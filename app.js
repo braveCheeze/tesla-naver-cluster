@@ -38,7 +38,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.13-20'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.13-21'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -1566,14 +1566,21 @@
     $('#tollDist').textContent = fmtDist(ahead);
     $('#tollFare').textContent = p.fare; // 하이패스 안내 문구는 카드의 셋째 줄에 고정
   }
-  // 테슬라 모드에서 단속 경고 묶음을 길안내 패널(없으면 검색 버튼) 바로 밑에 붙인다
+  // 테슬라 모드에서 단속 경고 묶음을 길안내 패널(없으면 검색 버튼) 바로 밑에 붙이고,
+  // 위쪽 버튼(야간·전체화면·설정)은 그 패널(또는 검색 버튼) 바로 오른쪽에 붙인다
   function placeAlerts() {
     const app = $('#app');
     if (!app.classList.contains('tesla')) return;
-    const np = $('#navPanel');
-    const top = !np.hidden ? np.getBoundingClientRect().bottom - app.getBoundingClientRect().top + 10 : 58;
-    const v = Math.round(top) + 'px';
-    if (app.style.getPropertyValue('--tl-top') !== v) app.style.setProperty('--tl-top', v);
+    const base = app.getBoundingClientRect();
+    const setVar = (k, px) => { const v = Math.round(px) + 'px'; if (app.style.getPropertyValue(k) !== v) app.style.setProperty(k, v); };
+    const np = $('#navPanel'), sb = $('#searchBtn');
+    setVar('--tl-top', !np.hidden ? np.getBoundingClientRect().bottom - base.top + 10 : 58);
+    const anchor = !np.hidden ? np : !sb.hidden ? sb : null;
+    if (anchor) {
+      const r = anchor.getBoundingClientRect();
+      setVar('--tc-left', r.right - base.left + 8);
+      setVar('--tc-top', r.top - base.top);
+    }
   }
 
   // 지도 왼쪽 세로 막대: 맨 아래 출발, 맨 위 도착으로 고정. 내 차 점이 올라가고, 지나온 만큼 막대가 줄어든다.

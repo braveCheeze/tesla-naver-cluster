@@ -997,7 +997,7 @@
       const app = document.getElementById('app').getBoundingClientRect();
       const q = (s) => document.querySelector(s).getBoundingClientRect();
       const clock = q('.timebox'), road = q('#roadName'), gps = q('.gps'), head = q('.heading'), strip = q('#routeStrip'),
-        bar = q('#rsBar'), alerts = q('.alerts'), np = q('#navPanel'), btn = q('#zin');
+        bar = q('#rsBar'), alerts = q('.alerts'), np = q('#navPanel'), btn = q('#zin'), tc = q('.topctrls');
       r = {
         clockTopRight: clock.right > app.right - 40 && clock.top < app.top + 40,
         roadBottomCenter: Math.abs((road.left + road.right) / 2 - (app.left + app.right) / 2) < 30 && road.bottom > app.bottom - 40,
@@ -1006,6 +1006,8 @@
         stripRight: strip.left > app.right - 60 && bar.width <= 8,
         alertsUnderNav: alerts.top >= np.bottom && alerts.top - np.bottom < 30 && alerts.left < app.left + 40,
         buttonsHalf: btn.width <= 32,
+        // 야간·전체화면·설정 버튼은 길안내 패널 바로 오른쪽, 패널 위쪽 높이에
+        topButtonsNextToNav: tc.left >= np.right && tc.left - np.right <= 16 && Math.abs(tc.top - np.top) <= 4,
       };
     } finally {
       t.endNav();

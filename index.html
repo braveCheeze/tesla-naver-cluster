@@ -632,10 +632,10 @@
   #app.tesla .rs-me { width: 14px; height: 14px; margin: 0 0 -7px -7px; border-width: 2px; }
   #app.tesla .rs-start, #app.tesla .rs-goal { width: 8px; height: 8px; border-width: 1.5px; }
 
-  /* 터치하면 나오는 버튼: 절반 크기로. 위쪽 버튼은 시계 왼쪽, 확대·축소는 경로 막대 왼쪽 */
+  /* 터치하면 나오는 버튼: 절반 크기로. 위쪽 버튼은 길안내 패널(또는 검색 버튼) 바로 오른쪽, 확대·축소는 경로 막대 왼쪽 */
   #app.tesla .btn { width: 30px; height: 30px; border-radius: 9px; }
   #app.tesla .btn svg { width: 15px; height: 15px; }
-  #app.tesla .topctrls { top: 12px; right: 112px; gap: 6px; }
+  #app.tesla .topctrls { top: var(--tc-top, 14px); left: var(--tc-left, 140px); right: auto; gap: 6px; }
   #app.tesla .ctrls { right: 46px; gap: 6px; }
   #app.tesla .searchbtn { height: 32px; font-size: 13px; padding: 0 12px 0 9px; gap: 6px; border-radius: 10px; }
   #app.tesla .searchbtn svg { width: 15px; height: 15px; }
@@ -825,6 +825,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.13-20"></script>
+<script src="app.js?v=2026.11.13-21"></script>
 </body>
 </html>
