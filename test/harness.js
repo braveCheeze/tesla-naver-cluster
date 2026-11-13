@@ -793,6 +793,7 @@
     const t = T(), C = CAM_ISO_A;
     // 2026-11-13 두 번째 피드백: 70m → 30m, 오차 거리(+Xm·'후면' 문구)는 보여 주지 않고 30m 지나면 사라진다
     const seen = { near: null, after: [], cleared: null };
+    const mark = t.alertLog[t.alertLog.length - 1];
     for (let s = 0; s <= 800; s += 5) {
       const p = dest(C, 180, 700 - s);   // 700m 남쪽 -> 100m 북쪽, 72 km/h
       feed(p, 20, 0, { dt: 250 });
@@ -807,11 +808,15 @@
     const nearOk = !!seen.near && !/단속 지점/.test(seen.near.type);
     const afterOk = seen.after.length >= 2 && seen.after.every((x) => x.ok);
     const clearOk = !!seen.cleared && seen.cleared.gone;
+    // 단속이 끝나면 '띠링' 한 번만
+    const from = mark ? t.alertLog.indexOf(mark) + 1 : 0;
+    const chimes = t.alertLog.slice(from).filter((e) => /단속 통과 띠링/.test(e.text)).length;
     return {
-      pass: nearOk && afterOk && clearOk,
+      pass: nearOk && afterOk && clearOk && chimes === 1,
       detail: 'before: ' + (seen.near ? seen.near.past + ' m "' + seen.near.type + ' ' + seen.near.dist + '"' : 'NO TARGET within 25 m') +
         '; after +15..+25 m (card kept, "0m", no margin text): ' + seen.after.map((x) => '+' + x.past + (x.ok ? '✓' : '✗')).join(' ') +
-        '; at +' + (seen.cleared ? seen.cleared.past + ' m ' + (seen.cleared.gone ? 'cleared' : 'STILL SHOWN') : '?'),
+        '; at +' + (seen.cleared ? seen.cleared.past + ' m ' + (seen.cleared.gone ? 'cleared' : 'STILL SHOWN') : '?') +
+        '; 띠링 x' + chimes + (chimes === 1 ? '✓' : '✗'),
     };
   }
 
@@ -947,7 +952,7 @@
     const t = T(), box = document.getElementById('optTesla'), prev = t.prefs.tesla;
     const set = (on) => { box.checked = on; box.dispatchEvent(new Event('change')); };
     const snap = () => {
-      const cl = document.getElementById('cluster'), map = document.getElementById('map');
+      const cl = document.querySelector('.timebox'), map = document.getElementById('map'); // 테슬라 모드에서는 시계 등이 지도 위에 따로 뜬다
       const cs = getComputedStyle(cl);
       return {
         pos: cs.position, mapW: map.clientWidth, appW: document.getElementById('app').clientWidth,
@@ -975,6 +980,97 @@
     };
   }
   const C_A = () => CAM_ISO_A;
+
+  // S24: 테슬라 모드 배치 — 시계 오른쪽 위, 주소 가운데 아래, GPS 오른쪽 아래, 나침반 왼쪽 아래,
+  //      경로 막대 오른쪽 끝(얇게), 단속 경고는 길안내 패널 바로 밑, 버튼은 절반 크기
+  async function s24() {
+    const t = T(), box = document.getElementById('optTesla'), prev = t.prefs.tesla;
+    const set = (on) => { box.checked = on; box.dispatchEvent(new Event('change')); };
+    let r = {};
+    try {
+      set(true);
+      const R = buildNavRoute();
+      await planAndStart(R);
+      feed(pointAt(R, 15).p, 15, 0);
+      t.renderNav();
+      await new Promise((res) => setTimeout(res, 60));
+      const app = document.getElementById('app').getBoundingClientRect();
+      const q = (s) => document.querySelector(s).getBoundingClientRect();
+      const clock = q('.timebox'), road = q('#roadName'), gps = q('.gps'), head = q('.heading'), strip = q('#routeStrip'),
+        bar = q('#rsBar'), alerts = q('.alerts'), np = q('#navPanel'), btn = q('#zin');
+      r = {
+        clockTopRight: clock.right > app.right - 40 && clock.top < app.top + 40,
+        roadBottomCenter: Math.abs((road.left + road.right) / 2 - (app.left + app.right) / 2) < 30 && road.bottom > app.bottom - 40,
+        gpsBottomRight: gps.right > app.right - 40 && gps.bottom > app.bottom - 60,
+        compassBottomLeft: head.left < app.left + 40 && head.bottom > app.bottom - 40,
+        stripRight: strip.left > app.right - 60 && bar.width <= 8,
+        alertsUnderNav: alerts.top >= np.bottom && alerts.top - np.bottom < 30 && alerts.left < app.left + 40,
+        buttonsHalf: btn.width <= 32,
+      };
+    } finally {
+      t.endNav();
+      set(prev);
+    }
+    const bad = Object.keys(r).filter((k) => !r[k]);
+    return { pass: bad.length === 0, detail: Object.keys(r).map((k) => k + (r[k] ? '✓' : '✗')).join(', ') };
+  }
+
+  // S25: 하이패스 — 경로 안내에 톨게이트(type 121)가 있으면 2km 앞부터 카드(이름·거리·통행료·하이패스 차로 이용)와 음성
+  async function s25() {
+    const t = T();
+    const raw = [];
+    const o = dest(NAV_ORIGIN, 0, 0);
+    for (let k = 0; k <= 40; k++) raw.push(dest(o, 0, 100 * k));   // 북쪽으로 4km, 톨게이트는 2.5km 지점
+    const path = raw.map((p) => [round6(p.lng), round6(p.lat)]);
+    const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const total = cum[cum.length - 1];
+    const R = {
+      route: { distance: r0(total), duration: r0(total / 25 * 1000), tollFare: 3900, fuelPrice: 300, path,
+        guide: [{ i: 25, t: 121, s: '테스트톨게이트 (통행료 3,900원)', d: r0(cum[25]), ms: 100000 },
+                { i: 40, t: 88, s: '목적지', d: r0(total - cum[25]), ms: 60000 }],
+        sections: [{ i: 0, n: 41, name: '테스트고속도로', speed: 100, cong: 1 }] },
+      P, cum, total, dest: { name: '톨 테스트', addr: '', lat: P[40].lat, lng: P[40].lng },
+    };
+    await planAndStart(R);
+    const mark = t.alertLog[t.alertLog.length - 1];
+    let shownAt = null, card = null, voice = null;
+    for (let s = 25; s <= 2500; s += 25) {
+      const a = pointAt(R, s);
+      feed(a.p, 25, 0);   // 90 km/h
+      t.renderNav();
+      if (shownAt === null && visible('#tollCard')) { shownAt = r0(cum[25] - s); card = { name: text('#tollName'), dist: text('#tollDist'), fare: text('#tollFare') + ' ' + text('#tollCard .toll-hint') }; }
+      if (!voice) {
+        const from = mark ? t.alertLog.indexOf(mark) + 1 : 0;
+        const v = t.alertLog.slice(from).find((e) => /테스트톨게이트/.test(e.text));
+        if (v) voice = { at: r0(cum[25] - s), text: v.text };
+      }
+    }
+    const ok = shownAt !== null && shownAt <= 2000 && shownAt > 1950 && card.name === '테스트톨게이트' && /3,900원/.test(card.fare) &&
+      /하이패스/.test(card.fare) && !!voice && /2킬로미터 앞/.test(voice.text) && /하이패스 차로를 이용하세요/.test(voice.text);
+    return {
+      pass: ok,
+      detail: 'card ' + (shownAt === null ? 'NEVER' : 'from ' + shownAt + ' m: "' + card.name + ' ' + card.dist + ' ' + card.fare + '"') +
+        '; voice ' + (voice ? 'at ' + voice.at + ' m "' + voice.text + '"' : 'NONE'),
+    };
+  }
+
+  // S26: 길안내 없이 지도에는 내 진행 방향 앞의 카메라만 (뒤쪽·반대편 차로 카메라는 표시하지 않음)
+  async function s26() {
+    const t = T(), C = CAM_ISO_A;   // 한 방향(하행) 카메라
+    const m = await waitFor(() => t.getMap(), 5000, 100);
+    if (!m || !('cams' in m)) return { status: 'SKIP', detail: 'no map' };
+    const shownAfter = (fn) => { softReset(); t.camState.markerAt = null; fn(); return m.cams.size; };
+    // (a) 카메라를 향해 북쪽으로 (1.5km 남쪽에서 1.2km 남쪽까지)
+    const ahead = shownAfter(() => { for (let s = 0; s <= 300; s += 20) feed(dest(C, 180, 1500 - s), 20, 0); });
+    // (b) 카메라를 지나 북쪽으로 계속 (뒤에 있음)
+    const behind = shownAfter(() => { for (let s = 0; s <= 300; s += 20) feed(dest(C, 0, 200 + s), 20, 0); });
+    // (c) 왼쪽 18m 옆으로 나란히 = 반대편 차로 (300m 안)
+    const opposite = shownAfter(() => { for (let s = 0; s <= 200; s += 20) feed(dest(dest(C, 180, 300 - s), 90, 18), 20, 0); });
+    const pass = ahead >= 1 && behind === 0 && opposite === 0;
+    return { pass, detail: 'markers: heading to camera ' + ahead + (ahead >= 1 ? '✓' : '✗') + ', camera behind ' + behind + (behind === 0 ? '✓' : '✗') + ', opposite lane ' + opposite + (opposite === 0 ? '✓' : '✗') };
+  }
 
   // S23: 경로 이탈 → 같은 목적지를 '추천'(traoptimal) 경로로 다시 찾는다. 80m 넘게 벗어나면 2번째 위치에서 바로.
   //      처음에 무료 도로를 골랐으면 다시 찾을 때도 무료 도로(traavoidtoll)
@@ -1238,6 +1334,9 @@
     { id: 'S21', name: 'S21 route-number road names', fn: s21 },
     { id: 'S22', name: 'S22 route colours (blue = no traffic data)', fn: s22 },
     { id: 'S23', name: 'S23 off-route reroute: same goal, 추천', fn: s23 },
+    { id: 'S24', name: 'S24 Tesla mode placement', fn: s24 },
+    { id: 'S25', name: 'S25 toll gate (하이패스) card + voice', fn: s25 },
+    { id: 'S26', name: 'S26 map shows only my-direction cameras', fn: s26 },
   ];
 
   // ---------------------------------------------------------------- runner

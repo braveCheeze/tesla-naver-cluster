@@ -544,55 +544,102 @@
     .turndist { font-size: 24px; }
   }
 
+  /* 톨게이트(하이패스) 안내 카드 */
+  .alerts { display: contents; }
+  .tollcard {
+    display: flex; gap: 12px; align-items: center; padding: 12px 14px; border-radius: var(--r-md);
+    background: linear-gradient(135deg, rgba(41, 121, 255, .26), rgba(41, 121, 255, .07)); border: 1px solid rgba(41, 121, 255, .5);
+  }
+  .toll-badge {
+    flex: none; padding: 8px 10px; border-radius: 10px; background: #1565c0; color: #fff;
+    font-size: 15px; font-weight: 800; letter-spacing: -0.02em; box-shadow: 0 3px 10px rgba(0, 0, 0, .3);
+  }
+  .toll-name { font-size: 16px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .toll-info { min-width: 0; }
+  .toll-sub { font-size: 14px; color: #cfe0ff; margin-top: 2px; display: flex; gap: 8px; align-items: baseline; white-space: nowrap; }
+  .toll-sub b { font-size: 22px; color: #fff; font-variant-numeric: tabular-nums; }
+  .toll-hint { font-size: 13px; font-weight: 700; color: #9cc3ff; margin-top: 1px; white-space: nowrap; }
+
   /* ---------- 테슬라 모드: 계기판 칸을 없애고 지도를 꽉 채운다 ----------
-     속도는 차 화면에 나오므로 숨기고, 시계·날짜·날씨·도로·방향·주행 기록은 지도 왼쪽 위에 글자로만 띄운다.
-     글자는 그림자와 왼쪽의 옅은 어둠 그라데이션으로 낮·밤 지도 어디서나 읽히게 한다. 카메라 경고는 카드 그대로. */
+     속도는 차 화면에 나오므로 숨긴다. 나머지는 지도 위 제자리에 글자로만 띄운다(배경 없이 그림자로 읽히게):
+       오른쪽 위 시계·날짜·날씨 / 오른쪽 끝 얇은 경로 막대 / 왼쪽 위 길안내 → 그 밑에 단속 경고 → 다음 단속 /
+       가운데 아래 주소 / 왼쪽 아래 나침반(그 위 주행 기록) / 오른쪽 아래 지도 저작권 위에 GPS */
   .date { display: none; }
-  #app { position: relative; }
+  #app { position: relative; --tl-top: 84px; } /* --tl-top: 길안내 패널(또는 검색 버튼) 바로 밑 (app.js 가 맞춘다) */
   #app.tesla { grid-template-columns: 1fr; grid-template-rows: 1fr; }
-  #app.tesla #cluster {
-    position: absolute; left: 0; top: 0; bottom: 0; z-index: 990;
-    display: flex; flex-direction: column;
-    width: 360px; max-width: 46%; padding: 88px 20px 20px; gap: 10px;
-    /* 사이드바처럼 보이지 않게 아주 옅은 그늘만 두고, 글자는 진한 그림자로 읽히게 한다 */
-    background: linear-gradient(90deg, rgba(8, 10, 14, .34) 0%, rgba(8, 10, 14, .14) 55%, rgba(8, 10, 14, 0) 100%);
-    border: 0; overflow: hidden; pointer-events: none;
+  #app.tesla #cluster, #app.tesla .top { display: contents; }
+  #app.tesla .speedbox { display: none; } /* 속도·제한속도는 차 화면과 경고 카드에 나온다 */
+  #app.tesla .timebox, #app.tesla .weather, #app.tesla .gps, #app.tesla .road, #app.tesla .heading,
+  #app.tesla .trip, #app.tesla .alerts {
+    position: absolute; z-index: 990; pointer-events: none; margin: 0;
     text-shadow: 0 1px 2px rgba(0, 0, 0, .95), 0 0 3px rgba(0, 0, 0, .8), 0 0 14px rgba(0, 0, 0, .55);
   }
-  /* 길안내 중에는 안내 패널(왼쪽 위)과 경로 막대(왼쪽 끝) 옆으로 비켜 선다 */
-  #app.tesla:has(#map.navigating) #cluster { padding-top: 196px; padding-left: 104px; width: 440px; }
-  /* 속도·제한속도 표지는 숨긴다 (속도는 차 화면에, 제한속도는 카메라·구간단속 카드에 나온다) */
-  #app.tesla .speedbox { display: none; }
-  #app.tesla .top { flex-direction: column; align-items: flex-start; gap: 4px; }
-  #app.tesla .timebox { order: -1; display: flex; align-items: baseline; gap: 10px; }
-  #app.tesla .clock { font-size: 40px; font-weight: 800; line-height: 1; letter-spacing: -0.02em; }
-  #app.tesla .date { display: inline; font-size: 17px; font-weight: 700; color: #eef1f5; }
-  #app.tesla .gps { font-size: 14px; font-weight: 600; color: #dfe3e9; }
-  #app.tesla .road { font-size: 21px; font-weight: 800; }
-  #app.tesla .road small { color: #dfe3e9; font-weight: 600; }
-  #app.tesla .heading { font-size: 17px; font-weight: 700; }
-  #app.tesla .compass { width: 34px; height: 34px; background: rgba(0, 0, 0, .35); border-color: rgba(255, 255, 255, .28); }
-  #app.tesla .weather, #app.tesla .camnext {
-    background: none; border: 0; padding: 0; margin-top: 0; color: #eef1f5; font-size: 17px; font-weight: 600;
+  /* 오른쪽 위: 시계 · 날짜 · 날씨 */
+  #app.tesla .timebox { top: 10px; right: 16px; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+  #app.tesla .clock { font-size: 34px; font-weight: 800; line-height: 1; letter-spacing: -0.02em; }
+  #app.tesla .date { display: block; font-size: 14px; font-weight: 700; color: #eef1f5; }
+  #app.tesla .chip { margin: 2px 0 0; }
+  #app.tesla .weather { top: 72px; right: 16px; background: none; border: 0; padding: 0; color: #eef1f5; font-size: 13px; font-weight: 600; text-align: right; }
+  #app.tesla .weather b { font-size: 16px; }
+  /* 오른쪽 아래: 지도 저작권 표시 바로 위에 GPS */
+  #app.tesla .gps { right: 10px; bottom: 28px; font-size: 12px; font-weight: 700; color: #e6e9ee; }
+  /* 가운데 아래: 주소 */
+  #app.tesla .road {
+    left: 50%; bottom: 12px; transform: translateX(-50%); max-width: 56%; min-height: 0; text-align: center;
+    font-size: 16px; font-weight: 800;
   }
-  #app.tesla .weather b { font-size: 22px; }
-  #app.tesla .mini-sign { text-shadow: none; }
-  #app.tesla .trip { display: grid; grid-template-columns: repeat(2, max-content); justify-content: start; gap: 6px 26px; margin-top: auto; }
+  #app.tesla .road small { color: #e6e9ee; font-weight: 700; font-size: 14px; }
+  /* 왼쪽 아래: 나침반, 그 위에 주행 기록 */
+  #app.tesla .heading { left: 14px; bottom: 12px; font-size: 14px; font-weight: 700; gap: 8px; }
+  #app.tesla .compass { width: 30px; height: 30px; background: rgba(0, 0, 0, .35); border-color: rgba(255, 255, 255, .28); }
+  #app.tesla .compass svg { width: 16px; height: 16px; }
+  #app.tesla .trip { left: 14px; bottom: 54px; display: grid; grid-template-columns: repeat(2, max-content); gap: 4px 20px; }
   #app.tesla .stat { background: none; border: 0; padding: 0; }
-  #app.tesla .stat .k { color: #d3d8df; font-size: 12px; font-weight: 700; }
-  #app.tesla .stat .v { font-size: 19px; font-weight: 800; margin-top: 1px; }
+  #app.tesla .stat .k { color: #d3d8df; font-size: 11px; font-weight: 700; }
+  #app.tesla .stat .v { font-size: 16px; font-weight: 800; margin-top: 0; }
   #app.tesla .stat small { color: #d3d8df; }
-  #app.tesla .camcard, #app.tesla .seccard {
-    text-shadow: none; background-color: rgba(15, 19, 25, .55);
-    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); box-shadow: var(--shadow);
+  /* 왼쪽 위: 길안내 패널 바로 밑에 단속 경고 → 다음 단속 (배경 없이 표지·글자만) */
+  #app.tesla .alerts { left: 14px; top: var(--tl-top); width: 300px; display: flex; flex-direction: column; gap: 8px; }
+  #app.tesla .camcard, #app.tesla .seccard, #app.tesla .tollcard {
+    background: none; border: 0; box-shadow: none; padding: 0; -webkit-backdrop-filter: none; backdrop-filter: none;
   }
-  #app.tesla .camcard.zonecam { background: none; -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none; width: 150px; }
+  #app.tesla .camcard.over, #app.tesla .camcard.mobile.over { background: none; animation: none; }
+  #app.tesla .camcard.over .cam-dist { color: #ff6b6b; animation: overblink 1s ease-in-out infinite; }
+  @keyframes overblink { 50% { opacity: .45; } }
+  #app.tesla .cam-sign, #app.tesla .toll-badge, #app.tesla .mini-sign, #app.tesla .zone-tile { text-shadow: none; }
+  #app.tesla .cam-dist { font-size: 30px; }
+  #app.tesla .cam-bar { background: rgba(0, 0, 0, .35); }
+  #app.tesla .camcard.mobile .cam-type { color: #82b1ff; }
+  #app.tesla .seccard .sec-top { color: #dbe8ff; }
+  #app.tesla .seccard.over .sec-avg { color: #ff6b6b; }
+  #app.tesla .camnext { background: none; border: 0; padding: 0; color: #eef1f5; font-size: 15px; font-weight: 700; }
+  #app.tesla .toll-sub { color: #f2f6ff; font-weight: 700; }
+  #app.tesla .toll-hint { color: #d6e6ff; }
+  #app.tesla .camcard.zonecam { width: 150px; }
   #app.tesla .zt-dist { font-size: 26px; padding: 7px 6px 6px; }
   #app.tesla .zt-limit { font-size: 42px; }
-  /* 테슬라 화면(804×638)은 낮아서, 카메라·구간단속 경고가 떠 있는 동안은 날씨·주행 기록을 잠시 접어 경고가 가리지 않게 한다 */
-  #app.tesla #cluster:has(#camCard:not([hidden])) .weather,
-  #app.tesla #cluster:has(#camCard:not([hidden])) .trip,
-  #app.tesla #cluster:has(#secCard:not([hidden])) .trip { display: none; }
+  /* 키가 큰 보호구역 표지가 떠 있는 동안은 주행 기록을 접어 둔다 (화면이 낮아 겹치지 않게) */
+  #app.tesla:has(#camCard.zonecam:not([hidden])) .trip { display: none; }
+
+  /* 경로 막대: 오른쪽 끝에 얇은 띠로 */
+  #app.tesla .rstrip { left: auto; right: 6px; top: 104px; bottom: 56px; width: 34px; }
+  #app.tesla .rs-top { min-width: 0; padding: 3px 5px; margin-bottom: 6px; border-radius: 8px; }
+  #app.tesla .rs-top b { font-size: 11px; }
+  #app.tesla .rs-top span { font-size: 9px; }
+  #app.tesla .rs-track { width: 16px; }
+  #app.tesla .rs-track::before { width: 2px; margin-left: -1px; }
+  #app.tesla .rs-bar { width: 6px; margin-left: -3px; border-width: 1px; border-radius: 3px; }
+  #app.tesla .rs-me { width: 14px; height: 14px; margin: 0 0 -7px -7px; border-width: 2px; }
+  #app.tesla .rs-start, #app.tesla .rs-goal { width: 8px; height: 8px; border-width: 1.5px; }
+
+  /* 터치하면 나오는 버튼: 절반 크기로. 위쪽 버튼은 시계 왼쪽, 확대·축소는 경로 막대 왼쪽 */
+  #app.tesla .btn { width: 30px; height: 30px; border-radius: 9px; }
+  #app.tesla .btn svg { width: 15px; height: 15px; }
+  #app.tesla .topctrls { top: 12px; right: 112px; gap: 6px; }
+  #app.tesla .ctrls { right: 46px; gap: 6px; }
+  #app.tesla .searchbtn { height: 32px; font-size: 13px; padding: 0 12px 0 9px; gap: 6px; border-radius: 10px; }
+  #app.tesla .searchbtn svg { width: 15px; height: 15px; }
+  #app.tesla .toast { bottom: 44px; }
 </style>
 </head>
 <body>
@@ -614,7 +661,8 @@
       <div class="compass"><svg id="compassArrow" viewBox="0 0 24 24"><path d="M12 2.5 L18.5 20.5 L12 16.2 L5.5 20.5 Z" fill="currentColor"/></svg></div>
       <span id="headingText">방향 -</span>
     </div>
-    <div id="camNext" class="camnext" hidden></div>
+    <!-- 경고 묶음: 일반 화면에서는 그대로 풀어 놓고(display: contents), 테슬라 모드에서는 길안내 패널 바로 밑에 세로로 쌓는다 -->
+    <div class="alerts">
     <div id="camCard" class="camcard" hidden>
       <div class="cam-sign"><span id="camLimit">60</span></div>
       <div class="cam-info">
@@ -633,6 +681,17 @@
       <div class="sec-top">구간단속 · 제한 <b id="secLimit">100</b> km/h</div>
       <div class="sec-avg"><span id="secAvg">-</span><small> km/h 평균</small></div>
       <div id="secRemain" class="sec-remain">-</div>
+    </div>
+    <!-- 톨게이트(하이패스) 안내: 길안내 경로에 톨게이트가 있으면 2km 앞부터 -->
+    <div id="tollCard" class="tollcard" hidden>
+      <div class="toll-badge">하이패스</div>
+      <div class="toll-info">
+        <div id="tollName" class="toll-name">톨게이트</div>
+        <div class="toll-sub"><b id="tollDist">0m</b><span id="tollFare"></span></div>
+        <div class="toll-hint">하이패스 차로로 지나가세요</div>
+      </div>
+    </div>
+    <div id="camNext" class="camnext" hidden></div>
     </div>
     <div id="weather" class="weather" hidden></div>
     <div class="trip">
@@ -766,6 +825,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.13-19"></script>
+<script src="app.js?v=2026.11.13-20"></script>
 </body>
 </html>

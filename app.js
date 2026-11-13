@@ -38,7 +38,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.13-19'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.13-20'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -253,6 +253,20 @@
       o.connect(g); g.connect(actx.destination);
       o.start(s); o.stop(s + 0.18);
     }
+  }
+  // 단속 구간을 무사히 지나면 '띠링' 한 번 (높은 두 음을 짧게 이어서)
+  function chime() {
+    if (!prefs.beep || !actx) return;
+    const t0 = actx.currentTime + 0.02;
+    [[1318.5, 0], [1760, 0.12]].forEach(([freq, dt]) => {
+      const o = actx.createOscillator(), g = actx.createGain(), s = t0 + dt;
+      o.type = 'sine'; o.frequency.value = freq;
+      g.gain.setValueAtTime(0.0001, s);
+      g.gain.exponentialRampToValueAtTime(0.35, s + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, s + 0.45);
+      o.connect(g); g.connect(actx.destination);
+      o.start(s); o.stop(s + 0.5);
+    });
   }
   let koVoice = null;
   const hasTTS = 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
@@ -938,7 +952,11 @@
         tg.after = true; // 카메라 좌표 오차·후면 단속을 감안해 지나간 뒤 CAM_HOLD m 까지 경고를 유지한다
       }
       if (tg.after) {
-        if (d >= CAM_HOLD) camState.target = tg = null;
+        if (d >= CAM_HOLD) { // 단속 지점을 다 지났다: 경고를 내리고 '띠링' 한 번
+          camState.target = tg = null;
+          chime();
+          logAlert('beep', '단속 통과 띠링');
+        }
       } else if (d > alertRange(tg.c) + 300) {
         camState.target = tg = null;
       } else if (moving && d > 150 && !isAhead(f, tg.c, d, true)) {
@@ -1109,8 +1127,11 @@
   function refreshCamMarkers(f) {
     if (!mapA || !mapA.setCameras) return;
     if (!cams.loaded || !prefs.cams) { mapA.setCameras([]); camState.markerAt = null; return; }
-    if (camState.markerAt && haversine(camState.markerAt, f) < 250) return;
+    // 250m 넘게 움직였거나(길안내 없이는 방향이 30° 넘게 바뀌어도) 다시 고른다
+    const turned = !nav.active && state.heading !== null && camState.markerHdg != null && angleDiff(state.heading, camState.markerHdg) > 30;
+    if (camState.markerAt && haversine(camState.markerAt, f) < 250 && !turned) return;
     camState.markerAt = { lat: f.lat, lng: f.lng };
+    camState.markerHdg = state.heading;
     if (nav.active && nav.pts) {
       // 길안내 중에는 경로 위 카메라만 지도에 (조금 전 지나온 것부터 앞쪽 5km 까지)
       ensureRouteCams();
@@ -1118,7 +1139,12 @@
         .map((x) => ({ i: x.i, c: x.c, d: x.at - nav.along })).slice(0, 80));
       return;
     }
-    mapA.setCameras(camsNear(f.lat, f.lng, 2000).filter((x) => camWanted(x.c)).sort((a, b) => a.d - b.d).slice(0, 80));
+    // 길안내 없이: 내가 달리는 길·방향 앞의 카메라만 지도에 (반대편 차로·옆 도로·지나온 카메라는 표시하지 않음).
+    // 방향을 아직 모르면(출발 전) 가까운 카메라를 보여 준다
+    const tg = camState.target;
+    const list = camsNear(f.lat, f.lng, 2000).filter((x) => camWanted(x.c) &&
+      (state.heading === null || (tg && x.i === tg.i) || isAhead(f, x.c, x.d, true)));
+    mapA.setCameras(list.sort((a, b) => a.d - b.d).slice(0, 80));
   }
 
   // ---------- 길안내 ----------
@@ -1495,19 +1521,59 @@
     renderNav();
   }
 
+  // 톨게이트 안내 문구: '남춘천톨게이트 (통행료 3,900원)' → 이름 · 통행료 · 하이패스 안내
+  // (하이패스 차로가 몇 번째인지는 길찾기 데이터에 없어 '하이패스 차로 이용'까지만 알린다)
+  function tollParts(g) {
+    const m = String(g.s || '').match(/^(.*?)\s*\((.*)\)\s*$/);
+    return { name: (m ? m[1] : g.s) || '톨게이트', fare: m ? m[2] : '' };
+  }
   function announceTurn(g, dg) {
     const said = nav.said[g.i] || (nav.said[g.i] = {});
     const fast = state.speedKmh > 60;
-    if (fast && dg <= 1100 && dg > 700 && !said.k1) {
+    const toll = g.t === 121;
+    const text = toll ? (() => { const p = tollParts(g); return p.name + (p.fare ? ', ' + p.fare : '') + '. 하이패스 차로를 이용하세요'; })() : g.s;
+    if (toll && dg <= 2050 && dg > 1500 && !said.k2) {
+      said.k2 = true;
+      say('2킬로미터 앞, ' + text, 1);
+    } else if (fast && dg <= 1100 && dg > 700 && !said.k1) {
       said.k1 = true;
-      say('1킬로미터 앞, ' + g.s, 1);
+      say('1킬로미터 앞, ' + text, 1);
     } else if (dg <= 320 && dg > (fast ? 160 : 90) && !said.m300) {
       said.m300 = true;
-      say(spokenDist(Math.round(dg / 100) * 100 || 100) + ' 앞, ' + g.s, 1);
+      say(spokenDist(Math.round(dg / 100) * 100 || 100) + ' 앞, ' + text, 1);
     } else if (dg <= (fast ? 160 : 90) && !said.now) {
       said.now = true; said.m300 = true;
-      say(g.s, 1, true);
+      if (!toll) say(g.s, 1, true); // 톨게이트는 바로 앞에서 다시 말하지 않는다
     }
+  }
+  // 하이패스(톨게이트) 카드: 경로 위 다음 톨게이트가 2km 안이면 이름·남은 거리·통행료를 보여 준다
+  function renderToll() {
+    const el = $('#tollCard');
+    let g = null, ahead = 0;
+    if (nav.active && nav.guides && nav.cum) {
+      for (const x of nav.guides) {
+        if (x.t !== 121) continue;
+        const a = nav.cum[Math.min(x.i, nav.cum.length - 1)] - nav.along;
+        if (a < -30) continue;  // 이미 지나감
+        if (a <= 2000) { g = x; ahead = Math.max(0, a); }
+        break;
+      }
+    }
+    el.hidden = !g;
+    if (!g) return;
+    const p = tollParts(g);
+    $('#tollName').textContent = p.name;
+    $('#tollDist').textContent = fmtDist(ahead);
+    $('#tollFare').textContent = p.fare; // 하이패스 안내 문구는 카드의 셋째 줄에 고정
+  }
+  // 테슬라 모드에서 단속 경고 묶음을 길안내 패널(없으면 검색 버튼) 바로 밑에 붙인다
+  function placeAlerts() {
+    const app = $('#app');
+    if (!app.classList.contains('tesla')) return;
+    const np = $('#navPanel');
+    const top = !np.hidden ? np.getBoundingClientRect().bottom - app.getBoundingClientRect().top + 10 : 58;
+    const v = Math.round(top) + 'px';
+    if (app.style.getPropertyValue('--tl-top') !== v) app.style.setProperty('--tl-top', v);
   }
 
   // 지도 왼쪽 세로 막대: 맨 아래 출발, 맨 위 도착으로 고정. 내 차 점이 올라가고, 지나온 만큼 막대가 줄어든다.
@@ -1553,6 +1619,11 @@
   }
 
   function renderNav() {
+    renderToll();
+    renderNavPanel();
+    placeAlerts(); // 안내 패널 높이가 바뀌면 그 밑의 단속 경고도 따라 움직인다
+  }
+  function renderNavPanel() {
     const p = $('#navPanel');
     renderStrip();
     if (!nav.active) { p.hidden = true; $('#searchBtn').hidden = false; return; }
@@ -2226,6 +2297,7 @@
   function applyTesla() {
     $('#app').classList.toggle('tesla', prefs.tesla);
     queueLayout(); // 지도 칸 너비가 바뀌므로 다시 배치
+    placeAlerts();
   }
   function applyNight() {
     $('#map').classList.toggle('night', state.night);
