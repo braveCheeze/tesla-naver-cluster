@@ -38,7 +38,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.13-24'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-25'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -1102,33 +1102,52 @@
       }
     }
     renderSection();
+    renderCamAvg();
     renderLimit();
+  }
+  // 구간단속 계산: 평균 속도, 남은 거리, 평균을 넘었을 때 남은 구간에서 지킬 속도(need)
+  function sectionStats(s) {
+    const now = state.fix ? state.fix.t : Date.now();
+    const dt = (now - s.t0) / 1000, done = state.odo - s.d0;
+    const avg = dt >= 8 ? done / dt * 3.6 : null;
+    const remain = sectionRemain(s, done);
+    const over = avg !== null && avg > s.limit;
+    let need = null;
+    // 평균이 제한을 넘었으면, 끝까지 남은 거리를 이 속도 이하로 달리면 평균이 제한 안으로 들어온다
+    if (over && remain !== null && remain > 150) {
+      const leftS = (done + remain) / (s.limit / 3.6) - dt; // 제한속도로 달렸을 때 걸렸을 시간 - 이미 쓴 시간
+      need = leftS > 0 ? remain / leftS * 3.6 : 0;
+    }
+    return { avg, done, remain, over, need };
   }
   function renderSection() {
     const s = camState.section, card = $('#secCard');
     if (!s) { card.hidden = true; return; }
     card.hidden = false;
-    const now = state.fix ? state.fix.t : Date.now();
-    const dt = (now - s.t0) / 1000, done = state.odo - s.d0;
-    const avg = dt >= 8 ? done / dt * 3.6 : null;
+    const st = sectionStats(s);
     $('#secLimit').textContent = s.limit;
-    $('#secAvg').textContent = avg === null ? '-' : Math.round(avg);
-    const remain = sectionRemain(s, done);
-    let line = remain !== null ? '남은 거리 ' + fmtDist(remain) : fmtDist(done) + ' 주행';
-    const over = avg !== null && avg > s.limit;
-    // 평균이 제한을 넘었으면, 끝까지 남은 거리를 이 속도 이하로 달리면 평균이 제한 안으로 들어온다
-    if (over && remain !== null && remain > 150) {
-      const leftS = (done + remain) / (s.limit / 3.6) - dt; // 제한속도로 달렸을 때 걸렸을 시간 - 이미 쓴 시간
-      const need = leftS > 0 ? remain / leftS * 3.6 : 0;
-      if (need >= 20) {
-        line += ' · ' + Math.floor(need) + ' km/h 이하로';
-        if (!s.warned) { s.warned = true; say('구간 평균 속도가 제한을 넘었습니다. 남은 구간은 ' + Math.floor(need) + ' 이하로 달리세요.', 2); }
+    $('#secAvg').textContent = st.avg === null ? '-' : Math.round(st.avg);
+    let line = st.remain !== null ? '남은 거리 ' + fmtDist(st.remain) : fmtDist(st.done) + ' 주행';
+    if (st.need !== null) {
+      if (st.need >= 20) {
+        line += ' · ' + Math.floor(st.need) + ' km/h 이하로';
+        if (!s.warned) { s.warned = true; say('구간 평균 속도가 제한을 넘었습니다. 남은 구간은 ' + Math.floor(st.need) + ' 이하로 달리세요.', 2); }
       } else {
         line += ' · 평균 초과';
       }
     }
     $('#secRemain').textContent = line;
-    card.classList.toggle('over', over);
+    card.classList.toggle('over', st.over);
+  }
+  // 경고 카드(예: '구간단속 끝 1.4km') 오른쪽 끝에 구간 평균 속도를 붙인다
+  function renderCamAvg() {
+    const el = $('#camAvg'), s = camState.section;
+    if (!s || !camState.target) { el.hidden = true; return; }
+    const st = sectionStats(s);
+    el.hidden = false;
+    el.classList.toggle('over', st.over);
+    el.innerHTML = '<small>구간 평균</small><b>' + (st.avg === null ? '-' : Math.round(st.avg)) + '</b><i>km/h</i>' +
+      (st.need !== null && st.need >= 20 ? '<span class="need">' + Math.floor(st.need) + ' 이하로</span>' : '');
   }
   // 구간단속 남은 거리: 길안내 중이면 경로 위 구간 끝 카메라까지의 실제 거리(데이터의 구간 길이는 어림값이거나 비어 있음),
   // 아니면 데이터의 구간 길이 - 달린 거리. 모르면 null

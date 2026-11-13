@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GL 다크 지도 시험</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #111; color: #eee; font: 13px system-ui, sans-serif; }
+  #map { position: absolute; inset: 0; }
+  #log { position: absolute; left: 8px; top: 8px; z-index: 10; background: rgba(0,0,0,.6); padding: 6px 8px; border-radius: 6px; white-space: pre; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="log">loading…</div>
+<script>
+  // 네이버 지도 GL(벡터) 서브모듈로 기본 다크 지도가 뜨는지 시험한다 (?mode=dark|normal, ?lat=&lng=&z=)
+  const qs = new URLSearchParams(location.search);
+  const log = (s) => { document.getElementById('log').textContent += '\n' + s; };
+  window.navermap_authFailure = () => log('AUTH FAILURE');
+  const s = document.createElement('script');
+  s.src = 'https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=psnihw1wyf&submodules=gl';
+  s.onload = () => {
+    try {
+      const N = naver.maps;
+      const center = new N.LatLng(+(qs.get('lat') || 37.5100), +(qs.get('lng') || 127.0600));
+      const opt = { gl: true, center, zoom: +(qs.get('z') || 15) };
+      const map = new N.Map('map', opt);
+      window.__map = map;
+      log('gl map ok, types: ' + Object.keys(N.NaverStyleMapTypeOptions).filter((k) => /Dark|Vector/.test(k)).join(','));
+      if ((qs.get('mode') || 'dark') === 'dark') {
+        map.mapTypes.set('dark', N.NaverStyleMapTypeOptions.getDarkMap());
+        map.setMapTypeId('dark');
+        log('set dark → ' + map.getMapTypeId());
+      }
+    } catch (e) { log('ERR ' + e.message); }
+  };
+  s.onerror = () => log('script load failed');
+  document.head.appendChild(s);
+</script>
+</body>
+</html>

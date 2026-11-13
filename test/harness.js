@@ -1092,7 +1092,7 @@
         if (sec && o.secAt === null) o.secAt = r0(s - sStart);
         if (sec && !o.mid && s >= (sStart + sEnd) / 2) {
           const rm = /남은 거리 ([\d.]+)(km|m)/.exec(text('#secRemain'));
-          o.mid = { avg: num('#secAvg'), over: hasCls('#secCard', 'over'), shown: visible('#secCard'), remain: text('#secRemain'),
+          o.mid = { avg: num('#secAvg'), over: hasCls('#secCard', 'over'), shown: visible('#secCard') || (visible('#camAvg') && document.getElementById('camAvg').getClientRects().length > 0), remain: text('#secRemain'),
             remainM: rm ? parseFloat(rm[1]) * (rm[2] === 'km' ? 1000 : 1) : null, wantM: sEnd - s };
         }
         if (o.secAt !== null && !sec && o.endAt === null) o.endAt = r0(s - sEnd);
@@ -1143,7 +1143,8 @@
         clockTopRight: clock.right > app.right - 40 && clock.top < app.top + 40,
         roadBottomCenter: Math.abs((road.left + road.right) / 2 - (app.left + app.right) / 2) < 30 && road.bottom > app.bottom - 40,
         gpsBottomRight: gps.right > app.right - 40 && gps.bottom > app.bottom - 60,
-        compassBottomLeft: head.left < app.left + 40 && head.bottom > app.bottom - 40,
+        compassBottomLeft: head.left < app.left + 40 && head.bottom > app.bottom - 140, // 나침반은 맨 아래 주행 기록 바로 위
+        tripAtBottom: document.querySelector('.trip').getBoundingClientRect().bottom > app.bottom - 30 && head.bottom <= document.querySelector('.trip').getBoundingClientRect().top + 6,
         stripRight: strip.left > app.right - 60 && bar.width <= 8,
         alertsUnderNav: alerts.top >= np.bottom && alerts.top - np.bottom < 30 && alerts.left < app.left + 40,
         buttonsHalf: btn.width <= 32,

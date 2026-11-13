@@ -5,9 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>지도 클러스터</title>
 <meta name="theme-color" content="#0b0d10">
-<!-- 한글이 깔끔한 Pretendard 글꼴 (못 받으면 시스템 글꼴로 대신) -->
+<!-- 글꼴: 페이퍼로지(Paperlogy, OFL 무료 글꼴). 받기 전이나 못 받으면 Pretendard → 시스템 글꼴로 대신 -->
+<link rel="preload" href="https://cdn.jsdelivr.net/gh/projectnoonnu/2408-3@1.0/Paperlogy-7Bold.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <style>
+  @font-face { font-family: 'Paperlogy'; src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/2408-3@1.0/Paperlogy-4Regular.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+  @font-face { font-family: 'Paperlogy'; src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/2408-3@1.0/Paperlogy-5Medium.woff2') format('woff2'); font-weight: 500; font-display: swap; }
+  @font-face { font-family: 'Paperlogy'; src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/2408-3@1.0/Paperlogy-6SemiBold.woff2') format('woff2'); font-weight: 600; font-display: swap; }
+  @font-face { font-family: 'Paperlogy'; src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/2408-3@1.0/Paperlogy-7Bold.woff2') format('woff2'); font-weight: 700; font-display: swap; }
+  @font-face { font-family: 'Paperlogy'; src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/2408-3@1.0/Paperlogy-8ExtraBold.woff2') format('woff2'); font-weight: 800; font-display: swap; }
   :root {
     --bg: #0b0d10;
     --panel: #111418;
@@ -97,6 +103,13 @@
   .cam-info { flex: 1; min-width: 0; }
   .cam-type { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cam-dist { font-size: 28px; font-weight: 750; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .cam-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .cam-avg { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; line-height: 1.05; }
+  .cam-avg small { display: block; font-size: 11px; font-weight: 700; color: var(--muted); }
+  .cam-avg b { font-size: 24px; font-weight: 800; }
+  .cam-avg i { font-style: normal; font-size: 12px; font-weight: 700; margin-left: 2px; }
+  .cam-avg .need { display: block; font-size: 11px; font-weight: 800; color: #ffb4b4; margin-top: 1px; }
+  .cam-avg.over b { color: #ff6b6b; }
   .cam-bar { height: 6px; background: #3d2522; border-radius: 3px; margin-top: 6px; overflow: hidden; }
   .cam-bar i { display: block; height: 100%; width: 0; background: var(--bad); transition: width .9s linear; }
 
@@ -136,12 +149,13 @@
   /* 네이버 지도가 이 칸에 style="position: relative" 를 직접 넣으므로 !important 로 위치·크기를 지킨다.
      (안 그러면 정지 중 평면 지도에서 높이가 0이 되어 지도가 안 보인다) */
   .mapcanvas { position: absolute !important; inset: 0; }
-  /* 야간(다크) 지도: 지도 바탕 타일에만 색 반전 + 채도 낮춤을 걸어 검정·회색 톤으로 만든다.
-     (예전처럼 지도 전체에 걸면 산이 짙은 초록·강이 갈색이 되고, 경로선·카메라·내 차 색까지 뒤집혔다)
-     교통 정보는 타일에 같이 그려져 있어 은은하게 남고, 경로선·아이콘은 원래 색 그대로 */
-  #map.night { background: #11151b; }
+  /* 야간(다크) 지도: 지도 바탕 타일에만 색 반전을 걸어 바탕은 검게, 가게·건물 이름과 아이콘·큰길은 밝고 또렷하게.
+     (전체 밝기를 내리는 게 아니라 대비를 올린다. 예전처럼 지도 전체에 걸면 산이 짙은 초록·강이 갈색이 되고,
+      경로선·카메라·내 차 색까지 뒤집혔다. 경로선·아이콘은 원래 색 그대로)
+     진짜 다크 스타일은 네이버 지도 스타일 에디터의 스타일 ID(GL)가 있어야 쓸 수 있다 */
+  #map.night { background: #0b0e13; }
   #map.night .mapcanvas img[src*="map.naver.net/styles"], #map.night .leaflet-tile {
-    filter: invert(1) hue-rotate(180deg) saturate(.4) brightness(.9) contrast(1.08);
+    filter: invert(1) hue-rotate(180deg) saturate(.6) brightness(1.1) contrast(1.25);
   }
   #nightBtn { position: relative; }
   #nightBtn.auto::after { /* 자동 모드 표시 */
@@ -401,7 +415,7 @@
     --ease: cubic-bezier(.2, .8, .2, 1);
   }
   html, body {
-    font-family: "Pretendard Variable", Pretendard, system-ui, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+    font-family: Paperlogy, "Pretendard Variable", Pretendard, system-ui, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
     font-feature-settings: "tnum";
     letter-spacing: -0.01em;
   }
@@ -614,11 +628,13 @@
     font-size: 16px; font-weight: 800;
   }
   #app.tesla .road small { color: #e6e9ee; font-weight: 700; font-size: 14px; }
-  /* 왼쪽 아래: 나침반, 그 위에 주행 기록 */
-  #app.tesla .heading { left: 14px; bottom: 12px; font-size: 14px; font-weight: 700; gap: 8px; }
+  /* 왼쪽 아래: 맨 아래 주행 기록(주행 거리~최고 속도), 그 위에 나침반 */
+  #app.tesla .trip { left: 14px; bottom: 12px; display: grid; grid-template-columns: repeat(2, max-content); gap: 4px 20px; }
+  #app.tesla .heading { left: 14px; bottom: 92px; font-size: 14px; font-weight: 700; gap: 8px; }
   #app.tesla .compass { width: 30px; height: 30px; background: rgba(0, 0, 0, .35); border-color: rgba(255, 255, 255, .28); }
   #app.tesla .compass svg { width: 16px; height: 16px; }
-  #app.tesla .trip { left: 14px; bottom: 54px; display: grid; grid-template-columns: repeat(2, max-content); gap: 4px 20px; }
+  /* 주행 기록을 접어 둘 때(보호구역 표지가 떠 있을 때)는 나침반을 맨 아래로 */
+  #app.tesla:has(#camCard.zonecam:not([hidden])) .heading { bottom: 12px; }
   #app.tesla .stat { background: none; border: 0; padding: 0; }
   #app.tesla .stat .k { color: #d3d8df; font-size: 11px; font-weight: 700; }
   #app.tesla .stat .v { font-size: 16px; font-weight: 800; margin-top: 0; }
@@ -635,6 +651,9 @@
   #app.tesla .cam-dist { font-size: 30px; }
   #app.tesla .cam-bar { background: rgba(0, 0, 0, .35); }
   #app.tesla .camcard.mobile .cam-type { color: #82b1ff; }
+  #app.tesla .cam-avg small { color: #e6e9ee; }
+  /* 경고 카드 오른쪽 끝에 구간 평균이 보이는 동안은 아래 구간단속 카드를 접는다 (같은 내용이 겹치지 않게) */
+  #app.tesla:has(#camAvg:not([hidden])) #secCard { display: none; }
   /* 구간단속 카드: 배경이 없으니 작은 글씨도 굵고 밝게 */
   #app.tesla .seccard .sec-top { color: #f2f6ff; font-size: 15px; font-weight: 800; }
   #app.tesla .seccard .sec-avg small { color: #f2f6ff; font-weight: 700; }
@@ -651,7 +670,7 @@
   #app.tesla:has(#camCard.zonecam:not([hidden])) .trip { display: none; }
 
   /* 경로 막대: 오른쪽 끝에 얇은 띠로 */
-  #app.tesla .rstrip { left: auto; right: 6px; top: 104px; bottom: 56px; width: 34px; }
+  #app.tesla .rstrip { left: auto; right: 6px; top: 104px; bottom: auto; height: min(300px, calc(100% - 180px)); width: 34px; }
   #app.tesla .rs-top { min-width: 0; padding: 3px 5px; margin-bottom: 6px; border-radius: 8px; }
   #app.tesla .rs-top b { font-size: 11px; }
   #app.tesla .rs-top span { font-size: 9px; }
@@ -696,7 +715,8 @@
       <div class="cam-sign"><span id="camLimit">60</span></div>
       <div class="cam-info">
         <div id="camType" class="cam-type">과속 단속</div>
-        <div id="camDist" class="cam-dist">0m</div>
+        <!-- 구간단속 중이면 거리 오른쪽 끝(게이지 끝)에 구간 평균 속도 -->
+        <div class="cam-row"><div id="camDist" class="cam-dist">0m</div><div id="camAvg" class="cam-avg" hidden></div></div>
         <div class="cam-bar"><i id="camBar"></i></div>
       </div>
       <!-- 어린이·노인 보호구역일 때만 보이는 도로 주의 표지 모양 타일 -->
@@ -861,6 +881,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.13-24"></script>
+<script src="app.js?v=2026.11.14-25"></script>
 </body>
 </html>
