@@ -38,7 +38,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.13-14'; // index.html 의 app.js?v= 와 같이 올린다
+  const APP_VERSION = '2026.11.13-15'; // index.html 의 app.js?v= 와 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -165,6 +165,37 @@
     // 바로 붙은 다른 색 구간 사이에 초록 틈이 생기지 않게 잇는다
     for (let k = 0; k + 1 < runs.length; k++) if (runs[k + 1].a === runs[k].b + 1) runs[k].b++;
     return runs;
+  }
+  // 경로선을 300점 단위 조각으로 나눠 그린다. 지나온 조각은 숨기고 차가 있는 조각만 고쳐 그려서,
+  // 긴 경로(수천 점)에서도 1초마다 지나온 부분을 지우는 부담이 작다. 조각은 시작·끝 점을 이웃과 공유해 틈이 없다.
+  const ROUTE_CHUNK = 300;
+  function routePieces(n, sections) {
+    const out = [];
+    const split = (a, b, kind, color) => { for (let x = a; x < b; x += ROUTE_CHUNK) out.push({ a: x, b: Math.min(b, x + ROUTE_CHUNK), kind, color }); };
+    split(0, n - 1, 'edge', ROUTE_EDGE);
+    split(0, n - 1, 'base', ROUTE_BASE);
+    trafficRuns(sections, n).forEach((r) => split(r.a, r.b, 'traffic', r.color));
+    return out;
+  }
+  // 조각마다: 차(점 번호 s, 위치 cur)보다 뒤면 숨기고, 차가 걸친 조각은 cur 부터, 앞이면 원래대로
+  // ops: { hide(pc), show(pc), setPath(pc, pathArray), point(cur) }
+  function trimPieces(pieces, path, s, cur, ops) {
+    let c = null;
+    pieces.forEach((pc) => {
+      if (pc.b <= s) { if (pc.st !== 'hidden') { ops.hide(pc); pc.st = 'hidden'; } return; }
+      if (pc.a <= s) {
+        if (!c) c = ops.point(cur);
+        ops.setPath(pc, [c].concat(path.slice(s + 1, pc.b + 1)));
+        if (pc.st === 'hidden') ops.show(pc);
+        pc.st = 'part';
+        return;
+      }
+      if (pc.st !== 'full') {
+        ops.setPath(pc, path.slice(pc.a, pc.b + 1));
+        if (pc.st === 'hidden') ops.show(pc);
+        pc.st = 'full';
+      }
+    });
   }
   function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -340,25 +371,32 @@
       this.map.setCenter(c);
     },
     drawRoute(pts, sections) {
+      this.clearRoute();
       const N = naver.maps;
       const path = pts.map((p) => new N.LatLng(p.lat, p.lng));
-      const line = (seg, color, weight, z) => new N.Polyline({
-        map: this.map, path: seg, strokeColor: color, strokeWeight: weight, strokeOpacity: 1,
-        strokeLineCap: 'round', strokeLineJoin: 'round', zIndex: z, clickable: false,
+      const STYLE = { edge: [13, 48], base: [9, 50], traffic: [9, 51] };
+      this.routePath = path;
+      this.route = routePieces(path.length, sections).map((pc) => {
+        pc.line = new N.Polyline({
+          map: this.map, path: path.slice(pc.a, pc.b + 1), strokeColor: pc.color, strokeWeight: STYLE[pc.kind][0],
+          strokeOpacity: 1, strokeLineCap: 'round', strokeLineJoin: 'round', zIndex: STYLE[pc.kind][1], clickable: false,
+        });
+        pc.st = 'full';
+        return pc;
       });
-      if (this.route && this.route.length >= 2 && this.route[0].setPath) {
-        // 이미 그린 선이 있으면 경로만 바꿔 깜빡임과 부담을 줄인다 (교통 색 구간만 새로 만든다)
-        this.route.splice(2).forEach((l) => l.setMap(null));
-        this.route[0].setPath(path); this.route[1].setPath(path);
-      } else {
-        this.clearRoute();
-        this.route = [line(path, ROUTE_EDGE, 13, 48), line(path, ROUTE_BASE, 9, 50)];
-      }
-      trafficRuns(sections, path.length).forEach((r) => this.route.push(line(path.slice(r.a, r.b + 1), r.color, 9, 51)));
+    },
+    // 지나온 경로 지우기: 점 번호 s 와 그 사이 위치 cur 부터 앞만 남긴다
+    trimRoute(s, cur) {
+      if (!this.route || !this.routePath) return;
+      const N = naver.maps, map = this.map;
+      trimPieces(this.route, this.routePath, s, cur, {
+        hide: (pc) => pc.line.setMap(null), show: (pc) => pc.line.setMap(map),
+        setPath: (pc, p) => pc.line.setPath(p), point: (q) => new N.LatLng(q.lat, q.lng),
+      });
     },
     clearRoute() {
-      if (this.route) this.route.forEach((l) => l.setMap(null));
-      this.route = null;
+      if (this.route) this.route.forEach((pc) => pc.line.setMap(null));
+      this.route = null; this.routePath = null;
     },
     fit(pts) {
       const N = naver.maps;
@@ -426,22 +464,34 @@
       this.map.setView(c, this.map.getZoom(), { animate: false });
     },
     drawRoute(pts, sections) {
+      this.clearRoute();
       const path = pts.map((p) => [p.lat, p.lng]);
-      const line = (seg, color, weight) => L.polyline(seg, {
-        color, weight, opacity: 1, lineCap: 'round', lineJoin: 'round', interactive: false,
-      }).addTo(this.map);
-      if (this.route && this.route.length >= 2) {
-        this.route.splice(2).forEach((l) => l.remove());
-        this.route[0].setLatLngs(path); this.route[1].setLatLngs(path);
-      } else {
-        this.clearRoute();
-        this.route = [line(path, ROUTE_EDGE, 13), line(path, ROUTE_BASE, 9)];
-      }
-      trafficRuns(sections, path.length).forEach((r) => this.route.push(line(path.slice(r.a, r.b + 1), r.color, 9)));
+      const WEIGHT = { edge: 13, base: 9, traffic: 9 };
+      this.routePath = path;
+      // Leaflet 은 나중에 더한 선이 위에 그려지므로 테두리 → 본선 → 교통색 순서(routePieces 순서)를 지킨다
+      this.route = routePieces(path.length, sections).map((pc) => {
+        pc.line = L.polyline(path.slice(pc.a, pc.b + 1), {
+          color: pc.color, weight: WEIGHT[pc.kind], opacity: 1, lineCap: 'round', lineJoin: 'round', interactive: false,
+        }).addTo(this.map);
+        pc.st = 'full';
+        return pc;
+      });
+    },
+    trimRoute(s, cur) {
+      if (!this.route || !this.routePath) return;
+      const map = this.map;
+      trimPieces(this.route, this.routePath, s, cur, {
+        hide: (pc) => pc.line.remove(),
+        show: (pc) => { // 다시 보일 때 겹침 순서를 되돌린다 (차가 잠깐 뒤로 잡힌 경우)
+          pc.line.addTo(map);
+          if (pc.kind === 'edge') pc.line.bringToBack(); else if (pc.kind === 'traffic') pc.line.bringToFront();
+        },
+        setPath: (pc, p) => pc.line.setLatLngs(p), point: (q) => [q.lat, q.lng],
+      });
     },
     clearRoute() {
-      if (this.route) this.route.forEach((l) => l.remove());
-      this.route = null;
+      if (this.route) this.route.forEach((pc) => pc.line.remove());
+      this.route = null; this.routePath = null;
     },
     fit(pts) {
       this.map.fitBounds(L.latLngBounds(pts.map((p) => [p.lat, p.lng])), {
@@ -734,12 +784,12 @@
     for (const s of secs) if (idx >= s.i && idx <= s.i + Math.max(1, s.n) - 1) return s.name || '';
     return '';
   }
-  // 지금 고속도로를 달리는 중인지: 길안내 경로의 도로 이름으로만 판단한다
-  // (속도로 추정하면 일반도로에서 과속 중일 때 정작 그 도로의 카메라를 숨기게 되므로 쓰지 않는다)
-  function onHighway() {
-    if (!(nav.active && nav.pts && nav.onRoute)) return false;
-    return /고속/.test(routeRoadAt(nav.seg));
-  }
+  // 경고를 시작하는 거리 (카메라가 서 있는 도로 기준):
+  //   고속도로(고속국도) 3km · 고속화도로(제한 80 이상: 도시고속도로·자동차전용도로 등) 1km · 일반도로 400m
+  // 첫 음성 안내는 고속도로만 2km 에서, 나머지는 경고 시작과 함께 한다
+  function alertRange(c) { return c[8] === 1 ? 3000 : c[2] >= 80 ? 1000 : 400; }
+  function voiceRange(c) { return c[8] === 1 ? 2000 : alertRange(c); }
+  const CAM_SCAN = 3000; // 가장 긴 경고 거리
 
   // 반대편 차로 카메라 거르기: 한국은 우측통행이라 내 방향을 찍는 카메라는 오른쪽 길가(또는 머리 위)에 선다.
   // 한 방향만 찍는 카메라(데이터의 도로노선방향 상행/하행)가 내 진행 방향 왼쪽으로 이만큼 넘게 떨어져 있으면
@@ -762,10 +812,9 @@
   // 내가 달리는 도로의, 진행 방향 앞에 있는 카메라인지
   function isAhead(f, c, d, keep) { // keep: 이미 경고 중인 카메라를 계속 둘지 볼 때 (조금 느슨하게)
     if (!camWanted(c)) return false;
-    // 고속도로 주행 중이면 옆 일반도로의 저속 카메라(제한 70 이하, 고속국도 아님)는 제외
-    if (onHighway() && c[8] !== 1 && c[2] <= 70) return false;
-    // 경로를 벗어나 있으면(재탐색 실패 등) 지금 달리는 길 기준으로 판단한다
-    if (nav.active && nav.pts && nav.onRoute) return camOnRouteAhead(c);
+    // 길안내 중에는 안내하는 경로 위의 카메라만 (잠깐 경로를 벗어나도 다른 길 카메라는 알리지 않는다)
+    if (nav.active && nav.pts) return camOnRouteAhead(c);
+    // 길안내가 없으면 진행 방향 앞의 내 도로 카메라
     if (state.heading === null) return false;
     const diff = angleDiff(bearing(f, { lat: c[0], lng: c[1] }), state.heading);
     if (diff > 60 && d > 40) return false;
@@ -781,25 +830,51 @@
     }
     return true;
   }
-  // 길안내 중: 카메라가 남은 경로 위(1.5km 안)에 있는지.
+  // 경로 선분 i 위의 카메라인지 보고, 맞으면 경로 위 거리(m)를 돌려준다.
   // 경로에서 20m 이내면 내 도로로 본다. 단, 도로명이 둘 다 구체적인데 서로 다르면(옆 도로·교차로의 가로 도로) 뺀다.
   // 도로명이 같다고 확인되면 카메라 좌표 오차를 감안해 30m 까지 인정한다.
-  function camOnRouteAhead(c) {
-    const p = { lat: c[0], lng: c[1] };
-    const pts = nav.pts, limit = nav.along + 1500;
-    const cn = camRoad(c);
-    for (let i = nav.seg; i < pts.length - 1 && nav.cum[i] < limit; i++) {
-      const pr = projectSeg(p, pts[i], pts[i + 1]);
-      if (pr.dist >= 30) continue;
-      const at = nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]);
-      if (at <= nav.along - 5) continue;
-      const rn = routeRoadAt(i);
-      if (pr.dist > 6 && roadsDiffer(rn, cn)) continue;
-      // 경로 왼쪽으로 8m 넘게 떨어진 한 방향 카메라는 반대편 차로용
-      if (oneDir(c) && pr.dist > OPP_SIDE && sideOfSeg(p, pts[i], pts[i + 1], pr.dist) < 0) continue;
-      if (pr.dist < 20 || (specificRoad(rn) && sameRoad(rn, cn))) return true;
+  function camAtSeg(c, i) {
+    const p = { lat: c[0], lng: c[1] }, a = nav.pts[i], b = nav.pts[i + 1];
+    const pr = projectSeg(p, a, b);
+    if (pr.dist >= 30) return null;
+    const rn = routeRoadAt(i), cn = camRoad(c);
+    if (pr.dist > 6 && roadsDiffer(rn, cn)) return null;
+    // 경로 왼쪽으로 8m 넘게 떨어진 한 방향 카메라는 반대편 차로용
+    if (oneDir(c) && pr.dist > OPP_SIDE && sideOfSeg(p, a, b, pr.dist) < 0) return null;
+    // 고속도로 구간이면 옆 일반도로의 저속 카메라(제한 70 이하, 고속국도 아님)는 제외
+    if (/고속/.test(rn) && c[8] !== 1 && c[2] <= 70) return null;
+    if (!(pr.dist < 20 || (specificRoad(rn) && sameRoad(rn, cn)))) return null;
+    return nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]);
+  }
+  // 경로 위 카메라 목록: 카메라 행 → 경로 위 거리들, 그리고 거리순 목록.
+  // 긴 경로를 한 번에 훑으면 그 순간 화면이 멈칫하므로, 차 앞 21km 까지만 찾아 두고 달리면서 조금씩 늘린다.
+  const ROUTE_CAM_AHEAD = 21000;
+  function ensureRouteCams() {
+    if (!cams.loaded || !nav.pts || nav.pts.length < 2) return false;
+    if (!nav.routeCams) { nav.routeCams = new Map(); nav.routeCamList = []; nav.routeCamsUpto = 0; }
+    const pts = nav.pts, m = nav.routeCams, list = nav.routeCamList, want = nav.along + ROUTE_CAM_AHEAD;
+    let i = nav.routeCamsUpto, added = false;
+    for (; i < pts.length - 1 && nav.cum[i] < want; i++) {
+      const a = pts[i], b = pts[i + 1], half = (nav.cum[i + 1] - nav.cum[i]) / 2;
+      for (const it of camsNear((a.lat + b.lat) / 2, (a.lng + b.lng) / 2, half + 30)) {
+        const at = camAtSeg(it.c, i);
+        if (at === null) continue;
+        const arr = m.get(it.c);
+        if (arr && arr.some((x) => Math.abs(x - at) < 100)) continue; // 이웃 선분에서 같은 카메라를 또 찾은 것
+        if (arr) arr.push(at); else m.set(it.c, [at]);
+        list.push({ i: it.i, c: it.c, at });
+        added = true;
+      }
     }
-    return false;
+    nav.routeCamsUpto = i;
+    if (added) list.sort((x, y) => x.at - y.at);
+    return true;
+  }
+  // 길안내 중: 카메라가 남은 경로 위(경고 거리 안)에 있는지
+  function camOnRouteAhead(c) {
+    if (!ensureRouteCams()) return false;
+    const arr = nav.routeCams.get(c);
+    return !!arr && arr.some((at) => at > nav.along - 5 && at < nav.along + CAM_SCAN + 300);
   }
 
   function evalCameras(f) {
@@ -828,12 +903,12 @@
       }
       if (tg.after) {
         if (d >= CAM_HOLD) camState.target = tg = null;
-      } else if (d > 1300) {
+      } else if (d > alertRange(tg.c) + 300) {
         camState.target = tg = null;
       } else if (moving && d > 150 && !isAhead(f, tg.c, d, true)) {
         tg.miss = (tg.miss || 0) + 1;                   // 방향을 틀어 벗어남
         if (tg.miss >= 3) camState.target = tg = null;
-      } else if (moving && d > 25 && d <= 150 && oneDir(tg.c) && !(nav.active && nav.onRoute) &&
+      } else if (moving && d > 25 && d <= 150 && oneDir(tg.c) && !nav.active &&
                  sideOf(f, tg.c, d) < -(OPP_SIDE + 2)) {
         // 가까이 와서 보니 왼쪽(반대편 차로) 카메라였다: 길안내 없이 멀리서 방향만 보고 잡은 경우
         tg.miss = (tg.miss || 0) + 1;
@@ -845,7 +920,8 @@
 
     if (moving && (state.heading !== null || nav.active)) {
       let best = null;
-      for (const it of camsNear(f.lat, f.lng, 1200)) {
+      for (const it of camsNear(f.lat, f.lng, CAM_SCAN)) {
+        if (it.d > alertRange(it.c)) continue; // 도로 종류별 경고 거리 밖
         if (camState.passed.has(it.i) || (tg && it.i === tg.i)) continue;
         if (it.c[4] === 2 && !camState.section) continue; // 구간 끝 카메라는 구간 안에서만
         if (it.c[4] === 1 && camState.section) continue;  // 구간 안에서는 (반대 방향) 시작 카메라를 무시
@@ -867,14 +943,28 @@
       if ((s.len && done > s.len + 400) || now - s.t0 > 45 * 60000) endSection();
     }
     if (tg) announceCam(tg, f);
-    // 경고 거리 밖이라도 앞쪽 3km 안의 다음 카메라를 3초마다 미리 찾아 둔다
+    // 경고 거리 밖의 다음 카메라를 3초마다 미리 찾아 둔다 ('다음 단속 2.4km').
+    // 길안내 중에는 경로 위 카메라 중 다음 것(경로 거리, 20km 까지), 아니면 앞쪽 4km 안
     if (!tg && moving && f.t - (camState.peekAt || 0) > 3000) {
       camState.peekAt = f.t;
       let nx = null;
-      for (const it of camsNear(f.lat, f.lng, 3000)) {
-        if (it.d <= 1200 || camState.passed.has(it.i) || it.c[4] === 2) continue;
-        if (!isAhead(f, it.c, it.d)) continue;
-        if (!nx || it.d < nx.d) nx = it;
+      if (nav.active && nav.pts) {
+        ensureRouteCams();
+        for (const it of nav.routeCamList || []) {
+          const ahead = it.at - nav.along;
+          if (ahead <= 0) continue;
+          if (ahead > 20000) break;
+          if (!camWanted(it.c) || camState.passed.has(it.i) || it.c[4] === 2) continue;
+          if (haversine(f, { lat: it.c[0], lng: it.c[1] }) <= alertRange(it.c)) continue;
+          nx = { i: it.i, c: it.c, at: it.at };
+          break;
+        }
+      } else {
+        for (const it of camsNear(f.lat, f.lng, 4000)) {
+          if (it.d <= alertRange(it.c) || camState.passed.has(it.i) || it.c[4] === 2) continue;
+          if (!isAhead(f, it.c, it.d)) continue;
+          if (!nx || it.d < nx.d) nx = it;
+        }
       }
       camState.peek = nx;
     } else if (tg || !moving) {
@@ -890,10 +980,10 @@
       if (!tg.said.far && d <= 300) { tg.said.far = true; say('300미터 앞, 신호 단속 카메라입니다.', 1); }
       return;
     }
-    const far = limit >= 90 ? 1000 : 500;
+    const far = voiceRange(c); // 고속도로 2km · 고속화도로 1km · 일반도로 400m
     if (!tg.said.far && d <= far + 30) {
       tg.said.far = true;
-      const dd = d > 900 ? '1킬로미터' : Math.max(100, Math.round(d / 100) * 100) + '미터';
+      const dd = d >= 950 ? Math.round(d / 1000) + '킬로미터' : Math.max(100, Math.round(d / 100) * 100) + '미터';
       say(dd + ' 앞, ' + camLabel(c).replace('·', ' ') + '. 제한속도 ' + limit + '입니다.', 2);
     }
     const over = state.speedKmh > limit + 1;
@@ -924,7 +1014,9 @@
     const pk = camState.peek, nxEl = $('#camNext');
     nxEl.hidden = !(pk && prefs.cams && !tg);
     if (!nxEl.hidden) {
-      const d = state.fix ? haversine(state.fix, { lat: pk.c[0], lng: pk.c[1] }) : pk.d;
+      // 길안내 중이면 경로를 따라간 거리, 아니면 직선 거리
+      const d = pk.at != null && nav.active ? Math.max(0, pk.at - nav.along)
+        : state.fix ? haversine(state.fix, { lat: pk.c[0], lng: pk.c[1] }) : pk.d;
       nxEl.innerHTML = '<span class="mini-sign">' + pk.c[2] + '</span>다음 단속 <b>' + fmtDist(d) + '</b>';
     }
     if (!tg || !prefs.cams) {
@@ -972,6 +1064,13 @@
     if (!cams.loaded || !prefs.cams) { mapA.setCameras([]); camState.markerAt = null; return; }
     if (camState.markerAt && haversine(camState.markerAt, f) < 250) return;
     camState.markerAt = { lat: f.lat, lng: f.lng };
+    if (nav.active && nav.pts) {
+      // 길안내 중에는 경로 위 카메라만 지도에 (조금 전 지나온 것부터 앞쪽 5km 까지)
+      ensureRouteCams();
+      mapA.setCameras((nav.routeCamList || []).filter((x) => x.at > nav.along - 100 && x.at < nav.along + 5000 && camWanted(x.c))
+        .map((x) => ({ i: x.i, c: x.c, d: x.at - nav.along })).slice(0, 80));
+      return;
+    }
     mapA.setCameras(camsNear(f.lat, f.lng, 2000).filter((x) => camWanted(x.c)).sort((a, b) => a.d - b.d).slice(0, 80));
   }
 
@@ -981,6 +1080,7 @@
     seg: 0, along: 0, remain: null, next: null, dg: null, gi: 0, guides: [], said: {},
     off: 0, lastReroute: 0, busy: false, lastTraffic: 0,
     onRoute: false, onCount: 0, gap: 12000, gen: 0, byDemo: false,
+    routeCams: null, routeCamList: [], // 경로 위 카메라 (경로가 바뀌면 다시 계산)
   };
 
   function recents() { try { return JSON.parse(store.get('recent') || '[]'); } catch (e) { return []; } }
@@ -1147,6 +1247,7 @@
     nav.seg = 0; nav.along = 0; nav.off = 0; nav.gi = 0;
     nav.onRoute = false; nav.onCount = 0;
     nav.setAt = state.fix ? state.fix.t : Date.now(); nav.drawnSeg = 0; nav.drawnAlong = 0; nav.drawnAt = 0;
+    nav.routeCams = null; nav.routeCamList = []; camState.markerAt = null; // 경로 위 카메라·지도 표시를 새 경로로
     nav.lastTraffic = state.fix ? state.fix.t : Date.now();
     if (!keepAlerts) { nav.said = {}; nav.gap = 10000; }
     nav.remain = nav.total; nav.next = null; nav.dg = null;
@@ -1206,6 +1307,9 @@
     nav.option = nav.route.option || prefs.routeOpt; // 재탐색·교통 갱신도 고른 옵션으로
     nav.preview = false; nav.active = true;
     nav.odo0 = state.odo; // 경로 막대의 출발점 (재탐색해도 유지)
+    camState.markerAt = null; camState.peekAt = 0; // 지도 카메라 표시를 경로 위 카메라로 바로 바꾼다
+    // 안내 시작 전에 잡혀 있던 카메라가 경로 위가 아니면 바로 내린다
+    if (camState.target && !camState.target.after && !camOnRouteAhead(camState.target.c)) camState.target = null;
     if (mapA && mapA.drawAlts) mapA.drawAlts([]);
     $('#map').classList.add('navigating');
     setFollowing(true);
@@ -1218,6 +1322,7 @@
     nav.gen++; nav.busy = false; nav.byDemo = false;
     nav.active = false; nav.preview = false;
     nav.route = null; nav.pts = null; nav.cum = null; nav.dest = null; nav.guides = [];
+    nav.routeCams = null; nav.routeCamList = []; camState.markerAt = null; camState.peekAt = 0;
     nav.alts = null; nav.altIdx = 0;
     if (mapA) { mapA.clearRoute(); if (mapA.drawAlts) mapA.drawAlts([]); }
     $('#routeCard').hidden = true;
@@ -1261,13 +1366,8 @@
     let s = Math.max(0, Math.min(nav.seg, nav.pts.length - 2));
     while (s < nav.pts.length - 2 && nav.cum[s + 1] <= at) s++;
     const cur = routePointAt(at) || nav.pts[s];
-    const pts = [cur].concat(nav.pts.slice(s + 1));
-    if (pts.length < 2) return;
-    const sections = (nav.route.sections || []).map((x) => {
-      const a = Math.max(0, x.i - s), b = x.i + Math.max(1, x.n) - 1 - s;
-      return b > a ? Object.assign({}, x, { i: a, n: b - a + 1 }) : null;
-    }).filter(Boolean);
-    mapA.drawRoute(pts, sections);
+    // 지도에 그려 둔 경로 조각 중 차가 걸친 조각만 고쳐 그린다 (setRoute 에서 nav.pts 전체를 그려 둠)
+    if (mapA.trimRoute) mapA.trimRoute(s, cur);
     nav.drawnSeg = nav.seg;
     nav.drawnAlong = nav.along;
     nav.drawnAt = state.fix ? state.fix.t : Date.now();

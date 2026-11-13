@@ -475,7 +475,7 @@
       const p = dest(C, 180, 1150 - s);
       feed(p, v, 0);
       const d = hav(p, C);
-      if (d >= 990 || d <= 30) continue;
+      if (d >= 390 || d <= 30) continue;   // 일반도로(제한 50) 카메라는 400m 앞부터 경고
       n1000++;
       const tg = t.camState.target;
       const okTarget = !!tg && sameCam(tg.c, C);
@@ -492,7 +492,7 @@
     }
     return {
       pass: n1000 >= 10 && n600 >= 5 && bad.length === 0,
-      detail: 'limit ' + L + ', driving ' + (L + 20) + ' km/h; ' + n1000 + ' samples <1000 m, ' + n600 + ' samples <600 m' +
+      detail: 'limit ' + L + ', driving ' + (L + 20) + ' km/h; ' + n1000 + ' samples <390 m, ' + n600 + ' samples <390 m (card over)' +
         (bad.length ? '; problems: ' + bad.join('; ') : '; #limitSign=' + L + ', #speed.over, #camCard.over all held'),
     };
   }
@@ -696,14 +696,20 @@
 
   // ---- S10+ : 2026-11-13 주행 피드백 (지나온 경로 지우기 / 엉뚱한 경로 재탐색 / 후면 단속 70m / 신호 전용 / 옆 도로)
   // 지도 위 경로선(두 번째 선 = 본선)의 점 목록
+  // 경로는 300점 조각들로 그려진다: 보이는 본선(base) 조각을 순서대로 이어 붙인다 (이웃 조각은 끝점을 공유)
   function routeLine() {
-    const m = T().getMap(), l = m && m.route && m.route[1];
-    if (!l) return null;
-    let a = l.getPath ? l.getPath() : l.getLatLngs();
-    if (a && a.getArray) a = a.getArray();
-    return Array.from(a || []).map((q) => ({
-      lat: typeof q.lat === 'function' ? q.lat() : q.lat, lng: typeof q.lng === 'function' ? q.lng() : q.lng,
-    }));
+    const m = T().getMap();
+    if (!m || !m.route) return null;
+    const out = [];
+    m.route.filter((pc) => pc.kind === 'base' && pc.st !== 'hidden').sort((x, y) => x.a - y.a).forEach((pc, k) => {
+      let a = pc.line.getPath ? pc.line.getPath() : pc.line.getLatLngs();
+      if (a && a.getArray) a = a.getArray();
+      const arr = Array.from(a || []).map((q) => ({
+        lat: typeof q.lat === 'function' ? q.lat() : q.lat, lng: typeof q.lng === 'function' ? q.lng() : q.lng,
+      }));
+      out.push(...(k ? arr.slice(1) : arr));
+    });
+    return out.length ? out : null;
   }
   function lineLen(P) { let s = 0; for (let i = 1; i < P.length; i++) s += hav(P[i - 1], P[i]); return s; }
   function softReset() {
@@ -733,7 +739,7 @@
       last = { s, head: r0(head), remain: r0(remain), pts: P.length };
     }
     const m = t.getMap();
-    const trafficKept = !!(m && m.route && m.route.length >= 3);   // 율곡로 정체 구간 색은 남아 있어야 한다
+    const trafficKept = !!(m && m.route && m.route.some((pc) => pc.kind === 'traffic' && pc.st !== 'hidden'));   // 율곡로 정체 구간 색은 남아 있어야 한다
     // 경로 막대: 출발(아래)·도착(위) 고정, 내 차 점과 색 막대 아래 끝이 지나온 비율(450/1080 ≈ 42%)만큼 올라가 있어야 한다
     t.renderNav();
     const meB = parseFloat(document.getElementById('rsMe').style.bottom);
@@ -960,6 +966,101 @@
   }
   const C_A = () => CAM_ISO_A;
 
+  // S17: 도로 종류별 경고 거리 — 고속도로 3km(음성 2km) · 고속화도로(제한 80+) 1km · 일반도로 400m
+  // 고속도로: 서울양양고속도로 [37.72753,127.59605,100,1,0,0,0,88,1,2]. 가장 가까운 다른 카메라는 북동쪽 3.6km 의
+  // 신호 전용과 남쪽 4km 의 어린이보호구역(400m 경고)이라, 북서쪽(300°)에서 다가가면 이 카메라만 잡힌다.
+  const CAM_HWY = { lat: 37.72753, lng: 127.59605 };
+  async function s17() {
+    const t = T();
+    const approach = (C, from, brgFrom, v) => {
+      softReset();
+      const mark = t.alertLog[t.alertLog.length - 1];
+      let first = null, voiceAt = null;
+      const head = (brgFrom + 180) % 360;
+      for (let s = 0; s <= from - 100; s += v) {
+        const p = dest(C, brgFrom, from - s);
+        feed(p, v, head);
+        const tg = t.camState.target, d = hav(p, C);
+        if (first === null && tg && sameCam(tg.c, C)) first = r0(d);
+        if (voiceAt === null) {
+          const from0 = mark ? t.alertLog.indexOf(mark) + 1 : 0;
+          const hit = t.alertLog.slice(from0).find((e) => /앞, /.test(e.text));
+          if (hit) voiceAt = { d: r0(d), text: hit.text };
+        }
+      }
+      return { first, voiceAt };
+    };
+    const hw = approach(CAM_HWY, 3400, 300, 27);      // 고속도로, 97 km/h
+    const ex = approach(CAM_ISO_A, 1300, 180, 22);    // 제한 80 국도
+    const gn = approach(CAM_ISO_B, 800, 180, 13);     // 제한 50 일반도로
+    const okHw = hw.first !== null && hw.first <= 3000 && hw.first > 2940 && !!hw.voiceAt && /2킬로미터/.test(hw.voiceAt.text) && hw.voiceAt.d <= 2030 && hw.voiceAt.d > 1960;
+    const okEx = ex.first !== null && ex.first <= 1000 && ex.first > 970 && !!ex.voiceAt && /1킬로미터/.test(ex.voiceAt.text);
+    const okGn = gn.first !== null && gn.first <= 400 && gn.first > 380 && !!gn.voiceAt && /400미터/.test(gn.voiceAt.text);
+    const show = (x) => (x.first === null ? 'NO ALERT' : 'card at ' + x.first + ' m') + (x.voiceAt ? ', voice at ' + x.voiceAt.d + ' m "' + x.voiceAt.text.split(',')[0] + '"' : ', no voice');
+    return {
+      pass: okHw && okEx && okGn,
+      detail: 'highway: ' + show(hw) + (okHw ? '✓' : '✗') + '; limit 80: ' + show(ex) + (okEx ? '✓' : '✗') + '; limit 50: ' + show(gn) + (okGn ? '✓' : '✗'),
+    };
+  }
+
+  // S18: 길안내 중에는 안내 경로 위 카메라만 (경고·지도 표시·'다음 단속' 모두). 길안내가 없으면 앞쪽 카메라 아무거나
+  async function s18() {
+    const t = T(), C = CAM_ISO_B;
+    const start = dest(C, 180, 1000);
+    // (a) 경로는 동쪽으로 가는데 차는 북쪽(카메라 정면)으로 달린다 = 경로 밖 카메라
+    const raw = [];
+    for (let k = 0; k <= 12; k++) raw.push(dest(start, 90, 100 * k));
+    const path = raw.map((p) => [round6(p.lng), round6(p.lat)]);
+    const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const total = cum[cum.length - 1];
+    const R = {
+      route: { distance: r0(total), duration: r0(total / 14 * 1000), tollFare: 0, fuelPrice: 100, path,
+        guide: [{ i: 12, t: 88, s: '목적지', d: r0(total), ms: r0(total / 14 * 1000) }],
+        sections: [{ i: 0, n: 13, name: '동쪽길', speed: 50, cong: 1 }] },
+      P, cum, total, dest: { name: '동쪽 목적지', addr: '', lat: P[12].lat, lng: P[12].lng },
+    };
+    await planAndStart(R);
+    let offHit = null;
+    for (let s = 14; s <= 900; s += 14) {
+      feed(dest(start, 0, s), 13, 0);
+      const tg = t.camState.target;
+      if (tg && sameCam(tg.c, C) && offHit === null) offHit = r0(1000 - s);
+    }
+    const m = t.getMap();
+    const offMarkers = m && m.cams ? m.cams.size : -1;
+    await waitFor(() => !t.nav.busy, 2000, 20);
+    // (b) 같은 길을 길안내 없이 달리면 알린다
+    softReset();
+    let freeHit = null;
+    for (let s = 14; s <= 900; s += 14) {
+      feed(dest(start, 0, s), 13, 0);
+      const tg = t.camState.target;
+      if (tg && sameCam(tg.c, C) && freeHit === null) freeHit = r0(1000 - s);
+    }
+    // (c) 카메라를 지나는 경로로 안내하면 경고 + 지도 표시 + 경고 거리 밖에서는 '다음 단속'(경로 거리)
+    softReset();
+    const R2 = buildRouteBeside(C, -6, '위례성로');
+    await planAndStart(R2);
+    let nextTxt = null, onHit = null, onMarkers = -1;
+    for (let s = 14; s <= 900; s += 14) {
+      const a = pointAt(R2, s);
+      feed(a.p, 13, a.h, { dt: 1100 });
+      if (nextTxt === null && visible('#camNext')) nextTxt = text('#camNext');
+      const tg = t.camState.target;
+      if (tg && sameCam(tg.c, C) && onHit === null) { onHit = r0(1000 - s); onMarkers = m && m.cams ? m.cams.size : -1; }
+    }
+    const pass = offHit === null && offMarkers === 0 && freeHit !== null && onHit !== null && onMarkers >= 1 && !!nextTxt && /다음 단속/.test(nextTxt);
+    return {
+      pass,
+      detail: '(a) navigating, camera off the route straight ahead: ' + (offHit === null ? 'ignored✓' : 'WRONG alert at ' + offHit + ' m') +
+        ', map markers ' + offMarkers + (offMarkers === 0 ? '✓' : '✗') +
+        '; (b) same drive without nav: ' + (freeHit !== null ? 'alert at ' + freeHit + ' m✓' : 'MISSED') +
+        '; (c) route through camera: ' + (onHit !== null ? 'alert at ' + onHit + ' m, markers ' + onMarkers : 'MISSED') + ', preview "' + (nextTxt || 'none') + '"',
+    };
+  }
+
   const SCENARIOS = [
     { id: 'S1', name: 'S1 section enforcement', fn: s1 },
     { id: 'S2', name: 'S2 direction filtering', fn: s2 },
@@ -977,6 +1078,8 @@
     { id: 'S14', name: 'S14 adjacent-road / opposite-lane cameras', fn: s14 },
     { id: 'S15', name: 'S15 over-speed beep once a second', fn: s15 },
     { id: 'S16', name: 'S16 Tesla mode layout', fn: s16 },
+    { id: 'S17', name: 'S17 alert range by road type', fn: s17 },
+    { id: 'S18', name: 'S18 navigation: route cameras only', fn: s18 },
   ];
 
   // ---------------------------------------------------------------- runner
