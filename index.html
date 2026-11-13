@@ -429,9 +429,9 @@
 <div id="sheet" class="sheet" hidden>
   <div class="sheet-card" role="dialog" aria-label="설정">
     <h2>설정</h2>
-    <label class="lbl" for="keyInput">네이버 지도 Client ID</label>
+    <label class="lbl" for="keyInput">네이버 지도 Client ID (보통은 비워 두세요)</label>
     <input id="keyInput" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="NCP 콘솔 → Maps → Application의 Client ID">
-    <p class="hint">비워 두면 길안내 서버에 설정된 키를 자동으로 받아 씁니다. 여기에 넣은 키가 있으면 그 키가 우선입니다. Web 서비스 URL에 지금 주소 <b id="origin"></b> 가 등록돼 있어야 지도가 뜹니다.</p>
+    <p class="hint">아무것도 넣지 않아도 누구나 네이버 지도를 씁니다. 키는 길안내 서버에서 자동으로 받아 오고, 서버에 잠깐 닿지 않으면 마지막으로 받은 키를 씁니다. 다른 키를 시험할 때만 넣으세요. (현재 주소 <b id="origin"></b>)</p>
     <div class="row">
       <button id="saveKey" class="primary">저장하고 다시 불러오기</button>
       <button id="clearKey">키 지우기</button>

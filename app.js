@@ -35,8 +35,9 @@
   const APP_VERSION = '2026.11.13-4';
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
+  const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
   function report(type, data) {
-    if (testPage || tele.sent >= 40) return;
+    if (testPage || botLike || tele.sent >= 40) return; // 검색엔진 로봇·자동화 접속은 보고하지 않음
     const key = type + '|' + (data && data.msg);
     if (tele.seen.has(key)) return; // 같은 내용은 세션당 한 번만
     tele.seen.add(key);
