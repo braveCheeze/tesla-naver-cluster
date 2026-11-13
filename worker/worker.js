@@ -68,6 +68,23 @@ export default {
         return json({ mapKeyId: env.NCP_KEY_ID || '' }, 200, cors, 300);
       }
 
+      // 날씨 (Open-Meteo). 위치는 약 10km 단위로 뭉개서 보낸다. 10분 캐시
+      if (url.pathname === '/weather') {
+        const lat = Number(p.get('lat')), lng = Number(p.get('lng'));
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return json({ error: 'bad coords' }, 400, cors);
+        const qs = new URLSearchParams({
+          latitude: (Math.round(lat * 10) / 10).toFixed(1), longitude: (Math.round(lng * 10) / 10).toFixed(1),
+          current: 'temperature_2m,weather_code', hourly: 'precipitation_probability', forecast_hours: '2', timezone: 'Asia/Seoul',
+        });
+        const r = await upstream('https://api.open-meteo.com/v1/forecast?' + qs, {});
+        if (!r.ok || !r.data.current) return json({ error: 'upstream', status: r.status }, 502, cors);
+        const pp = (r.data.hourly && r.data.hourly.precipitation_probability) || [];
+        return json({
+          temp: r.data.current.temperature_2m, code: r.data.current.weather_code,
+          rain: pp.length ? Math.max(...pp.slice(0, 2).filter(Number.isFinite)) : null,
+        }, 200, cors, 600);
+      }
+
       // 운영 모니터링: 페이지가 보내는 접속·오류 이벤트 (위치 없음, 7일 보관)
       if (url.pathname === '/event' && isEventPost) {
         if (!env.LOGS) return json({ ok: false }, 200, cors);

@@ -106,6 +106,17 @@
   .sec-avg small { font-size: 15px; color: var(--muted); font-weight: 500; }
   .sec-remain { font-size: 15px; color: var(--muted); }
 
+  /* 날씨는 아래쪽 주행 기록 바로 위에 둔다 */
+  .weather { font-size: 17px; color: var(--muted); margin-top: auto; }
+  .weather:not([hidden]) + .trip { margin-top: 0; }
+  .weather b { color: var(--text); font-size: 20px; margin-right: 2px; }
+  .weather .rain { color: #6ec1ff; font-weight: 600; }
+  .camnext { display: flex; align-items: center; gap: 10px; font-size: 16px; color: var(--muted); }
+  .camnext b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .mini-sign {
+    flex: none; width: 34px; height: 34px; border-radius: 50%; background: #fff; border: 4px solid #e53935;
+    display: grid; place-items: center; color: #111; font-weight: 800; font-size: 13px;
+  }
   .trip { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: auto; }
   .stat { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; min-width: 0; }
   .stat .k { font-size: 13px; color: var(--muted); }
@@ -193,6 +204,28 @@
   }
   .toast.bad { border-left-color: var(--bad); }
 
+  /* 길안내 중 지도 왼쪽 세로 막대: 아래 내 차 → 위 도착, 막히는 구간 주황·빨강 */
+  .rstrip {
+    position: absolute; left: 14px; top: 190px; bottom: 64px; width: 76px; z-index: 1040;
+    display: flex; flex-direction: column; align-items: center; pointer-events: none;
+  }
+  .rs-top {
+    background: rgba(11, 13, 16, .6); color: var(--text); border-radius: 10px; padding: 5px 8px;
+    text-align: center; margin-bottom: 8px; min-width: 76px; white-space: nowrap;
+    box-shadow: 0 2px 8px rgba(0,0,0,.25); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  }
+  .rs-top b { display: block; font-size: 15px; font-variant-numeric: tabular-nums; }
+  .rs-top span { display: block; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .rs-bar {
+    flex: 1; width: 14px; border-radius: 7px; background: var(--accent);
+    border: 2px solid rgba(255,255,255,.95); box-shadow: 0 2px 8px rgba(0,0,0,.35);
+  }
+  .rs-me {
+    width: 22px; height: 22px; margin-top: -8px; border-radius: 50%;
+    background: var(--accent); border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4);
+  }
+  @media (max-height: 560px) { .rstrip { display: none !important; } }
+
   .soundpill {
     position: absolute; left: 50%; top: 16px; transform: translateX(-50%); z-index: 1070;
     min-height: 48px; padding: 0 18px; border-radius: 999px; cursor: pointer;
@@ -231,31 +264,36 @@
   #locate.alert { background: var(--accent); color: #04130b; }
 
   /* 길안내 패널 */
+  /* 길안내 패널: 작고 반투명하게 (지도가 비쳐 보여 답답하지 않게) */
   .navpanel {
-    position: absolute; left: 16px; top: 16px; z-index: 1050;
-    width: min(460px, calc(100% - 110px));
-    background: rgba(11, 13, 16, .96); border: 1px solid var(--line); border-radius: 18px;
-    box-shadow: 0 8px 24px rgba(0,0,0,.35); overflow: hidden;
+    position: absolute; left: 14px; top: 14px; z-index: 1050;
+    width: min(330px, calc(100% - 100px));
+    background: rgba(11, 13, 16, .55); border: 1px solid rgba(255,255,255,.12); border-radius: 16px;
+    box-shadow: 0 6px 18px rgba(0,0,0,.25); overflow: hidden;
+    -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
   }
-  .turn { display: flex; gap: 16px; align-items: center; padding: 14px 18px; background: #0d3d25; }
-  .turnicon { flex: none; width: 64px; height: 64px; }
-  .turnicon svg { width: 64px; height: 64px; stroke: #fff; fill: none; stroke-width: 3.4; stroke-linecap: round; stroke-linejoin: round; }
-  .turndist { font-size: 38px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.05; }
-  .turntext { font-size: 17px; color: #d6f5e3; margin-top: 4px; line-height: 1.35; }
+  .turn { display: flex; gap: 12px; align-items: center; padding: 10px 14px; background: rgba(6, 92, 50, .72); }
+  .turnicon { flex: none; width: 44px; height: 44px; }
+  .turnicon svg { width: 44px; height: 44px; stroke: #fff; fill: none; stroke-width: 3.6; stroke-linecap: round; stroke-linejoin: round; }
+  .turndist { font-size: 28px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.05; text-shadow: 0 1px 2px rgba(0,0,0,.35); }
+  .turntext {
+    font-size: 14px; color: #e3fbec; margin-top: 2px; line-height: 1.3;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; /* 긴 안내는 두 줄까지 */
+  }
   .nextturn {
-    display: flex; align-items: center; gap: 8px; padding: 6px 18px;
-    background: #0a2c1b; border-top: 1px solid rgba(255,255,255,.06);
-    font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums;
+    display: flex; align-items: center; gap: 6px; padding: 4px 14px;
+    background: rgba(4, 60, 33, .6); border-top: 1px solid rgba(255,255,255,.08);
+    font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums;
   }
-  .nextturn small { font-size: 13px; font-weight: 500; color: #9fd8b8; }
-  .nexticon { width: 26px; height: 26px; flex: none; }
-  .nexticon svg { width: 26px; height: 26px; stroke: #fff; fill: none; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
-  .navmeta { display: flex; align-items: center; gap: 14px; padding: 10px 12px 10px 18px; font-size: 17px; flex-wrap: wrap; }
+  .nextturn small { font-size: 12px; font-weight: 500; color: #b5e8cb; }
+  .nexticon { width: 20px; height: 20px; flex: none; }
+  .nexticon svg { width: 20px; height: 20px; stroke: #fff; fill: none; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+  .navmeta { display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 14px; font-size: 14px; flex-wrap: wrap; }
   .navmeta b { font-variant-numeric: tabular-nums; }
-  .navmeta span { color: var(--muted); }
+  .navmeta span { color: #c3c9d2; }
   .navmeta button {
-    margin-left: auto; min-height: 46px; padding: 0 16px; border-radius: 12px; cursor: pointer;
-    background: #2a1416; color: #ffb3b5; border: 1px solid #5c2428; font-size: 15px;
+    margin-left: auto; min-height: 36px; padding: 0 12px; border-radius: 10px; cursor: pointer;
+    background: rgba(42, 20, 22, .75); color: #ffb3b5; border: 1px solid rgba(92, 36, 40, .8); font-size: 13px;
   }
 
   .routecard {
@@ -327,6 +365,7 @@
     .heading { grid-area: head; font-size: 16px; }
     .compass { width: 34px; height: 34px; }
     .camcard { grid-area: cam; }
+    .weather, .camnext { grid-column: 1 / -1; font-size: 15px; }
     .seccard { grid-area: sec; }
     .trip { grid-area: trip; margin-top: 0; }
     .stat { padding: 8px 12px; }
@@ -336,7 +375,7 @@
     .badge { top: 76px; max-width: calc(100% - 100px); }
     .toast { max-width: calc(100% - 32px); }
     .navpanel { width: calc(100% - 32px); }
-    .turndist { font-size: 30px; }
+    .turndist { font-size: 24px; }
   }
 </style>
 </head>
@@ -359,6 +398,7 @@
       <div class="compass"><svg id="compassArrow" viewBox="0 0 24 24"><path d="M12 2.5 L18.5 20.5 L12 16.2 L5.5 20.5 Z" fill="currentColor"/></svg></div>
       <span id="headingText">방향 -</span>
     </div>
+    <div id="camNext" class="camnext" hidden></div>
     <div id="camCard" class="camcard" hidden>
       <div class="cam-sign"><span id="camLimit">60</span></div>
       <div class="cam-info">
@@ -372,15 +412,24 @@
       <div class="sec-avg"><span id="secAvg">-</span><small> km/h 평균</small></div>
       <div id="secRemain" class="sec-remain">-</div>
     </div>
+    <div id="weather" class="weather" hidden></div>
     <div class="trip">
       <div class="stat"><div class="k">주행 거리</div><div class="v"><span id="tripKm">0.0</span><small> km</small></div></div>
       <div class="stat"><div class="k">주행 시간</div><div class="v" id="tripTime">0:00</div></div>
+      <div class="stat"><div class="k">평균 속도</div><div class="v"><span id="tripAvg">0</span><small> km/h</small></div></div>
+      <div class="stat"><div class="k">최고 속도</div><div class="v"><span id="tripMax">0</span><small> km/h</small></div></div>
     </div>
   </section>
 
   <section id="map" aria-label="지도">
     <button id="searchBtn" class="searchbtn"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg>목적지 검색</button>
     <div id="source" class="badge">지도 불러오는 중</div>
+
+    <div id="routeStrip" class="rstrip" hidden>
+      <div class="rs-top"><b id="rsRemain">-</b><span id="rsEta">-</span></div>
+      <div id="rsBar" class="rs-bar"></div>
+      <div class="rs-me"></div>
+    </div>
 
     <div id="navPanel" class="navpanel" hidden>
       <div class="turn">
@@ -447,6 +496,8 @@
     <label class="check"><input type="checkbox" id="optVoice"> 음성 안내</label>
     <label class="check"><input type="checkbox" id="optBeep"> 경고음</label>
     <label class="check"><input type="checkbox" id="optCams"> 단속 카메라 경고</label>
+    <label class="check"><input type="checkbox" id="optTraffic"> 실시간 교통 (도로를 막힘 정도로 색칠)</label>
+    <label class="check"><input type="checkbox" id="optWeather"> 날씨 표시 (위치는 약 10km 단위로만 보냄)</label>
     <p class="hint">단속 카메라 <b id="camCount">-</b>대 · 기준일 <b id="camDate">-</b> (경찰청 공공데이터)</p>
     <div class="row"><button id="soundTest">소리 테스트</button></div>
 
@@ -485,6 +536,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.13-6"></script>
+<script src="app.js?v=2026.11.13-7"></script>
 </body>
 </html>
