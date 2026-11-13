@@ -116,6 +116,10 @@
   /* 두 손가락 확대·축소가 페이지 전체 확대로 새지 않고 지도로 가게 한다 */
   #map { position: relative; overflow: hidden; background: #1a1d22; min-width: 0; touch-action: none; }
   #hupBtn.on { color: var(--accent); }
+  /* 화면 버튼은 터치하면 3초 동안만 보인다 (길안내·카메라 경고·소리 안내는 항상 보임) */
+  .topctrls, .ctrls, .searchbtn, .badge { transition: opacity .25s ease; }
+  #map.chrome-hidden .topctrls, #map.chrome-hidden .ctrls,
+  #map.chrome-hidden .searchbtn, #map.chrome-hidden .badge { opacity: 0; pointer-events: none; }
   /* 네이버 지도가 이 칸에 style="position: relative" 를 직접 넣으므로 !important 로 위치·크기를 지킨다.
      (안 그러면 정지 중 평면 지도에서 높이가 0이 되어 지도가 안 보인다) */
   .mapcanvas { position: absolute !important; inset: 0; }

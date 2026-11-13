@@ -1311,14 +1311,45 @@
     if (!on && !noAutoReturn) state.refollowTimer = setTimeout(() => setFollowing(true), 15000); // 15초 손 안 대면 복귀
   }
   function onUserPan() { setFollowing(false, nav.preview); }
-  // 주행 화면에서 지도를 만지면 먼저 평면(북쪽 위) 지도로 바꾼 뒤 끌기를 이어간다
-  function leaveDrive(e) {
-    if (e.target.closest && e.target.closest('.btn, .searchbtn, .navpanel, .routecard, .toast, #diagBox, .ctrls, .topctrls, .badge, .soundpill')) return;
-    // 손으로 지도를 만지면(끌기·두 손가락 확대/축소) 30초 동안 자동 줌이 그 배율을 덮어쓰지 않게 한다
+  // 지도 손 조작: 톡 치기는 화면 버튼만 보여 주고, 실제로 끌거나(10px 이상) 두 손가락을 쓰면
+  // 주행 화면을 평면(북쪽 위) 지도로 바꿔 조작을 이어간다
+  const gesture = { x: 0, y: 0, used: false, pointers: new Set() };
+  const NOT_MAP = '.btn, .searchbtn, .navpanel, .routecard, .toast, #diagBox, .ctrls, .topctrls, .badge, .soundpill';
+  function userMapGesture() {
+    gesture.used = true;
+    // 손으로 바꾼 배율은 30초 동안 자동 줌이 덮어쓰지 않게 한다
     zoomCtl.manualUntil = (state.fix ? state.fix.t : Date.now()) + 30000;
-    if (!view.drive) return;
-    setFollowing(false);
+    if (view.drive) setFollowing(false);
   }
+  function onMapDown(e) {
+    if (e.target.closest && e.target.closest(NOT_MAP)) return;
+    gesture.pointers.add(e.pointerId);
+    if (gesture.pointers.size === 1) { gesture.x = e.clientX; gesture.y = e.clientY; gesture.used = false; }
+    else if (!gesture.used) userMapGesture(); // 두 손가락 = 확대/축소
+  }
+  function onMapMove(e) {
+    if (gesture.used || !gesture.pointers.has(e.pointerId)) return;
+    if (Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) > 10) userMapGesture();
+  }
+  function onMapUp(e) { gesture.pointers.delete(e.pointerId); }
+
+  // ---------- 화면 버튼 자동 숨김: 화면을 한 번 터치하면 3초 동안 보인다 ----------
+  const CHROME_MS = 3000;
+  let chromeTimer = 0;
+  function showChrome() {
+    $('#map').classList.remove('chrome-hidden');
+    clearTimeout(chromeTimer);
+    chromeTimer = setTimeout(hideChrome, CHROME_MS);
+  }
+  function hideChrome() {
+    // 지도를 손으로 보고 있거나(따라가기 꺼짐) 경로 미리보기·설정·검색 창이 열려 있으면 기다린다
+    if (!state.following || nav.preview || !$('#sheet').hidden || !$('#searchSheet').hidden) {
+      chromeTimer = setTimeout(hideChrome, CHROME_MS);
+      return;
+    }
+    $('#map').classList.add('chrome-hidden');
+  }
+  document.addEventListener('pointerdown', showChrome, { capture: true, passive: true });
 
   // 지도 방향: 진행 방향이 위(주행 화면) ↔ 북쪽 고정. 지도 오른쪽 버튼으로 바로 바꾼다.
   const ICON_HUP = '<svg viewBox="0 0 24 24"><path d="M12 3.5 18 19l-6-3.4L6 19z" fill="currentColor" stroke="none"/></svg>';
@@ -1340,8 +1371,11 @@
     toast(on ? '진행 방향이 위로 보이게 바꿨습니다' : '지도를 북쪽 위로 고정했습니다', '', 2000);
   }
   $('#hupBtn').onclick = () => setHeadingUp(!prefs.headingUp);
-  $('#map').addEventListener('pointerdown', leaveDrive, true);
-  $('#map').addEventListener('wheel', leaveDrive, { capture: true, passive: true });
+  $('#map').addEventListener('pointerdown', onMapDown, true);
+  $('#map').addEventListener('pointermove', onMapMove, { capture: true, passive: true });
+  window.addEventListener('pointerup', onMapUp, true);
+  window.addEventListener('pointercancel', onMapUp, true);
+  $('#map').addEventListener('wheel', (e) => { if (!(e.target.closest && e.target.closest(NOT_MAP))) userMapGesture(); }, { capture: true, passive: true });
   window.addEventListener('resize', queueLayout);
   window.addEventListener('orientationchange', queueLayout);
   if (window.ResizeObserver) new ResizeObserver(queueLayout).observe($('#map'));
@@ -1678,6 +1712,7 @@
   applyNight();
   updateSoundPill();
   renderHupBtn();
+  showChrome(); // 처음 3초 동안 버튼을 보여 준 뒤 숨긴다
   setTimeout(() => report('session', { msg: 'open', debug: params.has('debug') }), 6000); // 지도·GPS 상태가 잡힌 뒤 접속 기록
   render();
   tickClock();
