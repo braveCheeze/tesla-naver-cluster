@@ -1,0 +1,774 @@
+/* 지도 클러스터 시나리오 테스트 하네스 (브라우저 안에서 실행)
+ *
+ * Run: serve the repo root (e.g. `python -m http.server 8765`) and open
+ *   http://localhost:8765/test/harness.html?debug
+ * (?debug is added automatically if missing; app.js only exposes window.__tnc with it.)
+ *
+ * What it does
+ *  1. Copies index.html's <style>/<link rel=stylesheet> into this page's head and its <body> markup
+ *     (minus scripts) into this body, then adds a fixed results panel on top.
+ *  2. Before the app loads: localStorage tnc.voice='0', tnc.beep='0', removes tnc.key / tnc.recent / tnc.cams
+ *     (Leaflet/OSM fallback map, silent, camera alerts on). The previous values are restored when the run ends.
+ *     navigator.geolocation is replaced by a silent stub so real GPS never mixes with synthetic fixes.
+ *  3. window.fetch stub: same-origin requests under /test/ (e.g. the app's relative 'data/cameras.json')
+ *     are redirected to the repo root; Worker endpoints (/route /geocode /search /reverse /health /log /config)
+ *     on the proxy origin are answered with canned JSON in the Worker's shapes and recorded in
+ *     __harness.stub.calls. Everything else goes to the real fetch.
+ *  4. Loads ../app.js (classic script), waits for __tnc and __tnc.cams.loaded (20 s), then runs S1..S9.
+ *     Each scenario resets the app, feeds synthetic fixes through __tnc.onFix with a synthetic clock
+ *     (1000 ms steps unless noted), and asserts on the debug API + stable DOM ids only.
+ *
+ * Output: results table in the panel, window.__testResults = [{name, status, detail}], window.__testsDone = true.
+ * Re-run one scenario from the console: await __harness.run('S5')
+ */
+(() => {
+  'use strict';
+
+  // ---------------------------------------------------------------- config
+  const PROXY_DEFAULT = 'https://tesla-nav.cy6789.workers.dev';
+  const ENDPOINTS = ['/route', '/geocode', '/search', '/reverse', '/health', '/log', '/config'];
+  const BOOT_TIMEOUT_MS = 20000;
+  const LS_KEYS = ['tnc.voice', 'tnc.beep', 'tnc.key', 'tnc.recent', 'tnc.cams'];
+
+  const RESULTS = [];
+  window.__testResults = RESULTS;
+  window.__testsDone = false;
+
+  // app.js reads location.search once at load; make sure ?debug is there before it runs
+  if (!new URLSearchParams(location.search).has('debug')) {
+    history.replaceState(null, '', location.pathname + (location.search ? location.search + '&debug' : '?debug') + location.hash);
+  }
+
+  const pageErrors = [];
+  window.addEventListener('error', (e) => {
+    pageErrors.push((e.message || 'error') + (e.filename ? ' @ ' + e.filename.split('/').pop() + ':' + e.lineno : ''));
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    pageErrors.push('unhandled rejection: ' + (e.reason && e.reason.message ? e.reason.message : String(e.reason)));
+  });
+
+  // ---------------------------------------------------------------- small helpers
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  async function waitFor(fn, ms, step) {
+    const t0 = performance.now();
+    for (;;) {
+      let v = null;
+      try { v = fn(); } catch (e) { v = null; }
+      if (v) return v;
+      if (performance.now() - t0 >= ms) return null;
+      await sleep(step || 50);
+    }
+  }
+  function withTimeout(p, ms, what) {
+    let to = 0;
+    const timer = new Promise((_, rej) => { to = setTimeout(() => rej(new Error(what + ' timed out after ' + ms + ' ms')), ms); });
+    return Promise.race([Promise.resolve(p), timer]).finally(() => clearTimeout(to));
+  }
+  const $ = (s) => document.querySelector(s);
+  const text = (s) => { const el = $(s); return el ? String(el.textContent || '').trim() : ''; };
+  const num = (s) => parseFloat(text(s));
+  const hasCls = (s, c) => { const el = $(s); return !!el && el.classList.contains(c); };
+  function visible(s) {
+    const el = $(s);
+    if (!el || el.hidden) return false;
+    return getComputedStyle(el).display !== 'none';
+  }
+  // app fmtDist(): "850m", "1.2km", "12km"
+  function distM(str) {
+    const m = /(-?[\d.]+)\s*(km|m)\b/.exec(str || '');
+    return m ? parseFloat(m[1]) * (m[2] === 'km' ? 1000 : 1) : NaN;
+  }
+  const round6 = (n) => Math.round(n * 1e6) / 1e6;
+  const r0 = (n) => Math.round(n);
+
+  // ---------------------------------------------------------------- geo (same sphere as app.js haversine)
+  const R_EARTH = 6371000;
+  const rad = (d) => d * Math.PI / 180, deg = (r) => r * 180 / Math.PI;
+  function hav(a, b) {
+    const dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng);
+    const s = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+    return 2 * R_EARTH * Math.asin(Math.min(1, Math.sqrt(s)));
+  }
+  function brg(a, b) {
+    const y = Math.sin(rad(b.lng - a.lng)) * Math.cos(rad(b.lat));
+    const x = Math.cos(rad(a.lat)) * Math.sin(rad(b.lat)) - Math.sin(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.cos(rad(b.lng - a.lng));
+    return (deg(Math.atan2(y, x)) + 360) % 360;
+  }
+  // point at distance d (m) from p along initial bearing b (deg), great circle
+  function dest(p, b, d) {
+    const dr = d / R_EARTH, br = rad(b), la = rad(p.lat), lo = rad(p.lng);
+    const la2 = Math.asin(Math.sin(la) * Math.cos(dr) + Math.cos(la) * Math.sin(dr) * Math.cos(br));
+    const lo2 = lo + Math.atan2(Math.sin(br) * Math.sin(dr) * Math.cos(la), Math.cos(dr) - Math.sin(la) * Math.sin(la2));
+    return { lat: deg(la2), lng: deg(lo2) };
+  }
+  const sameCam = (c, ref) => !!c && Math.abs(c[0] - ref.lat) < 1e-6 && Math.abs(c[1] - ref.lng) < 1e-6;
+
+  // ---------------------------------------------------------------- localStorage (restored at the end)
+  const lsSnapshot = {};
+  let lsTaken = false;
+  function prepStorage() {
+    try {
+      LS_KEYS.forEach((k) => { lsSnapshot[k] = localStorage.getItem(k); });
+      lsTaken = true;
+      localStorage.setItem('tnc.voice', '0');
+      localStorage.setItem('tnc.beep', '0');
+      localStorage.removeItem('tnc.key');
+      localStorage.removeItem('tnc.recent');
+      localStorage.removeItem('tnc.cams');
+    } catch (e) { /* storage blocked: app falls back to defaults (voice/beep on, but no audio unlock happens) */ }
+  }
+  function restoreStorage() {
+    if (!lsTaken) return;
+    lsTaken = false;
+    Object.keys(lsSnapshot).forEach((k) => {
+      try {
+        const v = lsSnapshot[k];
+        if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v);
+      } catch (e) { /* ignore */ }
+    });
+  }
+  window.addEventListener('pagehide', restoreStorage);
+
+  // ---------------------------------------------------------------- geolocation stub
+  function stubGeolocation() {
+    const fake = {
+      watchPosition() { return 1; },
+      clearWatch() {},
+      getCurrentPosition() {},
+    };
+    try { Object.defineProperty(navigator, 'geolocation', { configurable: true, get: () => fake }); } catch (e) { /* ignore */ }
+    if (navigator.geolocation !== fake && navigator.geolocation) {
+      try { navigator.geolocation.watchPosition = fake.watchPosition; } catch (e) { /* ignore */ }
+    }
+  }
+
+  // ---------------------------------------------------------------- fetch stub (fake Cloudflare Worker)
+  const realFetch = window.fetch.bind(window);
+  const harnessDir = new URL('./', location.href).href;   // .../test/
+  const rootDir = new URL('../', location.href).href;     // repo root
+  function proxyBase() {
+    let p = null;
+    try { p = localStorage.getItem('tnc.proxy'); } catch (e) { p = null; }
+    return (p || PROXY_DEFAULT).replace(/\/+$/, '');
+  }
+  function defaultCanned() {
+    return {
+      '/route': { __status: 404, body: { error: 'no route', code: 1, message: 'harness: no canned /route for this scenario' } },
+      '/geocode': { items: [] },
+      '/search': { items: [] },
+      '/reverse': { road: '하네스로', area: '테스트시 테스트구 테스트동' },
+      '/health': { ok: true, ncp: true, search: true, logs: false },
+      '/log': (q, rec) => (rec.method === 'POST' ? { id: 'harness001' } : { __status: 404, body: { error: 'not found' } }),
+      '/config': { mapKeyId: '' },   // empty key -> app keeps the Leaflet/OSM fallback map
+    };
+  }
+  const stub = {
+    calls: [],
+    canned: defaultCanned(),
+    reset() { this.canned = defaultCanned(); },
+    since(i, path) { return this.calls.slice(i).filter((c) => !path || c.path === path); },
+    count(path, i) { return this.since(i || 0, path).length; },
+  };
+  function jsonResponse(body, status) {
+    return new Response(JSON.stringify(body == null ? {} : body), {
+      status: status || 200,
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    });
+  }
+  function endpointOf(u) {
+    const base = proxyBase();
+    if (u.href.startsWith(base + '/')) {
+      const rest = u.href.slice(base.length).split(/[?#]/)[0];
+      if (ENDPOINTS.indexOf(rest) >= 0) return rest;
+    }
+    if (u.origin !== location.origin && ENDPOINTS.indexOf(u.pathname) >= 0) return u.pathname;
+    return null;
+  }
+  function installFetchStub() {
+    window.fetch = function harnessFetch(input, init) {
+      const raw = typeof input === 'string' ? input : (input && input.url) || String(input);
+      let u;
+      try { u = new URL(raw, location.href); } catch (e) { return realFetch(input, init); }
+      const ep = endpointOf(u);
+      if (ep) {
+        const method = String((init && init.method) || (typeof input !== 'string' && input && input.method) || 'GET').toUpperCase();
+        const query = {};
+        u.searchParams.forEach((v, k) => { query[k] = v; });
+        let body = init && init.body;
+        if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { /* keep text */ } }
+        const rec = { path: ep, method, url: u.href, query, body, at: performance.now() };
+        stub.calls.push(rec);
+        let v = stub.canned[ep];
+        try { if (typeof v === 'function') v = v(query, rec); } catch (e) { v = { __status: 500, body: { error: 'proxy', message: 'harness canned fn: ' + e.message } }; }
+        if (v && v.__status) return Promise.resolve(jsonResponse(v.body, v.__status));
+        return Promise.resolve(jsonResponse(v, 200));
+      }
+      // the app fetches files relative to the page ('data/cameras.json' -> /test/data/...): serve them from the repo root
+      if (u.href.startsWith(harnessDir) && !/\/harness\.(html|js)$/.test(u.pathname)) {
+        return realFetch(rootDir + u.href.slice(harnessDir.length), init);
+      }
+      return realFetch(input, init);
+    };
+  }
+
+  // ---------------------------------------------------------------- results panel
+  let panel = null, tbody = null, summaryEl = null, infoEl = null;
+  function makePanel() {
+    const css = document.createElement('style');
+    css.textContent = [
+      '#harnessPanel{position:fixed;top:8px;right:8px;z-index:2147483000;width:min(780px,calc(100vw - 16px));',
+      'max-height:calc(100vh - 16px);overflow:auto;background:rgba(9,11,15,.97);color:#e8ecf1;',
+      'border:1px solid #3a4250;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.55);',
+      'font:12px/1.45 ui-monospace,Consolas,"Malgun Gothic",monospace;-webkit-user-select:text;user-select:text}',
+      '#harnessPanel header{position:sticky;top:0;display:flex;gap:10px;align-items:center;padding:8px 10px;',
+      'background:#151a21;border-bottom:1px solid #2b323d}',
+      '#harnessPanel header b{font-size:13px}',
+      '#harnessPanel header span{flex:1;color:#aab3c0}',
+      '#harnessPanel header button{font:inherit;background:#232a34;color:#e8ecf1;border:1px solid #3a4250;border-radius:6px;padding:2px 8px;cursor:pointer}',
+      '#harnessPanel.min table,#harnessPanel.min .hinfo{display:none}',
+      '#harnessPanel .hinfo{padding:6px 10px;color:#8b93a1;white-space:pre-wrap;word-break:break-word;border-bottom:1px solid #2b323d}',
+      '#harnessPanel table{width:100%;border-collapse:collapse}',
+      '#harnessPanel td,#harnessPanel th{padding:5px 8px;border-bottom:1px solid #222831;vertical-align:top;text-align:left}',
+      '#harnessPanel th{color:#8b93a1;font-weight:600}',
+      '#harnessPanel td.d{white-space:pre-wrap;word-break:break-word;color:#c9d1dc}',
+      '#harnessPanel td.n{white-space:nowrap}',
+      '#harnessPanel .PASS{color:#3ddc84;font-weight:700}',
+      '#harnessPanel .FAIL{color:#ff5a5f;font-weight:700}',
+      '#harnessPanel .SKIP{color:#ffb020;font-weight:700}',
+      '#harnessPanel .RUN{color:#8ab4ff}',
+    ].join('');
+    document.head.appendChild(css);
+    panel = document.createElement('div');
+    panel.id = 'harnessPanel';
+    panel.innerHTML = '<header><b>Scenario tests</b><span id="harnessSummary">starting…</span>' +
+      '<button type="button" id="harnessMin">hide</button></header>' +
+      '<div class="hinfo" id="harnessInfo"></div>' +
+      '<table><thead><tr><th>scenario</th><th>status</th><th>detail</th></tr></thead><tbody></tbody></table>';
+    document.body.appendChild(panel);
+    tbody = panel.querySelector('tbody');
+    summaryEl = panel.querySelector('#harnessSummary');
+    infoEl = panel.querySelector('#harnessInfo');
+    panel.querySelector('#harnessMin').onclick = (e) => {
+      panel.classList.toggle('min');
+      e.target.textContent = panel.classList.contains('min') ? 'show' : 'hide';
+    };
+  }
+  function setSummary(s) { if (summaryEl) summaryEl.textContent = s; }
+  function addInfo(s) { if (infoEl) infoEl.textContent += (infoEl.textContent ? '\n' : '') + s; }
+  function addResult(name, status, detail) {
+    const row = { name, status, detail: String(detail || '') };
+    const i = RESULTS.findIndex((r) => r.name === name);
+    if (i >= 0) RESULTS[i] = row; else RESULTS.push(row);
+    if (tbody) {
+      let tr = tbody.querySelector('tr[data-name="' + CSS.escape(name) + '"]');
+      if (!tr) { tr = document.createElement('tr'); tr.dataset.name = name; tbody.appendChild(tr); }
+      tr.innerHTML = '<td class="n"></td><td class="' + status + '">' + status + '</td><td class="d"></td>';
+      tr.children[0].textContent = name;
+      tr.children[2].textContent = row.detail;
+    }
+    // eslint-disable-next-line no-console
+    console.log('[harness] ' + status + ' ' + name + ' :: ' + row.detail);
+  }
+  function showRunning(name) {
+    if (!tbody) return;
+    let tr = tbody.querySelector('tr[data-name="' + CSS.escape(name) + '"]');
+    if (!tr) { tr = document.createElement('tr'); tr.dataset.name = name; tbody.appendChild(tr); }
+    tr.innerHTML = '<td class="n"></td><td class="RUN">RUN</td><td class="d"></td>';
+    tr.children[0].textContent = name;
+  }
+
+  // ---------------------------------------------------------------- load index.html markup + app.js
+  function addScript(spec) {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      if (spec.type) s.type = spec.type;
+      if (spec.src) {
+        s.async = false;
+        // cache-bust so a concurrently edited app.js is always fresh
+        s.src = spec.src + (spec.src.indexOf('?') >= 0 ? '&' : '?') + 'harness=' + Date.now();
+        s.onload = () => resolve();
+        s.onerror = () => reject(new Error('script load failed: ' + spec.src));
+        document.body.appendChild(s);
+      } else {
+        s.textContent = spec.text || '';
+        document.body.appendChild(s);
+        resolve();
+      }
+    });
+  }
+  async function injectApp() {
+    const indexUrl = new URL('../index.html', location.href).href;
+    const r = await realFetch(indexUrl, { cache: 'no-store' });
+    if (!r.ok) throw new Error('index.html HTTP ' + r.status);
+    const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
+    if (doc.documentElement.lang) document.documentElement.lang = doc.documentElement.lang;
+    // styles (anywhere in the document), in order
+    doc.querySelectorAll('style, link[rel~="stylesheet"]').forEach((n) => {
+      if (n.tagName === 'STYLE') {
+        const s = document.createElement('style');
+        s.textContent = n.textContent;
+        document.head.appendChild(s);
+      } else {
+        const l = document.createElement('link');
+        l.rel = 'stylesheet';
+        l.href = new URL(n.getAttribute('href'), indexUrl).href;
+        document.head.appendChild(l);
+      }
+      n.remove();
+    });
+    // scripts: removed from the markup, loaded afterwards in document order (src resolved against index.html)
+    const scripts = [];
+    doc.querySelectorAll('script').forEach((n) => {
+      const src = n.getAttribute('src');
+      scripts.push({ src: src ? new URL(src, indexUrl).href : null, type: n.getAttribute('type'), text: n.textContent });
+      n.remove();
+    });
+    if (!scripts.some((s) => s.src && /(^|\/)app\.js$/.test(new URL(s.src).pathname))) {
+      scripts.push({ src: new URL('../app.js', location.href).href, type: null, text: '' });
+    }
+    for (const a of Array.from(doc.body.attributes)) document.body.setAttribute(a.name, a.value);
+    const anchor = panel || null;
+    Array.from(doc.body.childNodes).forEach((n) => document.body.insertBefore(document.importNode(n, true), anchor));
+    return scripts;
+  }
+
+  // ---------------------------------------------------------------- app driving helpers
+  const T = () => window.__tnc;
+  let clock = Date.now();   // synthetic GPS clock (ms); only moves forward
+  function feed(p, speed, heading, opt) {
+    const o = opt || {};
+    clock += o.dt != null ? o.dt : 1000;
+    const f = { lat: p.lat, lng: p.lng, acc: o.acc != null ? o.acc : 5, speed, heading, t: clock };
+    T().onFix(f);
+    return f;
+  }
+  async function resetApp() {
+    const t = T();
+    await waitFor(() => !t.nav.busy, 3000);   // never reset over an in-flight planRoute
+    if (t.state.demoTimer) t.stopDemo(true);
+    t.endNav();
+    t.camState.target = null;
+    t.camState.section = null;
+    t.camState.passed.clear();
+    t.state.fix = null;
+    t.state.heading = null;
+    t.state.speedKmh = 0;
+    stub.reset();
+    clock += 10 * 60000;   // big gap: reroute throttle / camera 'passed' expiry from earlier scenarios never carries over
+  }
+
+  // ---------------------------------------------------------------- scenarios
+  // Camera choices: scanned data/cameras.json (2026-10-22, 31091 rows, coords rounded to 5 decimals) with a node script.
+  // S1 section pair. Rows: start [37.17466,127.89025,80,9,1,9956,0], end [37.26181,127.90208,80,9,2,9956,0]
+  // (the brief's 37.1746581,127.8902541 rounds to the start row; the data coordinates are used so the line hits the
+  // cameras exactly). Straight line start->end is 9747 m at bearing 6.2 deg (not 7.5). Along the drive line, the only
+  // other camera ever inside the app's look-ahead cone (28 deg; 55 deg under 150 m) is
+  // [37.23227,127.89585,80,1,0,0,0], 195 m west of the line at ~6.4 km into the section; it may briefly become
+  // the target mid-section and then drops off, without touching the section. (After the end, a school-zone camera
+  // [37.27063,127.90521] 1 km past the end may become a target; also harmless.)
+  const S1_START = { lat: 37.17466, lng: 127.89025 };
+  const S1_END = { lat: 37.26181, lng: 127.90208 };
+  // S2: kind-1 speed camera [37.08727,127.80979,80,1,0,0,0]; no other camera within 3.5 km, so any target is this one.
+  const CAM_ISO_A = { lat: 37.08727, lng: 127.80979, limit: 80 };
+  // S4: kind-1 speed camera [36.85538,127.26662,50,1,0,0,0]; nearest other camera is 3.47 km away. Limit 50, so the
+  // test drives at 70 km/h.
+  const CAM_ISO_B = { lat: 36.85538, lng: 127.26662, limit: 50 };
+  // S3: school-zone (zone 2) signal+speed camera [34.96209,127.26828,30,2,0,0,2]; no other camera within 3.5 km.
+  const CAM_SCHOOL = { lat: 34.96209, lng: 127.26828, limit: 30 };
+  // S5/S6 route origin and S9 drive origin: no camera within 4 km of either point, so camera logic stays quiet.
+  const NAV_ORIGIN = { lat: 37.70, lng: 128.30 };
+  const TRIP_ORIGIN = { lat: 37.80, lng: 127.90 };
+  const SEOUL = { lat: 37.5658, lng: 126.9772 };   // 서울시청 (app DEFAULT_CENTER), dense camera area
+
+  // S1: section enforcement, from 800 m before the start camera to 600 m past the end camera at 25 m/s (90 km/h)
+  async function s1() {
+    const t = T();
+    const L = hav(S1_START, S1_END);
+    const A0 = dest(S1_START, (brg(S1_START, S1_END) + 180) % 360, 800);
+    const b0 = brg(A0, S1_END);
+    const startS = 800, endS = 800 + L, total = endS + 600;
+    let startTarget = null, secStartS = null, secObj = null, restarted = false, nullAt = null, mid = null, fixes = 0;
+    for (let s = 0; s <= total + 0.01; s += 25) {
+      const p = dest(A0, b0, s);
+      feed(p, 25, brg(p, dest(A0, b0, s + 25)));
+      fixes++;
+      const tg = t.camState.target, sec = t.camState.section;
+      if (!startTarget && s < startS && tg && tg.c[4] === 1 && sameCam(tg.c, S1_START)) startTarget = { s, d: r0(tg.d) };
+      if (sec && secStartS === null) { secStartS = s; secObj = sec; }
+      if (secObj && sec && sec !== secObj) restarted = true;
+      if (secStartS !== null && !sec && nullAt === null) nullAt = s;
+      if (!mid && sec && s >= startS + 5000) {
+        mid = { s: r0(s), vis: visible('#secCard'), avg: num('#secAvg'), over: hasCls('#secCard', 'over'), limit: sec.limit, len: sec.len };
+      }
+    }
+    const endSec = t.camState.section, endCard = visible('#secCard');
+    const checks = {
+      startTargetBeforeStart: !!startTarget,
+      sectionStartsAfterStartCam: secStartS !== null && secStartS > startS && secStartS <= startS + 100,
+      sectionLimit80: !!secObj && secObj.limit === 80,
+      midCardVisible: !!mid && mid.vis,
+      midAvg90pm3: !!mid && Math.abs(mid.avg - 90) <= 3,
+      midCardOver: !!mid && mid.over,
+      noRestart: !restarted,
+      endsAtEndCam: nullAt !== null && nullAt >= endS - 10 && nullAt <= endS + 150,
+      nullAfterDrive: endSec === null && !endCard,
+    };
+    const failed = Object.keys(checks).filter((k) => !checks[k]);
+    return {
+      pass: failed.length === 0,
+      detail: (failed.length ? 'FAILED: ' + failed.join(', ') + ' | ' : '') +
+        fixes + ' fixes, heading ' + b0.toFixed(1) + 'deg; start cam targeted at ' + (startTarget ? startTarget.d + ' m before' : 'never') +
+        '; section from +' + (secStartS === null ? '-' : r0(secStartS - startS)) + ' m past start (limit ' + (secObj ? secObj.limit : '-') +
+        ', len ' + (secObj ? secObj.len : '-') + '); mid@' + (mid ? r0(mid.s - startS) + 'm: card ' + (mid.vis ? 'shown' : 'hidden') +
+        ', #secAvg ' + mid.avg + ', over=' + mid.over : 'n/a') + '; section null at ' +
+        (nullAt === null ? 'never' : (nullAt - endS >= 0 ? '+' : '') + r0(nullAt - endS) + ' m vs end cam') + (restarted ? '; RESTARTED mid-way' : ''),
+    };
+  }
+
+  // S2: direction filter. A: from 700 m south heading north (15 m/s) -> target. B: same line, heading south, moving away -> none.
+  async function s2() {
+    const t = T(), C = CAM_ISO_A;
+    let hit = null;
+    for (let s = 0; s <= 650; s += 15) {
+      feed(dest(C, 180, 700 - s), 15, 0);
+      const tg = t.camState.target;
+      if (!hit && tg && sameCam(tg.c, C)) hit = { s, d: r0(tg.d), card: visible('#camCard'), type: text('#camType') };
+    }
+    await resetApp();
+    let wrong = null, other = null;
+    for (let s = 0; s <= 300; s += 15) {
+      feed(dest(C, 180, 700 + s), 15, 180);
+      const tg = t.camState.target;
+      if (tg && sameCam(tg.c, C)) { if (!wrong) wrong = { s, d: r0(tg.d) }; } else if (tg && !other) other = tg.c;
+    }
+    const cardB = visible('#camCard');
+    const pass = !!hit && hit.card && !wrong;
+    return {
+      pass,
+      detail: 'toward: ' + (hit ? 'target at ' + hit.d + ' m, #camCard ' + (hit.card ? 'visible' : 'HIDDEN') + ' ("' + hit.type + '")' : 'NO TARGET') +
+        '; away (heading 180): ' + (wrong ? 'WRONG target at ' + wrong.d + ' m' : 'no target') +
+        (other ? ', other target ' + JSON.stringify(other) : '') + ', #camCard ' + (cardB ? 'visible' : 'hidden'),
+    };
+  }
+
+  // S3: school-zone label
+  async function s3() {
+    const t = T(), C = CAM_SCHOOL;
+    let label = null, at = null;
+    for (let s = 0; s <= 650 && label === null; s += 10) {
+      feed(dest(C, 180, 700 - s), 10, 0);
+      const tg = t.camState.target;
+      if (tg && sameCam(tg.c, C)) { label = text('#camType'); at = r0(tg.d); }
+    }
+    return {
+      pass: label !== null && label.indexOf('어린이보호구역') >= 0,
+      detail: label === null ? 'camera never became target' : '#camType="' + label + '" at ' + at + ' m (limit ' + text('#camLimit') + ')',
+    };
+  }
+
+  // S4: over-speed at limit+20 km/h, approaching from 1150 m
+  async function s4() {
+    const t = T(), C = CAM_ISO_B, L = C.limit, v = (L + 20) / 3.6;
+    let n1000 = 0, n600 = 0;
+    const bad = [];
+    for (let s = 0; s <= 1120; s += v) {
+      const p = dest(C, 180, 1150 - s);
+      feed(p, v, 0);
+      const d = hav(p, C);
+      if (d >= 990 || d <= 30) continue;
+      n1000++;
+      const tg = t.camState.target;
+      const okTarget = !!tg && sameCam(tg.c, C);
+      const okSign = visible('#limitSign') && text('#limitVal') === String(L);
+      const okSpeed = hasCls('#speed', 'over');
+      if (!okTarget || !okSign || !okSpeed) {
+        if (bad.length < 4) bad.push(r0(d) + 'm:' + (!okTarget ? ' no-target' : '') + (!okSign ? ' sign(' + (visible('#limitSign') ? text('#limitVal') : 'hidden') + ')' : '') + (!okSpeed ? ' speed-not-over' : ''));
+        else bad.push('…');
+      }
+      if (d < 590) {
+        n600++;
+        if (!hasCls('#camCard', 'over') && bad.length < 8) bad.push(r0(d) + 'm: camCard-not-over');
+      }
+    }
+    return {
+      pass: n1000 >= 10 && n600 >= 5 && bad.length === 0,
+      detail: 'limit ' + L + ', driving ' + (L + 20) + ' km/h; ' + n1000 + ' samples <1000 m, ' + n600 + ' samples <600 m' +
+        (bad.length ? '; problems: ' + bad.join('; ') : '; #limitSign=' + L + ', #speed.over, #camCard.over all held'),
+    };
+  }
+
+  // Canned /route: 10 points 120 m apart, 600 m north from NAV_ORIGIN, then a right turn and 480 m east.
+  const RIGHT_TURN = "'율곡로' 방면으로 우회전";
+  function buildNavRoute() {
+    const raw = [];
+    for (let k = 0; k <= 5; k++) raw.push(dest(NAV_ORIGIN, 0, 120 * k));
+    for (let k = 1; k <= 4; k++) raw.push(dest(raw[5], 90, 120 * k));
+    const path = raw.map((p) => [round6(p.lng), round6(p.lat)]);   // Worker shape: [lng, lat], 6 decimals
+    const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const total = cum[cum.length - 1];
+    const ms = (m) => r0(m / 12 * 1000);   // ~43 km/h
+    const route = {
+      distance: r0(total), duration: ms(total), tollFare: 0, fuelPrice: 160,
+      path,
+      guide: [
+        { i: 2, t: 1, s: '직진', d: r0(cum[2]), ms: ms(cum[2]) },
+        { i: 5, t: 3, s: RIGHT_TURN, d: r0(cum[5] - cum[2]), ms: ms(cum[5] - cum[2]) },
+        { i: 9, t: 88, s: '목적지', d: r0(cum[9] - cum[5]), ms: ms(cum[9] - cum[5]) },
+      ],
+      sections: [
+        { i: 0, n: 6, name: '테스트로', speed: 45, cong: 1 },
+        { i: 5, n: 5, name: '율곡로', speed: 12, cong: 3 },
+      ],
+    };
+    return { route, P, cum, total, dest: { name: '테스트 목적지', addr: '테스트시 율곡로 1', lat: P[9].lat, lng: P[9].lng } };
+  }
+  function pointAt(R, s) {
+    const P = R.P, cum = R.cum;
+    s = Math.max(0, Math.min(s, cum[cum.length - 1]));
+    let i = 0;
+    while (i < P.length - 2 && cum[i + 1] < s) i++;
+    const len = cum[i + 1] - cum[i], k = len > 0 ? (s - cum[i]) / len : 0;
+    return {
+      p: { lat: P[i].lat + (P[i + 1].lat - P[i].lat) * k, lng: P[i].lng + (P[i + 1].lng - P[i].lng) * k },
+      h: brg(P[i], P[i + 1]),
+    };
+  }
+  async function planAndStart(R) {
+    const t = T();
+    stub.canned['/route'] = R.route;
+    feed(R.P[0], 0, null);
+    await withTimeout(t.planRoute(R.dest, false), 5000, 'planRoute');
+    const pre = { card: visible('#routeCard'), title: text('#rcTitle'), meta: text('#rcMeta'), preview: !!t.nav.preview };
+    t.startNav();
+    return pre;
+  }
+
+  // S5: plan -> route card -> start -> turn-by-turn along the canned path at 15 m/s -> arrival
+  async function s5() {
+    const t = T(), R = buildNavRoute();
+    const c0 = stub.calls.length;
+    const pre = await planAndStart(R);
+    const routeCalls = stub.since(c0, '/route');
+    const q = routeCalls[0] ? routeCalls[0].query : {};
+    const expStart = R.P[0].lng.toFixed(6) + ',' + R.P[0].lat.toFixed(6);
+    const expGoal = R.dest.lng.toFixed(6) + ',' + R.dest.lat.toFixed(6);
+    const startPanel = visible('#navPanel'), startText = text('#turnText');
+    const log = [];
+    let arrivedS = null;
+    for (let s = 15; s <= R.total + 0.01; s += 15) {
+      const a = pointAt(R, s);
+      feed(a.p, 15, a.h);
+      if (!t.nav.active) { arrivedS = s; break; }
+      log.push({ s, txt: text('#turnText'), m: distM(text('#turnDist')) });
+    }
+    const g1 = R.cum[2], g2 = R.cum[5];
+    const beforeOk = log.filter((e) => e.s <= g1 - 10).every((e) => e.txt === '직진');
+    const firstRight = log.find((e) => e.txt === RIGHT_TURN);
+    const rightPhase = log.filter((e) => e.txt === RIGHT_TURN);
+    let mono = rightPhase.length >= 2 && rightPhase[0].m > rightPhase[rightPhase.length - 1].m;
+    for (let i = 1; i < rightPhase.length; i++) if (!(rightPhase[i].m <= rightPhase[i - 1].m)) mono = false;
+    const afterCorner = log.filter((e) => e.s >= g2 + 10);
+    const goalOk = afterCorner.length > 0 && afterCorner.every((e) => e.txt === '목적지');
+    const endPanel = visible('#navPanel');
+    const checks = {
+      routeRequested: routeCalls.length === 1 && q.start === expStart && q.goal === expGoal,
+      routeCardShown: pre.card && pre.title === R.dest.name,
+      navPanelShown: startPanel,
+      firstGuide: startText === '직진',
+      straightBeforeG1: beforeOk,
+      switchesToRightTurn: !!firstRight && firstRight.s > g1 - 10 && firstRight.s <= g1 + 20,
+      turnDistDecreases: mono,
+      goalAfterCorner: goalOk,
+      arrived: arrivedS !== null && !t.nav.active && !endPanel,
+    };
+    const failed = Object.keys(checks).filter((k) => !checks[k]);
+    return {
+      pass: failed.length === 0,
+      detail: (failed.length ? 'FAILED: ' + failed.join(', ') + ' | ' : '') +
+        'path ' + r0(R.total) + ' m; /route start=' + q.start + ' goal=' + q.goal + '; card "' + pre.title + '" (' + pre.meta + ')' +
+        '; first turnText "' + startText + '"; right-turn shown from ' + (firstRight ? firstRight.s + ' m' : 'never') + ' (guide at ' + r0(g1) + ' m passed)' +
+        '; #turnDist ' + (rightPhase.length ? rightPhase[0].m + '→' + rightPhase[rightPhase.length - 1].m + ' m over ' + rightPhase.length + ' fixes' : 'n/a') +
+        '; arrived at ' + (arrivedS === null ? 'never' : arrivedS + ' m') + ', #navPanel ' + (endPanel ? 'VISIBLE' : 'hidden'),
+    };
+  }
+
+  // S6: off-route -> reroute (/route called again)
+  async function s6() {
+    const t = T(), R = buildNavRoute();
+    const c0 = stub.calls.length;
+    await planAndStart(R);
+    for (const s of [15, 30, 45]) { const a = pointAt(R, s); feed(a.p, 10, a.h); }
+    const before = stub.count('/route', c0);
+    let firedAfter = null, offFix = null;
+    for (let k = 0; k < 4; k++) {
+      const on = pointAt(R, 60 + 50 * k).p;
+      const f = feed(dest(on, 90, 100), 10, 0, { dt: 5000, acc: 5 });   // 100 m east of the northbound leg
+      if (firedAfter === null && stub.count('/route', c0) >= 2) { firedAfter = k + 1; offFix = f; }
+    }
+    const t0 = performance.now();
+    const got = await waitFor(() => stub.count('/route', c0) >= 2, 2000, 20);
+    const waited = r0(performance.now() - t0);
+    await waitFor(() => !t.nav.busy, 2000, 20);   // let the reroute finish before the next reset
+    const calls = stub.since(c0, '/route');
+    const rq = calls[1] ? calls[1].query : null;
+    const startOk = !!rq && !!offFix && rq.start === offFix.lng.toFixed(6) + ',' + offFix.lat.toFixed(6);
+    return {
+      pass: before === 1 && !!got && startOk && t.nav.active,
+      detail: '/route calls: ' + before + ' before going off-route, ' + calls.length + ' after' +
+        (firedAfter ? ' (reroute fired on off-route fix #' + firedAfter + ', seen after ' + waited + ' ms)' : ' (no reroute)') +
+        (rq ? '; reroute start=' + rq.start + (startOk ? ' (= off-route fix)' : ' (MISMATCH)') : '') +
+        '; nav.active=' + t.nav.active,
+    };
+  }
+
+  // S7: /search + /geocode merge, dedupe (name + 4-decimal coords) and sort by distance from the fix
+  async function s7() {
+    const t = T();
+    const search = [
+      { name: '테스트카페 시청점', category: '카페,디저트', addr: '서울특별시 중구 세종대로 110', lng: 126.9779, lat: 37.5663 },
+      { name: '테스트공원', category: '여행,명소>공원', addr: '서울특별시 중구 을지로 100', lng: 126.9900, lat: 37.5700 },
+    ];
+    const geo = [
+      // same name and same coords to 4 decimals as search[0] -> must be dropped
+      { name: '테스트카페 시청점', addr: '서울특별시 중구 태평로1가 31', lng: 126.97791, lat: 37.56631, dist: 83 },
+      { name: '서울특별시 중구 세종대로 1', addr: '서울특별시 중구 남대문로4가 1', lng: 126.9750, lat: 37.5600, dist: 672 },
+    ];
+    stub.canned['/search'] = { items: search };
+    stub.canned['/geocode'] = { items: geo };
+    feed(SEOUL, 0, null);
+    $('#q').value = '테스트';
+    const c0 = stub.calls.length;
+    await withTimeout(t.doSearch(), 5000, 'doSearch');
+    const btns = Array.from(document.querySelectorAll('#results .result'));
+    const names = btns.map((b) => ((b.querySelector('.nm') || b).textContent || '').trim());
+    const seen = new Set(), merged = [];
+    search.concat(geo).forEach((it) => {
+      const k = it.name + '|' + it.lat.toFixed(4) + ',' + it.lng.toFixed(4);
+      if (!seen.has(k)) { seen.add(k); merged.push(it); }
+    });
+    const expected = merged.sort((a, b) => hav(SEOUL, a) - hav(SEOUL, b)).map((it) => it.name);
+    const sq = stub.since(c0, '/search'), gq = stub.since(c0, '/geocode');
+    const callsOk = sq.length === 1 && gq.length === 1 && sq[0].query.query === '테스트' &&
+      gq[0].query.near === SEOUL.lng.toFixed(6) + ',' + SEOUL.lat.toFixed(6);
+    const orderOk = names.length === 3 && names.join('|') === expected.join('|');
+    return {
+      pass: orderOk && callsOk,
+      detail: btns.length + ' .result buttons: ' + JSON.stringify(names) + (orderOk ? '' : ' expected ' + JSON.stringify(expected)) +
+        '; /search x' + sq.length + ', /geocode x' + gq.length + (gq[0] ? ' near=' + gq[0].query.near : '') + (callsOk ? '' : ' (CALLS WRONG)'),
+    };
+  }
+
+  // S8: camera markers on the map around Seoul City Hall
+  async function s8() {
+    const t = T();
+    if (t.camState && 'markerAt' in t.camState) t.camState.markerAt = null;
+    feed(SEOUL, 0, null);
+    const map = await waitFor(() => t.getMap(), 10000, 100);
+    if (!map) {
+      const src = text('#source');
+      return { status: /못했/.test(src) ? 'SKIP' : 'FAIL', detail: 'getMap() still null after 10 s; #source="' + src + '"' };
+    }
+    if (!('cams' in map)) return { status: 'SKIP', detail: 'getMap() has no cams property; #source="' + text('#source') + '"' };
+    if ('markerAt' in t.camState) t.camState.markerAt = null;   // force refreshCamMarkers to redraw
+    feed(SEOUL, 0, null);
+    const size = map.cams && typeof map.cams.size === 'number' ? map.cams.size : -1;
+    return {
+      pass: size > 0,
+      detail: 'getMap().cams.size=' + size + ' (max 80 nearest within 2 km); map source "' + text('#source') + '"',
+    };
+  }
+
+  // S9: trip odometer: 1 km at 20 m/s
+  async function s9() {
+    const t = T();
+    feed(TRIP_ORIGIN, 20, 90);
+    const km0 = num('#tripKm'), m0 = t.state.trip;
+    for (let s = 20; s <= 1000 + 0.01; s += 20) feed(dest(TRIP_ORIGIN, 90, s), 20, 90);
+    const km1 = num('#tripKm'), m1 = t.state.trip;
+    const dKm = km1 - km0, dM = m1 - m0;
+    return {
+      pass: Math.abs(dKm - 1.0) <= 0.1001 && Math.abs(dM - 1000) <= 5,
+      detail: '#tripKm ' + km0 + ' → ' + km1 + ' (Δ ' + dKm.toFixed(2) + ' km); state.trip Δ ' + dM.toFixed(1) + ' m',
+    };
+  }
+
+  const SCENARIOS = [
+    { id: 'S1', name: 'S1 section enforcement', fn: s1 },
+    { id: 'S2', name: 'S2 direction filtering', fn: s2 },
+    { id: 'S3', name: 'S3 school-zone label', fn: s3 },
+    { id: 'S4', name: 'S4 over-speed', fn: s4 },
+    { id: 'S5', name: 'S5 navigation flow', fn: s5 },
+    { id: 'S6', name: 'S6 off-route reroute', fn: s6 },
+    { id: 'S7', name: 'S7 search merge', fn: s7 },
+    { id: 'S8', name: 'S8 camera markers', fn: s8 },
+    { id: 'S9', name: 'S9 trip odometer', fn: s9 },
+  ];
+
+  // ---------------------------------------------------------------- runner
+  async function runOne(id) {
+    const sc = SCENARIOS.find((s) => s.id === id || s.name === id);
+    if (!sc) throw new Error('unknown scenario ' + id);
+    showRunning(sc.name);
+    const t0 = performance.now();
+    let res;
+    try {
+      await resetApp();
+      res = await sc.fn();
+    } catch (e) {
+      res = { pass: false, detail: 'exception: ' + (e && e.stack ? e.stack.split('\n').slice(0, 3).join(' | ') : String(e)) };
+    }
+    const status = res.status || (res.pass ? 'PASS' : 'FAIL');
+    addResult(sc.name, status, (res.detail || '') + ' [' + r0(performance.now() - t0) + ' ms]');
+    return RESULTS.find((r) => r.name === sc.name);
+  }
+  function summarize(extra) {
+    const c = { PASS: 0, FAIL: 0, SKIP: 0 };
+    RESULTS.forEach((r) => { c[r.status] = (c[r.status] || 0) + 1; });
+    setSummary(c.PASS + ' pass · ' + c.FAIL + ' fail · ' + c.SKIP + ' skip' + (extra ? ' · ' + extra : ''));
+  }
+
+  async function main() {
+    const tStart = performance.now();
+    makePanel();
+    prepStorage();
+    stubGeolocation();
+    installFetchStub();
+    try {
+      setSummary('loading index.html…');
+      const scripts = await injectApp();
+      setSummary('loading app.js…');
+      for (const s of scripts) await addScript(s);
+      setSummary('waiting for __tnc + cameras…');
+      const ok = await waitFor(() => window.__tnc && window.__tnc.cams && window.__tnc.cams.loaded, BOOT_TIMEOUT_MS, 50);
+      if (!ok) {
+        const why = !window.__tnc ? 'window.__tnc never appeared (app.js error or no ?debug)' : '__tnc.cams.loaded stayed false';
+        addResult('boot', 'FAIL', why + '. toast="' + text('#toast') + '" errors=' + JSON.stringify(pageErrors.slice(0, 5)));
+      } else {
+        const t = T();
+        addInfo('booted in ' + r0(performance.now() - tStart) + ' ms · cameras ' + t.cams.rows.length + ' (' + t.cams.date + ')' +
+          ' · __tnc keys: ' + Object.keys(t).join(','));
+        for (const sc of SCENARIOS) {
+          await runOne(sc.id);
+          summarize('running');
+          await sleep(0);
+        }
+        try { await resetApp(); } catch (e) { /* ignore */ }
+        const byEp = {};
+        stub.calls.forEach((c) => { byEp[c.path] = (byEp[c.path] || 0) + 1; });
+        addInfo('stub calls: ' + JSON.stringify(byEp) + ' · map source: "' + text('#source') + '"' +
+          (pageErrors.length ? ' · page errors: ' + JSON.stringify(pageErrors.slice(0, 5)) : ''));
+      }
+    } catch (e) {
+      addResult('boot', 'FAIL', 'exception: ' + (e && e.message ? e.message : String(e)));
+    } finally {
+      restoreStorage();
+      summarize('done in ' + (r0(performance.now() - tStart) / 1000).toFixed(1) + ' s');
+      window.__testsDone = true;
+    }
+  }
+
+  window.__harness = { stub, run: runOne, reset: resetApp, feed, scenarios: () => SCENARIOS.map((s) => s.id), geo: { hav, brg, dest } };
+  main();
+})();

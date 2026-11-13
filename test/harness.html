@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cluster Test Harness</title>
+</head>
+<body>
+<!--
+  Scenario test harness for the map cluster app.
+  Serve the repo root (python -m http.server 8765) and open:
+    http://localhost:8765/test/harness.html?debug
+  harness.js copies index.html's styles + markup into this page, stubs fetch (Worker endpoints) and
+  geolocation, loads ../app.js, then drives window.__tnc.onFix() with synthetic GPS fixes.
+  Results: on-page panel, window.__testResults = [{name, status, detail}], window.__testsDone = true.
+-->
+<script src="harness.js"></script>
+</body>
+</html>

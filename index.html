@@ -30,7 +30,7 @@
 
   #app {
     display: grid;
-    grid-template-columns: clamp(270px, 26vw, 380px) 1fr;
+    grid-template-columns: clamp(280px, 27vw, 390px) 1fr;
     height: 100vh; height: 100dvh;
   }
 
@@ -39,8 +39,8 @@
     background: var(--panel);
     border-right: 1px solid var(--line);
     display: flex; flex-direction: column;
-    padding: 22px 24px; gap: 16px;
-    min-width: 0;
+    padding: 20px 22px; gap: 14px;
+    min-width: 0; overflow-y: auto;
   }
   .top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
   .gps { display: flex; align-items: center; gap: 8px; font-size: 15px; color: var(--muted); min-width: 0; }
@@ -56,31 +56,79 @@
   }
   #app:not(.demo) .chip { display: none; }
 
-  .speedbox { margin-top: 3vh; }
+  .speedbox { margin-top: 1vh; }
+  .speedrow { display: flex; align-items: center; gap: 16px; }
   #speed {
-    font-size: clamp(88px, 10vw, 170px); font-weight: 700; line-height: .9;
+    font-size: clamp(84px, 9.5vw, 160px); font-weight: 700; line-height: .9;
     letter-spacing: -0.04em; font-variant-numeric: tabular-nums;
+    transition: color .2s;
   }
-  .unit { font-size: 20px; color: var(--muted); margin-top: 8px; }
+  #speed.over { color: var(--bad); }
+  #speed.stale { color: var(--muted); }
+  .unit { font-size: 18px; color: var(--muted); margin-top: 8px; }
+  .limit {
+    flex: none; width: clamp(64px, 6vw, 88px); height: clamp(64px, 6vw, 88px);
+    border-radius: 50%; background: #fff; border: clamp(7px, .65vw, 10px) solid #e53935;
+    display: grid; place-items: center; color: #111; font-weight: 800;
+    font-size: clamp(24px, 2.3vw, 34px); font-variant-numeric: tabular-nums;
+  }
+  .road { font-size: 18px; min-height: 24px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .road small { color: var(--muted); font-size: 14px; margin-left: 8px; }
 
-  .heading { display: flex; align-items: center; gap: 12px; font-size: 22px; }
+  .heading { display: flex; align-items: center; gap: 12px; font-size: 20px; }
   .compass {
-    width: 46px; height: 46px; flex: none; border: 2px solid var(--line); border-radius: 50%;
+    width: 42px; height: 42px; flex: none; border: 2px solid var(--line); border-radius: 50%;
     display: grid; place-items: center; color: var(--accent);
   }
-  .compass svg { width: 24px; height: 24px; transition: transform .5s ease; }
+  .compass svg { width: 22px; height: 22px; transition: transform .5s ease; }
+
+  .camcard {
+    display: flex; gap: 14px; align-items: center;
+    background: #24110f; border: 1px solid #5c2420; border-radius: 16px; padding: 12px 14px;
+  }
+  .camcard.over { background: #4a0f14; border-color: var(--bad); animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { background: #6b1219; } }
+  .cam-sign {
+    flex: none; width: 56px; height: 56px; border-radius: 50%; background: #fff; border: 6px solid #e53935;
+    display: grid; place-items: center; color: #111; font-weight: 800; font-size: 21px;
+  }
+  .cam-info { flex: 1; min-width: 0; }
+  .cam-type { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cam-dist { font-size: 28px; font-weight: 750; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .cam-bar { height: 6px; background: #3d2522; border-radius: 3px; margin-top: 6px; overflow: hidden; }
+  .cam-bar i { display: block; height: 100%; width: 0; background: var(--bad); transition: width .9s linear; }
+
+  .seccard { background: #0f1f35; border: 1px solid #1f3e66; border-radius: 16px; padding: 12px 14px; }
+  .seccard.over { background: #3a1015; border-color: var(--bad); }
+  .sec-top { font-size: 14px; color: #9fb8d8; }
+  .sec-top b { color: var(--text); }
+  .sec-avg { font-size: 34px; font-weight: 750; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .sec-avg small { font-size: 15px; color: var(--muted); font-weight: 500; }
+  .sec-remain { font-size: 15px; color: var(--muted); }
 
   .trip { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: auto; }
   .stat { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; min-width: 0; }
   .stat .k { font-size: 13px; color: var(--muted); }
-  .stat .v { font-size: 26px; font-weight: 650; margin-top: 4px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .stat .v { font-size: 24px; font-weight: 650; margin-top: 4px; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .stat small { font-size: 14px; color: var(--muted); font-weight: 500; }
 
   /* ---------- 지도 ---------- */
   #map { position: relative; overflow: hidden; background: #1a1d22; min-width: 0; }
   .mapcanvas { position: absolute; inset: 0; }
   #map.night .mapcanvas { filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.9); }
-  #map.night .me { filter: invert(1) hue-rotate(180deg); }
+  #map.night .me, #map.night .cammk { filter: invert(1) hue-rotate(180deg); }
+
+  /* 주행 화면: 캔버스를 차 위치(회전 중심)를 가운데로 한 큰 정사각형으로 키워 돌리고 기울인다 (값은 app.js) */
+  #map { --cl: 0px; --ct: 0px; --cs: 100%; --rot: 0deg; --crot: 0deg; --tilt: 0deg; --persp: 1400px; }
+  #map.drive .mapcanvas {
+    inset: auto; left: var(--cl); top: var(--ct); width: var(--cs); height: var(--cs);
+    transform-origin: 50% 50%;
+    transform: perspective(var(--persp)) rotateX(var(--tilt)) rotate(var(--rot));
+    transition: transform .9s linear;
+  }
+  #map.drive .me-arrow { transition: transform .9s linear; }
+  #map.drive .cammk { transform: rotate(var(--crot)); transition: transform .9s linear; }
+  #map.snap .mapcanvas, #map.snap .me-arrow, #map.snap .cammk { transition: none !important; }
 
   .me { position: relative; width: 56px; height: 56px; pointer-events: none; }
   .me-halo { position: absolute; inset: 6px; border-radius: 50%; background: rgba(3, 199, 90, .18); }
@@ -98,13 +146,31 @@
   .me:not(.nohead) .me-dot { display: none; }
   .me-wrap { background: none; border: 0; }
 
+  .cammk {
+    width: 30px; height: 30px; border-radius: 50%; background: #fff; border: 4px solid #e53935;
+    display: grid; place-items: center; color: #111; font: 800 11px/1 system-ui, sans-serif;
+    box-shadow: 0 1px 4px rgba(0,0,0,.35); pointer-events: none;
+  }
+  .cammk.k2 { border-color: #ff7a00; }
+  .cammk.k9 { border-color: #7c4dff; }
+
+  .searchbtn {
+    position: absolute; left: 16px; top: 16px; z-index: 1000;
+    height: 60px; padding: 0 22px 0 16px; border-radius: 16px;
+    display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 650;
+    background: rgba(17, 20, 24, .93); color: #fff; border: 1px solid rgba(255,255,255,.06);
+    box-shadow: 0 4px 14px rgba(0,0,0,.28); cursor: pointer;
+  }
+  .searchbtn svg { width: 26px; height: 26px; stroke: currentColor; fill: none; stroke-width: 2.4; stroke-linecap: round; }
+
   .badge {
-    position: absolute; left: 12px; top: 12px; z-index: 1000;
+    position: absolute; left: 16px; top: 86px; z-index: 1000;
     font-size: 13px; padding: 7px 12px; border-radius: 999px;
     background: rgba(17, 20, 24, .85); color: var(--muted);
     max-width: calc(100% - 260px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .badge.warn { color: var(--warn); }
+  #map.navigating .badge { display: none; }
 
   .toast {
     position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 1100;
@@ -115,6 +181,28 @@
     box-shadow: 0 8px 24px rgba(0,0,0,.35); cursor: pointer;
   }
   .toast.bad { border-left-color: var(--bad); }
+
+  .soundpill {
+    position: absolute; left: 50%; top: 16px; transform: translateX(-50%); z-index: 1070;
+    min-height: 48px; padding: 0 18px; border-radius: 999px; cursor: pointer;
+    background: var(--warn); color: #1a1200; border: 0; font-size: 16px; font-weight: 700;
+    box-shadow: 0 6px 18px rgba(0,0,0,.35);
+  }
+  #map.navigating .soundpill { top: auto; bottom: 28px; }
+  .attrib {
+    position: absolute; right: 8px; bottom: 6px; z-index: 1000; pointer-events: none;
+    font-size: 11px; color: #333; background: rgba(255,255,255,.75); padding: 1px 6px; border-radius: 4px;
+    display: none;
+  }
+  #map.drive .attrib { display: block; }
+  #map.night .attrib { color: #ddd; background: rgba(0,0,0,.55); }
+
+  .diagbox {
+    position: absolute; left: 16px; bottom: 44px; z-index: 1040; max-width: calc(100% - 120px);
+    background: rgba(0, 0, 0, .8); color: #d7ffe9; padding: 8px 12px; border-radius: 10px;
+    font: 13px/1.55 ui-monospace, Consolas, "Malgun Gothic", monospace; pointer-events: none;
+  }
+  .diagbox b { color: var(--warn); margin-right: 4px; }
 
   .topctrls { position: absolute; right: 16px; top: 16px; display: flex; gap: 10px; z-index: 1000; }
   .ctrls {
@@ -127,57 +215,117 @@
     display: grid; place-items: center; cursor: pointer;
     box-shadow: 0 4px 14px rgba(0,0,0,.28);
   }
-  .btn:active { transform: scale(.96); }
+  .btn:active, .searchbtn:active { transform: scale(.96); }
   .btn svg { width: 28px; height: 28px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
   #locate.alert { background: var(--accent); color: #04130b; }
 
-  /* ---------- 설정 ---------- */
-  #sheet {
+  /* 길안내 패널 */
+  .navpanel {
+    position: absolute; left: 16px; top: 16px; z-index: 1050;
+    width: min(460px, calc(100% - 110px));
+    background: rgba(11, 13, 16, .96); border: 1px solid var(--line); border-radius: 18px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.35); overflow: hidden;
+  }
+  .turn { display: flex; gap: 16px; align-items: center; padding: 14px 18px; background: #0d3d25; }
+  .turnicon { flex: none; width: 64px; height: 64px; }
+  .turnicon svg { width: 64px; height: 64px; stroke: #fff; fill: none; stroke-width: 3.4; stroke-linecap: round; stroke-linejoin: round; }
+  .turndist { font-size: 38px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.05; }
+  .turntext { font-size: 17px; color: #d6f5e3; margin-top: 4px; line-height: 1.35; }
+  .nextturn {
+    display: flex; align-items: center; gap: 8px; padding: 6px 18px;
+    background: #0a2c1b; border-top: 1px solid rgba(255,255,255,.06);
+    font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums;
+  }
+  .nextturn small { font-size: 13px; font-weight: 500; color: #9fd8b8; }
+  .nexticon { width: 26px; height: 26px; flex: none; }
+  .nexticon svg { width: 26px; height: 26px; stroke: #fff; fill: none; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+  .navmeta { display: flex; align-items: center; gap: 14px; padding: 10px 12px 10px 18px; font-size: 17px; flex-wrap: wrap; }
+  .navmeta b { font-variant-numeric: tabular-nums; }
+  .navmeta span { color: var(--muted); }
+  .navmeta button {
+    margin-left: auto; min-height: 46px; padding: 0 16px; border-radius: 12px; cursor: pointer;
+    background: #2a1416; color: #ffb3b5; border: 1px solid #5c2428; font-size: 15px;
+  }
+
+  .routecard {
+    position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 1060;
+    width: min(540px, calc(100% - 32px));
+    background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 18px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.4);
+  }
+  .rc-title { font-size: 20px; font-weight: 700; }
+  .rc-meta { color: var(--muted); margin-top: 6px; font-size: 16px; }
+
+  /* ---------- 시트 (설정 / 검색) ---------- */
+  .sheet {
     position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,.55);
     display: grid; place-items: center; padding: 16px;
   }
   .sheet-card {
-    width: min(560px, 100%); max-height: 100%; overflow: auto;
+    width: min(580px, 100%); max-height: 100%; overflow: auto;
     background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 22px;
   }
   .sheet-card h2 { margin: 0 0 16px; font-size: 22px; }
-  .sheet-card label { display: block; font-size: 14px; color: var(--muted); margin-bottom: 8px; }
-  .sheet-card input {
+  .sheet-card .lbl { display: block; font-size: 14px; color: var(--muted); margin: 14px 0 8px; }
+  .sheet-card input:not([type=checkbox]), .sheet-card select {
     width: 100%; font: inherit; font-size: 18px; padding: 14px; border-radius: 12px;
     background: var(--card); color: var(--text); border: 1px solid var(--line);
     -webkit-user-select: text; user-select: text;
   }
+  .check { display: flex; align-items: center; gap: 12px; font-size: 17px; margin-top: 14px; cursor: pointer; }
+  .check input { width: 24px; height: 24px; accent-color: var(--accent); }
   .hint { font-size: 14px; color: var(--muted); line-height: 1.55; margin: 10px 0 0; }
   .hint b { color: var(--text); word-break: break-all; -webkit-user-select: text; user-select: text; }
   .row { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
   .row.end { justify-content: flex-end; }
-  .sheet-card button {
+  .sheet-card button, .routecard button {
     min-height: 52px; padding: 0 18px; border-radius: 12px; cursor: pointer; font-size: 16px;
     background: #1b2027; color: var(--text); border: 1px solid var(--line);
   }
-  .sheet-card button.primary { background: var(--accent); color: #04130b; border-color: transparent; font-weight: 700; }
+  .sheet-card button.primary, .routecard button.primary { background: var(--accent); color: #04130b; border-color: transparent; font-weight: 700; }
   hr { border: 0; border-top: 1px solid var(--line); margin: 20px 0 4px; }
+
+  .searchrow { display: flex; gap: 10px; }
+  .searchrow input { flex: 1; min-width: 0; }
+  .results { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+  .rtitle { font-size: 13px; color: var(--muted); margin: 4px 2px; }
+  .empty { color: var(--muted); padding: 18px 4px; font-size: 15px; }
+  .sheet-card button.result {
+    text-align: left; padding: 12px 16px; min-height: 64px;
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  }
+  .result .nm { font-size: 17px; font-weight: 650; }
+  .result .sub { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .result .dist { color: var(--muted); white-space: nowrap; font-size: 14px; }
 
   /* ---------- 세로 화면(휴대폰) ---------- */
   @media (orientation: portrait), (max-width: 720px) {
     #app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
     #cluster {
       border-right: 0; border-bottom: 1px solid var(--line);
-      display: grid; grid-template-columns: auto 1fr; gap: 8px 18px; padding: 12px 16px;
-      grid-template-areas: "speed top" "speed head" "trip trip";
+      display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; padding: 12px 16px;
+      grid-template-areas: "speed top" "speed road" "speed head" "cam cam" "sec sec" "trip trip";
+      max-height: 55vh;
     }
     .top { grid-area: top; }
     .speedbox { grid-area: speed; margin-top: 0; align-self: center; }
-    #speed { font-size: 72px; }
-    .unit { font-size: 15px; margin-top: 4px; }
-    .heading { grid-area: head; font-size: 18px; }
-    .compass { width: 38px; height: 38px; }
+    .road { grid-area: road; font-size: 16px; }
+    #speed { font-size: 64px; }
+    .limit { width: 52px; height: 52px; font-size: 20px; border-width: 6px; }
+    .unit { font-size: 14px; margin-top: 4px; }
+    .heading { grid-area: head; font-size: 16px; }
+    .compass { width: 34px; height: 34px; }
+    .camcard { grid-area: cam; }
+    .seccard { grid-area: sec; }
     .trip { grid-area: trip; margin-top: 0; }
     .stat { padding: 8px 12px; }
-    .stat .v { font-size: 20px; }
+    .stat .v { font-size: 19px; }
     .btn { width: 52px; height: 52px; }
-    .badge { max-width: calc(100% - 210px); }
+    .searchbtn { height: 52px; font-size: 16px; }
+    .badge { top: 76px; max-width: calc(100% - 100px); }
     .toast { max-width: calc(100% - 32px); }
+    .navpanel { width: calc(100% - 32px); }
+    .turndist { font-size: 30px; }
   }
 </style>
 </head>
@@ -189,12 +337,29 @@
       <div><span id="clock" class="clock">--:--</span><span class="chip">데모</span></div>
     </div>
     <div class="speedbox">
-      <div id="speed">0</div>
+      <div class="speedrow">
+        <div id="speed">0</div>
+        <div id="limitSign" class="limit" hidden><span id="limitVal">60</span></div>
+      </div>
       <div class="unit">km/h</div>
     </div>
+    <div id="roadName" class="road"></div>
     <div class="heading">
       <div class="compass"><svg id="compassArrow" viewBox="0 0 24 24"><path d="M12 2.5 L18.5 20.5 L12 16.2 L5.5 20.5 Z" fill="currentColor"/></svg></div>
       <span id="headingText">방향 -</span>
+    </div>
+    <div id="camCard" class="camcard" hidden>
+      <div class="cam-sign"><span id="camLimit">60</span></div>
+      <div class="cam-info">
+        <div id="camType" class="cam-type">과속 단속</div>
+        <div id="camDist" class="cam-dist">0m</div>
+        <div class="cam-bar"><i id="camBar"></i></div>
+      </div>
+    </div>
+    <div id="secCard" class="seccard" hidden>
+      <div class="sec-top">구간단속 · 제한 <b id="secLimit">100</b> km/h</div>
+      <div class="sec-avg"><span id="secAvg">-</span><small> km/h 평균</small></div>
+      <div id="secRemain" class="sec-remain">-</div>
     </div>
     <div class="trip">
       <div class="stat"><div class="k">주행 거리</div><div class="v"><span id="tripKm">0.0</span><small> km</small></div></div>
@@ -203,7 +368,33 @@
   </section>
 
   <section id="map" aria-label="지도">
+    <button id="searchBtn" class="searchbtn"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg>목적지 검색</button>
     <div id="source" class="badge">지도 불러오는 중</div>
+
+    <div id="navPanel" class="navpanel" hidden>
+      <div class="turn">
+        <div id="turnIcon" class="turnicon"></div>
+        <div>
+          <div id="turnDist" class="turndist">-</div>
+          <div id="turnText" class="turntext"></div>
+        </div>
+      </div>
+      <div id="nextTurn" class="nextturn" hidden><small>그다음</small><span id="nextIcon" class="nexticon"></span><span id="nextDist"></span></div>
+      <div class="navmeta">
+        <b id="navRemain">-</b><span id="navTime">-</span><span id="navEta">-</span>
+        <button id="navEnd">안내 종료</button>
+      </div>
+    </div>
+
+    <div id="routeCard" class="routecard" hidden>
+      <div id="rcTitle" class="rc-title"></div>
+      <div id="rcMeta" class="rc-meta"></div>
+      <div class="row">
+        <button id="rcStart" class="primary">안내 시작</button>
+        <button id="rcCancel">취소</button>
+      </div>
+    </div>
+
     <div id="toast" class="toast" hidden></div>
     <div class="topctrls">
       <button class="btn" id="nightBtn" aria-label="야간 지도"></button>
@@ -218,461 +409,69 @@
   </section>
 </div>
 
-<div id="sheet" hidden>
+<div id="searchSheet" class="sheet" hidden>
+  <div class="sheet-card" role="dialog" aria-label="목적지 검색">
+    <div class="searchrow">
+      <input id="q" autocomplete="off" spellcheck="false" enterkeyhint="search" placeholder="장소 이름이나 주소">
+      <button id="qBtn" class="primary">검색</button>
+    </div>
+    <div id="results" class="results"></div>
+    <div class="row end"><button id="searchClose">닫기</button></div>
+  </div>
+</div>
+
+<div id="sheet" class="sheet" hidden>
   <div class="sheet-card" role="dialog" aria-label="설정">
     <h2>설정</h2>
-    <label for="keyInput">네이버 지도 Client ID</label>
+    <label class="lbl" for="keyInput">네이버 지도 Client ID</label>
     <input id="keyInput" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="NCP 콘솔 → Maps → Application의 Client ID">
-    <p class="hint">NCP 콘솔에서 Application을 만들 때 <b>Dynamic Map</b>을 켜고, Web 서비스 URL에 지금 주소 <b id="origin"></b> 를 등록해야 지도가 뜹니다.</p>
+    <p class="hint">비워 두면 길안내 서버에 설정된 키를 자동으로 받아 씁니다. 여기에 넣은 키가 있으면 그 키가 우선입니다. Web 서비스 URL에 지금 주소 <b id="origin"></b> 가 등록돼 있어야 지도가 뜹니다.</p>
     <div class="row">
       <button id="saveKey" class="primary">저장하고 다시 불러오기</button>
       <button id="clearKey">키 지우기</button>
     </div>
+
+    <hr>
+    <label class="check"><input type="checkbox" id="optVoice"> 음성 안내</label>
+    <label class="check"><input type="checkbox" id="optBeep"> 경고음</label>
+    <label class="check"><input type="checkbox" id="optCams"> 단속 카메라 경고</label>
+    <p class="hint">단속 카메라 <b id="camCount">-</b>대 · 기준일 <b id="camDate">-</b> (경찰청 공공데이터)</p>
+    <div class="row"><button id="soundTest">소리 테스트</button></div>
+
+    <hr>
+    <label class="check"><input type="checkbox" id="optHup"> 진행 방향이 위로</label>
+    <label class="check"><input type="checkbox" id="optTilt"> 3D 기울기</label>
+    <p class="hint">주행 중에는 차가 화면 아래쪽에 오고 앞쪽 길이 더 넓게 보입니다. 지도를 만지면 북쪽이 위인 평면 지도로 바뀌고, 위치 버튼을 누르거나 15초가 지나면 돌아옵니다.</p>
+
+    <hr>
+    <label class="lbl" for="optRoute">경로 옵션</label>
+    <select id="optRoute">
+      <option value="trafast">빠른 길</option>
+      <option value="tracomfort">편한 길</option>
+      <option value="traoptimal">최적 경로</option>
+      <option value="traavoidtoll">무료 도로 우선</option>
+    </select>
+    <label class="lbl" for="proxyInput">길안내 서버 주소</label>
+    <input id="proxyInput" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <p id="proxyStatus" class="hint"></p>
+    <div class="row"><button id="proxyTest">서버 확인</button></div>
+
     <hr>
     <div class="row">
       <button id="demoBtn">데모 주행 시작</button>
       <button id="resetTrip">주행 기록 초기화</button>
     </div>
+
+    <hr>
+    <p class="hint">진단 모드는 실제 차에서 GPS 갱신 주기, 위치 지연, 정확도, 화면 반영 시간을 재고 주행 기록을 남깁니다. 주행 후 업로드하면 기록 번호가 나옵니다.</p>
+    <div class="row">
+      <button id="diagToggle">진단 모드 켜기</button>
+      <button id="diagUpload">기록 업로드</button>
+    </div>
     <div class="row end"><button id="closeSheet">닫기</button></div>
   </div>
 </div>
 
-<script>
-(() => {
-  'use strict';
-
-  const $ = (s) => document.querySelector(s);
-  const NS = 'tnc.';
-  const store = {
-    get(k) { try { return localStorage.getItem(NS + k); } catch (e) { return null; } },
-    set(k, v) {
-      try {
-        if (v == null || v === '') localStorage.removeItem(NS + k);
-        else localStorage.setItem(NS + k, String(v));
-      } catch (e) { /* 저장 불가 환경: 이번 세션만 사용 */ }
-    },
-  };
-
-  const DEFAULT_CENTER = { lat: 37.5658, lng: 126.9772 }; // 서울시청
-  const LEAFLET_JS = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
-  const LEAFLET_CSS = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';
-  const ICON_MOON = '<svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>';
-  const ICON_SUN = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
-
-  const state = {
-    fix: null,          // 마지막 위치 {lat,lng,acc,t}
-    speedKmh: 0,
-    heading: null,
-    trip: 0,            // m
-    driveMs: 0,
-    following: true,
-    refollowTimer: 0,
-    demoTimer: 0,
-    night: store.get('night') === '1',
-  };
-
-  // URL에 ?key=... 로 넘기면 저장하고 주소에서는 지운다 (테슬라 즐겨찾기 첫 설정용)
-  const params = new URLSearchParams(location.search);
-  if (params.get('key')) {
-    store.set('key', params.get('key').trim());
-    params.delete('key');
-    const qs = params.toString();
-    history.replaceState(null, '', location.pathname + (qs ? '?' + qs : '') + location.hash);
-  }
-
-  // ---------- 계산 도우미 ----------
-  const toRad = (d) => d * Math.PI / 180;
-  const toDeg = (r) => r * 180 / Math.PI;
-  function haversine(a, b) {
-    const R = 6371000;
-    const dLat = toRad(b.lat - a.lat), dLng = toRad(b.lng - a.lng);
-    const s = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
-    return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
-  }
-  function bearing(a, b) {
-    const y = Math.sin(toRad(b.lng - a.lng)) * Math.cos(toRad(b.lat));
-    const x = Math.cos(toRad(a.lat)) * Math.sin(toRad(b.lat)) -
-              Math.sin(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.cos(toRad(b.lng - a.lng));
-    return (toDeg(Math.atan2(y, x)) + 360) % 360;
-  }
-  const DIRS = ['북', '북동', '동', '남동', '남', '남서', '서', '북서'];
-  const dirName = (h) => DIRS[Math.round(h / 45) % 8];
-  // 350° → 10° 로 갈 때 한 바퀴 돌지 않게 누적 각도로 회전
-  function makeRotator(el) {
-    let cur = null;
-    return (h) => {
-      if (cur === null) cur = h;
-      else cur += ((h - cur) % 360 + 540) % 360 - 180;
-      el.style.transform = 'rotate(' + cur + 'deg)';
-    };
-  }
-  function loadScript(src) {
-    return new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = src; s.async = true;
-      s.onload = () => resolve();
-      s.onerror = () => reject(new Error('load failed: ' + src));
-      document.head.appendChild(s);
-    });
-  }
-  function loadCss(href) {
-    return new Promise((resolve) => {
-      const l = document.createElement('link');
-      l.rel = 'stylesheet'; l.href = href;
-      l.onload = l.onerror = () => resolve();
-      document.head.appendChild(l);
-    });
-  }
-
-  // ---------- 알림 ----------
-  let toastTimer = 0;
-  function toast(msg, kind, ms) {
-    const t = $('#toast');
-    t.textContent = msg;
-    t.className = 'toast ' + (kind || '');
-    t.hidden = false;
-    clearTimeout(toastTimer);
-    if (ms !== 0) toastTimer = setTimeout(() => { t.hidden = true; }, ms || 4000);
-  }
-  $('#toast').addEventListener('click', () => { $('#toast').hidden = true; });
-
-  // ---------- 내 위치 마커 ----------
-  const meEl = document.createElement('div');
-  meEl.className = 'me nohead';
-  meEl.innerHTML = '<div class="me-halo"></div><div class="me-dot"></div>' +
-    '<svg class="me-arrow" viewBox="0 0 40 40"><path d="M20 3 L33 35 L20 27.5 L7 35 Z"/></svg>';
-  const rotateMe = makeRotator(meEl.querySelector('.me-arrow'));
-  const rotateCompass = makeRotator($('#compassArrow'));
-
-  // ---------- 지도 어댑터 (네이버 / 테스트용 OSM) ----------
-  const NaverAdapter = {
-    init(el, c) {
-      const N = naver.maps;
-      this.map = new N.Map(el, {
-        center: new N.LatLng(c.lat, c.lng), zoom: 17, minZoom: 7,
-        zoomControl: false, mapTypeControl: false, scaleControl: false,
-      });
-      this.marker = new N.Marker({
-        position: new N.LatLng(c.lat, c.lng), map: this.map, visible: false, clickable: false, zIndex: 1000,
-        icon: { content: meEl, anchor: new N.Point(28, 28) },
-      });
-      N.Event.addListener(this.map, 'dragstart', onUserPan);
-    },
-    setMe(lat, lng) {
-      this.marker.setPosition(new naver.maps.LatLng(lat, lng));
-      this.marker.setVisible(true);
-    },
-    center(lat, lng, jump) {
-      const p = new naver.maps.LatLng(lat, lng);
-      if (jump) this.map.setCenter(p); else this.map.panTo(p);
-    },
-    zoomBy(d) { this.map.setZoom(this.map.getZoom() + d, true); },
-    destroy() { if (this.map) this.map.destroy(); this.map = null; this.marker = null; },
-  };
-
-  const LeafletAdapter = {
-    async init(el, c) {
-      await loadCss(LEAFLET_CSS);
-      if (!window.L) await loadScript(LEAFLET_JS);
-      this.map = L.map(el, { zoomControl: false }).setView([c.lat, c.lng], 17);
-      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19, attribution: '&copy; OpenStreetMap',
-      }).addTo(this.map);
-      this.marker = null;
-      this.map.on('dragstart', onUserPan);
-    },
-    setMe(lat, lng) {
-      if (this.marker) { this.marker.setLatLng([lat, lng]); return; }
-      this.marker = L.marker([lat, lng], {
-        icon: L.divIcon({ html: meEl, className: 'me-wrap', iconSize: [56, 56], iconAnchor: [28, 28] }),
-        interactive: false, keyboard: false, zIndexOffset: 1000,
-      }).addTo(this.map);
-    },
-    center(lat, lng, jump) {
-      if (jump) this.map.setView([lat, lng], this.map.getZoom(), { animate: false });
-      else this.map.panTo([lat, lng], { animate: true, duration: 0.9 });
-    },
-    zoomBy(d) { this.map.setZoom(this.map.getZoom() + d); },
-    destroy() { if (this.map) this.map.remove(); this.map = null; this.marker = null; },
-  };
-
-  let mapA = null;
-  async function useMap(adapter) {
-    if (mapA) { try { mapA.destroy(); } catch (e) { /* 무시 */ } mapA = null; }
-    const host = $('#map');
-    host.querySelectorAll('.mapcanvas').forEach((n) => n.remove());
-    const el = document.createElement('div');
-    el.className = 'mapcanvas';
-    host.prepend(el);
-    await adapter.init(el, state.fix || DEFAULT_CENTER);
-    mapA = adapter;
-    if (state.fix) mapA.setMe(state.fix.lat, state.fix.lng);
-  }
-
-  function setSource(text, warn) {
-    const b = $('#source');
-    b.textContent = text;
-    b.classList.toggle('warn', !!warn);
-  }
-
-  let fallbackStarted = false;
-  async function fallbackMap(reason) {
-    if (reason) toast(reason, 'bad', 10000);
-    if (fallbackStarted) return; // 인증 실패 콜백과 로드 실패가 겹쳐도 한 번만 전환
-    fallbackStarted = true;
-    try {
-      await useMap(LeafletAdapter);
-      setSource('테스트 지도 (OpenStreetMap) · 설정에서 네이버 키 입력', true);
-    } catch (e) {
-      setSource('지도를 불러오지 못했습니다', true);
-    }
-  }
-
-  // 네이버 지도 스크립트가 인증 실패 시 호출하는 전역 함수
-  let naverFailed = false;
-  window.navermap_authFailure = function () {
-    if (naverFailed) return;
-    naverFailed = true;
-    fallbackMap('네이버 지도 인증 실패: Client ID와 Web 서비스 URL(' + location.origin + ') 등록을 확인하세요.');
-  };
-
-  async function bootMap() {
-    const key = store.get('key');
-    if (!key) { await fallbackMap(null); return; }
-    try {
-      await loadScript('https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=' + encodeURIComponent(key));
-      if (!(window.naver && naver.maps && naver.maps.Map)) throw new Error('naver.maps missing');
-      if (naverFailed) return;
-      await useMap(NaverAdapter);
-      setSource('네이버 지도', false);
-    } catch (e) {
-      if (!naverFailed) await fallbackMap('네이버 지도 스크립트를 불러오지 못했습니다. 네트워크나 키를 확인하세요.');
-    }
-  }
-
-  // ---------- 위치 처리 ----------
-  function setGps(kind, text) {
-    $('#gpsDot').className = 'dot ' + (kind || '');
-    $('#gpsText').textContent = text;
-  }
-
-  function onFix(f) {
-    const prev = state.fix;
-    let v = Number.isFinite(f.speed) && f.speed >= 0 ? f.speed : null; // m/s
-    let h = Number.isFinite(f.heading) ? f.heading : null;
-
-    if (prev) {
-      const dt = (f.t - prev.t) / 1000;
-      const d = haversine(prev, f);
-      if (dt > 0 && dt < 30) {
-        // 브라우저가 속도를 안 주면 두 지점 거리로 계산 (정확도 이내 흔들림은 정지로 본다)
-        if (v === null) v = d > Math.max(3, (f.acc || 10) * 0.4) ? d / dt : 0;
-        if (v * 3.6 > 3 && d < 70 * dt) { state.trip += d; state.driveMs += dt * 1000; }
-        if (h === null && d > 4) h = bearing(prev, f);
-      }
-    }
-
-    const kmh = (v || 0) * 3.6;
-    state.speedKmh = kmh < 2 ? 0 : kmh;
-    if (h !== null && state.speedKmh >= 3) state.heading = h; // 정지 중 GPS 방향은 믿지 않음
-    state.fix = f;
-
-    const acc = Math.round(f.acc || 0);
-    setGps(acc <= 25 ? 'ok' : 'warn', 'GPS ±' + acc + 'm');
-    render();
-    if (mapA) {
-      mapA.setMe(f.lat, f.lng);
-      if (state.following) mapA.center(f.lat, f.lng, !prev);
-    }
-  }
-
-  function startGps() {
-    if (!window.isSecureContext) {
-      setGps('bad', 'HTTPS 필요');
-      toast('위치는 HTTPS 주소에서만 쓸 수 있습니다.', 'bad', 0);
-      return;
-    }
-    if (!('geolocation' in navigator)) { setGps('bad', '위치 미지원 브라우저'); return; }
-    setGps('warn', 'GPS 신호 찾는 중');
-    navigator.geolocation.watchPosition((p) => {
-      if (state.demoTimer) return;
-      onFix({
-        lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy,
-        speed: p.coords.speed, heading: p.coords.heading, t: p.timestamp || Date.now(),
-      });
-    }, (err) => {
-      if (state.demoTimer) return;
-      if (err.code === 1) {
-        setGps('bad', '위치 권한 꺼짐');
-        toast('위치 권한을 허용해야 속도와 현재 위치가 표시됩니다.', 'bad', 0);
-      } else {
-        setGps('warn', err.code === 3 ? 'GPS 신호 약함' : 'GPS 오류');
-      }
-    }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
-  }
-
-  // ---------- 화면 갱신 ----------
-  function fmtDur(ms) {
-    const m = Math.floor(ms / 60000);
-    return Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0');
-  }
-  function render() {
-    $('#speed').textContent = Math.round(state.speedKmh);
-    if (state.heading !== null) {
-      $('#headingText').textContent = dirName(state.heading) + ' · ' + Math.round(state.heading) + '°';
-      rotateCompass(state.heading);
-      rotateMe(state.heading);
-      meEl.classList.remove('nohead');
-    } else {
-      $('#headingText').textContent = '방향 -';
-      meEl.classList.add('nohead');
-    }
-    $('#tripKm').textContent = (state.trip / 1000).toFixed(1);
-    $('#tripTime').textContent = fmtDur(state.driveMs);
-  }
-  function tickClock() {
-    const d = new Date();
-    $('#clock').textContent = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
-  }
-
-  // ---------- 따라가기 ----------
-  function setFollowing(on) {
-    state.following = on;
-    $('#locate').classList.toggle('alert', !on);
-    clearTimeout(state.refollowTimer);
-    if (on && state.fix && mapA) mapA.center(state.fix.lat, state.fix.lng, false);
-    if (!on) state.refollowTimer = setTimeout(() => setFollowing(true), 15000); // 15초 손 안 대면 복귀
-  }
-  function onUserPan() { setFollowing(false); }
-
-  // ---------- 데모 주행 (차 없이 화면 확인용) ----------
-  const DEMO_ROUTE = [
-    { lat: 37.5658, lng: 126.9772 }, // 서울시청
-    { lat: 37.5712, lng: 126.9769 }, // 세종로 사거리
-    { lat: 37.5757, lng: 126.9768 }, // 광화문 앞
-    { lat: 37.5762, lng: 126.9806 }, // 동십자각
-    { lat: 37.5765, lng: 126.9856 }, // 안국역
-    { lat: 37.5706, lng: 126.9880 }, // 종로2가
-    { lat: 37.5700, lng: 126.9830 }, // 종각
-    { lat: 37.5693, lng: 126.9790 }, // 청계광장
-  ];
-  const DEMO_STOPS = new Set([2, 4, 6]); // 신호 대기 지점
-
-  function startDemo() {
-    stopDemo(true);
-    state.fix = null; state.trip = 0; state.driveMs = 0; state.heading = null;
-    const n = DEMO_ROUTE.length;
-    let seg = 0, along = 0, v = 0, stopLeft = 0, last = Date.now();
-
-    const tick = () => {
-      const now = Date.now();
-      const dt = Math.min(2, (now - last) / 1000);
-      last = now;
-      if (stopLeft > 0) {
-        stopLeft -= dt; v = 0;
-      } else {
-        const next = (seg + 1) % n;
-        const len = haversine(DEMO_ROUTE[seg], DEMO_ROUTE[next]);
-        const remain = len - along;
-        const stopHere = DEMO_STOPS.has(next);
-        let target = 15; // m/s ≈ 54 km/h
-        if (stopHere && remain < v * v / (2 * 2.5) + 14) target = 0;
-        else if (!stopHere && remain < 45) target = 7; // 코너 감속
-        v = target > v ? Math.min(target, v + 2.0 * dt) : Math.max(target, v - 2.8 * dt);
-        if (stopHere && target === 0 && v < 1.2) v = 1.2; // 정지선까지 서행
-        along += v * dt;
-        if (along >= len) {
-          if (stopHere) { along = 0; v = 0; stopLeft = 5; } else { along -= len; }
-          seg = next;
-        }
-      }
-      const a = DEMO_ROUTE[seg], b = DEMO_ROUTE[(seg + 1) % n];
-      const r = Math.min(1, along / haversine(a, b));
-      onFix({
-        lat: a.lat + (b.lat - a.lat) * r, lng: a.lng + (b.lng - a.lng) * r,
-        acc: 5, speed: v, heading: bearing(a, b), t: now,
-      });
-    };
-
-    tick();
-    state.demoTimer = setInterval(tick, 1000);
-    $('#app').classList.add('demo');
-    toast('데모 주행 중 · 설정에서 멈출 수 있어요', '', 3000);
-  }
-
-  function stopDemo(silent) {
-    if (!state.demoTimer) return;
-    clearInterval(state.demoTimer);
-    state.demoTimer = 0;
-    state.fix = null; state.speedKmh = 0; state.heading = null;
-    render();
-    $('#app').classList.remove('demo');
-    setGps('warn', 'GPS 신호 찾는 중');
-    if (!silent) toast('데모를 멈췄습니다.', '', 2500);
-  }
-
-  // ---------- 버튼 ----------
-  $('#zin').onclick = () => mapA && mapA.zoomBy(1);
-  $('#zout').onclick = () => mapA && mapA.zoomBy(-1);
-  $('#locate').onclick = () => setFollowing(true);
-
-  function applyNight() {
-    $('#map').classList.toggle('night', state.night);
-    $('#nightBtn').innerHTML = state.night ? ICON_SUN : ICON_MOON;
-    $('#nightBtn').setAttribute('aria-label', state.night ? '주간 지도' : '야간 지도');
-  }
-  $('#nightBtn').onclick = () => {
-    state.night = !state.night;
-    store.set('night', state.night ? '1' : null);
-    applyNight();
-  };
-
-  const d = document;
-  if (!(d.fullscreenEnabled || d.webkitFullscreenEnabled)) $('#fsBtn').hidden = true;
-  $('#fsBtn').onclick = () => {
-    if (d.fullscreenElement || d.webkitFullscreenElement) {
-      (d.exitFullscreen || d.webkitExitFullscreen).call(d);
-      return;
-    }
-    const el = d.documentElement;
-    const req = el.requestFullscreen || el.webkitRequestFullscreen;
-    if (!req) return;
-    const p = req.call(el);
-    if (p && p.catch) p.catch(() => toast('이 브라우저에서는 전체화면이 막혀 있습니다.', '', 4000));
-  };
-
-  const sheet = $('#sheet');
-  function updateDemoBtn() { $('#demoBtn').textContent = state.demoTimer ? '데모 주행 멈추기' : '데모 주행 시작'; }
-  $('#setBtn').onclick = () => {
-    $('#keyInput').value = store.get('key') || '';
-    $('#origin').textContent = location.origin;
-    updateDemoBtn();
-    sheet.hidden = false;
-  };
-  $('#closeSheet').onclick = () => { sheet.hidden = true; };
-  sheet.addEventListener('click', (e) => { if (e.target === sheet) sheet.hidden = true; });
-  $('#saveKey').onclick = () => { store.set('key', $('#keyInput').value.trim() || null); location.reload(); };
-  $('#clearKey').onclick = () => { store.set('key', null); location.reload(); };
-  $('#resetTrip').onclick = () => {
-    state.trip = 0; state.driveMs = 0; render();
-    sheet.hidden = true;
-    toast('주행 기록을 초기화했습니다.', '', 2500);
-  };
-  $('#demoBtn').onclick = () => {
-    if (state.demoTimer) stopDemo(false); else startDemo();
-    updateDemoBtn();
-    sheet.hidden = true;
-  };
-
-  // ---------- 시작 ----------
-  applyNight();
-  render();
-  tickClock();
-  setInterval(tickClock, 1000);
-  bootMap();
-  startGps();
-  if (params.has('demo')) startDemo();
-})();
-</script>
+<script src="app.js"></script>
 </body>
 </html>
