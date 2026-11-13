@@ -610,8 +610,12 @@
   #app.tesla .cam-dist { font-size: 30px; }
   #app.tesla .cam-bar { background: rgba(0, 0, 0, .35); }
   #app.tesla .camcard.mobile .cam-type { color: #82b1ff; }
-  #app.tesla .seccard .sec-top { color: #dbe8ff; }
+  /* 구간단속 카드: 배경이 없으니 작은 글씨도 굵고 밝게 */
+  #app.tesla .seccard .sec-top { color: #f2f6ff; font-size: 15px; font-weight: 800; }
+  #app.tesla .seccard .sec-avg small { color: #f2f6ff; font-weight: 700; }
+  #app.tesla .seccard .sec-remain { color: #f2f6ff; font-size: 15px; font-weight: 800; }
   #app.tesla .seccard.over .sec-avg { color: #ff6b6b; }
+  #app.tesla .seccard.over .sec-remain { color: #ffd0d0; }
   #app.tesla .camnext { background: none; border: 0; padding: 0; color: #eef1f5; font-size: 15px; font-weight: 700; }
   #app.tesla .toll-sub { color: #f2f6ff; font-weight: 700; }
   #app.tesla .toll-hint { color: #d6e6ff; }
@@ -825,6 +829,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.13-21"></script>
+<script src="app.js?v=2026.11.13-22"></script>
 </body>
 </html>

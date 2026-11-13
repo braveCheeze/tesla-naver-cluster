@@ -981,6 +981,63 @@
   }
   const C_A = () => CAM_ISO_A;
 
+  // S27: 실제 경로로 구간단속 — 수도권제1순환고속도로 판교 부근 구간(시작 [37.39568,127.04752] → 끝 [37.40004,127.08276], 약 3.1km, 제한 100).
+  //      test/fixtures/route-ring1-pangyo.json 은 2026-11-13 에 받은 실제 네이버 경로(평촌 → 성남).
+  //      길안내 주행(97 km/h, 112 km/h 과속)과 길안내 없는 주행에서 시작 안내 → 평균 속도 카드 → 끝 안내가 맞게 나오는지
+  const SEC_START = { lat: 37.39568, lng: 127.04752 }, SEC_END = { lat: 37.40004, lng: 127.08276 };
+  async function s27() {
+    const t = T();
+    const fx = await (await realFetch(harnessDir + 'fixtures/route-ring1-pangyo.json', { cache: 'no-store' })).json();
+    const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const total = cum[cum.length - 1];
+    const R = { route: fx, P, cum, total, dest: { name: '성남', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    const nearestS = (c) => { let b = 1e9, s = 0; for (let s0 = 0; s0 <= total; s0 += 5) { const d = hav(pointAt(R, s0).p, c); if (d < b) { b = d; s = s0; } } return s; };
+    const sStart = nearestS(SEC_START), sEnd = nearestS(SEC_END);
+    const run = async (v, withNav) => {
+      softReset();
+      if (withNav) await planAndStart(R); else feed(P[0], 0, null);
+      const mark = t.alertLog[t.alertLog.length - 1];
+      const o = { startTarget: null, secAt: null, mid: null, endAt: null, lastSec: null };
+      for (let s = Math.max(0, sStart - 3500); s <= Math.min(total, sEnd + 800); s += v) {
+        const a = pointAt(R, s);
+        feed(a.p, v, a.h);
+        const tg = t.camState.target, sec = t.camState.section;
+        if (!o.startTarget && tg && tg.c[4] === 1 && hav({ lat: tg.c[0], lng: tg.c[1] }, SEC_START) < 30) o.startTarget = r0(sStart - s);
+        if (sec && o.secAt === null) o.secAt = r0(s - sStart);
+        if (sec && !o.mid && s >= (sStart + sEnd) / 2) {
+          const rm = /남은 거리 ([\d.]+)(km|m)/.exec(text('#secRemain'));
+          o.mid = { avg: num('#secAvg'), over: hasCls('#secCard', 'over'), shown: visible('#secCard'), remain: text('#secRemain'),
+            remainM: rm ? parseFloat(rm[1]) * (rm[2] === 'km' ? 1000 : 1) : null, wantM: sEnd - s };
+        }
+        if (o.secAt !== null && !sec && o.endAt === null) o.endAt = r0(s - sEnd);
+      }
+      const from = mark ? t.alertLog.indexOf(mark) + 1 : 0;
+      const log = t.alertLog.slice(from).map((e) => e.text);
+      o.voiceStart = log.some((x) => /구간단속 시작/.test(x));
+      o.voiceEnd = log.some((x) => /구간단속이 끝났습니다/.test(x));
+      o.voiceOver = log.filter((x) => /구간 평균 속도가 제한을 넘었습니다/.test(x)).length;
+      if (withNav) t.endNav();
+      return o;
+    };
+    const a = await run(27, true), b = await run(31, true), c = await run(27, false);
+    // 길안내 중이면 남은 거리는 경로 위 끝 카메라까지의 실제 거리(±100m). 과속하면 권장 속도와 음성 한 번
+    const ok = (o, over, navOn) => o.startTarget !== null && o.startTarget > 1000 && o.secAt !== null && o.secAt >= 0 && o.secAt < 60 &&
+      !!o.mid && o.mid.shown && o.mid.over === over && o.endAt !== null && o.endAt >= 0 && o.endAt < 80 && o.voiceStart && o.voiceEnd &&
+      (!navOn || (o.mid.remainM !== null && Math.abs(o.mid.remainM - o.mid.wantM) < 100)) &&
+      (!over || (/km\/h 이하로/.test(o.mid.remain) && o.voiceOver === 1));
+    const show = (o) => 'start cam alert ' + (o.startTarget === null ? 'NEVER' : o.startTarget + ' m before') + ', section on at +' + o.secAt + ' m' +
+      (o.mid ? ', mid avg ' + o.mid.avg + ' km/h' + (o.mid.over ? ' OVER' : '') + ' "' + o.mid.remain + '" (real ' + r0(o.mid.wantM) + ' m)' : ', NO CARD') +
+      ', off at end +' + o.endAt + ' m, voice start ' + o.voiceStart + ' end ' + o.voiceEnd;
+    const okA = ok(a, false, true), okB = ok(b, true, true), okC = ok(c, false, false);
+    return {
+      pass: okA && okB && okC,
+      detail: 'section ' + r0(sEnd - sStart) + ' m on real route. nav 97 km/h: ' + show(a) + (okA ? '✓' : '✗') + ' | nav 112 km/h: ' + show(b) + (okB ? '✓' : '✗') +
+        ' | no nav 97 km/h: ' + show(c) + (okC ? '✓' : '✗'),
+    };
+  }
+
   // S24: 테슬라 모드 배치 — 시계 오른쪽 위, 주소 가운데 아래, GPS 오른쪽 아래, 나침반 왼쪽 아래,
   //      경로 막대 오른쪽 끝(얇게), 단속 경고는 길안내 패널 바로 밑, 버튼은 절반 크기
   async function s24() {
@@ -1339,6 +1396,7 @@
     { id: 'S24', name: 'S24 Tesla mode placement', fn: s24 },
     { id: 'S25', name: 'S25 toll gate (하이패스) card + voice', fn: s25 },
     { id: 'S26', name: 'S26 map shows only my-direction cameras', fn: s26 },
+    { id: 'S27', name: 'S27 section enforcement on a real route', fn: s27 },
   ];
 
   // ---------------------------------------------------------------- runner
