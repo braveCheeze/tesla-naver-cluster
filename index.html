@@ -218,14 +218,26 @@
   }
   .rs-top b { display: block; font-size: 15px; font-variant-numeric: tabular-nums; }
   .rs-top span { display: block; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  /* 출발(아래)~도착(위) 위치는 고정. 가는 흰 선이 전체 길이, 색 막대는 내 차부터 도착까지만 */
+  .rs-track { position: relative; flex: 1; width: 24px; }
+  .rs-track::before {
+    content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 4px; margin-left: -2px;
+    border-radius: 2px; background: rgba(255, 255, 255, .55); box-shadow: 0 0 0 1px rgba(0, 0, 0, .18), 0 1px 4px rgba(0, 0, 0, .3);
+  }
   .rs-bar {
-    flex: 1; width: 14px; border-radius: 7px; background: var(--accent);
+    position: absolute; top: 0; bottom: 0; left: 50%; width: 14px; margin-left: -7px;
+    border-radius: 7px; background: var(--accent);
     border: 2px solid rgba(255,255,255,.95); box-shadow: 0 2px 8px rgba(0,0,0,.35);
+    transition: bottom .9s linear;
   }
   .rs-me {
-    width: 22px; height: 22px; margin-top: -8px; border-radius: 50%;
+    position: absolute; left: 50%; bottom: 0; width: 22px; height: 22px; margin: 0 0 -11px -11px; border-radius: 50%;
     background: var(--accent); border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4);
+    transition: bottom .9s linear;
   }
+  .rs-start, .rs-goal { flex: none; width: 12px; height: 12px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.35); }
+  .rs-start { background: #8b93a1; margin-top: 10px; }
+  .rs-goal { background: #e53935; margin-bottom: 6px; }
   @media (max-height: 560px) { .rstrip { display: none !important; } }
 
   .soundpill {
@@ -391,15 +403,6 @@
   @keyframes pulse { 50% { filter: brightness(1.25); } }
   .cam-sign { box-shadow: 0 4px 12px rgba(0, 0, 0, .3); }
   .cam-bar { background: rgba(255, 255, 255, .08); }
-  /* 카메라 70m 앞(찍히는 지점) — 테두리를 굵게 강조 */
-  .camcard.zone { box-shadow: inset 0 0 0 2px var(--bad), 0 0 18px rgba(229, 57, 53, .35); }
-  /* 지나간 뒤 70m(후면 단속) — 주황으로 바꿔 '아직 주의' 느낌만 남긴다 */
-  .camcard.after {
-    background: linear-gradient(135deg, rgba(255, 152, 0, .22), rgba(255, 152, 0, .06));
-    border-color: rgba(255, 152, 0, .45);
-  }
-  .camcard.after .cam-bar i { background: #ff9800; }
-  .camcard.after.over { background: linear-gradient(135deg, rgba(255, 70, 70, .42), rgba(229, 57, 53, .16)); border-color: var(--bad); }
   /* 신호 위반 전용 카메라 */
   .camcard.signal .cam-sign { border-color: #ff9800; font-size: 14px; letter-spacing: -.5px; }
   .seccard {
@@ -510,6 +513,49 @@
     .navpanel { width: calc(100% - 32px); }
     .turndist { font-size: 24px; }
   }
+
+  /* ---------- 테슬라 모드: 계기판 칸을 없애고 지도를 꽉 채운다 ----------
+     속도는 차 화면에 나오므로 숨기고, 시계·날짜·날씨·도로·방향·주행 기록은 지도 왼쪽 위에 글자로만 띄운다.
+     글자는 그림자와 왼쪽의 옅은 어둠 그라데이션으로 낮·밤 지도 어디서나 읽히게 한다. 카메라 경고는 카드 그대로. */
+  .date { display: none; }
+  #app { position: relative; }
+  #app.tesla { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+  #app.tesla #cluster {
+    position: absolute; left: 0; top: 0; bottom: 0; z-index: 990;
+    display: flex; flex-direction: column;
+    width: 360px; max-width: 46%; padding: 88px 20px 20px; gap: 10px;
+    /* 사이드바처럼 보이지 않게 아주 옅은 그늘만 두고, 글자는 진한 그림자로 읽히게 한다 */
+    background: linear-gradient(90deg, rgba(8, 10, 14, .34) 0%, rgba(8, 10, 14, .14) 55%, rgba(8, 10, 14, 0) 100%);
+    border: 0; overflow: hidden; pointer-events: none;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, .95), 0 0 3px rgba(0, 0, 0, .8), 0 0 14px rgba(0, 0, 0, .55);
+  }
+  /* 길안내 중에는 안내 패널(왼쪽 위)과 경로 막대(왼쪽 끝) 옆으로 비켜 선다 */
+  #app.tesla:has(#map.navigating) #cluster { padding-top: 196px; padding-left: 104px; width: 440px; }
+  /* 속도·제한속도 표지는 숨긴다 (속도는 차 화면에, 제한속도는 카메라·구간단속 카드에 나온다) */
+  #app.tesla .speedbox { display: none; }
+  #app.tesla .top { flex-direction: column; align-items: flex-start; gap: 4px; }
+  #app.tesla .timebox { order: -1; display: flex; align-items: baseline; gap: 10px; }
+  #app.tesla .clock { font-size: 40px; font-weight: 800; line-height: 1; letter-spacing: -0.02em; }
+  #app.tesla .date { display: inline; font-size: 17px; font-weight: 700; color: #eef1f5; }
+  #app.tesla .gps { font-size: 14px; font-weight: 600; color: #dfe3e9; }
+  #app.tesla .road { font-size: 21px; font-weight: 800; }
+  #app.tesla .road small { color: #dfe3e9; font-weight: 600; }
+  #app.tesla .heading { font-size: 17px; font-weight: 700; }
+  #app.tesla .compass { width: 34px; height: 34px; background: rgba(0, 0, 0, .35); border-color: rgba(255, 255, 255, .28); }
+  #app.tesla .weather, #app.tesla .camnext {
+    background: none; border: 0; padding: 0; margin-top: 0; color: #eef1f5; font-size: 17px; font-weight: 600;
+  }
+  #app.tesla .weather b { font-size: 22px; }
+  #app.tesla .mini-sign { text-shadow: none; }
+  #app.tesla .trip { display: grid; grid-template-columns: repeat(2, max-content); justify-content: start; gap: 6px 26px; margin-top: auto; }
+  #app.tesla .stat { background: none; border: 0; padding: 0; }
+  #app.tesla .stat .k { color: #d3d8df; font-size: 12px; font-weight: 700; }
+  #app.tesla .stat .v { font-size: 19px; font-weight: 800; margin-top: 1px; }
+  #app.tesla .stat small { color: #d3d8df; }
+  #app.tesla .camcard, #app.tesla .seccard {
+    text-shadow: none; background-color: rgba(15, 19, 25, .55);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); box-shadow: var(--shadow);
+  }
 </style>
 </head>
 <body>
@@ -517,7 +563,7 @@
   <section id="cluster" aria-label="계기판">
     <div class="top">
       <div class="gps"><span id="gpsDot" class="dot"></span><span id="gpsText">GPS 준비 중</span></div>
-      <div><span id="clock" class="clock">--:--</span><span class="chip">데모</span></div>
+      <div class="timebox"><span id="clock" class="clock">--:--</span><span id="dateText" class="date"></span><span class="chip">데모</span></div>
     </div>
     <div class="speedbox">
       <div class="speedrow">
@@ -560,8 +606,12 @@
 
     <div id="routeStrip" class="rstrip" hidden>
       <div class="rs-top"><b id="rsRemain">-</b><span id="rsEta">-</span></div>
-      <div id="rsBar" class="rs-bar"></div>
-      <div class="rs-me"></div>
+      <div class="rs-goal" aria-hidden="true"></div>
+      <div class="rs-track">
+        <div id="rsBar" class="rs-bar"></div>
+        <div id="rsMe" class="rs-me"></div>
+      </div>
+      <div class="rs-start" aria-hidden="true"></div>
     </div>
 
     <div id="navPanel" class="navpanel" hidden>
@@ -637,6 +687,7 @@
     <div class="row"><button id="soundTest">소리 테스트</button></div>
 
     <hr>
+    <label class="check"><input type="checkbox" id="optTesla"> 테슬라 모드 (왼쪽 계기판을 없애고 지도를 넓게 · 속도는 차 화면으로)</label>
     <label class="check"><input type="checkbox" id="optHup"> 진행 방향이 위로</label>
     <label class="check"><input type="checkbox" id="optTilt"> 3D 기울기</label>
     <p class="hint">주행 중에는 차가 화면 아래쪽에 오고 앞쪽 길이 더 넓게 보입니다. 지도를 만지면 북쪽이 위인 평면 지도로 바뀌고, 위치 버튼을 누르거나 15초가 지나면 돌아옵니다.</p>
@@ -671,6 +722,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.13-13"></script>
+<script src="app.js?v=2026.11.13-14"></script>
 </body>
 </html>

@@ -734,12 +734,19 @@
     }
     const m = t.getMap();
     const trafficKept = !!(m && m.route && m.route.length >= 3);   // 율곡로 정체 구간 색은 남아 있어야 한다
+    // 경로 막대: 출발(아래)·도착(위) 고정, 내 차 점과 색 막대 아래 끝이 지나온 비율(450/1080 ≈ 42%)만큼 올라가 있어야 한다
+    t.renderNav();
+    const meB = parseFloat(document.getElementById('rsMe').style.bottom);
+    const barB = parseFloat(document.getElementById('rsBar').style.bottom);
+    const wantP = 450 / R.total * 100;
+    const stripOk = Math.abs(meB - wantP) < 5 && Math.abs(barB - meB) < 0.01;
     return {
-      pass: samples >= 20 && bad.length === 0 && trafficKept && !!full && last && last.pts < full.length,
+      pass: samples >= 20 && bad.length === 0 && trafficKept && !!full && last && last.pts < full.length && stripOk,
       detail: (bad.length ? 'problems: ' + bad.slice(0, 5).join('; ') + ' | ' : '') +
         'full line ' + (full ? full.length + ' pts/' + r0(lineLen(full)) + ' m' : 'none') +
         '; at ' + (last ? last.s + ' m: head ' + last.head + ' m from car, remaining ' + last.remain + ' m, ' + last.pts + ' pts' : 'n/a') +
-        '; traffic overlay ' + (trafficKept ? 'kept' : 'LOST') + '; ' + samples + ' samples',
+        '; traffic overlay ' + (trafficKept ? 'kept' : 'LOST') + '; ' + samples + ' samples' +
+        '; strip car at ' + (meB || 0).toFixed(1) + '% (want ≈' + wantP.toFixed(1) + '%), bar starts ' + (barB || 0).toFixed(1) + '%' + (stripOk ? '' : ' ✗'),
     };
   }
 
@@ -768,27 +775,26 @@
   // S12: 카메라 70m 앞은 '단속 지점', 지나간 뒤 70m 까지 '후면 단속 주의'로 유지, 그 뒤 사라짐
   async function s12() {
     const t = T(), C = CAM_ISO_A;
-    const seen = { zone: null, after: [], cleared: null };
-    for (let s = 0; s <= 850; s += 10) {
-      const p = dest(C, 180, 700 - s);   // 700m 남쪽 -> 150m 북쪽, 72 km/h
-      feed(p, 20, 0, { dt: 500 });
+    // 2026-11-13 두 번째 피드백: 70m → 30m, 오차 거리(+Xm·'후면' 문구)는 보여 주지 않고 30m 지나면 사라진다
+    const seen = { near: null, after: [], cleared: null };
+    for (let s = 0; s <= 800; s += 5) {
+      const p = dest(C, 180, 700 - s);   // 700m 남쪽 -> 100m 북쪽, 72 km/h
+      feed(p, 20, 0, { dt: 250 });
       const tg = t.camState.target, past = s - 700;
       const mine = tg && sameCam(tg.c, C);
-      if (past < 0 && past >= -60 && mine && seen.zone === null) {
-        seen.zone = { past, cls: hasCls('#camCard', 'zone'), type: text('#camType') };
+      if (past < 0 && past >= -25 && mine && seen.near === null) seen.near = { past, type: text('#camType'), dist: text('#camDist') };
+      if (past >= 15 && past <= 25) {
+        seen.after.push({ past, ok: !!mine && visible('#camCard') && text('#camDist') === '0m' && !/후면|단속 지점|\+/.test(text('#camType') + text('#camDist')) });
       }
-      if (past >= 30 && past <= 60) {
-        seen.after.push({ past, ok: !!mine && !!tg.after && hasCls('#camCard', 'after') && /후면/.test(text('#camType')) && /^\+/.test(text('#camDist')) });
-      }
-      if (past >= 80 && seen.cleared === null) seen.cleared = { past, gone: !mine && !visible('#camCard') };
+      if (past >= 35 && seen.cleared === null) seen.cleared = { past, gone: !mine && !visible('#camCard') };
     }
-    const zoneOk = !!seen.zone && seen.zone.cls && /^단속 지점/.test(seen.zone.type);
-    const afterOk = seen.after.length >= 3 && seen.after.every((x) => x.ok);
+    const nearOk = !!seen.near && !/단속 지점/.test(seen.near.type);
+    const afterOk = seen.after.length >= 2 && seen.after.every((x) => x.ok);
     const clearOk = !!seen.cleared && seen.cleared.gone;
     return {
-      pass: zoneOk && afterOk && clearOk,
-      detail: 'before: ' + (seen.zone ? seen.zone.past + ' m "' + seen.zone.type + '" .zone=' + seen.zone.cls : 'NO TARGET within 60 m') +
-        '; after +30..+60 m: ' + seen.after.map((x) => '+' + x.past + (x.ok ? '✓' : '✗')).join(' ') +
+      pass: nearOk && afterOk && clearOk,
+      detail: 'before: ' + (seen.near ? seen.near.past + ' m "' + seen.near.type + ' ' + seen.near.dist + '"' : 'NO TARGET within 25 m') +
+        '; after +15..+25 m (card kept, "0m", no margin text): ' + seen.after.map((x) => '+' + x.past + (x.ok ? '✓' : '✗')).join(' ') +
         '; at +' + (seen.cleared ? seen.cleared.past + ' m ' + (seen.cleared.gone ? 'cleared' : 'STILL SHOWN') : '?'),
     };
   }
@@ -845,19 +851,29 @@
   }
   async function s14() {
     const t = T();
-    // (a)
-    let parallelHit = null;
-    for (let s = 0; s <= 1150; s += 20) {
-      feed(dest(dest(C_A(), 180, 1150 - s), 90, 45), 20, 0);
-      const tg = t.camState.target;
-      if (tg && sameCam(tg.c, CAM_ISO_A) && !parallelHit) parallelHit = r0(tg.d);
-    }
-    // (b)
+    // (a) 길안내 없이 북쪽으로 달린다. east = 내 차 선이 카메라에서 동쪽으로 떨어진 거리 (+ 면 카메라가 내 왼쪽)
+    //     CAM_ISO_A 는 한 방향(하행) 카메라
+    const noNav = (east) => {
+      softReset();
+      let hit = null;
+      for (let s = 0; s <= 1150; s += 20) {
+        feed(dest(dest(C_A(), 180, 1150 - s), 90, east), 20, 0);
+        const tg = t.camState.target;
+        if (tg && sameCam(tg.c, CAM_ISO_A) && hit === null) hit = r0(tg.d);
+      }
+      return hit;
+    };
+    const parallelHit = noNav(45);   // 45m 옆 나란한 도로
+    const oppHit = noNav(14);        // 왼쪽 14m = 반대편 차로
+    const mineHit = noNav(-6);       // 오른쪽 6m = 내 차로 길가
+    // (b) 길안내 중: 위례성로 카메라(CAM_ISO_B, 한 방향)를 경로 오른쪽(east<0)·왼쪽(east>0)에 두고 확인
     const cases = [
-      { east: 12, name: '위례성로', want: true },
-      { east: 12, name: '다른대로', want: false },
-      { east: 25, name: '위례성로', want: true },
-      { east: 40, name: '위례성로', want: false },
+      { east: -12, name: '위례성로', want: true },
+      { east: -12, name: '다른대로', want: false },
+      { east: -25, name: '위례성로', want: true },
+      { east: -40, name: '위례성로', want: false },
+      { east: 12, name: '위례성로', want: false },   // 왼쪽 12m: 반대편 차로
+      { east: 5, name: '위례성로', want: true },     // 왼쪽 5m: 중앙선 근처, 거르지 않는다
     ];
     const out = [];
     for (const k of cases) {
@@ -874,9 +890,72 @@
       out.push({ k, hit, ok: hit === k.want });
     }
     return {
-      pass: parallelHit === null && out.every((x) => x.ok),
-      detail: '(a) no-nav 45 m parallel: ' + (parallelHit === null ? 'ignored' : 'WRONG alert at ' + parallelHit + ' m') +
-        '; (b) on route: ' + out.map((x) => x.k.east + 'm/' + x.k.name + '→' + (x.hit ? 'alert' : 'none') + (x.ok ? '✓' : '✗')).join(', '),
+      pass: parallelHit === null && oppHit === null && mineHit !== null && out.every((x) => x.ok),
+      detail: '(a) no nav: 45 m parallel ' + (parallelHit === null ? 'ignored✓' : 'WRONG alert at ' + parallelHit + ' m') +
+        ', opposite lane (left 14 m) ' + (oppHit === null ? 'ignored✓' : 'WRONG alert at ' + oppHit + ' m') +
+        ', my side (right 6 m) ' + (mineHit !== null ? 'alert at ' + mineHit + ' m✓' : 'MISSED') +
+        '; (b) on route (east<0 = camera on my right): ' + out.map((x) => x.k.east + 'm/' + x.k.name + '→' + (x.hit ? 'alert' : 'none') + (x.ok ? '✓' : '✗')).join(', '),
+    };
+  }
+
+  // S15: 과속 반복 경고음은 1초에 한 번, 짧게 한 번만 (CAM_ISO_B 제한 50, 70 km/h 로 접근)
+  async function s15() {
+    const t = T(), C = CAM_ISO_B, v = 70 / 3.6;
+    const run = (dtMs) => {
+      softReset();
+      // alertLog 는 300개로 잘려 번호가 밀리고, 두 번의 실행이 같은 ms 안에 끝나 시각으로도 못 가른다 → 마지막 항목을 표시로 쓴다
+      const mark = t.alertLog[t.alertLog.length - 1];
+      let tSim = 0, inRange = 0;
+      for (let s = 0; s <= 1100; s += v * dtMs / 1000) {
+        const p = dest(C, 180, 1150 - s);
+        feed(p, v, 0, { dt: dtMs });
+        if (hav(p, C) <= 240) { inRange++; tSim += dtMs; }
+      }
+      const from = mark ? t.alertLog.indexOf(mark) + 1 : 0;
+      const reps = t.alertLog.slice(from).filter((e) => /과속 반복/.test(e.text)).length;
+      return { reps, secs: tSim / 1000, inRange };
+    };
+    const a = run(1000), b = run(250);
+    // 250m 안내 뒤 50m 앞까지(약 200m, 10초) 1초에 한 번. GPS 가 0.25초마다 와도 1초에 한 번 이하
+    const okA = a.reps >= a.secs - 2 && a.reps <= a.secs + 1;
+    const okB = b.reps <= b.secs + 1 && b.reps >= b.secs - 2;
+    return {
+      pass: okA && okB,
+      detail: 'GPS 1 Hz: ' + a.reps + ' beeps in ' + a.secs.toFixed(0) + ' s' + (okA ? '✓' : '✗') +
+        '; GPS 4 Hz: ' + b.reps + ' beeps in ' + b.secs.toFixed(1) + ' s' + (okB ? '✓' : '✗') + ' (inside 240 m)',
+    };
+  }
+
+  // S16: 테슬라 모드 — 계기판 칸이 사라지고 지도가 꽉 차며, 속도는 숨기고 시계·날짜는 지도 위 글자로
+  async function s16() {
+    const t = T(), box = document.getElementById('optTesla'), prev = t.prefs.tesla;
+    const set = (on) => { box.checked = on; box.dispatchEvent(new Event('change')); };
+    const snap = () => {
+      const cl = document.getElementById('cluster'), map = document.getElementById('map');
+      const cs = getComputedStyle(cl);
+      return {
+        pos: cs.position, mapW: map.clientWidth, appW: document.getElementById('app').clientWidth,
+        // 부모가 숨겨져도 잡히게 실제로 그려진 상자가 있는지로 본다
+        speedShown: document.getElementById('speed').getClientRects().length > 0,
+        date: document.getElementById('dateText').getClientRects().length > 0 ? text('#dateText') : '', clockShown: visible('#clock'),
+      };
+    };
+    let on, off;
+    try {
+      // 화면 배치는 CSS 로 바로 바뀐다 (창이 가려져 있으면 requestAnimationFrame 이 멈추므로 타이머로 기다린다)
+      set(true); await new Promise((r) => setTimeout(r, 60));
+      on = snap();
+      set(false); await new Promise((r) => setTimeout(r, 60));
+      off = snap();
+    } finally {
+      set(prev);
+    }
+    const okOn = on.pos === 'absolute' && on.mapW >= on.appW - 2 && !on.speedShown && /월 \d+일/.test(on.date) && on.clockShown;
+    const okOff = off.pos !== 'absolute' && off.mapW < off.appW - 100 && off.speedShown && !off.date;
+    return {
+      pass: okOn && okOff,
+      detail: 'on: map ' + on.mapW + '/' + on.appW + ' px, cluster ' + on.pos + ', speed ' + (on.speedShown ? 'SHOWN' : 'hidden') + ', date "' + on.date + '"' + (okOn ? '✓' : '✗') +
+        '; off: map ' + off.mapW + '/' + off.appW + ' px, speed ' + (off.speedShown ? 'shown' : 'HIDDEN') + (okOff ? '✓' : '✗'),
     };
   }
   const C_A = () => CAM_ISO_A;
@@ -893,9 +972,11 @@
     { id: 'S9', name: 'S9 trip odometer', fn: s9 },
     { id: 'S10', name: 'S10 route behind car erased', fn: s10 },
     { id: 'S11', name: 'S11 reroute when never on route', fn: s11 },
-    { id: 'S12', name: 'S12 camera 70 m before/after', fn: s12 },
+    { id: 'S12', name: 'S12 camera hold 30 m after', fn: s12 },
     { id: 'S13', name: 'S13 signal-only cameras', fn: s13 },
-    { id: 'S14', name: 'S14 adjacent-road cameras', fn: s14 },
+    { id: 'S14', name: 'S14 adjacent-road / opposite-lane cameras', fn: s14 },
+    { id: 'S15', name: 'S15 over-speed beep once a second', fn: s15 },
+    { id: 'S16', name: 'S16 Tesla mode layout', fn: s16 },
   ];
 
   // ---------------------------------------------------------------- runner

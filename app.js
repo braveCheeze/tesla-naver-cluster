@@ -31,11 +31,14 @@
     headingUp: store.get('hup') !== '0',
     tilt: store.get('tilt') !== '0',
     routeOpt: store.get('routeOpt') || 'trafast',
+    // 테슬라 모드: 속도는 차 화면에 이미 나오므로 왼쪽 계기판을 없애고 지도를 넓게, 시계·날씨 등은 지도 위 글자로.
+    // 테슬라 브라우저는 'X11; Linux x86_64' 로만 보이므로 그때 기본으로 켠다 (설정에서 바꾸면 그 값을 따른다)
+    tesla: store.get('tesla') ? store.get('tesla') === '1' : /X11; Linux x86_64/.test(navigator.userAgent),
   };
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.13-13'; // index.html 의 app.js?v= 와 같이 올린다
+  const APP_VERSION = '2026.11.13-14'; // index.html 의 app.js?v= 와 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -697,6 +700,8 @@
   }
 
   const camState = { target: null, passed: new Map(), saidById: new Map(), section: null, markerAt: null, lastOverBeep: 0 };
+  // 카메라를 지나간 뒤 경고를 유지하는 거리 (데이터 좌표와 실제 단속 지점이 15m 안팎 다르다)
+  const CAM_HOLD = 30;
   // 카메라 행: [lat, lng, limit, kind, sec, len, zone, road, rtype]
   // kind: 1 과속, 2 신호 전용, 3 과속+신호, 9 구간/기타 · rtype: 1 고속국도, 3 일반국도, 4 지방도, 5 시도, 6 기타
   const KIND_NAME = { 1: '과속 단속', 2: '신호 단속', 3: '신호·과속 단속', 9: '단속 구간' };
@@ -736,6 +741,24 @@
     return /고속/.test(routeRoadAt(nav.seg));
   }
 
+  // 반대편 차로 카메라 거르기: 한국은 우측통행이라 내 방향을 찍는 카메라는 오른쪽 길가(또는 머리 위)에 선다.
+  // 한 방향만 찍는 카메라(데이터의 도로노선방향 상행/하행)가 내 진행 방향 왼쪽으로 이만큼 넘게 떨어져 있으면
+  // 반대편 차로용으로 본다. 양방향 카메라와 방향을 모르는 카메라는 절대 거르지 않는다.
+  const OPP_SIDE = 8;
+  const oneDir = (c) => c[9] === 1 || c[9] === 2;
+  // 진행 방향 기준 좌우 거리 (오른쪽 +, 왼쪽 -)
+  function sideOf(f, c, d) {
+    if (state.heading === null) return 0;
+    const a = ((bearing(f, { lat: c[0], lng: c[1] }) - state.heading) % 360 + 540) % 360 - 180;
+    return d * Math.sin(toRad(a));
+  }
+  // 경로 선분 a→b 기준 p 의 좌우 거리 (오른쪽 +, 왼쪽 -)
+  function sideOfSeg(p, a, b, dist) {
+    const k = Math.cos(toRad(a.lat));
+    const ax = (b.lng - a.lng) * k, ay = b.lat - a.lat, px = (p.lng - a.lng) * k, py = p.lat - a.lat;
+    return (ax * py - ay * px) > 0 ? -dist : dist; // 외적이 + 면 왼쪽
+  }
+
   // 내가 달리는 도로의, 진행 방향 앞에 있는 카메라인지
   function isAhead(f, c, d, keep) { // keep: 이미 경고 중인 카메라를 계속 둘지 볼 때 (조금 느슨하게)
     if (!camWanted(c)) return false;
@@ -748,7 +771,15 @@
     if (diff > 60 && d > 40) return false;
     // 진행 방향 직선에서 좌우로 얼마나 떨어져 있는지: 옆 도로(보통 30m 이상 떨어짐)는 빼고, 멀수록 방향 오차를 조금 허용
     const lateral = d * Math.sin(toRad(Math.min(diff, 90)));
-    return lateral <= 20 + d * (keep ? 0.03 : 0.015);
+    if (lateral > 20 + d * (keep ? 0.03 : 0.015)) return false;
+    // 반대편 차로 카메라. 멀리서는 방향 오차·굽은 길 때문에 좌우를 믿기 어려우므로,
+    // 왼쪽으로 보이는 한 방향 카메라는 300m 안으로 들어올 때까지 미뤘다가 그때 판단한다 (멀리서 잠깐 떴다 사라지는 일 방지)
+    if (oneDir(c)) {
+      const sd = sideOf(f, c, d);
+      if (keep) { if (sd < -(OPP_SIDE + d * 0.02)) return false; }
+      else if (sd < -OPP_SIDE && (d > 300 || sd < -(OPP_SIDE + d * 0.01))) return false;
+    }
+    return true;
   }
   // 길안내 중: 카메라가 남은 경로 위(1.5km 안)에 있는지.
   // 경로에서 20m 이내면 내 도로로 본다. 단, 도로명이 둘 다 구체적인데 서로 다르면(옆 도로·교차로의 가로 도로) 뺀다.
@@ -764,6 +795,8 @@
       if (at <= nav.along - 5) continue;
       const rn = routeRoadAt(i);
       if (pr.dist > 6 && roadsDiffer(rn, cn)) continue;
+      // 경로 왼쪽으로 8m 넘게 떨어진 한 방향 카메라는 반대편 차로용
+      if (oneDir(c) && pr.dist > OPP_SIDE && sideOfSeg(p, pts[i], pts[i + 1], pr.dist) < 0) continue;
       if (pr.dist < 20 || (specificRoad(rn) && sameRoad(rn, cn))) return true;
     }
     return false;
@@ -791,15 +824,20 @@
         camState.passed.set(tg.i, now);
         if (camState.section && (tg.c[4] === 2 || twins.some((x) => x.c[4] === 2))) endSection();
         else if (tg.c[4] === 1) startSection(tg.c, f);
-        tg.after = true; // 후면 단속 카메라를 대비해 지나간 뒤 70m까지 경고를 유지한다
+        tg.after = true; // 카메라 좌표 오차·후면 단속을 감안해 지나간 뒤 CAM_HOLD m 까지 경고를 유지한다
       }
       if (tg.after) {
-        if (d >= 70 || !moving && d > 30) camState.target = tg = null;
+        if (d >= CAM_HOLD) camState.target = tg = null;
       } else if (d > 1300) {
         camState.target = tg = null;
       } else if (moving && d > 150 && !isAhead(f, tg.c, d, true)) {
         tg.miss = (tg.miss || 0) + 1;                   // 방향을 틀어 벗어남
         if (tg.miss >= 3) camState.target = tg = null;
+      } else if (moving && d > 25 && d <= 150 && oneDir(tg.c) && !(nav.active && nav.onRoute) &&
+                 sideOf(f, tg.c, d) < -(OPP_SIDE + 2)) {
+        // 가까이 와서 보니 왼쪽(반대편 차로) 카메라였다: 길안내 없이 멀리서 방향만 보고 잡은 경우
+        tg.miss = (tg.miss || 0) + 1;
+        if (tg.miss >= 2) camState.target = tg = null;
       } else {
         tg.miss = 0;
       }
@@ -863,9 +901,10 @@
       tg.said.near = true;
       if (over) say('속도를 줄이세요. 제한속도 ' + limit + '.', 3, true);
       else { beep(1, 660); logAlert('beep', '카메라 250m 전 알림음'); }
-    } else if (over && (tg.said.near || tg.after) && d <= 300 && f.t - camState.lastOverBeep > 2500) {
+    } else if (over && (tg.said.near || tg.after) && d <= 300 && f.t - camState.lastOverBeep >= 900) {
+      // 과속 중에는 1초에 한 번, 짧게 한 번만 울린다 (GPS 가 1초에 한 번 오므로 900ms 로 둬서 한 번씩 빠지지 않게)
       camState.lastOverBeep = f.t;
-      beep(2, 1040);
+      beep(1, 1040);
       logAlert('beep', '과속 반복 경고음 (' + Math.round(d) + 'm)');
     }
   }
@@ -894,15 +933,13 @@
       card.hidden = false;
       const speedCam = isSpeedCam(tg.c);
       $('#camLimit').textContent = speedCam ? tg.c[2] : '신호';
-      // 70m 앞부터는 '단속 지점', 지나간 뒤 70m까지는 '후면 단속 주의'
-      $('#camType').textContent = tg.after ? '통과 · 후면 단속 주의' : (tg.d <= 70 ? '단속 지점 · ' : '') + camLabel(tg.c);
-      $('#camDist').textContent = tg.after ? '+' + fmtDist(tg.d) : fmtDist(tg.d);
+      // 지나간 뒤에도 CAM_HOLD(30m)까지는 카메라 바로 앞인 것처럼 그대로 보여 주고(오차 거리는 따로 알리지 않음), 그 뒤 사라진다
+      $('#camType').textContent = camLabel(tg.c);
+      $('#camDist').textContent = tg.after ? '0m' : fmtDist(tg.d);
       const span = Math.max(tg.first, 300);
       $('#camBar').style.width = tg.after ? '100%' : Math.max(0, Math.min(100, (1 - tg.d / span) * 100)) + '%';
       card.classList.toggle('over', speedCam && state.speedKmh > tg.c[2] + 1 && tg.d < 600);
-      card.classList.toggle('zone', !tg.after && tg.d <= 70);
       card.classList.toggle('signal', !speedCam);
-      card.classList.toggle('after', !!tg.after);
     }
     renderSection();
     renderLimit();
@@ -1168,6 +1205,7 @@
     $('#routeCard').hidden = true;
     nav.option = nav.route.option || prefs.routeOpt; // 재탐색·교통 갱신도 고른 옵션으로
     nav.preview = false; nav.active = true;
+    nav.odo0 = state.odo; // 경로 막대의 출발점 (재탐색해도 유지)
     if (mapA && mapA.drawAlts) mapA.drawAlts([]);
     $('#map').classList.add('navigating');
     setFollowing(true);
@@ -1317,16 +1355,23 @@
     }
   }
 
-  // 지도 왼쪽 세로 막대: 아래가 내 차, 위가 도착. 남은 경로 중 막히는 구간을 주황·빨강으로 칠한다.
+  // 지도 왼쪽 세로 막대: 맨 아래 출발, 맨 위 도착으로 고정. 내 차 점이 올라가고, 지나온 만큼 막대가 줄어든다.
+  // 남은 경로 중 막히는 구간은 주황·빨강. 재탐색해도 출발점은 그대로 (전체 = 지금까지 달린 거리 + 남은 거리).
   const CONG_COLOR = { 2: '#f5a623', 3: '#e53935' };
   function renderStrip() {
     const el = $('#routeStrip');
     if (!nav.active || !nav.pts || !nav.route) { el.hidden = true; return; }
     el.hidden = false;
-    const along = nav.along, total = nav.total, left = Math.max(1, total - along);
-    const remMs = nav.route.duration * ((total - along) / Math.max(1, total));
-    $('#rsRemain').textContent = fmtDist(total - along);
+    const along = nav.along, total = nav.total, rem = Math.max(0, total - along);
+    const done = Math.max(0, state.odo - (nav.odo0 != null ? nav.odo0 : state.odo));
+    const whole = Math.max(1, done + rem);
+    const p = Math.min(100, done / whole * 100); // 지나온 비율 (아래에서부터)
+    const remMs = nav.route.duration * (rem / Math.max(1, total));
+    $('#rsRemain').textContent = fmtDist(rem);
     $('#rsEta').textContent = hhmm(new Date(Date.now() + remMs)) + ' 도착';
+    // 색 막대는 내 차(p%)부터 도착(100%)까지만 그린다. 그 안의 위치는 남은 거리 기준 비율
+    const left = Math.max(1, rem);
+    const at = (x) => (x - along) / left * 100;
     const last = nav.cum.length - 1;
     const runs = [];
     (nav.route.sections || []).forEach((s) => {
@@ -1334,7 +1379,7 @@
       if (!color || !Number.isFinite(s.i) || !Number.isFinite(s.n)) return;
       const lo = Math.max(nav.cum[Math.min(s.i, last)], along);
       const hi = Math.min(nav.cum[Math.min(s.i + Math.max(1, s.n) - 1, last)], total);
-      if (hi > lo) runs.push([(lo - along) / left * 100, (hi - along) / left * 100, color]);
+      if (hi > lo) runs.push([at(lo), at(hi), color]);
     });
     runs.sort((a, b) => a[0] - b[0]);
     const base = '#03c75a', stops = [];
@@ -1345,7 +1390,10 @@
       pos = Math.max(pos, p1);
     });
     if (pos < 100) stops.push(base + ' ' + pos.toFixed(1) + '%', base + ' 100%');
-    $('#rsBar').style.background = 'linear-gradient(to top, ' + stops.join(', ') + ')';
+    const bar = $('#rsBar');
+    bar.style.background = 'linear-gradient(to top, ' + stops.join(', ') + ')';
+    bar.style.bottom = p.toFixed(2) + '%';
+    $('#rsMe').style.bottom = p.toFixed(2) + '%';
   }
 
   function renderNav() {
@@ -1626,7 +1674,9 @@
   }
 
   function tickClock() {
-    $('#clock').textContent = hhmm(new Date());
+    const now = new Date();
+    $('#clock').textContent = hhmm(now);
+    $('#dateText').textContent = (now.getMonth() + 1) + '월 ' + now.getDate() + '일 (' + '일월화수목금토'[now.getDay()] + ')';
     mapWatchdog();
     // 달리는 중 5초 넘게 위치가 안 오면 (터널 등) 속도를 흐리게 하고 알린다.
     // 멈춰 있으면 브라우저가 위치를 잘 안 보내므로 1분까지 기다린다.
@@ -1947,6 +1997,10 @@
   $('#rcCancel').onclick = endNav;
   $('#navEnd').onclick = () => { endNav(); say('안내를 종료합니다.', 1); };
 
+  function applyTesla() {
+    $('#app').classList.toggle('tesla', prefs.tesla);
+    queueLayout(); // 지도 칸 너비가 바뀌므로 다시 배치
+  }
   function applyNight() {
     $('#map').classList.toggle('night', state.night);
     $('#nightBtn').innerHTML = state.night ? ICON_SUN : ICON_MOON;
@@ -1996,6 +2050,7 @@
     $('#optTraffic').checked = prefs.traffic;
     $('#optWeather').checked = prefs.weather;
     $('#optHup').checked = prefs.headingUp;
+    $('#optTesla').checked = prefs.tesla;
     $('#optTilt').checked = prefs.tilt;
     $('#optTilt').disabled = !prefs.headingUp;
     $('#optRoute').value = prefs.routeOpt;
@@ -2012,6 +2067,10 @@
   $('#clearKey').onclick = () => { store.set('key', null); location.reload(); };
   $('#optVoice').onchange = (e) => { prefs.voice = e.target.checked; store.set('voice', prefs.voice ? null : '0'); updateSoundPill(); };
   $('#optBeep').onchange = (e) => { prefs.beep = e.target.checked; store.set('beep', prefs.beep ? null : '0'); updateSoundPill(); };
+  $('#optTesla').onchange = (e) => {
+    prefs.tesla = e.target.checked; store.set('tesla', prefs.tesla ? '1' : '0');
+    applyTesla();
+  };
   $('#optSigCams').onchange = (e) => {
     prefs.signalCams = e.target.checked; store.set('sigcam', prefs.signalCams ? '1' : null);
     camState.markerAt = null;
@@ -2070,6 +2129,7 @@
     gps: $('#gpsText').textContent, screen: [innerWidth, innerHeight, devicePixelRatio],
   });
   applyNight();
+  applyTesla();
   updateSoundPill();
   renderHupBtn();
   showChrome(); // 처음 3초 동안 버튼을 보여 준 뒤 숨긴다
