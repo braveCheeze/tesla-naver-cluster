@@ -103,13 +103,14 @@
   .cam-info { flex: 1; min-width: 0; }
   .cam-type { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cam-dist { font-size: 28px; font-weight: 750; font-variant-numeric: tabular-nums; margin-top: 2px; }
-  .cam-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-  .cam-avg { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; line-height: 1.05; }
-  .cam-avg small { display: block; font-size: 11px; font-weight: 700; color: var(--muted); }
+  /* 구간단속 중: [거리 ......... 평균 110km/h] 한 줄, 그 밑에 카드 끝까지 차는 게이지, 그 밑에 지킬 속도 한 줄 */
+  .cam-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .cam-avg { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .cam-avg small { font-size: 12px; font-weight: 700; color: var(--muted); margin-right: 3px; }
   .cam-avg b { font-size: 24px; font-weight: 800; }
-  .cam-avg i { font-style: normal; font-size: 12px; font-weight: 700; margin-left: 2px; }
-  .cam-avg .need { display: block; font-size: 11px; font-weight: 800; color: #ffb4b4; margin-top: 1px; }
+  .cam-avg i { font-style: normal; font-size: 12px; font-weight: 700; margin-left: 1px; }
   .cam-avg.over b { color: #ff6b6b; }
+  .cam-hint { font-size: 12px; font-weight: 800; color: #ffb4b4; margin-top: 4px; white-space: nowrap; }
   .cam-bar { height: 6px; background: #3d2522; border-radius: 3px; margin-top: 6px; overflow: hidden; }
   .cam-bar i { display: block; height: 100%; width: 0; background: var(--bad); transition: width .9s linear; }
 
@@ -740,6 +741,7 @@
         <!-- 구간단속 중이면 거리 오른쪽 끝(게이지 끝)에 구간 평균 속도 -->
         <div class="cam-row"><div id="camDist" class="cam-dist">0m</div><div id="camAvg" class="cam-avg" hidden></div></div>
         <div class="cam-bar"><i id="camBar"></i></div>
+        <div id="camHint" class="cam-hint" hidden></div>
       </div>
       <!-- 어린이·노인 보호구역일 때만 보이는 도로 주의 표지 모양 타일 -->
       <div class="zone-tile" aria-hidden="true">
@@ -914,6 +916,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-26"></script>
+<script src="app.js?v=2026.11.14-27"></script>
 </body>
 </html>

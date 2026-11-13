@@ -38,7 +38,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-26'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-27'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -1153,13 +1153,16 @@
   }
   // 경고 카드(예: '구간단속 끝 1.4km') 오른쪽 끝에 구간 평균 속도를 붙인다
   function renderCamAvg() {
-    const el = $('#camAvg'), s = camState.section;
-    if (!s || !camState.target) { el.hidden = true; return; }
+    const el = $('#camAvg'), hint = $('#camHint'), s = camState.section;
+    if (!s || !camState.target) { el.hidden = true; hint.hidden = true; return; }
     const st = sectionStats(s);
     el.hidden = false;
     el.classList.toggle('over', st.over);
-    el.innerHTML = '<small>구간 평균</small><b>' + (st.avg === null ? '-' : Math.round(st.avg)) + '</b><i>km/h</i>' +
-      (st.need !== null && st.need >= 20 ? '<span class="need">' + Math.floor(st.need) + ' 이하로</span>' : '');
+    el.innerHTML = '<small>평균</small><b>' + (st.avg === null ? '-' : Math.round(st.avg)) + '</b><i>km/h</i>';
+    // 평균을 넘었을 때만 게이지 밑에 한 줄로: 남은 구간에서 지킬 속도
+    const need = st.need !== null && st.need >= 20 ? '남은 구간 ' + Math.floor(st.need) + ' km/h 이하로' : st.over ? '구간 평균 초과' : '';
+    hint.hidden = !need;
+    hint.textContent = need;
   }
   // 구간단속 남은 거리: 길안내 중이면 경로 위 구간 끝 카메라까지의 실제 거리(데이터의 구간 길이는 어림값이거나 비어 있음),
   // 아니면 데이터의 구간 길이 - 달린 거리. 모르면 null
