@@ -38,7 +38,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.13-16'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.13-17'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -314,10 +314,25 @@
   const rotateCompass = makeRotator($('#compassArrow'));
   function camEl(c) {
     const el = document.createElement('div');
-    el.className = 'cammk k' + c[3];
+    el.className = 'cammk k' + c[3] + (c[6] ? ' z' + c[6] : ''); // z2 어린이·z1 노인 보호구역은 노란 바탕
     el.textContent = c[2];
     return el;
   }
+  // 보호구역 주의 표지 (빨간 테두리 노란 삼각형 + 그림): 어린이보호는 어른과 아이가 손잡고 걷는 모습, 노인보호는 지팡이 짚은 노인
+  const SIGN_TRI = '<path d="M50 5 L95 83 L5 83 Z" fill="#e53935" stroke="#e53935" stroke-width="8" stroke-linejoin="round"/>' +
+    '<path d="M50 20 L83 77 L17 77 Z" fill="#ffd200" stroke="#ffd200" stroke-width="4" stroke-linejoin="round"/>';
+  const SIGN_KID = '<svg viewBox="0 0 100 88" aria-hidden="true">' + SIGN_TRI +
+    '<g fill="#111"><circle cx="41" cy="40" r="4.6"/><circle cx="58.5" cy="50" r="3.8"/></g>' +
+    '<g stroke="#111" stroke-linecap="round" stroke-linejoin="round" fill="none">' +
+    '<path d="M41 47 L41 60" stroke-width="6.5"/><path d="M41 60 L36.5 72 M41 60 L45.5 72" stroke-width="4"/>' +
+    '<path d="M41 50 L35 57" stroke-width="3.4"/><path d="M42 50 L54 57" stroke-width="3.2"/>' +
+    '<path d="M58.5 55.5 L58.5 64" stroke-width="5.4"/><path d="M58.5 64 L55 72 M58.5 64 L62 72" stroke-width="3.4"/>' +
+    '<path d="M59 57.5 L63.5 62" stroke-width="3"/></g></svg>';
+  const SIGN_ELDER = '<svg viewBox="0 0 100 88" aria-hidden="true">' + SIGN_TRI +
+    '<circle cx="47" cy="38" r="4.6" fill="#111"/>' +
+    '<g stroke="#111" stroke-linecap="round" stroke-linejoin="round" fill="none">' +
+    '<path d="M46 45 Q47 52 44 60" stroke-width="6.5"/><path d="M44 60 L39.5 72 M44 60 L49.5 72" stroke-width="4"/>' +
+    '<path d="M47 48 L56 53" stroke-width="3.4"/><path d="M57 52 L60 72" stroke-width="3"/></g></svg>';
 
   // ---------- 지도 어댑터 (네이버 / 테스트용 OSM) ----------
   const ALT_LINE = { color: '#8d97a8', weight: 7, opacity: 0.85 }; // 고르지 않은 추천 경로
@@ -755,7 +770,8 @@
   const CAM_HOLD = 30;
   // 카메라 행: [lat, lng, limit, kind, sec, len, zone, road, rtype]
   // kind: 1 과속, 2 신호 전용, 3 과속+신호, 9 구간/기타 · rtype: 1 고속국도, 3 일반국도, 4 지방도, 5 시도, 6 기타
-  const KIND_NAME = { 1: '과속 단속', 2: '신호 단속', 3: '신호·과속 단속', 9: '단속 구간' };
+  // 8 이동식: 경찰청 공개 데이터는 고정식만 담고 있어 지금은 없다. 이동식 위치 데이터가 생기면 kind 8 로 넣으면 파란색으로 뜬다
+  const KIND_NAME = { 1: '과속 단속', 2: '신호 단속', 3: '신호·과속 단속', 8: '이동식 단속', 9: '단속 구간' };
   // 속도를 재는 카메라인지 (신호 전용은 제외. 단, 어린이보호구역은 안전을 위해 속도 단속으로 본다)
   const isSpeedCam = (c) => c[3] !== 2 || c[6] === 2;
   // 경고할 카메라인지: 신호 전용은 설정에서 켰을 때만
@@ -1033,6 +1049,17 @@
       $('#camBar').style.width = tg.after ? '100%' : Math.max(0, Math.min(100, (1 - tg.d / span) * 100)) + '%';
       card.classList.toggle('over', speedCam && state.speedKmh > tg.c[2] + 1 && tg.d < 600);
       card.classList.toggle('signal', !speedCam);
+      card.classList.toggle('mobile', tg.c[3] === 8); // 이동식 단속은 파란색
+      // 어린이·노인 보호구역: 도로 주의 표지 모양 타일 (삼각 표지 + 빨간 띠에 남은 거리 + '어린이보호' 와 제한속도)
+      const zone = tg.c[6] === 2 ? 'kid' : tg.c[6] === 1 ? 'elder' : '';
+      card.classList.toggle('zonecam', !!zone);
+      if (zone) {
+        const sign = $('#ztSign');
+        if (sign.dataset.zone !== zone) { sign.innerHTML = zone === 'kid' ? SIGN_KID : SIGN_ELDER; sign.dataset.zone = zone; }
+        $('#ztDist').textContent = tg.after ? '0m' : fmtDist(tg.d);
+        $('#ztLabel').textContent = zone === 'kid' ? '어린이보호' : '노인보호';
+        $('#ztLimit').textContent = speedCam ? tg.c[2] : '신호';
+      }
     }
     renderSection();
     renderLimit();

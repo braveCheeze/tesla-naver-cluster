@@ -176,7 +176,9 @@
     box-shadow: 0 1px 4px rgba(0,0,0,.35); pointer-events: none;
   }
   .cammk.k2 { border-color: #ff7a00; }
+  .cammk.k8 { border-color: #2979ff; } /* 이동식 */
   .cammk.k9 { border-color: #7c4dff; }
+  .cammk.z1, .cammk.z2 { background: #ffd200; } /* 노인·어린이 보호구역 */
 
   .searchbtn {
     position: absolute; left: 16px; top: 16px; z-index: 1000;
@@ -405,6 +407,34 @@
   .cam-bar { background: rgba(255, 255, 255, .08); }
   /* 신호 위반 전용 카메라 */
   .camcard.signal .cam-sign { border-color: #ff9800; font-size: 14px; letter-spacing: -.5px; }
+  /* 이동식 단속 카메라: 파란색 */
+  .camcard.mobile { background: linear-gradient(135deg, rgba(41, 121, 255, .3), rgba(41, 121, 255, .08)); border-color: rgba(41, 121, 255, .6); }
+  .camcard.mobile .cam-sign { border-color: #2979ff; }
+  .camcard.mobile .cam-bar i { background: #2979ff; }
+  .camcard.mobile.over { background: linear-gradient(135deg, rgba(255, 70, 70, .42), rgba(229, 57, 53, .16)); border-color: var(--bad); }
+
+  /* 어린이·노인 보호구역: 도로 주의 표지 모양 타일 (삼각 표지 → 빨간 띠에 남은 거리 → '어린이보호' + 제한속도) */
+  .zone-tile { display: none; }
+  .camcard.zonecam { display: block; width: 168px; padding: 0; background: none; border: 0; box-shadow: none; }
+  .camcard.zonecam .cam-sign, .camcard.zonecam .cam-info { display: none; }
+  .camcard.zonecam .zone-tile { display: block; }
+  /* 삼각 표지는 지도 위에 그대로 서 있고(배경 없음), 밑변이 빨간 거리 띠에 이어진다. 그림자는 모양을 따라 진다 */
+  .zone-tile { text-shadow: none; filter: drop-shadow(0 6px 12px rgba(0, 0, 0, .45)); }
+  .zt-sign { display: flex; justify-content: center; padding: 0 8px; }
+  .zt-sign svg { width: 100%; max-width: 150px; height: auto; display: block; margin-bottom: -7px; position: relative; }
+  .zt-dist {
+    background: #e53935; color: #fff; text-align: center; font-size: 30px; font-weight: 800; line-height: 1;
+    padding: 9px 6px 8px; font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+    border-radius: 12px 12px 0 0;
+  }
+  .zt-body { background: #1d2128; text-align: center; padding: 8px 6px 10px; border-radius: 0 0 12px 12px; }
+  .zt-label { font-size: 16px; font-weight: 700; color: #e9ecf1; }
+  .zt-limit { font-size: 50px; font-weight: 800; line-height: 1.05; color: #fff; font-variant-numeric: tabular-nums; letter-spacing: -0.03em; }
+  /* 보호구역에서 과속하면 빨간 띠와 숫자가 깜박인다 */
+  .camcard.zonecam.over { animation: none; background: none; }
+  .camcard.zonecam.over .zt-dist { animation: ztpulse 1s ease-in-out infinite; }
+  .camcard.zonecam.over .zt-limit { color: #ff6b6b; }
+  @keyframes ztpulse { 50% { background: #ff1744; filter: brightness(1.25); } }
   .seccard {
     background: linear-gradient(135deg, rgba(64, 140, 255, .2), rgba(64, 140, 255, .05));
     border: 1px solid rgba(64, 140, 255, .32); border-radius: var(--r-md); padding: 14px 16px;
@@ -556,6 +586,13 @@
     text-shadow: none; background-color: rgba(15, 19, 25, .55);
     -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); box-shadow: var(--shadow);
   }
+  #app.tesla .camcard.zonecam { background: none; -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none; width: 150px; }
+  #app.tesla .zt-dist { font-size: 26px; padding: 7px 6px 6px; }
+  #app.tesla .zt-limit { font-size: 42px; }
+  /* 테슬라 화면(804×638)은 낮아서, 카메라·구간단속 경고가 떠 있는 동안은 날씨·주행 기록을 잠시 접어 경고가 가리지 않게 한다 */
+  #app.tesla #cluster:has(#camCard:not([hidden])) .weather,
+  #app.tesla #cluster:has(#camCard:not([hidden])) .trip,
+  #app.tesla #cluster:has(#secCard:not([hidden])) .trip { display: none; }
 </style>
 </head>
 <body>
@@ -584,6 +621,12 @@
         <div id="camType" class="cam-type">과속 단속</div>
         <div id="camDist" class="cam-dist">0m</div>
         <div class="cam-bar"><i id="camBar"></i></div>
+      </div>
+      <!-- 어린이·노인 보호구역일 때만 보이는 도로 주의 표지 모양 타일 -->
+      <div class="zone-tile" aria-hidden="true">
+        <div id="ztSign" class="zt-sign"></div>
+        <div id="ztDist" class="zt-dist">0m</div>
+        <div class="zt-body"><div id="ztLabel" class="zt-label">어린이보호</div><div id="ztLimit" class="zt-limit">30</div></div>
       </div>
     </div>
     <div id="secCard" class="seccard" hidden>
@@ -722,6 +765,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.13-16"></script>
+<script src="app.js?v=2026.11.13-17"></script>
 </body>
 </html>

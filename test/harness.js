@@ -454,15 +454,25 @@
   // S3: school-zone label
   async function s3() {
     const t = T(), C = CAM_SCHOOL;
-    let label = null, at = null;
+    let label = null, at = null, tile = null;
     for (let s = 0; s <= 650 && label === null; s += 10) {
       feed(dest(C, 180, 700 - s), 10, 0);
       const tg = t.camState.target;
-      if (tg && sameCam(tg.c, C)) { label = text('#camType'); at = r0(tg.d); }
+      if (tg && sameCam(tg.c, C)) {
+        label = text('#camType'); at = r0(tg.d);
+        // 도로 주의 표지 모양 타일: 삼각 표지 + 빨간 띠의 남은 거리 + '어린이보호' + 제한속도
+        const el = document.querySelector('#camCard .zone-tile');
+        tile = {
+          shown: hasCls('#camCard', 'zonecam') && !!el && el.getClientRects().length > 0,
+          sign: !!document.querySelector('#ztSign svg'), label: text('#ztLabel'), limit: text('#ztLimit'), dist: text('#ztDist'),
+        };
+      }
     }
+    const tileOk = !!tile && tile.shown && tile.sign && tile.label === '어린이보호' && tile.limit === '30' && /m$/.test(tile.dist);
     return {
-      pass: label !== null && label.indexOf('어린이보호구역') >= 0,
-      detail: label === null ? 'camera never became target' : '#camType="' + label + '" at ' + at + ' m (limit ' + text('#camLimit') + ')',
+      pass: label !== null && label.indexOf('어린이보호구역') >= 0 && tileOk,
+      detail: label === null ? 'camera never became target' : '#camType="' + label + '" at ' + at + ' m (limit ' + text('#camLimit') + ')' +
+        '; sign tile ' + (tileOk ? 'shown✓ "' + tile.label + ' ' + tile.limit + '", ' + tile.dist : 'WRONG ' + JSON.stringify(tile)),
     };
   }
 
