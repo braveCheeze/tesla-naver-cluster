@@ -34,7 +34,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.13-11'; // index.html 의 app.js?v= 와 같이 올린다
+  const APP_VERSION = '2026.11.13-12'; // index.html 의 app.js?v= 와 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -969,8 +969,22 @@
       };
       if (reroute) q.option = nav.option || prefs.routeOpt;
       else q.options = ALT_OPTIONS;
-      const res = await api('/route', q);
+      // 차량 LTE 가 느릴 수 있어 20초까지 기다리고, 시간 초과면 한 번 더 시도한다
+      let res;
+      try { res = await api('/route', q, null, 20000); } catch (e1) {
+        if (e1.name !== 'AbortError' && !/abort/i.test(e1.message)) throw e1;
+        if (gen !== nav.gen) return;
+        res = await api('/route', q, null, 20000);
+      }
       if (gen !== nav.gen || (reroute && !nav.active)) return;
+      // 응답에 경로가 비어 있으면 지금 안내를 그대로 두고 실패로 처리한다
+      const okRoute = (x) => x && Array.isArray(x.path) && x.path.length >= 2;
+      if (!(okRoute(res) || (res && Array.isArray(res.alternatives) && res.alternatives.some(okRoute)))) {
+        const err = new Error('empty route');
+        err.detail = { message: '경로 응답이 비어 있습니다', keys: Object.keys(res || {}).join(',') };
+        throw err;
+      }
+      if (res.alternatives) res.alternatives = res.alternatives.filter(okRoute);
       let r = res;
       if (!reroute) {
         nav.alts = dedupAlts(res.alternatives || [res]);
@@ -1001,8 +1015,14 @@
     } catch (e) {
       if (gen !== nav.gen) return;
       const d = e.detail || {};
-      report('warn', { msg: 'route failed: ' + String(d.message || d.error || e.message).slice(0, 200), reroute: String(reroute || '') });
+      report('warn', { msg: 'route failed: ' + String(d.message || d.error || e.message).slice(0, 200), reroute: String(reroute || ''), keys: d.keys || '' });
       if (reroute === 'traffic') return; // 교통 갱신 실패는 지금 경로로 계속 안내 (화면에 띄우지 않음)
+      const slow = e.name === 'AbortError' || /abort/i.test(e.message || '');
+      if (reroute) { // 재탐색 실패: 지금 경로를 유지하고, 계속 벗어나 있으면 잠시 뒤 다시 시도한다
+        toast(slow ? '통신이 느려 경로를 다시 찾지 못했어요. 잠시 후 다시 시도합니다.' : '경로를 다시 찾지 못했어요. 잠시 후 다시 시도합니다.', 'bad', 5000);
+        return;
+      }
+      if (slow) { toast('통신이 느려 경로를 찾지 못했어요. 다시 시도해 주세요.', 'bad', 6000); return; }
       toast('경로를 찾지 못했습니다: ' + (d.message || (d.detail && d.detail.error && d.detail.error.message) || e.message), 'bad', 9000);
     } finally {
       if (gen === nav.gen) nav.busy = false;
@@ -1497,7 +1517,8 @@
     // 달리는 중 5초 넘게 위치가 안 오면 (터널 등) 속도를 흐리게 하고 알린다.
     // 멈춰 있으면 브라우저가 위치를 잘 안 보내므로 1분까지 기다린다.
     const silentMs = Date.now() - lastFixWall;
-    if (state.fix && !state.demoTimer && silentMs > (state.speedKmh >= 3 ? 5000 : 60000)) {
+    // 테슬라 브라우저는 위치를 조금 드문드문 줄 때가 있어 달리는 중에도 8초까지는 기다린다
+    if (state.fix && !state.demoTimer && silentMs > (state.speedKmh >= 3 ? 8000 : 60000)) {
       $('#speed').classList.add('stale');
       setGps('warn', 'GPS 신호 없음');
     }
