@@ -34,7 +34,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.13-8'; // index.html 의 app.js?v= 와 같이 올린다
+  const APP_VERSION = '2026.11.13-9'; // index.html 의 app.js?v= 와 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -193,22 +193,17 @@
   $('#toast').addEventListener('click', () => { $('#toast').hidden = true; });
 
   // ---------- 소리 / 음성 ----------
-  // 브라우저는 화면을 한 번 터치하기 전까지 소리(경고음·음성)를 막는다. 그동안 '터치해서 소리 켜기'를 띄운다.
+  // 브라우저는 화면을 한 번 터치하기 전까지 소리(경고음·음성)를 막는다.
+  // 화면 어디든 처음 터치할 때 조용히 소리를 켠다 (안내 문구는 띄우지 않음, 켜고 끄기는 설정에서)
   let actx = null, audioUnlocked = false;
-  const soundPill = document.createElement('button');
-  soundPill.className = 'soundpill';
-  soundPill.textContent = '화면을 터치하면 소리가 켜집니다';
-  $('#map').appendChild(soundPill);
-  function updateSoundPill() { soundPill.hidden = audioUnlocked || !(prefs.voice || prefs.beep); }
+  function updateSoundPill() { /* 안내 문구 없음 */ }
   function unlockAudio() {
     const C = window.AudioContext || window.webkitAudioContext;
     if (!actx && C) { try { actx = new C(); } catch (e) { actx = null; } }
     if (actx && actx.state === 'suspended') actx.resume();
     audioUnlocked = true;
-    updateSoundPill();
   }
   document.addEventListener('pointerdown', unlockAudio, { passive: true, capture: true });
-  soundPill.onclick = () => { unlockAudio(); beep(1, 660); };
   function beep(times, freq) {
     if (!prefs.beep || !actx) return;
     const t0 = actx.currentTime + 0.02;
