@@ -14,6 +14,9 @@
   geolocation, loads ../app.js, then drives window.__tnc.onFix() with synthetic GPS fixes.
   Results: on-page panel, window.__testResults = [{name, status, detail}], window.__testsDone = true.
 -->
-<script src="harness.js"></script>
+<script>
+  // 고친 harness.js 가 캐시 때문에 옛 버전으로 돌지 않게 매번 새로 받는다
+  (function () { var s = document.createElement('script'); s.src = 'harness.js?t=' + Date.now(); document.body.appendChild(s); })();
+</script>
 </body>
 </html>

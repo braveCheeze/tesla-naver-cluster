@@ -694,6 +694,193 @@
     };
   }
 
+  // ---- S10+ : 2026-11-13 주행 피드백 (지나온 경로 지우기 / 엉뚱한 경로 재탐색 / 후면 단속 70m / 신호 전용 / 옆 도로)
+  // 지도 위 경로선(두 번째 선 = 본선)의 점 목록
+  function routeLine() {
+    const m = T().getMap(), l = m && m.route && m.route[1];
+    if (!l) return null;
+    let a = l.getPath ? l.getPath() : l.getLatLngs();
+    if (a && a.getArray) a = a.getArray();
+    return Array.from(a || []).map((q) => ({
+      lat: typeof q.lat === 'function' ? q.lat() : q.lat, lng: typeof q.lng === 'function' ? q.lng() : q.lng,
+    }));
+  }
+  function lineLen(P) { let s = 0; for (let i = 1; i < P.length; i++) s += hav(P[i - 1], P[i]); return s; }
+  function softReset() {
+    const t = T();
+    t.endNav();
+    t.camState.target = null; t.camState.section = null; t.camState.passed.clear();
+    clock += 10 * 60000;
+  }
+
+  // S10: 지나온 경로는 지도에서 지워지고, 남은 경로선의 시작점이 차 바로 앞에 있다
+  async function s10() {
+    const t = T(), R = buildNavRoute();
+    await planAndStart(R);
+    const full = routeLine();
+    const bad = [];
+    let last = null, samples = 0;
+    for (let s = 15; s <= 450; s += 15) {
+      const a = pointAt(R, s);
+      feed(a.p, 15, a.h);
+      if (s < 60) continue;
+      const P = routeLine();
+      if (!P || P.length < 2) { bad.push(s + 'm: no line'); continue; }
+      samples++;
+      const head = hav(P[0], a.p), remain = lineLen(P), want = R.total - s;
+      if (head > 15) bad.push(s + 'm: head ' + r0(head) + 'm from car');
+      if (Math.abs(remain - want) > 20) bad.push(s + 'm: remain ' + r0(remain) + ' vs ' + r0(want));
+      last = { s, head: r0(head), remain: r0(remain), pts: P.length };
+    }
+    const m = t.getMap();
+    const trafficKept = !!(m && m.route && m.route.length >= 3);   // 율곡로 정체 구간 색은 남아 있어야 한다
+    return {
+      pass: samples >= 20 && bad.length === 0 && trafficKept && !!full && last && last.pts < full.length,
+      detail: (bad.length ? 'problems: ' + bad.slice(0, 5).join('; ') + ' | ' : '') +
+        'full line ' + (full ? full.length + ' pts/' + r0(lineLen(full)) + ' m' : 'none') +
+        '; at ' + (last ? last.s + ' m: head ' + last.head + ' m from car, remaining ' + last.remain + ' m, ' + last.pts + ' pts' : 'n/a') +
+        '; traffic overlay ' + (trafficKept ? 'kept' : 'LOST') + '; ' + samples + ' samples',
+    };
+  }
+
+  // S11: 출발부터 경로에 한 번도 올라타지 못한 채(엉뚱한 경로) 계속 벗어나 있으면 20초 뒤 재탐색한다
+  async function s11() {
+    const t = T(), R = buildNavRoute();
+    const off = dest(R.P[0], 90, 100);   // 경로 시작점에서 동쪽 100m
+    stub.canned['/route'] = R.route;
+    const c0 = stub.calls.length;
+    feed(off, 0, null);
+    await withTimeout(t.planRoute(R.dest, false), 5000, 'planRoute');
+    t.startNav();
+    let firedAt = null;
+    for (let k = 1; k <= 8 && firedAt === null; k++) {
+      feed(dest(off, 0, 60 * k), 10, 0, { dt: 6000 });   // 북쪽으로 나란히 (경로에서 100m 옆)
+      if (stub.count('/route', c0) >= 2) firedAt = k * 6;
+    }
+    await waitFor(() => !t.nav.busy, 2000, 20);
+    return {
+      pass: firedAt !== null && firedAt >= 20 && firedAt <= 42 && t.nav.active,
+      detail: firedAt === null ? 'NO reroute in 48 s while 100 m off a route never joined' :
+        'reroute after ' + firedAt + ' s off-route (never joined; expects 20–42 s); /route calls ' + stub.count('/route', c0),
+    };
+  }
+
+  // S12: 카메라 70m 앞은 '단속 지점', 지나간 뒤 70m 까지 '후면 단속 주의'로 유지, 그 뒤 사라짐
+  async function s12() {
+    const t = T(), C = CAM_ISO_A;
+    const seen = { zone: null, after: [], cleared: null };
+    for (let s = 0; s <= 850; s += 10) {
+      const p = dest(C, 180, 700 - s);   // 700m 남쪽 -> 150m 북쪽, 72 km/h
+      feed(p, 20, 0, { dt: 500 });
+      const tg = t.camState.target, past = s - 700;
+      const mine = tg && sameCam(tg.c, C);
+      if (past < 0 && past >= -60 && mine && seen.zone === null) {
+        seen.zone = { past, cls: hasCls('#camCard', 'zone'), type: text('#camType') };
+      }
+      if (past >= 30 && past <= 60) {
+        seen.after.push({ past, ok: !!mine && !!tg.after && hasCls('#camCard', 'after') && /후면/.test(text('#camType')) && /^\+/.test(text('#camDist')) });
+      }
+      if (past >= 80 && seen.cleared === null) seen.cleared = { past, gone: !mine && !visible('#camCard') };
+    }
+    const zoneOk = !!seen.zone && seen.zone.cls && /^단속 지점/.test(seen.zone.type);
+    const afterOk = seen.after.length >= 3 && seen.after.every((x) => x.ok);
+    const clearOk = !!seen.cleared && seen.cleared.gone;
+    return {
+      pass: zoneOk && afterOk && clearOk,
+      detail: 'before: ' + (seen.zone ? seen.zone.past + ' m "' + seen.zone.type + '" .zone=' + seen.zone.cls : 'NO TARGET within 60 m') +
+        '; after +30..+60 m: ' + seen.after.map((x) => '+' + x.past + (x.ok ? '✓' : '✗')).join(' ') +
+        '; at +' + (seen.cleared ? seen.cleared.past + ' m ' + (seen.cleared.gone ? 'cleared' : 'STILL SHOWN') : '?'),
+    };
+  }
+
+  // S13: 신호 위반 전용 카메라는 기본 꺼짐, 설정을 켜면 '신호'로 알림
+  // 제주 일주동로 [33.37693,126.87362,50,2,0,0,0] — 5.2km 안에 다른 카메라 없음
+  const CAM_SIGNAL = { lat: 33.37693, lng: 126.87362 };
+  async function s13() {
+    const t = T(), C = CAM_SIGNAL, prev = t.prefs.signalCams;
+    const drive = () => {
+      let hit = null;
+      for (let s = 0; s <= 600; s += 14) {
+        feed(dest(C, 180, 700 - s), 14, 0);
+        const tg = t.camState.target;
+        if (tg && sameCam(tg.c, C) && !hit) hit = { d: r0(tg.d), sign: text('#camLimit'), signal: hasCls('#camCard', 'signal') };
+      }
+      return hit;
+    };
+    let off, on;
+    try {
+      t.prefs.signalCams = false;
+      off = drive();
+      softReset();
+      t.prefs.signalCams = true;
+      on = drive();
+    } finally {
+      t.prefs.signalCams = prev;
+    }
+    return {
+      pass: !off && !!on && on.sign === '신호' && on.signal,
+      detail: 'setting off: ' + (off ? 'WRONG alert at ' + off.d + ' m' : 'no alert') +
+        '; setting on: ' + (on ? 'alert at ' + on.d + ' m, sign "' + on.sign + '", .signal=' + on.signal : 'NO ALERT'),
+    };
+  }
+
+  // S14: 옆 도로 카메라 걸러내기
+  //  (a) 길안내 없이: 진행 방향 직선에서 45m 옆(나란한 도로)의 카메라는 잡지 않는다 (CAM_ISO_A)
+  //  (b) 길안내 중: 위례성로 카메라(CAM_ISO_B)를 경로 옆 12/25/40m 에 두고 경로 도로명을 바꿔 가며 확인
+  function buildRouteBeside(C, east, name) {
+    const raw = [];
+    const o = dest(dest(C, 180, 1000), 90, east);
+    for (let k = 0; k <= 16; k++) raw.push(dest(o, 0, 100 * k));
+    const path = raw.map((p) => [round6(p.lng), round6(p.lat)]);
+    const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const total = cum[cum.length - 1];
+    const route = {
+      distance: r0(total), duration: r0(total / 14 * 1000), tollFare: 0, fuelPrice: 200, path,
+      guide: [{ i: 16, t: 88, s: '목적지', d: r0(total), ms: r0(total / 14 * 1000) }],
+      sections: [{ i: 0, n: 17, name, speed: 50, cong: 1 }],
+    };
+    return { route, P, cum, total, dest: { name: '옆도로 테스트', addr: name, lat: P[16].lat, lng: P[16].lng } };
+  }
+  async function s14() {
+    const t = T();
+    // (a)
+    let parallelHit = null;
+    for (let s = 0; s <= 1150; s += 20) {
+      feed(dest(dest(C_A(), 180, 1150 - s), 90, 45), 20, 0);
+      const tg = t.camState.target;
+      if (tg && sameCam(tg.c, CAM_ISO_A) && !parallelHit) parallelHit = r0(tg.d);
+    }
+    // (b)
+    const cases = [
+      { east: 12, name: '위례성로', want: true },
+      { east: 12, name: '다른대로', want: false },
+      { east: 25, name: '위례성로', want: true },
+      { east: 40, name: '위례성로', want: false },
+    ];
+    const out = [];
+    for (const k of cases) {
+      softReset();
+      const R = buildRouteBeside(CAM_ISO_B, k.east, k.name);
+      await planAndStart(R);
+      let hit = false;
+      for (let s = 14; s <= 900; s += 14) {
+        const a = pointAt(R, s);
+        feed(a.p, 13, a.h);   // 47 km/h (제한 50 이하)
+        const tg = t.camState.target;
+        if (tg && sameCam(tg.c, CAM_ISO_B)) hit = true;
+      }
+      out.push({ k, hit, ok: hit === k.want });
+    }
+    return {
+      pass: parallelHit === null && out.every((x) => x.ok),
+      detail: '(a) no-nav 45 m parallel: ' + (parallelHit === null ? 'ignored' : 'WRONG alert at ' + parallelHit + ' m') +
+        '; (b) on route: ' + out.map((x) => x.k.east + 'm/' + x.k.name + '→' + (x.hit ? 'alert' : 'none') + (x.ok ? '✓' : '✗')).join(', '),
+    };
+  }
+  const C_A = () => CAM_ISO_A;
+
   const SCENARIOS = [
     { id: 'S1', name: 'S1 section enforcement', fn: s1 },
     { id: 'S2', name: 'S2 direction filtering', fn: s2 },
@@ -704,6 +891,11 @@
     { id: 'S7', name: 'S7 search merge', fn: s7 },
     { id: 'S8', name: 'S8 camera markers', fn: s8 },
     { id: 'S9', name: 'S9 trip odometer', fn: s9 },
+    { id: 'S10', name: 'S10 route behind car erased', fn: s10 },
+    { id: 'S11', name: 'S11 reroute when never on route', fn: s11 },
+    { id: 'S12', name: 'S12 camera 70 m before/after', fn: s12 },
+    { id: 'S13', name: 'S13 signal-only cameras', fn: s13 },
+    { id: 'S14', name: 'S14 adjacent-road cameras', fn: s14 },
   ];
 
   // ---------------------------------------------------------------- runner

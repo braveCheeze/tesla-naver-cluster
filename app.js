@@ -25,6 +25,7 @@
     voice: store.get('voice') !== '0',
     beep: store.get('beep') !== '0',
     cams: store.get('cams') !== '0',
+    signalCams: store.get('sigcam') === '1', // 신호 전용 카메라 알림 (기본 끔)
     traffic: store.get('traffic') !== '0',
     weather: store.get('weather') !== '0',
     headingUp: store.get('hup') !== '0',
@@ -34,7 +35,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.13-12'; // index.html 의 app.js?v= 와 같이 올린다
+  const APP_VERSION = '2026.11.13-13'; // index.html 의 app.js?v= 와 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -336,14 +337,20 @@
       this.map.setCenter(c);
     },
     drawRoute(pts, sections) {
-      this.clearRoute();
       const N = naver.maps;
       const path = pts.map((p) => new N.LatLng(p.lat, p.lng));
       const line = (seg, color, weight, z) => new N.Polyline({
         map: this.map, path: seg, strokeColor: color, strokeWeight: weight, strokeOpacity: 1,
         strokeLineCap: 'round', strokeLineJoin: 'round', zIndex: z, clickable: false,
       });
-      this.route = [line(path, ROUTE_EDGE, 13, 48), line(path, ROUTE_BASE, 9, 50)];
+      if (this.route && this.route.length >= 2 && this.route[0].setPath) {
+        // 이미 그린 선이 있으면 경로만 바꿔 깜빡임과 부담을 줄인다 (교통 색 구간만 새로 만든다)
+        this.route.splice(2).forEach((l) => l.setMap(null));
+        this.route[0].setPath(path); this.route[1].setPath(path);
+      } else {
+        this.clearRoute();
+        this.route = [line(path, ROUTE_EDGE, 13, 48), line(path, ROUTE_BASE, 9, 50)];
+      }
       trafficRuns(sections, path.length).forEach((r) => this.route.push(line(path.slice(r.a, r.b + 1), r.color, 9, 51)));
     },
     clearRoute() {
@@ -416,12 +423,17 @@
       this.map.setView(c, this.map.getZoom(), { animate: false });
     },
     drawRoute(pts, sections) {
-      this.clearRoute();
       const path = pts.map((p) => [p.lat, p.lng]);
       const line = (seg, color, weight) => L.polyline(seg, {
         color, weight, opacity: 1, lineCap: 'round', lineJoin: 'round', interactive: false,
       }).addTo(this.map);
-      this.route = [line(path, ROUTE_EDGE, 13), line(path, ROUTE_BASE, 9)];
+      if (this.route && this.route.length >= 2) {
+        this.route.splice(2).forEach((l) => l.remove());
+        this.route[0].setLatLngs(path); this.route[1].setLatLngs(path);
+      } else {
+        this.clearRoute();
+        this.route = [line(path, ROUTE_EDGE, 13), line(path, ROUTE_BASE, 9)];
+      }
       trafficRuns(sections, path.length).forEach((r) => this.route.push(line(path.slice(r.a, r.b + 1), r.color, 9)));
     },
     clearRoute() {
@@ -462,7 +474,10 @@
     await adapter.init(el, state.fix || DEFAULT_CENTER);
     mapA = adapter;
     if (state.fix) { const p = mePos(); mapA.setMe(p.lat, p.lng); }
-    if (nav.pts) mapA.drawRoute(nav.pts, nav.route && nav.route.sections);
+    if (nav.pts) {
+      mapA.drawRoute(nav.pts, nav.route && nav.route.sections);
+      if (nav.onRoute) { nav.drawnAt = 0; drawRemaining(); }
+    }
     camState.markerAt = null;
     if (state.fix) refreshCamMarkers(state.fix);
     layoutView(true);
@@ -656,7 +671,7 @@
         if (!a) { a = []; g.set(k, a); }
         a.push(i);
       });
-      cams.rows = j.rows; cams.grid = g; cams.date = j.date; cams.loaded = true;
+      cams.rows = j.rows; cams.grid = g; cams.date = j.date; cams.roads = j.roads || []; cams.loaded = true;
     } catch (e) {
       toast('단속 카메라 데이터를 불러오지 못했습니다.', 'bad', 5000);
     }
@@ -682,30 +697,74 @@
   }
 
   const camState = { target: null, passed: new Map(), saidById: new Map(), section: null, markerAt: null, lastOverBeep: 0 };
-  const KIND_NAME = { 1: '과속 단속', 2: '신호·과속 단속', 9: '단속 구간' };
+  // 카메라 행: [lat, lng, limit, kind, sec, len, zone, road, rtype]
+  // kind: 1 과속, 2 신호 전용, 3 과속+신호, 9 구간/기타 · rtype: 1 고속국도, 3 일반국도, 4 지방도, 5 시도, 6 기타
+  const KIND_NAME = { 1: '과속 단속', 2: '신호 단속', 3: '신호·과속 단속', 9: '단속 구간' };
+  // 속도를 재는 카메라인지 (신호 전용은 제외. 단, 어린이보호구역은 안전을 위해 속도 단속으로 본다)
+  const isSpeedCam = (c) => c[3] !== 2 || c[6] === 2;
+  // 경고할 카메라인지: 신호 전용은 설정에서 켰을 때만
+  const camWanted = (c) => isSpeedCam(c) || prefs.signalCams;
   function camLabel(c) {
     let s = c[4] === 1 ? '구간단속 시작' : c[4] === 2 ? '구간단속 끝' : (KIND_NAME[c[3]] || '단속 카메라');
-    if (c[6] === 2) s = '어린이보호구역 ' + s;
+    if (c[6] === 2) s = '어린이보호구역 ' + (c[3] === 2 ? '단속' : s);
     else if (c[6] === 1) s = '노인보호구역 ' + s;
     return s;
   }
+  const camRoad = (c) => (cams.roads && c[7] >= 0 ? cams.roads[c[7]] : '') || '';
+  const roadKey = (s) => String(s || '').replace(/\s+/g, '').replace(/고속도로$/, '고속');
+  // 두 도로 이름이 같은 도로를 가리키는지 (한쪽이 다른 쪽을 포함하면 같다고 본다)
+  function sameRoad(a, b) {
+    const x = roadKey(a), y = roadKey(b);
+    return !!x && !!y && (x.indexOf(y) >= 0 || y.indexOf(x) >= 0);
+  }
+  // '19번 국도', '82번 지방도', '고속도로' 처럼 노선 번호·종류만 있는 이름은 실제 도로명과 비교할 수 없다
+  const GENERIC_ROAD = /^(\d+번\s*)?(일반국도|국도|국가지원지방도|지방도|고속도로|고속국도|시도|군도|구도|기타)$|\d+\s*호선$/;
+  const specificRoad = (s) => !!s && !GENERIC_ROAD.test(String(s).trim());
+  // 둘 다 구체적인 도로명인데 서로 다르면 다른 도로 (하나라도 모르면 다르다고 단정하지 않는다)
+  const roadsDiffer = (a, b) => specificRoad(a) && specificRoad(b) && !sameRoad(a, b);
+  // 경로 위 지점(점 번호)에 해당하는 도로 이름 (길찾기 응답의 주요 도로 구간 정보)
+  function routeRoadAt(idx) {
+    const secs = nav.route && nav.route.sections;
+    if (!secs) return '';
+    for (const s of secs) if (idx >= s.i && idx <= s.i + Math.max(1, s.n) - 1) return s.name || '';
+    return '';
+  }
+  // 지금 고속도로를 달리는 중인지: 길안내 경로의 도로 이름으로만 판단한다
+  // (속도로 추정하면 일반도로에서 과속 중일 때 정작 그 도로의 카메라를 숨기게 되므로 쓰지 않는다)
+  function onHighway() {
+    if (!(nav.active && nav.pts && nav.onRoute)) return false;
+    return /고속/.test(routeRoadAt(nav.seg));
+  }
 
-  // 진행 방향 앞에 있는 카메라인지 (길안내 중이면 경로 위에 있는지)
-  function isAhead(f, c, d) {
+  // 내가 달리는 도로의, 진행 방향 앞에 있는 카메라인지
+  function isAhead(f, c, d, keep) { // keep: 이미 경고 중인 카메라를 계속 둘지 볼 때 (조금 느슨하게)
+    if (!camWanted(c)) return false;
+    // 고속도로 주행 중이면 옆 일반도로의 저속 카메라(제한 70 이하, 고속국도 아님)는 제외
+    if (onHighway() && c[8] !== 1 && c[2] <= 70) return false;
     // 경로를 벗어나 있으면(재탐색 실패 등) 지금 달리는 길 기준으로 판단한다
     if (nav.active && nav.pts && nav.onRoute) return camOnRouteAhead(c);
     if (state.heading === null) return false;
-    return angleDiff(bearing(f, { lat: c[0], lng: c[1] }), state.heading) < (d < 150 ? 55 : 28);
+    const diff = angleDiff(bearing(f, { lat: c[0], lng: c[1] }), state.heading);
+    if (diff > 60 && d > 40) return false;
+    // 진행 방향 직선에서 좌우로 얼마나 떨어져 있는지: 옆 도로(보통 30m 이상 떨어짐)는 빼고, 멀수록 방향 오차를 조금 허용
+    const lateral = d * Math.sin(toRad(Math.min(diff, 90)));
+    return lateral <= 20 + d * (keep ? 0.03 : 0.015);
   }
+  // 길안내 중: 카메라가 남은 경로 위(1.5km 안)에 있는지.
+  // 경로에서 20m 이내면 내 도로로 본다. 단, 도로명이 둘 다 구체적인데 서로 다르면(옆 도로·교차로의 가로 도로) 뺀다.
+  // 도로명이 같다고 확인되면 카메라 좌표 오차를 감안해 30m 까지 인정한다.
   function camOnRouteAhead(c) {
     const p = { lat: c[0], lng: c[1] };
     const pts = nav.pts, limit = nav.along + 1500;
+    const cn = camRoad(c);
     for (let i = nav.seg; i < pts.length - 1 && nav.cum[i] < limit; i++) {
       const pr = projectSeg(p, pts[i], pts[i + 1]);
-      if (pr.dist < 30) {
-        const at = nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]);
-        if (at > nav.along - 5) return true;
-      }
+      if (pr.dist >= 30) continue;
+      const at = nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]);
+      if (at <= nav.along - 5) continue;
+      const rn = routeRoadAt(i);
+      if (pr.dist > 6 && roadsDiffer(rn, cn)) continue;
+      if (pr.dist < 20 || (specificRoad(rn) && sameRoad(rn, cn))) return true;
     }
     return false;
   }
@@ -725,17 +784,20 @@
       if (d < tg.minD) tg.minD = d;
       // 정지 중 GPS 흔들림을 '지나감'으로 오인하지 않도록, 움직이는 중이고 카메라가 뒤쪽에 있을 때만 인정
       const behind = state.heading === null || angleDiff(bearing(f, cp), state.heading) > 90;
-      if (tg.minD < 80 && d > tg.minD + 15 && moving && behind) {           // 지나감
+      if (!tg.after && tg.minD < 80 && d > tg.minD + 10 && moving && behind) {   // 카메라를 지나감
         // 같은 자리의 반대 방향 카메라(구간 시점·종점 쌍 등)도 함께 지나간 것으로 처리
         const twins = camsNear(tg.c[0], tg.c[1], 60);
         twins.forEach((x) => camState.passed.set(x.i, now));
         camState.passed.set(tg.i, now);
         if (camState.section && (tg.c[4] === 2 || twins.some((x) => x.c[4] === 2))) endSection();
         else if (tg.c[4] === 1) startSection(tg.c, f);
-        camState.target = tg = null;
+        tg.after = true; // 후면 단속 카메라를 대비해 지나간 뒤 70m까지 경고를 유지한다
+      }
+      if (tg.after) {
+        if (d >= 70 || !moving && d > 30) camState.target = tg = null;
       } else if (d > 1300) {
         camState.target = tg = null;
-      } else if (moving && d > 150 && !isAhead(f, tg.c, d)) {
+      } else if (moving && d > 150 && !isAhead(f, tg.c, d, true)) {
         tg.miss = (tg.miss || 0) + 1;                   // 방향을 틀어 벗어남
         if (tg.miss >= 3) camState.target = tg = null;
       } else {
@@ -785,6 +847,11 @@
 
   function announceCam(tg, f) {
     const c = tg.c, limit = c[2], d = tg.d;
+    if (tg.after && !(state.speedKmh > limit + 1 && isSpeedCam(c))) return;
+    if (!isSpeedCam(c)) { // 신호 전용 카메라: 짧게 한 번만 알린다 (속도 경고 없음)
+      if (!tg.said.far && d <= 300) { tg.said.far = true; say('300미터 앞, 신호 단속 카메라입니다.', 1); }
+      return;
+    }
     const far = limit >= 90 ? 1000 : 500;
     if (!tg.said.far && d <= far + 30) {
       tg.said.far = true;
@@ -796,7 +863,7 @@
       tg.said.near = true;
       if (over) say('속도를 줄이세요. 제한속도 ' + limit + '.', 3, true);
       else { beep(1, 660); logAlert('beep', '카메라 250m 전 알림음'); }
-    } else if (over && tg.said.near && d <= 300 && f.t - camState.lastOverBeep > 2500) {
+    } else if (over && (tg.said.near || tg.after) && d <= 300 && f.t - camState.lastOverBeep > 2500) {
       camState.lastOverBeep = f.t;
       beep(2, 1040);
       logAlert('beep', '과속 반복 경고음 (' + Math.round(d) + 'm)');
@@ -825,12 +892,17 @@
       card.hidden = true;
     } else {
       card.hidden = false;
-      $('#camLimit').textContent = tg.c[2];
-      $('#camType').textContent = camLabel(tg.c);
-      $('#camDist').textContent = fmtDist(tg.d);
+      const speedCam = isSpeedCam(tg.c);
+      $('#camLimit').textContent = speedCam ? tg.c[2] : '신호';
+      // 70m 앞부터는 '단속 지점', 지나간 뒤 70m까지는 '후면 단속 주의'
+      $('#camType').textContent = tg.after ? '통과 · 후면 단속 주의' : (tg.d <= 70 ? '단속 지점 · ' : '') + camLabel(tg.c);
+      $('#camDist').textContent = tg.after ? '+' + fmtDist(tg.d) : fmtDist(tg.d);
       const span = Math.max(tg.first, 300);
-      $('#camBar').style.width = Math.max(0, Math.min(100, (1 - tg.d / span) * 100)) + '%';
-      card.classList.toggle('over', state.speedKmh > tg.c[2] + 1 && tg.d < 600);
+      $('#camBar').style.width = tg.after ? '100%' : Math.max(0, Math.min(100, (1 - tg.d / span) * 100)) + '%';
+      card.classList.toggle('over', speedCam && state.speedKmh > tg.c[2] + 1 && tg.d < 600);
+      card.classList.toggle('zone', !tg.after && tg.d <= 70);
+      card.classList.toggle('signal', !speedCam);
+      card.classList.toggle('after', !!tg.after);
     }
     renderSection();
     renderLimit();
@@ -850,7 +922,7 @@
   function currentLimit() {
     if (camState.section) return camState.section.limit;
     const tg = camState.target;
-    return tg && tg.d < 1000 ? tg.c[2] : null;
+    return tg && tg.d < 1000 && isSpeedCam(tg.c) ? tg.c[2] : null;
   }
   function renderLimit() {
     const lim = currentLimit();
@@ -863,7 +935,7 @@
     if (!cams.loaded || !prefs.cams) { mapA.setCameras([]); camState.markerAt = null; return; }
     if (camState.markerAt && haversine(camState.markerAt, f) < 250) return;
     camState.markerAt = { lat: f.lat, lng: f.lng };
-    mapA.setCameras(camsNear(f.lat, f.lng, 2000).sort((a, b) => a.d - b.d).slice(0, 80));
+    mapA.setCameras(camsNear(f.lat, f.lng, 2000).filter((x) => camWanted(x.c)).sort((a, b) => a.d - b.d).slice(0, 80));
   }
 
   // ---------- 길안내 ----------
@@ -1037,8 +1109,9 @@
     nav.total = nav.cum[nav.cum.length - 1];
     nav.seg = 0; nav.along = 0; nav.off = 0; nav.gi = 0;
     nav.onRoute = false; nav.onCount = 0;
+    nav.setAt = state.fix ? state.fix.t : Date.now(); nav.drawnSeg = 0; nav.drawnAlong = 0; nav.drawnAt = 0;
     nav.lastTraffic = state.fix ? state.fix.t : Date.now();
-    if (!keepAlerts) { nav.said = {}; nav.gap = 12000; }
+    if (!keepAlerts) { nav.said = {}; nav.gap = 10000; }
     nav.remain = nav.total; nav.next = null; nav.dg = null;
     nav.guides = (r.guide || []).filter((g) => g.i < nav.pts.length).sort((a, b) => a.i - b.i);
     if (mapA) mapA.drawRoute(nav.pts, r.sections);
@@ -1142,6 +1215,26 @@
     goal: '<svg viewBox="0 0 48 48"><path d="M13 44V5M13 7h23l-6 8 6 8H13"/></svg>',
   };
 
+  // 남은 경로만 다시 그린다: 지금 위치(경로 위로 붙인 점)부터 목적지까지, 교통 색 구간도 번호를 맞춰 옮긴다
+  function drawRemaining() {
+    if (!mapA || !nav.pts || !nav.route) return;
+    // 다음 GPS 까지 차가 조금 더 나아가므로 0.4초 앞에서 자른다 (자른 끝은 차 아이콘에 가려진다)
+    const at = Math.min(nav.total, nav.along + Math.max(0, state.speedKmh / 3.6) * 0.4);
+    let s = Math.max(0, Math.min(nav.seg, nav.pts.length - 2));
+    while (s < nav.pts.length - 2 && nav.cum[s + 1] <= at) s++;
+    const cur = routePointAt(at) || nav.pts[s];
+    const pts = [cur].concat(nav.pts.slice(s + 1));
+    if (pts.length < 2) return;
+    const sections = (nav.route.sections || []).map((x) => {
+      const a = Math.max(0, x.i - s), b = x.i + Math.max(1, x.n) - 1 - s;
+      return b > a ? Object.assign({}, x, { i: a, n: b - a + 1 }) : null;
+    }).filter(Boolean);
+    mapA.drawRoute(pts, sections);
+    nav.drawnSeg = nav.seg;
+    nav.drawnAlong = nav.along;
+    nav.drawnAt = state.fix ? state.fix.t : Date.now();
+  }
+
   function navUpdate(f) {
     if (!nav.active || !nav.pts || !f) return;
     const pts = nav.pts;
@@ -1160,22 +1253,32 @@
     // 멀리 벗어났을 때만 전체를 다시 보되, 지나온 쪽으로 되돌아가지는 않는다
     if (best.dist > 80) scan(nav.seg, pts.length - 2);
 
-    nav.onRoute = best.dist <= 45;
+    // 경로에서 이만큼 떨어지면 벗어난 것으로 본다. 테슬라 GPS 는 ±2~5m 로 정확해서
+    // 옆으로 나란히 가는 다른 도로(보통 30m 이상)로 잘못 들어선 것도 잡을 수 있게 30m 를 기본으로 한다
+    const offLimit = Math.min(50, Math.max(30, (f.acc || 10) * 2));
+    nav.onRoute = best.dist <= offLimit;
     if (nav.onRoute) {
       nav.seg = best.seg;
       nav.along = nav.cum[best.seg] + best.t * (nav.cum[best.seg + 1] - nav.cum[best.seg]);
       nav.off = 0;
-      if (++nav.onCount >= 5) nav.gap = 12000; // 경로 위를 잘 따라가면 재탐색 간격 초기화
-    } else if ((f.acc || 0) < 60 && state.speedKmh > 3 && nav.onCount > 0) {
-      nav.off++; // 출발점이 도로에서 떨어진 곳(주차장 등)이면 경로에 한 번 올라탄 뒤부터 센다
+      if (++nav.onCount >= 5) nav.gap = 10000; // 경로 위를 잘 따라가면 재탐색 간격 초기화
+    } else if ((f.acc || 0) < 60 && state.speedKmh > 3 &&
+               (nav.onCount > 0 || f.t - (nav.setAt || 0) > 20000)) {
+      // 출발점이 도로에서 떨어진 곳(주차장 등)이면 경로에 한 번 올라탄 뒤부터 센다.
+      // 다만 20초가 지나도 경로에 못 올라탔다면(엉뚱한 경로) 그때부터는 센다
+      nav.off++;
     }
     if (nav.off >= 3 && f.t - nav.lastReroute > nav.gap && !nav.busy) {
       nav.lastReroute = f.t;
       nav.off = 0; nav.onCount = 0;
-      nav.gap = Math.min(nav.gap * 2, 180000); // 계속 벗어나면 재탐색 간격을 늘려 호출 낭비를 막는다
+      nav.gap = Math.min(nav.gap * 2, 40000); // 계속 벗어나면 간격을 늘리되 40초를 넘기지 않는다
       say('경로를 벗어났습니다. 다시 탐색합니다.', 1, true);
       planRoute(nav.dest, true);
     }
+    // 지나온 경로는 지운다 (내 차 앞의 남은 경로만 그린다)
+    // GPS 가 올 때마다(1초에 한 번 정도) 5m 이상 나아갔으면 다시 자른다. 선은 새로 만들지 않고 경로만 바꾼다
+    if (nav.onRoute && mapA && Math.abs(nav.along - (nav.drawnAlong || 0)) > 5 &&
+        f.t - (nav.drawnAt || 0) > 800) drawRemaining();
 
     // 5분마다 지금 위치에서 경로를 다시 받아 교통 상황(막히는 구간·도착 시간)을 갱신한다 (시간당 최대 12회)
     if (nav.onRoute && !nav.busy && nav.total - nav.along > 1500 && f.t - nav.lastTraffic > 5 * 60000) {
@@ -1458,12 +1561,23 @@
     }
     if (!('geolocation' in navigator)) { setGps('bad', '위치 미지원 브라우저'); return; }
     setGps('warn', 'GPS 신호 찾는 중');
+    let lastGoodFix = 0, tsReported = false;
     navigator.geolocation.watchPosition((p) => {
       diagRaw(p);
       if (state.demoTimer) return;
+      const now = Date.now(), acc = p.coords.accuracy;
+      // 테슬라 브라우저는 위치 시각(timestamp) 단위가 달라 주행 시간·재탐색 간격 계산이 틀어졌다.
+      // 시각은 기기 시계(받은 순간)를 쓰고, 원래 값이 이상하면 한 번 운영 서버에 알린다.
+      if (!tsReported && p.timestamp && Math.abs(p.timestamp - now) > 60000) {
+        tsReported = true;
+        report('warn', { msg: 'odd geolocation timestamp', raw: p.timestamp, now });
+      }
+      // 가끔 섞여 오는 아주 부정확한 위치(예: ±10km)는 최근 30초 안에 정확한 위치가 있었다면 버린다
+      if (!(acc <= 150) && state.fix && now - lastGoodFix < 30000) return;
+      if (acc <= 150) lastGoodFix = now;
       onFix({
-        lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy,
-        speed: p.coords.speed, heading: p.coords.heading, t: p.timestamp || Date.now(),
+        lat: p.coords.latitude, lng: p.coords.longitude, acc,
+        speed: p.coords.speed, heading: p.coords.heading, t: now,
       });
     }, (err) => {
       if (state.demoTimer) return;
@@ -1878,6 +1992,7 @@
     $('#optVoice').checked = prefs.voice;
     $('#optBeep').checked = prefs.beep;
     $('#optCams').checked = prefs.cams;
+    $('#optSigCams').checked = prefs.signalCams;
     $('#optTraffic').checked = prefs.traffic;
     $('#optWeather').checked = prefs.weather;
     $('#optHup').checked = prefs.headingUp;
@@ -1897,6 +2012,11 @@
   $('#clearKey').onclick = () => { store.set('key', null); location.reload(); };
   $('#optVoice').onchange = (e) => { prefs.voice = e.target.checked; store.set('voice', prefs.voice ? null : '0'); updateSoundPill(); };
   $('#optBeep').onchange = (e) => { prefs.beep = e.target.checked; store.set('beep', prefs.beep ? null : '0'); updateSoundPill(); };
+  $('#optSigCams').onchange = (e) => {
+    prefs.signalCams = e.target.checked; store.set('sigcam', prefs.signalCams ? '1' : null);
+    camState.markerAt = null;
+    if (state.fix) { evalCameras(state.fix); refreshCamMarkers(state.fix); }
+  };
   $('#optCams').onchange = (e) => {
     prefs.cams = e.target.checked; store.set('cams', prefs.cams ? null : '0');
     if (state.fix) { evalCameras(state.fix); refreshCamMarkers(state.fix); }

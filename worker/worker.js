@@ -14,6 +14,10 @@ const ALLOWED_ORIGINS = [
 const NCP = 'https://maps.apigw.ntruss.com';
 const COORD = /^-?\d{1,3}(\.\d+)?,-?\d{1,3}(\.\d+)?$/;
 const ROUTE_OPTIONS = new Set(['trafast', 'tracomfort', 'traoptimal', 'traavoidtoll', 'traavoidcaronly']);
+// 재탐색·교통 갱신(단일 옵션 경로)은 같은 접속지에서 15초에 한 번까지만 (호출 폭주로 무료 한도를 쓰지 않게).
+// 처음 길찾기(여러 경로)는 제한하지 않는다. 메모리 기반이라 완벽하진 않지만 폭주는 막는다.
+const ROUTE_GAP_MS = 15000;
+const routeHits = new Map();
 
 function json(body, status, cors, cacheSeconds) {
   const headers = { 'Content-Type': 'application/json; charset=utf-8', ...cors };
@@ -168,6 +172,19 @@ export default {
           return json({ alternatives }, 200, cors);
         }
 
+        const ip = req.headers.get('CF-Connecting-IP') || 'anon';
+        // Cloudflare Rate limiter 바인딩(ROUTE_LIMIT, 예: 60초에 4회)이 있으면 그것을 쓰고, 없으면 메모리 기준으로 막는다
+        if (env.ROUTE_LIMIT) {
+          const { success } = await env.ROUTE_LIMIT.limit({ key: 'route:' + ip });
+          if (!success) return json({ error: 'rate limited', message: '잠시 후 다시 시도합니다', retryAfter: 15 }, 429, cors);
+        } else {
+          const now = Date.now(), last = routeHits.get(ip) || 0;
+          if (now - last < ROUTE_GAP_MS) {
+            return json({ error: 'rate limited', message: '잠시 후 다시 시도합니다', retryAfter: Math.ceil((ROUTE_GAP_MS - (now - last)) / 1000) }, 429, cors);
+          }
+          routeHits.set(ip, now);
+          if (routeHits.size > 5000) routeHits.clear();
+        }
         const r = await call(single);
         if (!r.ok) return json({ error: 'upstream', status: r.status, detail: r.data }, 502, cors);
         if (r.data.code !== 0 || !r.data.route) return json({ error: 'no route', code: r.data.code, message: r.data.message }, 404, cors);

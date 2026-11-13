@@ -391,6 +391,17 @@
   @keyframes pulse { 50% { filter: brightness(1.25); } }
   .cam-sign { box-shadow: 0 4px 12px rgba(0, 0, 0, .3); }
   .cam-bar { background: rgba(255, 255, 255, .08); }
+  /* 카메라 70m 앞(찍히는 지점) — 테두리를 굵게 강조 */
+  .camcard.zone { box-shadow: inset 0 0 0 2px var(--bad), 0 0 18px rgba(229, 57, 53, .35); }
+  /* 지나간 뒤 70m(후면 단속) — 주황으로 바꿔 '아직 주의' 느낌만 남긴다 */
+  .camcard.after {
+    background: linear-gradient(135deg, rgba(255, 152, 0, .22), rgba(255, 152, 0, .06));
+    border-color: rgba(255, 152, 0, .45);
+  }
+  .camcard.after .cam-bar i { background: #ff9800; }
+  .camcard.after.over { background: linear-gradient(135deg, rgba(255, 70, 70, .42), rgba(229, 57, 53, .16)); border-color: var(--bad); }
+  /* 신호 위반 전용 카메라 */
+  .camcard.signal .cam-sign { border-color: #ff9800; font-size: 14px; letter-spacing: -.5px; }
   .seccard {
     background: linear-gradient(135deg, rgba(64, 140, 255, .2), rgba(64, 140, 255, .05));
     border: 1px solid rgba(64, 140, 255, .32); border-radius: var(--r-md); padding: 14px 16px;
@@ -619,6 +630,7 @@
     <label class="check"><input type="checkbox" id="optVoice"> 음성 안내</label>
     <label class="check"><input type="checkbox" id="optBeep"> 경고음</label>
     <label class="check"><input type="checkbox" id="optCams"> 단속 카메라 경고</label>
+    <label class="check"><input type="checkbox" id="optSigCams"> 신호 위반 전용 카메라도 알림</label>
     <label class="check"><input type="checkbox" id="optTraffic"> 실시간 교통 (도로를 막힘 정도로 색칠)</label>
     <label class="check"><input type="checkbox" id="optWeather"> 날씨 표시 (위치는 약 10km 단위로만 보냄)</label>
     <p class="hint">단속 카메라 <b id="camCount">-</b>대 · 기준일 <b id="camDate">-</b> (경찰청 공공데이터)</p>
@@ -659,6 +671,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.13-12"></script>
+<script src="app.js?v=2026.11.13-13"></script>
 </body>
 </html>
