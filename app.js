@@ -38,7 +38,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-25'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-26'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -1032,6 +1032,12 @@
 
   function announceCam(tg, f) {
     const c = tg.c, limit = c[2], d = tg.d;
+    // 단속 카메라 600m 앞부터 지나갈 때까지 제한을 넘으면 주행 기록에 (카메라마다 한 번, 가장 빨랐던 속도로)
+    if (isSpeedCam(c) && d < 600 && state.speedKmh > limit + 1) {
+      const kmh = Math.round(state.speedKmh);
+      if (!tg.said.evt) tg.said.evt = tripEvent({ kind: 'cam', label: camLabel(c), limit, kmh, lat: c[0], lng: c[1] });
+      else if (kmh > tg.said.evt.kmh) { tg.said.evt.kmh = kmh; }
+    }
     if (tg.after && !(state.speedKmh > limit + 1 && isSpeedCam(c))) return;
     if (!isSpeedCam(c)) { // 신호 전용 카메라: 짧게 한 번만 알린다 (속도 경고 없음)
       if (!tg.said.far && d <= 300) { tg.said.far = true; say('300미터 앞, 신호 단속 카메라입니다.', 1); }
@@ -1061,7 +1067,13 @@
     say('구간단속 시작. 제한속도 ' + c[2] + '.', 2);
   }
   function endSection() {
-    if (!camState.section) return;
+    const s = camState.section;
+    if (!s) return;
+    // 구간 평균이 제한을 넘었으면 주행 기록에 남긴다
+    const st = sectionStats(s);
+    if (st.over && st.avg !== null) {
+      tripEvent({ kind: 'sec', label: '구간단속', limit: s.limit, kmh: Math.round(st.avg), km: Math.round(st.done / 100) / 10 });
+    }
     camState.section = null;
     say('구간단속이 끝났습니다.', 1);
   }
@@ -1824,9 +1836,38 @@
 
   // ---------- 현재 도로 이름 ----------
   // ---------- 날씨 (Open-Meteo, 키 없음). 위치는 약 10km 단위로 뭉개서 보낸다. 15분마다 갱신 ----------
-  const weather = { at: null, t: 0, busy: false };
+  const weather = { at: null, t: 0, busy: false, last: null };
   const WMO = [[0, '맑음'], [2, '구름 조금'], [3, '흐림'], [48, '안개'], [57, '이슬비'], [67, '비'], [77, '눈'], [82, '소나기'], [86, '눈 소나기'], [99, '뇌우']];
   const wmoText = (code) => { for (const [max, t] of WMO) if (code <= max) return t; return ''; };
+  // 날씨 아이콘 (애플 날씨처럼 단순한 색 아이콘): 해·달은 노랑, 구름은 흰색, 비·이슬비는 파랑, 눈은 흰 점, 번개는 노랑
+  const WX_SUN = '<circle cx="12" cy="12" r="4.2" fill="#ffc83d"/><g stroke="#ffc83d" stroke-width="1.8" stroke-linecap="round"><path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.4 5.4l1.5 1.5M17.1 17.1l1.5 1.5M5.4 18.6l1.5-1.5M17.1 6.9l1.5-1.5"/></g>';
+  const WX_MOON = '<path d="M15.5 3.2a8.6 8.6 0 1 0 5.3 13.1A7 7 0 0 1 15.5 3.2z" fill="#f4e7a1"/>';
+  const WX_CLOUD = (y, fill) => '<path transform="translate(0 ' + (y || 0) + ')" d="M7.2 19.2h10.1a4.2 4.2 0 0 0 .4-8.4 5.6 5.6 0 0 0-10.7 1.6A3.4 3.4 0 0 0 7.2 19.2z" fill="' + (fill || '#eef2f7') + '"/>';
+  function wxIcon(code, night) {
+    const sky = night ? WX_MOON : WX_SUN;
+    const small = (s) => '<g transform="translate(-3.4 -3.6) scale(.72)">' + s + '</g>';
+    const drops = (n, len) => '<g stroke="#5ab0ff" stroke-width="1.7" stroke-linecap="round">' +
+      [8.6, 12.2, 15.8].slice(0, n).map((x) => '<path d="M' + x + ' 19.6l-.9 ' + len + '"/>').join('') + '</g>';
+    let g;
+    if (code === 0) g = sky;
+    else if (code <= 2) g = small(sky) + WX_CLOUD(1.4);
+    else if (code === 3) g = WX_CLOUD(-0.6, '#cfd6df');
+    else if (code <= 48) g = WX_CLOUD(-3, '#cfd6df') + '<g stroke="#aeb7c2" stroke-width="1.6" stroke-linecap="round"><path d="M5 18h14M7 21h10"/></g>';
+    else if (code <= 57) g = WX_CLOUD(-3) + '<g fill="#5ab0ff"><circle cx="8.6" cy="19.8" r="1"/><circle cx="12.4" cy="21.2" r="1"/><circle cx="16" cy="19.8" r="1"/></g>'; // 이슬비
+    else if (code <= 67 || (code >= 80 && code <= 82)) g = WX_CLOUD(-3) + drops(3, 2.8);
+    else if (code <= 77 || code === 85 || code === 86) g = WX_CLOUD(-3) + '<g fill="#ffffff"><circle cx="8.4" cy="20" r="1.2"/><circle cx="12.2" cy="21.6" r="1.2"/><circle cx="16" cy="20" r="1.2"/></g>';
+    else g = WX_CLOUD(-3, '#cfd6df') + '<path d="M12.6 16.2l-2.6 4h2.4l-1.2 3.6 3.6-5h-2.5l1.4-2.6z" fill="#ffc83d"/>'; // 뇌우
+    return '<svg class="wxicon" viewBox="0 0 24 24" aria-hidden="true">' + g + '</svg>';
+  }
+  function renderWeather() {
+    const w = weather.last, el = $('#weather');
+    if (!w) return;
+    const p = weather.at || state.fix || DEFAULT_CENTER;
+    const night = sunElevation(new Date(), p.lat, p.lng) < -2;
+    el.innerHTML = wxIcon(w.code, night) + '<b>' + Math.round(w.temp) + '°</b> ' + esc(wmoText(w.code)) +
+      (w.pp != null ? ' · <span class="' + (w.pp >= 50 ? 'rain' : '') + '">비 ' + w.pp + '%</span>' : '');
+    el.hidden = !prefs.weather;
+  }
   async function updateWeather(f) {
     if (!prefs.weather || weather.busy) return;
     if (weather.at && f.t - weather.t < 15 * 60000 && haversine(weather.at, f) < 10000) return;
@@ -1838,10 +1879,8 @@
       const j = await api('/weather', { lat: (Math.round(f.lat * 10) / 10).toFixed(1), lng: (Math.round(f.lng * 10) / 10).toFixed(1) });
       const temp = j.temp, code = j.code, pp = Number.isFinite(j.rain) ? j.rain : null;
       if (!Number.isFinite(temp)) throw new Error('no data');
-      const el = $('#weather');
-      el.innerHTML = '<b>' + Math.round(temp) + '°</b> ' + esc(wmoText(code)) +
-        (pp != null ? ' · <span class="' + (pp >= 50 ? 'rain' : '') + '">1시간 내 비 ' + pp + '%</span>' : '');
-      el.hidden = !prefs.weather;
+      weather.last = { temp, code: Number(code) || 0, pp };
+      renderWeather();
     } catch (e) {
       weather.t = f.t - 10 * 60000; // 실패하면 5분 뒤 다시
     } finally {
@@ -1861,6 +1900,7 @@
       const j = await api('/reverse', { coords: f.lng.toFixed(6) + ',' + f.lat.toFixed(6) });
       road.fails = 0;
       road.name = j.road || '';
+      road.area = j.area || '';
       $('#roadName').innerHTML = esc(j.road || '') + (j.area ? '<small>' + esc(j.area) + '</small>' : '');
     } catch (e) {
       road.fails++;
@@ -1946,6 +1986,71 @@
     curv.k = Math.max(-1 / 60, Math.min(1 / 60, toRad(dh) / ds));
   }
 
+  // ---------- 주행 기록: 주행마다 거리·시간·속도·과속 위치를 이 차 브라우저에 남긴다 ----------
+  // 움직이기 시작하면 주행 시작, 5분 넘게 서 있으면 끝. 새로고침·새 버전으로 바뀌어도 10분 안이면 이어서 쓴다
+  const TRIP_GAP = 5 * 60000;
+  const tripLog = { cur: null, savedAt: 0 };
+  function loadTrips() { try { const a = JSON.parse(store.get('trips') || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+  const placeLabel = () => [road.area, road.name].filter(Boolean).join(' ') || '';
+  function tripTick(f) {
+    if (state.demoTimer) return; // 데모 주행은 기록하지 않는다
+    const now = f.t, moving = state.speedKmh >= 8;
+    let c = tripLog.cur;
+    if (c && now - c.lastMove > TRIP_GAP) { finishTrip(); c = null; }
+    if (!c && moving) {
+      c = tripLog.cur = { id: now.toString(36), start: now, lastMove: now, odo0: state.odo, drive0: state.driveMs,
+        dist: 0, drive: 0, max: 0, from: placeLabel(), to: '', dest: '', events: [] };
+    }
+    if (!c) return;
+    if (moving) c.lastMove = now;
+    c.dist = state.odo - c.odo0;
+    c.drive = state.driveMs - c.drive0;
+    if (state.speedKmh > c.max && state.speedKmh < 250) c.max = Math.round(state.speedKmh);
+    const pl = placeLabel();
+    if (!c.from && pl) c.from = pl;
+    if (pl) c.to = pl;
+    if (nav.active && nav.dest) c.dest = nav.dest.name;
+    if (now - tripLog.savedAt > 30000) saveCurTrip();
+  }
+  function saveCurTrip() {
+    tripLog.savedAt = state.fix ? state.fix.t : Date.now();
+    if (tripLog.cur) store.set('tripCur', JSON.stringify(tripLog.cur));
+  }
+  function finishTrip() {
+    const c = tripLog.cur;
+    tripLog.cur = null;
+    store.set('tripCur', null);
+    if (!c || (c.dist || 0) < 300) return; // 주차장 안에서 조금 움직인 것은 빼고
+    const list = loadTrips();
+    list.unshift(c);
+    store.set('trips', JSON.stringify(list.slice(0, 60)));
+  }
+  // 과속 같은 일을 지금 주행에 붙인다. 고쳐 쓸 수 있게 그 기록 객체를 돌려준다
+  function tripEvent(e) {
+    const ev = Object.assign({ t: state.fix ? state.fix.t : Date.now(), place: placeLabel(),
+      lat: state.fix ? state.fix.lat : null, lng: state.fix ? state.fix.lng : null }, e);
+    const c = tripLog.cur;
+    if (c && c.events.length < 100) { c.events.push(ev); saveCurTrip(); }
+    return ev;
+  }
+  // 페이지를 다시 열면: 10분 안에 끊긴 주행은 이어 쓰고(누적 거리 기준을 다시 맞춘다), 오래됐으면 끝난 주행으로 넣는다
+  function resumeTrip() {
+    let c = null;
+    try { c = JSON.parse(store.get('tripCur') || 'null'); } catch (e) { c = null; }
+    if (!c) return;
+    if (Date.now() - c.lastMove < 10 * 60000) {
+      c.odo0 = state.odo - (c.dist || 0);
+      c.drive0 = state.driveMs - (c.drive || 0);
+      tripLog.cur = c;
+    } else {
+      tripLog.cur = c;
+      finishTrip();
+    }
+  }
+  resumeTrip();
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveCurTrip(); });
+  window.addEventListener('pagehide', saveCurTrip);
+
   let lastFixWall = 0;
   function onFix(f) {
     const t0 = performance.now();
@@ -1984,6 +2089,7 @@
     render();
     navUpdate(f);        // 경로 위 위치를 먼저 계산해야 내 차를 도로에 붙일 수 있다
     motionFix(f, !prev); // 지도·내 차는 매 프레임 부드럽게 따라간다
+    tripTick(f);         // 주행 기록 (과속 기록은 바로 아래 카메라 판단에서 붙는다)
     evalCameras(f);
     refreshCamMarkers(f);
     autoZoom(f);
@@ -2479,6 +2585,7 @@
     b.setAttribute('aria-label', '야간 지도: ' + NIGHT_LABEL[m]);
     const sel = $('#optNight');
     if (sel && sel.value !== m) sel.value = m;
+    renderWeather(); // 해가 지면 날씨 아이콘도 해 → 달로
   }
   function setNightMode(m) {
     store.set('nightMode', m === 'auto' ? null : m);
@@ -2542,6 +2649,61 @@
     checkProxy();
   };
   $('#closeSheet').onclick = () => { sheet.hidden = true; };
+
+  // ---------- 주행 기록 화면 ----------
+  const fmtDay = (t) => { const d = new Date(t); return (d.getMonth() + 1) + '월 ' + d.getDate() + '일 (' + '일월화수목금토'[d.getDay()] + ')'; };
+  function renderTrips() {
+    const live = tripLog.cur && tripLog.cur.dist >= 50 ? [tripLog.cur] : [];
+    const all = live.concat(loadTrips());
+    const box = $('#tripList');
+    const totKm = all.reduce((a, c) => a + (c.dist || 0), 0) / 1000;
+    const totOver = all.reduce((a, c) => a + (c.events || []).length, 0);
+    $('#tripSum').textContent = all.length ? '최근 ' + all.length + '번 주행 · ' + totKm.toFixed(1) + 'km · 과속 ' + totOver + '번 (단속 카메라 앞에서 제한을 넘었거나 구간 평균을 넘은 경우)' : '';
+    if (!all.length) { box.innerHTML = '<div class="empty">아직 주행 기록이 없어요. 달리기 시작하면 자동으로 남습니다.</div>'; return; }
+    box.innerHTML = all.map((c, k) => {
+      const avg = c.drive > 60000 ? Math.round(c.dist / (c.drive / 1000) * 3.6) : 0;
+      const ev = c.events || [];
+      const isLive = live.length && k === 0;
+      const route = esc(c.from || '출발지') + ' → ' + esc(c.dest || c.to || '도착지');
+      return '<div class="tripc' + (isLive ? ' live' : '') + '">' +
+        '<button class="trip-head" data-k="' + k + '"><div class="tc-top"><b>' + fmtDay(c.start) + ' ' + hhmm(new Date(c.start)) +
+        (isLive ? ' · 지금 주행 중' : '–' + hhmm(new Date(c.lastMove))) + '</b>' +
+        (ev.length ? '<span class="ovb">과속 ' + ev.length + '</span>' : '<span class="okb">과속 없음</span>') + '</div>' +
+        '<div class="tc-route">' + route + '</div>' +
+        '<div class="tc-stats">' + ((c.dist || 0) / 1000).toFixed(1) + 'km · ' + fmtDur(c.drive || 0) + ' · 평균 ' + avg + ' · 최고 ' + Math.round(c.max || 0) + ' km/h</div></button>' +
+        '<div class="tc-events" data-k="' + k + '" hidden>' + (ev.length ? ev.map((e, j) =>
+          '<button class="tev" data-k="' + k + '" data-j="' + j + '"><span class="tev-t">' + hhmm(new Date(e.t)) + '</span>' +
+          '<span class="tev-m"><b>' + e.kmh + '</b> / ' + e.limit + ' km/h</span>' +
+          '<span class="tev-p">' + esc(e.label || '') + (e.km ? ' ' + e.km + 'km' : '') + (e.place ? ' · ' + esc(e.place) : '') + '</span></button>').join('')
+          : '<div class="empty">이 주행에서는 과속이 없었어요.</div>') + '</div></div>';
+    }).join('');
+    box.querySelectorAll('.trip-head').forEach((b) => {
+      b.onclick = () => { const el = box.querySelector('.tc-events[data-k="' + b.dataset.k + '"]'); el.hidden = !el.hidden; };
+    });
+    // 과속한 곳을 누르면 지도에서 그 자리를 보여 준다 (15초 뒤 다시 내 차를 따라간다)
+    box.querySelectorAll('.tev').forEach((b) => {
+      b.onclick = () => {
+        const e = (all[+b.dataset.k].events || [])[+b.dataset.j];
+        if (!e || !Number.isFinite(e.lat) || !mapA) return;
+        $('#tripSheet').hidden = true;
+        setFollowing(false);
+        mapA.center(e.lat, e.lng, false);
+        toast(hhmm(new Date(e.t)) + ' ' + (e.place || '') + ' · ' + e.label + ' · ' + e.kmh + '/' + e.limit + ' km/h', '', 5000);
+      };
+    });
+  }
+  $('#tripBtn').onclick = () => { saveCurTrip(); renderTrips(); $('#tripSheet').hidden = false; };
+  $('#tripClose').onclick = () => { $('#tripSheet').hidden = true; };
+  $('#tripSheet').addEventListener('click', (e) => { if (e.target === $('#tripSheet')) $('#tripSheet').hidden = true; });
+  // 지우기는 두 번 눌러야 (잘못 눌러 기록을 날리지 않게)
+  let tripClearArmed = 0;
+  $('#tripClear').onclick = () => {
+    if (Date.now() - tripClearArmed > 4000) { tripClearArmed = Date.now(); toast('한 번 더 누르면 주행 기록이 모두 지워집니다.', 'bad', 4000); return; }
+    tripClearArmed = 0;
+    store.set('trips', null);
+    renderTrips();
+    toast('주행 기록을 지웠어요.', '', 2500);
+  };
   sheet.addEventListener('click', (e) => { if (e.target === sheet) sheet.hidden = true; });
   $('#saveKey').onclick = () => { store.set('key', $('#keyInput').value.trim() || null); location.reload(); };
   $('#clearKey').onclick = () => { store.set('key', null); location.reload(); };
@@ -2636,6 +2798,8 @@
       planRoute, doSearch, setFollowing, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
       sunElevation, isNightAt, setNightMode, openSearch, favs, setFav,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather,
+      tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
     };
   }
 })();

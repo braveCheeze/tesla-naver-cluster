@@ -125,6 +125,7 @@
   .weather { font-size: 17px; color: var(--muted); margin-top: auto; }
   .weather:not([hidden]) + .trip { margin-top: 0; }
   .weather b { color: var(--text); font-size: 20px; margin-right: 2px; }
+  .wxicon { width: 1.55em; height: 1.55em; vertical-align: -0.42em; margin-right: 4px; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .45)); }
   .weather .rain { color: #6ec1ff; font-weight: 600; }
   .camnext { display: flex; align-items: center; gap: 10px; font-size: 16px; color: var(--muted); }
   .camnext b { color: var(--text); font-variant-numeric: tabular-nums; }
@@ -400,6 +401,27 @@
   .sheet-card button.star.on { color: #ffc93c; }
   .favmenu { display: flex; gap: 6px; flex-wrap: wrap; margin: -2px 0 4px; }
   .sheet-card .favmenu button { min-height: 44px; padding: 0 14px; font-size: 15px; font-weight: 700; }
+  /* 주행 기록 */
+  .trips { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+  .tripc { border-radius: var(--r-md); background: var(--soft); border: 1px solid var(--soft-line); overflow: hidden; }
+  .tripc.live { border-color: rgba(3, 199, 90, .5); }
+  .sheet-card button.trip-head { width: 100%; text-align: left; background: none; border: 0; border-radius: 0; padding: 12px 14px; min-height: 0; display: block; }
+  .tc-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .tc-top b { font-size: 15px; font-weight: 800; }
+  .ovb, .okb { flex: none; font-size: 12px; font-weight: 800; border-radius: 999px; padding: 3px 9px; }
+  .ovb { background: rgba(255, 90, 95, .18); color: #ff8a8e; }
+  .okb { background: rgba(3, 199, 90, .14); color: #6ee7a6; }
+  .tc-route { font-size: 15px; font-weight: 700; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tc-stats { font-size: 13px; color: var(--muted); margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .tc-events { border-top: 1px solid var(--soft-line); padding: 6px 8px 8px; display: flex; flex-direction: column; gap: 4px; }
+  .sheet-card button.tev {
+    display: grid; grid-template-columns: auto auto 1fr; gap: 10px; align-items: baseline; text-align: left;
+    min-height: 44px; padding: 8px 10px; border-radius: 10px; background: rgba(255, 90, 95, .08); border: 0;
+  }
+  .tev-t { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .tev-m { font-size: 13px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .tev-m b { font-size: 18px; color: #ff6b6b; font-weight: 800; }
+  .tev-p { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ftag { display: inline-block; font-size: 12px; font-weight: 800; color: #04130b; background: var(--accent); border-radius: 6px; padding: 1px 6px; margin-right: 6px; vertical-align: 2px; }
 
   /* ================= 디자인 레이어 =================
@@ -794,6 +816,7 @@
     <div class="topctrls">
       <button class="btn" id="nightBtn" aria-label="야간 지도"></button>
       <button class="btn" id="fsBtn" aria-label="전체화면"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+      <button class="btn" id="tripBtn" aria-label="주행 기록"><svg viewBox="0 0 24 24"><path d="M5 20V10M10 20V5M15 20v-7M20 20V8"/></svg></button>
       <button class="btn" id="setBtn" aria-label="설정"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2.2"/><circle cx="10" cy="17" r="2.2"/></svg></button>
     </div>
     <div class="ctrls">
@@ -813,6 +836,16 @@
     </div>
     <div id="results" class="results"></div>
     <div class="row end"><button id="searchClose">닫기</button></div>
+  </div>
+</div>
+
+<!-- 주행 기록: 주행마다 거리·시간·속도, 누르면 과속한 곳 목록 -->
+<div id="tripSheet" class="sheet" hidden>
+  <div class="sheet-card" role="dialog" aria-label="주행 기록">
+    <h2>주행 기록</h2>
+    <p id="tripSum" class="hint"></p>
+    <div id="tripList" class="trips"></div>
+    <div class="row end"><button id="tripClear">기록 지우기</button><button id="tripClose" class="primary">닫기</button></div>
   </div>
 </div>
 
@@ -881,6 +914,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-25"></script>
+<script src="app.js?v=2026.11.14-26"></script>
 </body>
 </html>

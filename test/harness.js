@@ -981,6 +981,65 @@
   }
   const C_A = () => CAM_ISO_A;
 
+  // S30: 주행 기록 — 제한 50 카메라(CAM_ISO_B)를 70 km/h 로 지나 2km 달리고 8분 서 있으면
+  //      주행 하나가 저장되고(거리·최고 속도), 과속 1건(70/50)이 기록 화면에 뜬다
+  async function s30() {
+    const t = T();
+    const before = t.loadTrips();
+    const r = {};
+    try {
+      t.tripStore.save([]);
+      t.tripLog.cur = null;
+      const C = CAM_ISO_B, v = 70 / 3.6;
+      for (let s = 0; s <= 2000; s += v) feed(dest(C, 180, 1000 - s), v, 0);
+      r.liveDist = Math.round(t.tripLog.cur ? t.tripLog.cur.dist : -1);
+      const stop = dest(C, 0, 1000);
+      for (let k = 0; k < 8; k++) feed(stop, 0, 0, { dt: 60000 });   // 8분 서 있음
+      const trips = t.loadTrips();
+      const tr = trips[0] || {};
+      r.saved = trips.length;
+      r.dist = Math.round(tr.dist || 0);
+      r.max = tr.max;
+      r.events = (tr.events || []).map((e) => e.kmh + '/' + e.limit + ' ' + e.kind);
+      // 기록 화면
+      document.getElementById('tripBtn').click();
+      const head = document.querySelector('#tripList .trip-head');
+      r.card = head ? head.textContent.replace(/\s+/g, ' ').slice(0, 90) : '';
+      if (head) head.click();
+      const ev = document.querySelector('#tripList .tc-events:not([hidden]) .tev');
+      r.eventRow = ev ? ev.textContent.replace(/\s+/g, ' ') : '';
+    } finally {
+      document.getElementById('tripSheet').hidden = true;
+      t.tripStore.save(before);
+    }
+    const ok = r.saved === 1 && Math.abs(r.dist - 2000) < 80 && r.max >= 69 && r.events.length === 1 && /^7\d\/50 cam$/.test(r.events[0]) &&
+      /과속 1/.test(r.card) && /\/ 50 km\/h/.test(r.eventRow);
+    return { pass: ok, detail: JSON.stringify(r) };
+  }
+
+  // S31: 날씨 아이콘 — 날씨 코드별로 해·달·구름·이슬비·비·눈·번개 그림이 맞게 나오고 #weather 에 그려진다
+  async function s31() {
+    const t = T();
+    const has = (code, night, re) => re.test(t.wxIcon(code, night));
+    const checks = {
+      clearDaySun: has(0, false, /#ffc83d/) && !has(0, false, /#f4e7a1/),
+      clearNightMoon: has(0, true, /#f4e7a1/),
+      partlyCloud: has(2, false, /#ffc83d/) && has(2, false, /#eef2f7/),
+      drizzleDots: has(53, false, /<circle[^>]*r="1"/) && has(53, false, /#5ab0ff/),
+      rainLines: has(63, false, /stroke="#5ab0ff"/),
+      snowDots: has(73, false, /fill="#ffffff"/),
+      thunderBolt: has(95, false, /#ffc83d/) && has(95, false, /#cfd6df/),
+    };
+    const prev = t.weather.last;
+    t.weather.last = { temp: 10.4, code: 53, pp: 25 };
+    t.renderWeather();
+    const w = document.getElementById('weather');
+    checks.rendered = !!w.querySelector('svg.wxicon') && /10°/.test(w.textContent) && /이슬비/.test(w.textContent);
+    t.weather.last = prev;
+    const bad = Object.keys(checks).filter((k) => !checks[k]);
+    return { pass: bad.length === 0, detail: Object.keys(checks).map((k) => k + (checks[k] ? '✓' : '✗')).join(', ') };
+  }
+
   // S28: 자동 야간 — 서울의 해 높이(2026-11-13: 해 뜸 07:09, 해 짐 17:20 무렵)로 낮·밤을 가르고,
   //      야간 버튼은 자동 → 항상 어둡게 → 항상 밝게 → 자동. 다크 필터는 지도 타일에만 (경로선·아이콘은 그대로)
   async function s28() {
@@ -1487,6 +1546,8 @@
     { id: 'S27', name: 'S27 section enforcement on a real route', fn: s27 },
     { id: 'S28', name: 'S28 auto night (sun) + dark map', fn: s28 },
     { id: 'S29', name: 'S29 favourites: 집 · 회사 · ★', fn: s29 },
+    { id: 'S30', name: 'S30 trip log with speeding events', fn: s30 },
+    { id: 'S31', name: 'S31 weather icons', fn: s31 },
   ];
 
   // ---------------------------------------------------------------- runner
