@@ -30,7 +30,7 @@
     weather: store.get('weather') !== '0',
     headingUp: store.get('hup') !== '0',
     tilt: store.get('tilt') !== '0',
-    routeOpt: store.get('routeOpt') || 'trafast',
+    routeOpt: store.get('routeOpt') || 'traoptimal', // 기본은 '추천'(네이버 실시간 최적)
     // 테슬라 모드: 속도는 차 화면에 이미 나오므로 왼쪽 계기판을 없애고 지도를 넓게, 시계·날씨 등은 지도 위 글자로.
     // 테슬라 브라우저는 'X11; Linux x86_64' 로만 보이므로 그때 기본으로 켠다 (설정에서 바꾸면 그 값을 따른다)
     tesla: store.get('tesla') ? store.get('tesla') === '1' : /X11; Linux x86_64/.test(navigator.userAgent),
@@ -38,7 +38,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.13-18'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.13-19'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -1217,13 +1217,14 @@
     nav.busy = true;
     if (!reroute) toast('경로를 찾는 중…', '', 3000);
     try {
-      // 처음 길찾기는 추천 경로 여러 개(빠른 길·추천·무료 도로)를 받아 고르게 하고,
-      // 재탐색·교통 갱신은 고른 옵션 하나로만 다시 묻는다
+      // 처음 길찾기는 추천 경로 여러 개(추천·빠른 길·무료 도로)를 받아 고르게 하고,
+      // 교통 갱신은 지금 안내 중인 옵션으로, 경로 이탈 재탐색은 같은 목적지를 '추천' 경로로 다시 묻는다
       const q = {
         start: state.fix.lng.toFixed(6) + ',' + state.fix.lat.toFixed(6),
         goal: dest.lng.toFixed(6) + ',' + dest.lat.toFixed(6),
       };
-      if (reroute) q.option = nav.option || prefs.routeOpt;
+      if (reroute === 'traffic') q.option = nav.option || prefs.routeOpt;
+      else if (reroute) q.option = rerouteOption();
       else q.options = ALT_OPTIONS;
       // 차량 LTE 가 느릴 수 있어 20초까지 기다리고, 시간 초과면 한 번 더 시도한다
       let res;
@@ -1258,7 +1259,9 @@
         }
         navUpdate(state.fix);
       } else if (reroute) {
+        nav.option = q.option; // 이후 교통 갱신도 새로 잡은 추천 경로 기준으로
         say('새 경로로 안내합니다.', 1);
+        toast('새 경로로 안내합니다 · ' + (ALT_LABEL[q.option] || '추천') + ' · ' + fmtDist(r.distance || nav.total) + ' · ' + fmtMin(r.duration), '', 4000);
         navUpdate(state.fix);
       } else {
         nav.preview = true; nav.active = false;
@@ -1304,7 +1307,9 @@
   }
 
   // ---------- 추천 경로 여러 개 ----------
-  const ALT_OPTIONS = 'trafast:traoptimal:traavoidtoll';
+  const ALT_OPTIONS = 'traoptimal:trafast:traavoidtoll'; // 추천을 맨 앞에 (같은 길이면 '추천 · 빠른 길'로 합쳐 보인다)
+  // 경로를 벗어나 다시 찾을 때는 같은 목적지를 '추천'(실시간 최적) 경로로. 무료 도로를 골랐으면 그 조건은 지킨다
+  const rerouteOption = () => (nav.option === 'traavoidtoll' ? 'traavoidtoll' : 'traoptimal');
   const ALT_LABEL = { trafast: '빠른 길', traoptimal: '추천', traavoidtoll: '무료 도로', tracomfort: '편한 길', traavoidcaronly: '전용도로 회피' };
   // 사실상 같은 경로(거리·시간이 거의 같음)는 하나로 합치고 이름을 이어 붙인다
   function dedupAlts(list) {
@@ -1453,11 +1458,14 @@
       // 다만 20초가 지나도 경로에 못 올라탔다면(엉뚱한 경로) 그때부터는 센다
       nav.off++;
     }
-    if (nav.off >= 3 && f.t - nav.lastReroute > nav.gap && !nav.busy) {
+    // 확실히 다른 길(80m 넘게 벗어남)이면 2번, 아니면 3번 연속 확인되면 다시 찾는다
+    const need = best.dist > 80 ? 2 : 3;
+    if (nav.off >= need && f.t - nav.lastReroute > nav.gap && !nav.busy) {
       nav.lastReroute = f.t;
       nav.off = 0; nav.onCount = 0;
       nav.gap = Math.min(nav.gap * 2, 40000); // 계속 벗어나면 간격을 늘리되 40초를 넘기지 않는다
       say('경로를 벗어났습니다. 다시 탐색합니다.', 1, true);
+      toast('경로를 벗어나 같은 목적지로 다시 찾는 중… (추천 경로)', '', 4000);
       planRoute(nav.dest, true);
     }
     // 지나온 경로는 지운다 (내 차 앞의 남은 경로만 그린다)

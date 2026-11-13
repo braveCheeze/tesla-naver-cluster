@@ -976,6 +976,38 @@
   }
   const C_A = () => CAM_ISO_A;
 
+  // S23: 경로 이탈 → 같은 목적지를 '추천'(traoptimal) 경로로 다시 찾는다. 80m 넘게 벗어나면 2번째 위치에서 바로.
+  //      처음에 무료 도로를 골랐으면 다시 찾을 때도 무료 도로(traavoidtoll)
+  async function s23() {
+    const t = T();
+    const run = async (chosen) => {
+      softReset();
+      const R = buildNavRoute();
+      const c0 = stub.calls.length;
+      await planAndStart(R);
+      if (chosen) t.nav.option = chosen;
+      for (const s of [15, 30, 45]) { const a = pointAt(R, s); feed(a.p, 10, a.h); }
+      let firedOn = null;
+      for (let k = 0; k < 4 && firedOn === null; k++) {
+        const on = pointAt(R, 60 + 30 * k).p;
+        feed(dest(on, 90, 120), 10, 0, { dt: 3000 });   // 경로에서 동쪽 120m
+        if (stub.count('/route', c0) >= 2) firedOn = k + 1;
+      }
+      await waitFor(() => !t.nav.busy, 2000, 20);
+      const calls = stub.since(c0, '/route'), q = calls[1] ? calls[1].query : {};
+      const goal = R.dest.lng.toFixed(6) + ',' + R.dest.lat.toFixed(6);
+      return { firedOn, option: q.option, sameGoal: q.goal === goal, optionAfter: t.nav.option, active: t.nav.active };
+    };
+    const a = await run(null), b = await run('traavoidtoll');
+    const okA = a.firedOn === 2 && a.option === 'traoptimal' && a.sameGoal && a.optionAfter === 'traoptimal' && a.active;
+    const okB = b.option === 'traavoidtoll' && b.sameGoal && b.active;
+    return {
+      pass: okA && okB,
+      detail: 'default: reroute on off-route fix #' + a.firedOn + ', option=' + a.option + ', same goal ' + a.sameGoal + (okA ? '✓' : '✗') +
+        '; chose 무료 도로: option=' + b.option + ', same goal ' + b.sameGoal + (okB ? '✓' : '✗'),
+    };
+  }
+
   // S20: 길안내 없이 굽은 길 — 반지름 250m 로 왼쪽·오른쪽으로 계속 굽는 길 끝의 카메라(CAM_ISO_B, 400m 경고)를
   //      직선이 아니라 휘는 앞길로 예측해서 300m 넘게 앞에서 잡아야 한다 (예전에는 옆 도로·반대편 차로로 오인해 놓침)
   async function s20() {
@@ -1205,6 +1237,7 @@
     { id: 'S20', name: 'S20 curved road camera (no nav)', fn: s20 },
     { id: 'S21', name: 'S21 route-number road names', fn: s21 },
     { id: 'S22', name: 'S22 route colours (blue = no traffic data)', fn: s22 },
+    { id: 'S23', name: 'S23 off-route reroute: same goal, 추천', fn: s23 },
   ];
 
   // ---------------------------------------------------------------- runner

@@ -738,11 +738,12 @@
     <hr>
     <label class="lbl" for="optRoute">경로 옵션</label>
     <select id="optRoute">
+      <option value="traoptimal">추천 (실시간 최적)</option>
       <option value="trafast">빠른 길</option>
       <option value="tracomfort">편한 길</option>
-      <option value="traoptimal">최적 경로</option>
       <option value="traavoidtoll">무료 도로 우선</option>
     </select>
+    <p class="hint">경로를 벗어나면 같은 목적지를 추천 경로로 다시 찾습니다. 무료 도로를 고르셨다면 다시 찾을 때도 무료 도로로 찾습니다.</p>
     <label class="lbl" for="proxyInput">길안내 서버 주소</label>
     <input id="proxyInput" autocomplete="off" autocapitalize="off" spellcheck="false">
     <p id="proxyStatus" class="hint"></p>
@@ -765,6 +766,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.13-18"></script>
+<script src="app.js?v=2026.11.13-19"></script>
 </body>
 </html>
