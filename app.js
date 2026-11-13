@@ -34,7 +34,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.13-9'; // index.html 의 app.js?v= 와 같이 올린다
+  const APP_VERSION = '2026.11.13-10'; // index.html 의 app.js?v= 와 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -542,6 +542,7 @@
     const b = $('#source');
     b.textContent = text;
     b.classList.toggle('warn', !!warn);
+    b.hidden = !warn; // 정상(네이버 지도)일 때는 숨기고, 테스트 지도·오류일 때만 보인다
     attrib.textContent = mapA === NaverAdapter ? '© NAVER Corp.' : (mapA ? '© OpenStreetMap contributors' : '');
   }
 
