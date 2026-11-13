@@ -976,6 +976,84 @@
   }
   const C_A = () => CAM_ISO_A;
 
+  // S20: 길안내 없이 굽은 길 — 반지름 250m 로 왼쪽·오른쪽으로 계속 굽는 길 끝의 카메라(CAM_ISO_B, 400m 경고)를
+  //      직선이 아니라 휘는 앞길로 예측해서 300m 넘게 앞에서 잡아야 한다 (예전에는 옆 도로·반대편 차로로 오인해 놓침)
+  async function s20() {
+    const t = T(), C = CAM_ISO_B, R = 250;
+    const drive = (left) => {
+      softReset();
+      // 카메라가 원 위(중심에서 북쪽)에 오도록 중심을 둔다. 왼쪽 굽음: 중심 각을 140°→0° 로 줄이며(반시계) 달린다
+      const center = dest(C, 180, R);
+      let first = null;
+      for (let deg = 140; deg >= 0; deg -= (13 / R) * 180 / Math.PI) {
+        const phi = left ? deg : -deg;
+        const p = dest(center, (phi + 360) % 360, R);
+        const head = ((left ? phi - 90 : phi + 90) + 360) % 360;
+        feed(p, 13, head);
+        const tg = t.camState.target;
+        if (first === null && tg && sameCam(tg.c, C)) first = r0(hav(p, C));
+      }
+      return first;
+    };
+    const l = drive(true), r = drive(false);
+    return {
+      pass: l !== null && l >= 300 && r !== null && r >= 300,
+      detail: 'R=250 m curve, camera at the end (400 m range): left curve alert at ' + (l === null ? 'NEVER' : l + ' m') + (l >= 300 ? '✓' : '✗') +
+        ', right curve alert at ' + (r === null ? 'NEVER' : r + ' m') + (r >= 300 ? '✓' : '✗'),
+    };
+  }
+
+  // S21: 길안내 경로의 도로명이 '국도43' 처럼 노선 번호만 있어도, 이름이 다르다고 카메라를 숨기지 않는다
+  async function s21() {
+    const t = T(), out = [];
+    for (const name of ['국도43', '국지도70', '지방도333', '다른대로']) {
+      softReset();
+      const R = buildRouteBeside(CAM_ISO_B, -12, name);   // 카메라가 경로 오른쪽 12m
+      await planAndStart(R);
+      let hit = false;
+      for (let s = 14; s <= 900; s += 14) {
+        const a = pointAt(R, s);
+        feed(a.p, 13, a.h);
+        const tg = t.camState.target;
+        if (tg && sameCam(tg.c, CAM_ISO_B)) hit = true;
+      }
+      out.push({ name, hit, ok: hit === (name !== '다른대로') });
+    }
+    return {
+      pass: out.every((x) => x.ok),
+      detail: 'camera road 위례성로, 12 m right of route named: ' + out.map((x) => x.name + '→' + (x.hit ? 'alert' : 'none') + (x.ok ? '✓' : '✗')).join(', '),
+    };
+  }
+
+  // S22: 경로 색 — 교통 정보 없는 길 파랑, 원활 초록, 정체 빨강 (지도 경로선과 왼쪽 막대 모두)
+  async function s22() {
+    const t = T(), R = buildNavRoute();   // 테스트로 cong 1(원활) 0~5점, 율곡로 cong 3(정체) 5~9점
+    await planAndStart(R);
+    feed(pointAt(R, 15).p, 15, 0);
+    t.renderNav();
+    const m = t.getMap();
+    const colors = {};
+    (m.route || []).forEach((pc) => { colors[pc.kind] = colors[pc.kind] || new Set(); colors[pc.kind].add(String(pc.color).toLowerCase()); });
+    const has = (k, c) => !!colors[k] && colors[k].has(c);
+    const bar = (document.getElementById('rsBar').style.background || '').toLowerCase();
+    const blueBase = has('base', '#2f7dff'), green = has('traffic', '#03c75a'), red = has('traffic', '#e53935');
+    // 막대: 원활(초록)·정체(빨강) 구간이 그려진다. 이 경로는 정보 없는 구간이 없으므로 파랑은 없어도 된다
+    const barOk = /rgb\(3, 199, 90\)|#03c75a/.test(bar) && /rgb\(229, 57, 53\)|#e53935/.test(bar);
+    // 정보 없는 경로: 구간 정보를 빼면 막대가 파랑
+    t.endNav(); softReset();
+    const R2 = buildNavRoute(); R2.route.sections = [];
+    await planAndStart(R2);
+    feed(pointAt(R2, 15).p, 15, 0);
+    t.renderNav();
+    const bar2 = (document.getElementById('rsBar').style.background || '').toLowerCase();
+    const blueBar = /rgb\(47, 125, 255\)|#2f7dff/.test(bar2) && !/rgb\(3, 199, 90\)/.test(bar2);
+    return {
+      pass: blueBase && green && red && barOk && blueBar,
+      detail: 'line: base blue ' + (blueBase ? '✓' : '✗') + ', free-flow green ' + (green ? '✓' : '✗') + ', jam red ' + (red ? '✓' : '✗') +
+        '; strip: green+red ' + (barOk ? '✓' : '✗') + ', no-data route all blue ' + (blueBar ? '✓' : '✗'),
+    };
+  }
+
   // S19: 그냥 링크로 들어와도 최신 버전 — 버전 세 곳(app.js·index.html·version.json)이 맞는지,
   //      그리고 새 버전 판단(새로고침 / 이미 최신 / 운전 중 미룸 / 같은 창 재시도 안 함)이 맞는지
   async function s19() {
@@ -1124,6 +1202,9 @@
     { id: 'S17', name: 'S17 alert range by road type', fn: s17 },
     { id: 'S18', name: 'S18 navigation: route cameras only', fn: s18 },
     { id: 'S19', name: 'S19 latest version from plain link', fn: s19 },
+    { id: 'S20', name: 'S20 curved road camera (no nav)', fn: s20 },
+    { id: 'S21', name: 'S21 route-number road names', fn: s21 },
+    { id: 'S22', name: 'S22 route colours (blue = no traffic data)', fn: s22 },
   ];
 
   // ---------------------------------------------------------------- runner

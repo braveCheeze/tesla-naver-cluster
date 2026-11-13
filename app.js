@@ -38,7 +38,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.13-17'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.13-18'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -146,9 +146,10 @@
       el.style.transform = 'rotate(' + cur + 'deg)';
     };
   }
-  // 경로 소통 정보(sections) → 색칠할 구간 [a..b] 목록. 같은 색이 이어지면 합친다
-  const ROUTE_BASE = '#03c75a', ROUTE_EDGE = '#0b4a2b';
-  const TRAFFIC_COLOR = { 2: '#f5a623', 3: '#e53935' }; // 2 서행, 3 정체
+  // 경로 소통 정보(sections) → 색칠할 구간 [a..b] 목록. 같은 색이 이어지면 합친다.
+  // 바탕(교통 정보가 없는 길 = 대개 차가 거의 없는 한산한 길)은 파랑, 원활 초록, 서행 주황, 정체 빨강
+  const ROUTE_BASE = '#2f7dff', ROUTE_EDGE = '#0d2547';
+  const TRAFFIC_COLOR = { 1: '#03c75a', 2: '#f5a623', 3: '#e53935' }; // 1 원활, 2 서행, 3 정체 (0 은 정보 없음 = 바탕색)
   function trafficRuns(sections, len) {
     const runs = [];
     (sections || []).filter((s) => s && Number.isFinite(s.i) && Number.isFinite(s.n))
@@ -162,7 +163,7 @@
         if (last && last.color === color && a <= last.b + 1) last.b = Math.max(last.b, b);
         else runs.push({ a, b, color });
       });
-    // 바로 붙은 다른 색 구간 사이에 초록 틈이 생기지 않게 잇는다
+    // 바로 붙은 다른 색 구간 사이에 바탕색 틈이 생기지 않게 잇는다
     for (let k = 0; k + 1 < runs.length; k++) if (runs[k + 1].a === runs[k].b + 1) runs[k].b++;
     return runs;
   }
@@ -789,8 +790,9 @@
     const x = roadKey(a), y = roadKey(b);
     return !!x && !!y && (x.indexOf(y) >= 0 || y.indexOf(x) >= 0);
   }
-  // '19번 국도', '82번 지방도', '고속도로' 처럼 노선 번호·종류만 있는 이름은 실제 도로명과 비교할 수 없다
-  const GENERIC_ROAD = /^(\d+번\s*)?(일반국도|국도|국가지원지방도|지방도|고속도로|고속국도|시도|군도|구도|기타)$|\d+\s*호선$/;
+  // '19번 국도', '국도1', '국지도70', '지방도333', '국도 제3호선', '고속도로' 처럼 노선 번호·종류만 있는 이름은
+  // 실제 도로명(북한강로 등)과 비교할 수 없다 (같은 길이어도 이름이 달라 진짜 카메라를 숨기게 됨)
+  const GENERIC_ROAD = /^(\d+번\s*)?(일반국도|국도|국가지원지방도|국지도|지방도|고속도로|고속국도|시도|군도|구도|기타)(\s*제?\s*\d+\s*(호선|번)?)?$|\d+\s*호선$/;
   const specificRoad = (s) => !!s && !GENERIC_ROAD.test(String(s).trim());
   // 둘 다 구체적인 도로명인데 서로 다르면 다른 도로 (하나라도 모르면 다르다고 단정하지 않는다)
   const roadsDiffer = (a, b) => specificRoad(a) && specificRoad(b) && !sameRoad(a, b);
@@ -813,12 +815,25 @@
   // 반대편 차로용으로 본다. 양방향 카메라와 방향을 모르는 카메라는 절대 거르지 않는다.
   const OPP_SIDE = 8;
   const oneDir = (c) => c[9] === 1 || c[9] === 2;
-  // 진행 방향 기준 좌우 거리 (오른쪽 +, 왼쪽 -)
+  // 굽은 길: 최근 주행 궤적이 휜 정도(곡률 k, 1m 당 라디안, + 는 오른쪽으로 굽음)로 앞길을 원호로 보고,
+  // 거리 d 앞 지점이 놓일 방향(현 방향 + 원호의 현이 꺾인 각)을 구한다. 곧은 길이면 지금 방향 그대로
+  const curv = { hist: [], k: 0 };
+  function pathBearing(d) {
+    if (state.heading === null) return null;
+    const k = curv.k;
+    if (!k || d > 800) return state.heading;
+    const half = Math.asin(Math.min(1, d * Math.abs(k) / 2)); // 반지름 1/k 원에서 현 길이 d 의 꺾인 각
+    return (state.heading + Math.sign(k) * toDeg(half) + 360) % 360;
+  }
+  // 앞길(원호) 기준 좌우 거리 (오른쪽 +, 왼쪽 -)
   function sideOf(f, c, d) {
-    if (state.heading === null) return 0;
-    const a = ((bearing(f, { lat: c[0], lng: c[1] }) - state.heading) % 360 + 540) % 360 - 180;
+    const pb = pathBearing(d);
+    if (pb === null) return 0;
+    const a = ((bearing(f, { lat: c[0], lng: c[1] }) - pb) % 360 + 540) % 360 - 180;
     return d * Math.sin(toRad(a));
   }
+  // 지금 달리는 도로 이름(역지오코딩)과 카메라의 도로 이름이 같은지 (구체적인 도로명끼리만)
+  const onSameRoadName = (c) => specificRoad(road.name) && sameRoad(road.name, camRoad(c));
   // 경로 선분 a→b 기준 p 의 좌우 거리 (오른쪽 +, 왼쪽 -)
   function sideOfSeg(p, a, b, dist) {
     const k = Math.cos(toRad(a.lat));
@@ -831,13 +846,16 @@
     if (!camWanted(c)) return false;
     // 길안내 중에는 안내하는 경로 위의 카메라만 (잠깐 경로를 벗어나도 다른 길 카메라는 알리지 않는다)
     if (nav.active && nav.pts) return camOnRouteAhead(c);
-    // 길안내가 없으면 진행 방향 앞의 내 도로 카메라
+    // 길안내가 없으면 진행 방향 앞(굽은 길이면 휘는 대로 예측한 앞길)의 내 도로 카메라
     if (state.heading === null) return false;
-    const diff = angleDiff(bearing(f, { lat: c[0], lng: c[1] }), state.heading);
-    if (diff > 60 && d > 40) return false;
-    // 진행 방향 직선에서 좌우로 얼마나 떨어져 있는지: 옆 도로(보통 30m 이상 떨어짐)는 빼고, 멀수록 방향 오차를 조금 허용
+    const same = onSameRoadName(c);
+    const diff = angleDiff(bearing(f, { lat: c[0], lng: c[1] }), pathBearing(d));
+    if (diff > (same ? 75 : 60) && d > 40) return false;
+    // 앞길에서 좌우로 얼마나 떨어져 있는지: 옆 도로(보통 30m 이상 떨어짐)는 빼고, 멀수록 방향 오차를 조금 허용.
+    // 지금 달리는 도로와 이름이 같은 카메라는 굽은 길·좌표 오차를 감안해 훨씬 너그럽게 본다
     const lateral = d * Math.sin(toRad(Math.min(diff, 90)));
-    if (lateral > 20 + d * (keep ? 0.03 : 0.015)) return false;
+    const limit = same ? 45 + d * 0.06 : 20 + d * (keep ? 0.03 : 0.015);
+    if (lateral > limit) return false;
     // 반대편 차로 카메라. 멀리서는 방향 오차·굽은 길 때문에 좌우를 믿기 어려우므로,
     // 왼쪽으로 보이는 한 방향 카메라는 300m 안으로 들어올 때까지 미뤘다가 그때 판단한다 (멀리서 잠깐 떴다 사라지는 일 방지)
     if (oneDir(c)) {
@@ -859,7 +877,8 @@
     // 경로 왼쪽으로 8m 넘게 떨어진 한 방향 카메라는 반대편 차로용
     if (oneDir(c) && pr.dist > OPP_SIDE && sideOfSeg(p, a, b, pr.dist) < 0) return null;
     // 고속도로 구간이면 옆 일반도로의 저속 카메라(제한 70 이하, 고속국도 아님)는 제외
-    if (/고속/.test(rn) && c[8] !== 1 && c[2] <= 70) return null;
+    // ('분당수서고속화도로' 같은 고속화도로는 고속도로가 아니므로 이 규칙을 쓰지 않는다)
+    if (/고속도로|고속국도/.test(rn) && c[8] !== 1 && c[2] <= 70) return null;
     if (!(pr.dist < 20 || (specificRoad(rn) && sameRoad(rn, cn)))) return null;
     return nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]);
   }
@@ -1484,8 +1503,9 @@
   }
 
   // 지도 왼쪽 세로 막대: 맨 아래 출발, 맨 위 도착으로 고정. 내 차 점이 올라가고, 지나온 만큼 막대가 줄어든다.
-  // 남은 경로 중 막히는 구간은 주황·빨강. 재탐색해도 출발점은 그대로 (전체 = 지금까지 달린 거리 + 남은 거리).
-  const CONG_COLOR = { 2: '#f5a623', 3: '#e53935' };
+  // 색은 지도 경로선과 같다: 교통 정보 없음 파랑, 원활 초록, 서행 주황, 정체 빨강.
+  // 재탐색해도 출발점은 그대로 (전체 = 지금까지 달린 거리 + 남은 거리).
+  const CONG_COLOR = TRAFFIC_COLOR;
   function renderStrip() {
     const el = $('#routeStrip');
     if (!nav.active || !nav.pts || !nav.route) { el.hidden = true; return; }
@@ -1510,7 +1530,7 @@
       if (hi > lo) runs.push([at(lo), at(hi), color]);
     });
     runs.sort((a, b) => a[0] - b[0]);
-    const base = '#03c75a', stops = [];
+    const base = ROUTE_BASE, stops = [];
     let pos = 0;
     runs.forEach(([p0, p1, c]) => {
       if (p0 > pos) stops.push(base + ' ' + pos.toFixed(1) + '%', base + ' ' + p0.toFixed(1) + '%');
@@ -1605,7 +1625,7 @@
     }
   }
 
-  const road = { at: null, t: 0, fails: 0, busy: false };
+  const road = { at: null, t: 0, fails: 0, busy: false, name: '' }; // name: 지금 달리는 도로 이름 (카메라 판단에도 씀)
   async function updateRoad(f) {
     if (road.busy) return;
     if (road.fails > 3 && f.t - road.t < 300000) return; // 연속 실패하면 5분 쉬었다 다시 시도
@@ -1616,6 +1636,7 @@
     try {
       const j = await api('/reverse', { coords: f.lng.toFixed(6) + ',' + f.lat.toFixed(6) });
       road.fails = 0;
+      road.name = j.road || '';
       $('#roadName').innerHTML = esc(j.road || '') + (j.area ? '<small>' + esc(j.area) + '</small>' : '');
     } catch (e) {
       road.fails++;
@@ -1685,6 +1706,22 @@
     if (state.following) mapA.center(cur.lat, cur.lng, true);
   }
 
+  // 최근 40~150m 주행 궤적의 방향 변화로 곡률을 잰다 (굽은 길에서 앞쪽 카메라를 찾을 때 씀).
+  // 반지름 60m 보다 급한 값은 GPS 흔들림으로 보고 자른다. 멈추면 초기화
+  function updateCurvature() {
+    if (state.speedKmh < 10 || state.heading === null) {
+      if (state.speedKmh < 3) { curv.hist = []; curv.k = 0; }
+      return;
+    }
+    const h = curv.hist;
+    h.push({ s: state.odo, hd: state.heading });
+    while (h.length > 2 && state.odo - h[0].s > 150) h.shift();
+    const ds = state.odo - h[0].s;
+    if (ds < 40) return;
+    const dh = ((state.heading - h[0].hd) % 360 + 540) % 360 - 180;
+    curv.k = Math.max(-1 / 60, Math.min(1 / 60, toRad(dh) / ds));
+  }
+
   let lastFixWall = 0;
   function onFix(f) {
     const t0 = performance.now();
@@ -1715,6 +1752,7 @@
     if (state.speedKmh > (state.maxKmh || 0) && state.speedKmh < 250) state.maxKmh = state.speedKmh; // 튀는 값 제외
     if (h !== null && state.speedKmh >= 3) state.heading = h; // 정지 중 GPS 방향은 믿지 않음
     state.fix = f;
+    updateCurvature();
 
     const acc = Math.round(f.acc || 0);
     setGps(acc <= 25 ? 'ok' : 'warn', 'GPS ±' + acc + 'm');
