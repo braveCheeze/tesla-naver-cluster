@@ -38,7 +38,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.13-22'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.13-23'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -1176,10 +1176,11 @@
       return;
     }
     // 길안내 없이: 내가 달리는 길·방향 앞의 카메라만 지도에 (반대편 차로·옆 도로·지나온 카메라는 표시하지 않음).
-    // 방향을 아직 모르면(출발 전) 가까운 카메라를 보여 준다
+    // 경고 대상을 새로 고를 때와 같은 엄격한 기준을 쓴다: 왼쪽(반대편 차로 쪽)으로 보이는 한 방향 카메라는
+    // 300m 안에 들어와 판단될 때까지 지도에도 띄우지 않는다. 방향을 아직 모르면(출발 전) 가까운 카메라를 보여 준다
     const tg = camState.target;
     const list = camsNear(f.lat, f.lng, 2000).filter((x) => camWanted(x.c) &&
-      (state.heading === null || (tg && x.i === tg.i) || isAhead(f, x.c, x.d, true)));
+      (state.heading === null || (tg && x.i === tg.i) || isAhead(f, x.c, x.d, false)));
     mapA.setCameras(list.sort((a, b) => a.d - b.d).slice(0, 80));
   }
 

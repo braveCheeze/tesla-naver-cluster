@@ -1127,8 +1127,11 @@
     const behind = shownAfter(() => { for (let s = 0; s <= 300; s += 20) feed(dest(C, 0, 200 + s), 20, 0); });
     // (c) 왼쪽 18m 옆으로 나란히 = 반대편 차로 (300m 안)
     const opposite = shownAfter(() => { for (let s = 0; s <= 200; s += 20) feed(dest(dest(C, 180, 300 - s), 90, 18), 20, 0); });
-    const pass = ahead >= 1 && behind === 0 && opposite === 0;
-    return { pass, detail: 'markers: heading to camera ' + ahead + (ahead >= 1 ? '✓' : '✗') + ', camera behind ' + behind + (behind === 0 ? '✓' : '✗') + ', opposite lane ' + opposite + (opposite === 0 ? '✓' : '✗') };
+    // (d) 멀리(1.8km→1.5km 앞) 왼쪽 25m = 고속도로 반대편 차로의 카메라. 멀리 있어도 지도에 띄우지 않는다
+    const farOpposite = shownAfter(() => { for (let s = 0; s <= 300; s += 25) feed(dest(dest(C, 180, 1800 - s), 90, 25), 25, 0); });
+    const pass = ahead >= 1 && behind === 0 && opposite === 0 && farOpposite === 0;
+    return { pass, detail: 'markers: heading to camera ' + ahead + (ahead >= 1 ? '✓' : '✗') + ', camera behind ' + behind + (behind === 0 ? '✓' : '✗') +
+      ', opposite lane ' + opposite + (opposite === 0 ? '✓' : '✗') + ', far opposite lane ' + farOpposite + (farOpposite === 0 ? '✓' : '✗') };
   }
 
   // S23: 경로 이탈 → 같은 목적지를 '추천'(traoptimal) 경로로 다시 찾는다. 80m 넘게 벗어나면 2번째 위치에서 바로.
