@@ -38,7 +38,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.13-15'; // index.html 의 app.js?v= 와 같이 올린다
+  const APP_VERSION = '2026.11.13-16'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -715,7 +715,8 @@
   const CELL = 0.01;
   async function loadCameras() {
     try {
-      const r = await fetch('data/cameras.json');
+      // 버전을 붙여 새 버전과 함께 바뀐 카메라 데이터를 바로 받는다 (브라우저 10분 캐시 우회)
+      const r = await fetch('data/cameras.json?v=' + APP_VERSION);
       const j = await r.json();
       const g = new Map();
       j.rows.forEach((c, i) => {
@@ -1773,8 +1774,60 @@
     }
   }
 
+  // ---------- 새 버전 자동 반영 ----------
+  // GitHub Pages 는 페이지를 10분 동안 브라우저에 저장해 두므로, 그냥 링크로 들어오면 예전 화면이 뜰 수 있다.
+  // 페이지를 열 때(그리고 차가 잠들었다 깨어났을 때) version.json 을 캐시 없이 받아 보고,
+  // 지금보다 새 버전이면 한 번만 새로고침한다. 운전에 방해되지 않게 길안내 중·주행 중·데모 중에는 절대 하지 않는다.
+  const upd = { checking: false, hiddenAt: 0, lastTick: 0 };
+  const verNum = (v) => String(v || '').split(/[^0-9]+/).filter(Boolean).map(Number);
+  function verNewer(a, b) { // a 가 b 보다 새 버전인지 ('2026.11.13-15' > '2026.11.13-9')
+    const x = verNum(a), y = verNum(b);
+    for (let i = 0; i < Math.max(x.length, y.length); i++) {
+      const d = (x[i] || 0) - (y[i] || 0);
+      if (d) return d > 0;
+    }
+    return false;
+  }
+  const busyDriving = () => nav.active || nav.busy || state.speedKmh >= 3 || !!state.demoTimer;
+  // 돌려주는 값: 'reload' 새로고침함 · 'latest' 이미 최신 · 'driving' 운전 중이라 미룸 · 'tried' 이번 창에서 이미 시도함 · 'skip' · 'error'
+  // opt.dry: 새로고침 없이 판단만 (테스트용), opt.latest: version.json 대신 쓸 값 (테스트용)
+  async function checkForUpdate(why, opt) {
+    const o = opt || {};
+    if ((testPage && !o.dry) || upd.checking) return 'skip';
+    if (busyDriving()) return 'driving';
+    upd.checking = true;
+    try {
+      let v = o.latest;
+      if (v === undefined) {
+        const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+        if (!r.ok) return 'error';
+        const j = await r.json();
+        v = j && j.v;
+      }
+      if (!verNewer(v, APP_VERSION)) return 'latest';
+      let tried = null;
+      try { tried = sessionStorage.getItem('tnc.updTried'); } catch (e) { /* 저장소 막힘 */ }
+      if (tried === String(v)) return 'tried'; // 새로고침했는데도 그대로면(캐시 서버가 늦는 등) 되풀이하지 않는다
+      if (busyDriving()) return 'driving';    // 확인하는 사이 출발했으면 그만둔다
+      if (o.dry) return 'reload';
+      try { sessionStorage.setItem('tnc.updTried', String(v)); } catch (e) { /* 저장소 막힘 */ }
+      report('info', { msg: 'auto update', from: APP_VERSION, to: String(v), why });
+      // 브라우저에 저장된 예전 페이지를 새로 받아 둔 뒤 새로고침한다
+      try { await fetch(location.pathname + location.search, { cache: 'reload' }); } catch (e) { /* 새로고침이 다시 받는다 */ }
+      location.reload();
+      return 'reload';
+    } catch (e) {
+      return 'error'; // 오프라인 등: 지금 버전으로 계속
+    } finally {
+      upd.checking = false;
+    }
+  }
+
   function tickClock() {
     const now = new Date();
+    // 1초마다 도는 시계가 5분 넘게 멈췄다면 차가 잠들었다 깨어난 것: 새 버전을 확인한다
+    if (upd.lastTick && now - upd.lastTick > 5 * 60000) checkForUpdate('wake');
+    upd.lastTick = now.getTime();
     $('#clock').textContent = hhmm(now);
     $('#dateText').textContent = (now.getMonth() + 1) + '월 ' + now.getDate() + '일 (' + '일월화수목금토'[now.getDay()] + ')';
     mapWatchdog();
@@ -2242,12 +2295,18 @@
   startGps();
   if (store.get('diag') === '1' || params.has('diag')) setDiag(true);
   if (params.has('demo')) startDemo();
+  checkForUpdate('open');
+  document.addEventListener('visibilitychange', () => {
+    // 화면이 오래(5분 넘게) 가려졌다가 다시 보이면 새 버전을 확인한다 (길안내 중·주행 중이면 하지 않음)
+    if (document.visibilityState === 'hidden') upd.hiddenAt = Date.now();
+    else if (upd.hiddenAt && Date.now() - upd.hiddenAt > 5 * 60000) checkForUpdate('visible');
+  });
   // ?debug 일 때만 내부 상태를 콘솔에서 볼 수 있게 연다 (테스트용)
   if (params.has('debug')) {
     window.__tnc = {
       state, camState, nav, cams, prefs, onFix, setRoute, startNav, endNav, startDemo, stopDemo, renderNav,
       planRoute, doSearch, setFollowing, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
-      view, layoutView, zoomCtl, autoZoom, motion, alertLog,
+      view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
     };
   }
 })();

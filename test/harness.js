@@ -966,6 +966,39 @@
   }
   const C_A = () => CAM_ISO_A;
 
+  // S19: 그냥 링크로 들어와도 최신 버전 — 버전 세 곳(app.js·index.html·version.json)이 맞는지,
+  //      그리고 새 버전 판단(새로고침 / 이미 최신 / 운전 중 미룸 / 같은 창 재시도 안 함)이 맞는지
+  async function s19() {
+    const t = T();
+    const vj = await (await realFetch(rootDir + 'version.json', { cache: 'no-store' })).json();
+    const html = await (await realFetch(rootDir + 'index.html', { cache: 'no-store' })).text();
+    const m = html.match(/app\.js\?v=([0-9.\-]+)/);
+    const same = vj.v === t.version && m && m[1] === t.version;
+    const bump = (v) => v.replace(/(\d+)$/, (x) => String(+x + 1));
+    const older = t.version.replace(/(\d+)$/, (x) => String(Math.max(0, +x - 1)));
+    let saved = null;
+    try { saved = sessionStorage.getItem('tnc.updTried'); sessionStorage.removeItem('tnc.updTried'); } catch (e) { /* 막힘 */ }
+    const r = {};
+    r.newer = await t.checkForUpdate('test', { dry: true, latest: bump(t.version) });
+    r.same = await t.checkForUpdate('test', { dry: true, latest: t.version });
+    r.older = await t.checkForUpdate('test', { dry: true, latest: older });
+    r.numeric = await t.checkForUpdate('test', { dry: true, latest: t.version.replace(/-(\d+)$/, '-100') }); // -100 > -16 (글자 순서 아님)
+    t.state.speedKmh = 40;
+    r.moving = await t.checkForUpdate('test', { dry: true, latest: bump(t.version) });
+    t.state.speedKmh = 0;
+    try { sessionStorage.setItem('tnc.updTried', bump(t.version)); } catch (e) { /* 막힘 */ }
+    r.tried = await t.checkForUpdate('test', { dry: true, latest: bump(t.version) });
+    try { if (saved === null) sessionStorage.removeItem('tnc.updTried'); else sessionStorage.setItem('tnc.updTried', saved); } catch (e) { /* 막힘 */ }
+    r.realOnTestPage = await t.checkForUpdate('test'); // 테스트 페이지에서는 실제로는 아무것도 하지 않는다
+    const want = { newer: 'reload', same: 'latest', older: 'latest', numeric: 'reload', moving: 'driving', tried: 'tried', realOnTestPage: 'skip' };
+    const okLogic = Object.keys(want).every((k) => r[k] === want[k]);
+    return {
+      pass: same && okLogic,
+      detail: 'versions app.js ' + t.version + ' / index.html ' + (m ? m[1] : '?') + ' / version.json ' + vj.v + (same ? '✓' : ' ✗ MISMATCH') +
+        '; decisions ' + Object.keys(want).map((k) => k + '=' + r[k] + (r[k] === want[k] ? '' : '✗')).join(', '),
+    };
+  }
+
   // S17: 도로 종류별 경고 거리 — 고속도로 3km(음성 2km) · 고속화도로(제한 80+) 1km · 일반도로 400m
   // 고속도로: 서울양양고속도로 [37.72753,127.59605,100,1,0,0,0,88,1,2]. 가장 가까운 다른 카메라는 북동쪽 3.6km 의
   // 신호 전용과 남쪽 4km 의 어린이보호구역(400m 경고)이라, 북서쪽(300°)에서 다가가면 이 카메라만 잡힌다.
@@ -1080,6 +1113,7 @@
     { id: 'S16', name: 'S16 Tesla mode layout', fn: s16 },
     { id: 'S17', name: 'S17 alert range by road type', fn: s17 },
     { id: 'S18', name: 'S18 navigation: route cameras only', fn: s18 },
+    { id: 'S19', name: 'S19 latest version from plain link', fn: s19 },
   ];
 
   // ---------------------------------------------------------------- runner
