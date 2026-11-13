@@ -34,7 +34,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.13-10'; // index.html 의 app.js?v= 와 같이 올린다
+  const APP_VERSION = '2026.11.13-11'; // index.html 의 app.js?v= 와 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -285,7 +285,17 @@
   }
 
   // ---------- 지도 어댑터 (네이버 / 테스트용 OSM) ----------
+  const ALT_LINE = { color: '#8d97a8', weight: 7, opacity: 0.85 }; // 고르지 않은 추천 경로
   const NaverAdapter = {
+    drawAlts(list) {
+      const N = naver.maps;
+      (this.alts || []).forEach((l) => l.setMap(null));
+      this.alts = (list || []).map((pts) => new N.Polyline({
+        map: this.map, path: pts.map((p) => new N.LatLng(p.lat, p.lng)),
+        strokeColor: ALT_LINE.color, strokeWeight: ALT_LINE.weight, strokeOpacity: ALT_LINE.opacity,
+        strokeLineCap: 'round', strokeLineJoin: 'round', zIndex: 40, clickable: false,
+      }));
+    },
     init(el, c) {
       const N = naver.maps;
       this.cams = new Map();
@@ -368,6 +378,12 @@
   };
 
   const LeafletAdapter = {
+    drawAlts(list) {
+      (this.alts || []).forEach((l) => l.remove());
+      this.alts = (list || []).map((pts) => L.polyline(pts.map((p) => [p.lat, p.lng]), {
+        color: ALT_LINE.color, weight: ALT_LINE.weight, opacity: ALT_LINE.opacity, lineCap: 'round', lineJoin: 'round', interactive: false,
+      }).addTo(this.map));
+    },
     async init(el, c) {
       await loadCss(LEAFLET_CSS);
       if (!window.L) await loadScript(LEAFLET_JS);
@@ -945,12 +961,23 @@
     nav.busy = true;
     if (!reroute) toast('경로를 찾는 중…', '', 3000);
     try {
-      const r = await api('/route', {
+      // 처음 길찾기는 추천 경로 여러 개(빠른 길·추천·무료 도로)를 받아 고르게 하고,
+      // 재탐색·교통 갱신은 고른 옵션 하나로만 다시 묻는다
+      const q = {
         start: state.fix.lng.toFixed(6) + ',' + state.fix.lat.toFixed(6),
         goal: dest.lng.toFixed(6) + ',' + dest.lat.toFixed(6),
-        option: prefs.routeOpt,
-      });
+      };
+      if (reroute) q.option = nav.option || prefs.routeOpt;
+      else q.options = ALT_OPTIONS;
+      const res = await api('/route', q);
       if (gen !== nav.gen || (reroute && !nav.active)) return;
+      let r = res;
+      if (!reroute) {
+        nav.alts = dedupAlts(res.alternatives || [res]);
+        const pref = nav.alts.findIndex((a) => a.options.indexOf(prefs.routeOpt) >= 0);
+        nav.altIdx = pref >= 0 ? pref : 0;
+        r = nav.alts[nav.altIdx];
+      }
       const beforeMs = nav.active && nav.route ? nav.route.duration * ((nav.total - nav.along) / Math.max(1, nav.total)) : null;
       setRoute(r, dest, reroute);
       if (reroute === 'traffic') {
@@ -966,9 +993,10 @@
       } else {
         nav.preview = true; nav.active = false;
         $('#toast').hidden = true;
+        drawAltLines();
         showRouteCard();
         setFollowing(false, true);
-        if (mapA) mapA.fit(nav.pts);
+        if (mapA) mapA.fit([].concat(...nav.alts.map((a) => a.path.map((p) => ({ lat: p[1], lng: p[0] })))));
       }
     } catch (e) {
       if (gen !== nav.gen) return;
@@ -997,18 +1025,57 @@
     if (!keepAlerts) camState.target = null; // 재탐색 때는 진행 중인 카메라 안내를 유지
   }
 
+  // ---------- 추천 경로 여러 개 ----------
+  const ALT_OPTIONS = 'trafast:traoptimal:traavoidtoll';
+  const ALT_LABEL = { trafast: '빠른 길', traoptimal: '추천', traavoidtoll: '무료 도로', tracomfort: '편한 길', traavoidcaronly: '전용도로 회피' };
+  // 사실상 같은 경로(거리·시간이 거의 같음)는 하나로 합치고 이름을 이어 붙인다
+  function dedupAlts(list) {
+    const out = [];
+    list.forEach((a) => {
+      const opt = a.option || prefs.routeOpt;
+      // 경로 모양(거리·점 개수)이 같으면 예상 시간이 조금 달라도 같은 길로 본다
+      const same = out.find((b) => Math.abs(b.distance - a.distance) < 50 &&
+        (Math.abs(b.path.length - a.path.length) <= 2 || Math.abs(b.duration - a.duration) < 45000));
+      if (same) { same.label += ' · ' + (ALT_LABEL[opt] || opt); same.options.push(opt); return; }
+      out.push(Object.assign({}, a, { option: opt, options: [opt], label: ALT_LABEL[opt] || opt }));
+    });
+    return out;
+  }
+  function drawAltLines() {
+    if (!mapA || !mapA.drawAlts) return;
+    const others = (nav.preview || !nav.active) && nav.alts ? nav.alts.filter((_, k) => k !== nav.altIdx) : [];
+    mapA.drawAlts(others.map((a) => a.path.map((p) => ({ lat: p[1], lng: p[0] }))));
+  }
+  function selectAlt(k) {
+    if (!nav.alts || !nav.alts[k] || k === nav.altIdx) return;
+    nav.altIdx = k;
+    setRoute(nav.alts[k], nav.dest);
+    drawAltLines();
+    showRouteCard();
+  }
   function showRouteCard() {
     const r = nav.route;
     $('#rcTitle').textContent = nav.dest.name;
-    const parts = [fmtDist(r.distance), fmtMin(r.duration), '도착 ' + hhmm(new Date(Date.now() + r.duration))];
-    if (r.tollFare) parts.push('통행료 ' + r.tollFare.toLocaleString('ko-KR') + '원');
-    $('#rcMeta').textContent = parts.join(' · ');
+    const alts = nav.alts && nav.alts.length ? nav.alts : [Object.assign({ label: ALT_LABEL[r.option] || '경로' }, r)];
+    const fastest = Math.min(...alts.map((a) => a.duration));
+    $('#rcAlts').innerHTML = alts.map((a, k) => {
+      const diff = a.duration - fastest;
+      return '<button class="alt' + (k === (nav.altIdx || 0) ? ' on' : '') + '" data-k="' + k + '">' +
+        '<span class="alt-label">' + esc(a.label) + '</span>' +
+        '<b>' + fmtMin(a.duration) + '</b>' +
+        '<span class="alt-sub">' + fmtDist(a.distance) + ' · ' + (a.tollFare ? a.tollFare.toLocaleString('ko-KR') + '원' : '무료') +
+        (diff >= 60000 ? ' · +' + Math.round(diff / 60000) + '분' : '') + '</span></button>';
+    }).join('');
+    $('#rcAlts').querySelectorAll('.alt').forEach((b) => { b.onclick = () => selectAlt(+b.dataset.k); });
+    $('#rcMeta').textContent = hhmm(new Date(Date.now() + r.duration)) + ' 도착 예정' + (alts.length > 1 ? ' · 다른 경로는 지도에 회색으로 표시' : '');
     $('#routeCard').hidden = false;
   }
   function startNav() {
     if (!nav.pts) return;
     $('#routeCard').hidden = true;
+    nav.option = nav.route.option || prefs.routeOpt; // 재탐색·교통 갱신도 고른 옵션으로
     nav.preview = false; nav.active = true;
+    if (mapA && mapA.drawAlts) mapA.drawAlts([]);
     $('#map').classList.add('navigating');
     setFollowing(true);
     if (mapA) { mapA.setZoom(speedZoom(state.speedKmh)); zoomCtl.manualUntil = 0; }
@@ -1020,7 +1087,8 @@
     nav.gen++; nav.busy = false; nav.byDemo = false;
     nav.active = false; nav.preview = false;
     nav.route = null; nav.pts = null; nav.cum = null; nav.dest = null; nav.guides = [];
-    if (mapA) mapA.clearRoute();
+    nav.alts = null; nav.altIdx = 0;
+    if (mapA) { mapA.clearRoute(); if (mapA.drawAlts) mapA.drawAlts([]); }
     $('#routeCard').hidden = true;
     $('#map').classList.remove('navigating');
     camState.target = null;

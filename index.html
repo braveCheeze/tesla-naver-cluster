@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>지도 클러스터</title>
 <meta name="theme-color" content="#0b0d10">
+<!-- 한글이 깔끔한 Pretendard 글꼴 (못 받으면 시스템 글꼴로 대신) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <style>
   :root {
     --bg: #0b0d10;
@@ -347,6 +349,126 @@
   .result .sub { font-size: 13px; color: var(--muted); margin-top: 4px; }
   .result .dist { color: var(--muted); white-space: nowrap; font-size: 14px; }
 
+  /* ================= 디자인 레이어 =================
+     한 가지 글꼴(Pretendard) · 8px 간격 · 모서리 3단계(12/16/20) · 유리(반투명+흐림) 표면으로 통일 */
+  :root {
+    --glass: rgba(15, 19, 25, .62);
+    --glass-strong: rgba(15, 19, 25, .86);
+    --glass-line: rgba(255, 255, 255, .10);
+    --soft: rgba(255, 255, 255, .045);
+    --soft-line: rgba(255, 255, 255, .07);
+    --r-sm: 12px; --r-md: 16px; --r-lg: 20px;
+    --shadow: 0 10px 28px rgba(0, 0, 0, .28);
+    --ease: cubic-bezier(.2, .8, .2, 1);
+  }
+  html, body {
+    font-family: "Pretendard Variable", Pretendard, system-ui, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+    font-feature-settings: "tnum";
+    letter-spacing: -0.01em;
+  }
+
+  /* 계기판 */
+  #cluster {
+    background: radial-gradient(120% 60% at 0% 0%, rgba(3, 199, 90, .07), transparent 60%),
+                linear-gradient(180deg, #12161c 0%, #0b0d10 100%);
+    border-right: 1px solid rgba(255, 255, 255, .05);
+    padding: 24px 22px 20px; gap: 16px;
+  }
+  .clock { font-weight: 700; letter-spacing: 0; }
+  .gps { font-size: 14px; }
+  #speed { font-weight: 800; letter-spacing: -0.05em; }
+  .unit { font-size: 15px; font-weight: 600; letter-spacing: .04em; text-transform: lowercase; margin-top: 6px; }
+  .limit { box-shadow: 0 6px 18px rgba(229, 57, 53, .35); }
+  .road { font-size: 17px; font-weight: 600; }
+  .heading { font-size: 18px; font-weight: 600; }
+  .compass { border-color: var(--soft-line); background: var(--soft); }
+
+  .camcard {
+    background: linear-gradient(135deg, rgba(229, 57, 53, .22), rgba(229, 57, 53, .06));
+    border: 1px solid rgba(229, 57, 53, .38); border-radius: var(--r-md); padding: 14px 16px;
+  }
+  .camcard.over { background: linear-gradient(135deg, rgba(255, 70, 70, .42), rgba(229, 57, 53, .16)); border-color: var(--bad); }
+  @keyframes pulse { 50% { filter: brightness(1.25); } }
+  .cam-sign { box-shadow: 0 4px 12px rgba(0, 0, 0, .3); }
+  .cam-bar { background: rgba(255, 255, 255, .08); }
+  .seccard {
+    background: linear-gradient(135deg, rgba(64, 140, 255, .2), rgba(64, 140, 255, .05));
+    border: 1px solid rgba(64, 140, 255, .32); border-radius: var(--r-md); padding: 14px 16px;
+  }
+  .seccard.over { background: linear-gradient(135deg, rgba(255, 70, 70, .38), rgba(229, 57, 53, .12)); border-color: var(--bad); }
+  .camnext, .weather {
+    background: var(--soft); border: 1px solid var(--soft-line); border-radius: var(--r-sm); padding: 10px 12px;
+  }
+  .camnext { font-size: 15px; }
+  .weather { font-size: 15px; }
+  .trip { gap: 8px; }
+  .stat { background: var(--soft); border: 1px solid var(--soft-line); border-radius: var(--r-sm); padding: 10px 12px; }
+  .stat .k { font-size: 12px; font-weight: 600; letter-spacing: .02em; }
+  .stat .v { font-size: 22px; font-weight: 700; }
+
+  /* 지도 위 버튼: 유리 느낌 */
+  .btn, .searchbtn {
+    background: var(--glass); border: 1px solid var(--glass-line); box-shadow: var(--shadow);
+    -webkit-backdrop-filter: blur(12px) saturate(140%); backdrop-filter: blur(12px) saturate(140%);
+    transition: transform .15s var(--ease), background .2s, opacity .25s ease;
+  }
+  .btn { width: 56px; height: 56px; border-radius: var(--r-md); }
+  .btn svg { width: 26px; height: 26px; }
+  .searchbtn { height: 56px; border-radius: var(--r-md); font-weight: 700; padding: 0 20px 0 16px; }
+  .btn:active, .searchbtn:active { transform: scale(.94); }
+  #locate.alert { background: var(--accent); border-color: transparent; }
+  .ctrls { gap: 8px; }
+  .topctrls { gap: 8px; }
+
+  /* 경로 카드 + 추천 경로 고르기 */
+  .routecard {
+    background: var(--glass-strong); border: 1px solid var(--glass-line); border-radius: var(--r-lg);
+    -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); padding: 18px;
+  }
+  .rc-title { font-size: 19px; font-weight: 800; }
+  .rc-meta { font-size: 13px; margin-top: 10px; }
+  .alts { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 8px; margin-top: 12px; }
+  .routecard button.alt {
+    min-height: 78px; padding: 10px 12px; text-align: left; border-radius: var(--r-md);
+    display: flex; flex-direction: column; gap: 2px; justify-content: center;
+    background: var(--soft); border: 1px solid var(--soft-line); color: var(--text);
+    transition: background .2s, border-color .2s, transform .15s var(--ease);
+  }
+  .routecard button.alt:active { transform: scale(.97); }
+  .routecard button.alt.on { background: rgba(3, 199, 90, .16); border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .alt-label { font-size: 12px; font-weight: 700; color: var(--muted); }
+  .alt.on .alt-label { color: #7ef0ad; }
+  .alt b { font-size: 20px; font-weight: 800; }
+  .alt-sub { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .routecard .row { margin-top: 14px; }
+  .routecard button.primary { flex: 1; }
+
+  /* 시트(검색·설정) */
+  .sheet { background: rgba(0, 0, 0, .45); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+  .sheet-card {
+    background: var(--glass-strong); border: 1px solid var(--glass-line); border-radius: var(--r-lg);
+    -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); box-shadow: 0 24px 60px rgba(0, 0, 0, .45);
+  }
+  .sheet-card h2 { font-weight: 800; }
+  .sheet-card input:not([type=checkbox]), .sheet-card select { border-radius: var(--r-sm); background: rgba(0, 0, 0, .35); border-color: var(--soft-line); }
+  .sheet-card input:not([type=checkbox]):focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(3, 199, 90, .2); }
+  .sheet-card button, .routecard button { border-radius: var(--r-sm); background: var(--soft); border-color: var(--soft-line); }
+  .sheet-card button.result { border-radius: var(--r-md); }
+  .sheet-card button.result:active { background: rgba(255, 255, 255, .08); }
+  hr { border-top-color: var(--soft-line); }
+  .toast { background: var(--glass-strong); border: 1px solid var(--glass-line); border-radius: var(--r-md);
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+
+  /* 부드럽게 나타나기 */
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+  .camcard, .seccard, .camnext, .navpanel, .sheet-card { animation: rise .28s var(--ease) both; }
+  .camcard.over { animation: rise .28s var(--ease) both, pulse 1s ease-in-out .3s infinite; }
+  .routecard, .toast { animation: fadein .25s ease both; }
+  @media (prefers-reduced-motion: reduce) {
+    .camcard, .seccard, .camnext, .navpanel, .sheet-card, .routecard, .toast { animation: none !important; }
+  }
+
   /* ---------- 세로 화면(휴대폰) ---------- */
   @media (orientation: portrait), (max-width: 720px) {
     #app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
@@ -448,6 +570,7 @@
 
     <div id="routeCard" class="routecard" hidden>
       <div id="rcTitle" class="rc-title"></div>
+      <div id="rcAlts" class="alts"></div>
       <div id="rcMeta" class="rc-meta"></div>
       <div class="row">
         <button id="rcStart" class="primary">안내 시작</button>
@@ -536,6 +659,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.13-10"></script>
+<script src="app.js?v=2026.11.13-11"></script>
 </body>
 </html>

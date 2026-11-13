@@ -131,16 +131,14 @@ export default {
 
       if (url.pathname === '/route') {
         const start = p.get('start') || '', goal = p.get('goal') || '';
-        const option = ROUTE_OPTIONS.has(p.get('option')) ? p.get('option') : 'trafast';
         if (!COORD.test(start) || !COORD.test(goal)) return json({ error: 'bad coords' }, 400, cors);
-        const qs = new URLSearchParams({ start, goal, option });
+        // options=trafast:traoptimal:traavoidtoll 처럼 여러 개(최대 3)를 주면 경로 추천 목록(alternatives)을 돌려준다.
+        // option=하나 만 주면 예전과 같은 단일 경로 응답 (예전 페이지 호환)
+        const multi = [...new Set((p.get('options') || '').split(':').filter((o) => ROUTE_OPTIONS.has(o)))].slice(0, 3);
+        const single = ROUTE_OPTIONS.has(p.get('option')) ? p.get('option') : 'trafast';
         const way = (p.get('waypoints') || '').split('|').filter((w) => COORD.test(w)).slice(0, 5);
-        if (way.length) qs.set('waypoints', way.join('|'));
-        const r = await upstream(NCP + '/map-direction/v1/driving?' + qs, ncpHeaders);
-        if (!r.ok) return json({ error: 'upstream', status: r.status, detail: r.data }, 502, cors);
-        if (r.data.code !== 0 || !r.data.route) return json({ error: 'no route', code: r.data.code, message: r.data.message }, 404, cors);
-        const route = r.data.route[option][0];
-        return json({
+        const slim = (route, opt) => ({
+          option: opt,
           distance: route.summary.distance,           // m
           duration: route.summary.duration,           // ms
           tollFare: route.summary.tollFare || 0,
@@ -148,7 +146,32 @@ export default {
           path: route.path.map(([x, y]) => [round6(x), round6(y)]),  // [lng, lat]
           guide: (route.guide || []).map((g) => ({ i: g.pointIndex, t: g.type, s: g.instructions, d: g.distance, ms: g.duration })),
           sections: (route.section || []).map((s) => ({ i: s.pointIndex, n: s.pointCount, name: s.name, speed: s.speed, cong: s.congestion })),
-        }, 200, cors);
+        });
+        const call = (opt) => {
+          const qs = new URLSearchParams({ start, goal, option: opt });
+          if (way.length) qs.set('waypoints', way.join('|'));
+          return upstream(NCP + '/map-direction/v1/driving?' + qs, ncpHeaders);
+        };
+
+        if (multi.length) {
+          // 한 번에 여러 옵션을 묻고, 빠진 옵션이 있으면 그것만 따로 묻는다
+          const r = await call(multi.join(':'));
+          const got = {};
+          if (r.ok && r.data.code === 0 && r.data.route) multi.forEach((o) => { if (r.data.route[o] && r.data.route[o][0]) got[o] = r.data.route[o][0]; });
+          const missing = multi.filter((o) => !got[o]);
+          if (missing.length) {
+            const more = await Promise.all(missing.map((o) => call(o)));
+            more.forEach((m, k) => { if (m.ok && m.data.code === 0 && m.data.route && m.data.route[missing[k]]) got[missing[k]] = m.data.route[missing[k]][0]; });
+          }
+          const alternatives = multi.filter((o) => got[o]).map((o) => slim(got[o], o));
+          if (!alternatives.length) return json({ error: 'no route', code: r.data && r.data.code, message: r.data && r.data.message }, 404, cors);
+          return json({ alternatives }, 200, cors);
+        }
+
+        const r = await call(single);
+        if (!r.ok) return json({ error: 'upstream', status: r.status, detail: r.data }, 502, cors);
+        if (r.data.code !== 0 || !r.data.route) return json({ error: 'no route', code: r.data.code, message: r.data.message }, 404, cors);
+        return json(slim(r.data.route[single][0], single), 200, cors);
       }
 
       if (url.pathname === '/geocode') {
