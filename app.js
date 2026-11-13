@@ -31,6 +31,40 @@
   };
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
+  // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
+  const APP_VERSION = '2026.11.13-4';
+  const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
+  const testPage = /\/test\//.test(location.pathname);
+  function report(type, data) {
+    if (testPage || tele.sent >= 40) return;
+    const key = type + '|' + (data && data.msg);
+    if (tele.seen.has(key)) return; // 같은 내용은 세션당 한 번만
+    tele.seen.add(key);
+    tele.sent++;
+    let ctx = {};
+    try { ctx = tele.ctx ? tele.ctx() : {}; } catch (e) { /* 초기화 전 오류 */ }
+    const body = Object.assign({
+      type, sid: tele.sid, v: APP_VERSION, at: Date.now(), page: location.host + location.pathname,
+      ua: navigator.userAgent.slice(0, 180),
+    }, ctx, data || {});
+    try {
+      fetch(proxyUrl() + '/event', {
+        method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' }, keepalive: true,
+      }).catch(() => {});
+    } catch (e) { /* 보고 실패는 무시 */ }
+  }
+  window.addEventListener('error', (e) => {
+    report('error', {
+      msg: String(e.message || 'error').slice(0, 300),
+      src: String(e.filename || '').split('/').pop() + ':' + e.lineno + ':' + e.colno,
+      stack: e.error && e.error.stack ? String(e.error.stack).slice(0, 900) : '',
+    });
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    const r = e.reason || {};
+    report('error', { msg: 'unhandled: ' + String(r.message || r).slice(0, 300), stack: r.stack ? String(r.stack).slice(0, 900) : '' });
+  });
+
   const state = {
     fix: null,          // 마지막 위치 {lat,lng,acc,t}
     speedKmh: 0,
@@ -211,15 +245,38 @@
       return true;
     } catch (e) { return false; }
   }
+  // 최근 안내 기록 (진단·테스트용): 어떤 음성/경고음이 언제 나갔는지
+  const alertLog = [];
+  function logAlert(kind, text) {
+    alertLog.push({ t: Date.now(), kind, text, kmh: Math.round(state.speedKmh) });
+    if (alertLog.length > 300) alertLog.shift();
+  }
   function say(text, beeps, urgent) {
-    if (!speak(text, urgent, () => beep(beeps || 1))) beep(beeps || 1);
+    const spoke = speak(text, urgent, () => beep(beeps || 1));
+    logAlert(spoke ? 'voice' : 'beep', text);
+    if (!spoke) beep(beeps || 1);
   }
 
   // ---------- 마커 요소 ----------
   const meEl = document.createElement('div');
   meEl.className = 'me nohead';
+  // 내 차: 위에서 내려다본 동글동글한 초록 자동차 (헤드라이트 눈, 볼터치, 웃는 입). 앞쪽이 위를 향한다.
   meEl.innerHTML = '<div class="me-halo"></div><div class="me-dot"></div>' +
-    '<svg class="me-arrow" viewBox="0 0 40 40"><path d="M20 3 L33 35 L20 27.5 L7 35 Z"/></svg>';
+    '<svg class="me-arrow" viewBox="0 0 40 56">' +
+      '<rect x="2.5" y="12" width="6" height="11" rx="3" fill="#232a35"/>' +
+      '<rect x="31.5" y="12" width="6" height="11" rx="3" fill="#232a35"/>' +
+      '<rect x="2.5" y="37" width="6" height="11" rx="3" fill="#232a35"/>' +
+      '<rect x="31.5" y="37" width="6" height="11" rx="3" fill="#232a35"/>' +
+      '<rect x="5.5" y="3" width="29" height="50" rx="14" fill="#03c75a" stroke="#fff" stroke-width="2.5"/>' +
+      '<path d="M10.5 25 Q20 19.5 29.5 25 L28 31 Q20 28 12 31 Z" fill="#d9f4ff"/>' +
+      '<rect x="11.5" y="32" width="17" height="10.5" rx="5" fill="#02b351"/>' +
+      '<path d="M12.5 44.5 Q20 47.5 27.5 44.5 L26.5 48.5 Q20 50.5 13.5 48.5 Z" fill="#d9f4ff" opacity=".9"/>' +
+      '<circle cx="13" cy="10.5" r="4" fill="#fff"/><circle cx="27" cy="10.5" r="4" fill="#fff"/>' +
+      '<circle cx="13.5" cy="9.5" r="2.1" fill="#1b2330"/><circle cx="27.5" cy="9.5" r="2.1" fill="#1b2330"/>' +
+      '<circle cx="14.3" cy="8.8" r=".75" fill="#fff"/><circle cx="28.3" cy="8.8" r=".75" fill="#fff"/>' +
+      '<circle cx="9.3" cy="16.5" r="1.9" fill="#ff8fa3" opacity=".8"/><circle cx="30.7" cy="16.5" r="1.9" fill="#ff8fa3" opacity=".8"/>' +
+      '<path d="M16.8 16.2 Q20 19 23.2 16.2" fill="none" stroke="#0b4a2b" stroke-width="1.7" stroke-linecap="round"/>' +
+    '</svg>';
   const rotateMe = makeRotator(meEl.querySelector('.me-arrow'));
   const rotateCompass = makeRotator($('#compassArrow'));
   function camEl(c) {
@@ -383,7 +440,7 @@
     host.prepend(el);
     await adapter.init(el, state.fix || DEFAULT_CENTER);
     mapA = adapter;
-    if (state.fix) mapA.setMe(state.fix.lat, state.fix.lng);
+    if (state.fix) { const p = mePos(); mapA.setMe(p.lat, p.lng); }
     if (nav.pts) mapA.drawRoute(nav.pts, nav.route && nav.route.sections);
     camState.markerAt = null;
     if (state.fix) refreshCamMarkers(state.fix);
@@ -458,7 +515,8 @@
       try { mapA.resize(drive ? cs : w, drive ? cs : h); } catch (e) { /* 다음 배치 때 다시 */ }
       clear();
       if (state.fix && (drive || wasDrive || state.following)) {
-        mapA.center(state.fix.lat, state.fix.lng, true);
+        const p = mePos();
+        mapA.center(p.lat, p.lng, true);
         jumped = true;
       }
     }
@@ -500,15 +558,35 @@
   window.navermap_authFailure = function () {
     if (naverFailed) return;
     naverFailed = true;
+    report('warn', { msg: 'naver map auth failure' });
     fallbackMap('네이버 지도 인증 실패: Client ID와 Web 서비스 URL(' + location.origin + ') 등록을 확인하세요.');
   };
+
+  // 길안내 서버에서 지도 키를 받는다. 통신이 잠깐 끊겨도 네이버 지도가 테스트 지도로 떨어지지 않게
+  // 몇 번 다시 시도하고, 그래도 안 되면 마지막으로 받았던 키를 쓴다.
+  async function fetchMapKey() {
+    for (let i = 0; i < 3; i++) {
+      try {
+        const ctrl = new AbortController();
+        const to = setTimeout(() => ctrl.abort(), 6000);
+        const r = await fetch(proxyUrl() + '/config', { cache: 'no-store', signal: ctrl.signal });
+        clearTimeout(to);
+        if (r.ok) {
+          const k = String((await r.json()).mapKeyId || '').trim();
+          if (k) { store.set('keyCache', k); return k; }
+          return store.get('keyCache') || '';
+        }
+      } catch (e) { /* 잠시 뒤 다시 */ }
+      await new Promise((res) => setTimeout(res, 1500 * (i + 1)));
+    }
+    report('warn', { msg: 'map key fetch failed' + (store.get('keyCache') ? ' (using cached key)' : '') });
+    return store.get('keyCache') || '';
+  }
 
   async function bootMap() {
     // 설정에 직접 넣은 키가 우선. 없으면 길안내 서버에서 받는다 (저장 안 함: 서버에서 바꾸면 바로 반영)
     let key = store.get('key');
-    if (!key) {
-      try { key = String((await api('/config', {})).mapKeyId || '').trim(); } catch (e) { key = ''; }
-    }
+    if (!key) key = await fetchMapKey();
     if (!key) { await fallbackMap(null); return; }
     try {
       await loadScript('https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=' + encodeURIComponent(key));
@@ -682,10 +760,11 @@
     if (!tg.said.near && d <= 250) {
       tg.said.near = true;
       if (over) say('속도를 줄이세요. 제한속도 ' + limit + '.', 3, true);
-      else beep(1, 660);
+      else { beep(1, 660); logAlert('beep', '카메라 250m 전 알림음'); }
     } else if (over && tg.said.near && d <= 300 && f.t - camState.lastOverBeep > 2500) {
       camState.lastOverBeep = f.t;
       beep(2, 1040);
+      logAlert('beep', '과속 반복 경고음 (' + Math.round(d) + 'm)');
     }
   }
 
@@ -844,6 +923,7 @@
     } catch (e) {
       if (gen !== nav.gen) return;
       const d = e.detail || {};
+      report('warn', { msg: 'route failed: ' + String(d.message || d.error || e.message).slice(0, 200), reroute: !!reroute });
       toast('경로를 찾지 못했습니다: ' + (d.message || (d.detail && d.detail.error && d.detail.error.message) || e.message), 'bad', 9000);
     } finally {
       if (gen === nav.gen) nav.busy = false;
@@ -1067,6 +1147,61 @@
     $('#gpsText').textContent = text;
   }
 
+  // ---------- 부드러운 이동 ----------
+  // GPS 는 보통 1초에 한 번 온다. 그 사이를 속도·방향으로 예측해 매 프레임 조금씩 움직여 툭툭 끊기지 않게 한다.
+  const motion = { cur: null, fix: null, v: 0, hdg: null, raf: 0, last: 0 };
+  function mePos() { return motion.cur || state.fix; }
+  // 길안내 중 경로 위에 있으면 내 차를 경로(도로) 위에 붙이고, 예측도 직선이 아니라 도로를 따라 한다
+  function routePointAt(s) {
+    const pts = nav.pts, cum = nav.cum;
+    if (!pts || pts.length < 2) return null;
+    s = Math.max(0, Math.min(s, nav.total));
+    let i = Math.max(0, Math.min(nav.seg, pts.length - 2));
+    while (i > 0 && cum[i] > s) i--;
+    while (i < pts.length - 2 && cum[i + 1] < s) i++;
+    const len = cum[i + 1] - cum[i];
+    const r = len > 0 ? (s - cum[i]) / len : 0;
+    return { lat: pts[i].lat + (pts[i + 1].lat - pts[i].lat) * r, lng: pts[i].lng + (pts[i + 1].lng - pts[i].lng) * r };
+  }
+  function motionFix(f, jump) {
+    motion.fix = { lat: f.lat, lng: f.lng, t: performance.now() };
+    motion.v = state.speedKmh / 3.6;
+    motion.hdg = state.heading;
+    motion.snap = !!(nav.active && nav.pts && nav.onRoute);
+    motion.along = nav.along;
+    const p = (motion.snap && routePointAt(nav.along)) || f;
+    if (jump || !motion.cur || haversine(motion.cur, p) > 150) {
+      motion.cur = { lat: p.lat, lng: p.lng };
+      if (mapA) { mapA.setMe(p.lat, p.lng); if (state.following) mapA.center(p.lat, p.lng, true); }
+    }
+    if (!motion.raf) { motion.last = performance.now(); motion.raf = requestAnimationFrame(motionFrame); }
+  }
+  function motionTarget(now) {
+    const fx = motion.fix;
+    const dt = Math.min(Math.max(0, (now - fx.t) / 1000), 1.5); // 다음 위치가 늦어도 1.5초까지만 앞질러 예측
+    if (motion.snap && nav.pts) {
+      const p = routePointAt(motion.along + (motion.v >= 0.5 ? motion.v * dt : 0));
+      if (p) return p;
+    }
+    if (motion.v < 0.5 || motion.hdg === null) return fx;
+    const d = motion.v * dt, br = toRad(motion.hdg);
+    return { lat: fx.lat + d * Math.cos(br) / 110540, lng: fx.lng + d * Math.sin(br) / (111320 * Math.cos(toRad(fx.lat))) };
+  }
+  function motionFrame(now) {
+    motion.raf = requestAnimationFrame(motionFrame);
+    if (now - motion.last < 30) return; // 약 30fps 면 충분히 부드럽고 차량 화면 부담도 적다
+    const dt = Math.min((now - motion.last) / 1000, 0.2);
+    motion.last = now;
+    if (!motion.fix || !motion.cur || !mapA) return;
+    const tg = motionTarget(now), cur = motion.cur;
+    const dLat = tg.lat - cur.lat, dLng = tg.lng - cur.lng;
+    if (Math.abs(dLat) < 1e-7 && Math.abs(dLng) < 1e-7) return; // 멈춰 있으면 지도를 건드리지 않는다
+    const k = 1 - Math.exp(-dt / 0.18);
+    cur.lat += dLat * k; cur.lng += dLng * k;
+    mapA.setMe(cur.lat, cur.lng);
+    if (state.following) mapA.center(cur.lat, cur.lng, true);
+  }
+
   let lastFixWall = 0;
   function onFix(f) {
     const t0 = performance.now();
@@ -1100,11 +1235,8 @@
     const acc = Math.round(f.acc || 0);
     setGps(acc <= 25 ? 'ok' : 'warn', 'GPS ±' + acc + 'm');
     render();
-    if (mapA) {
-      mapA.setMe(f.lat, f.lng);
-      if (state.following) mapA.center(f.lat, f.lng, !prev);
-    }
-    navUpdate(f);
+    navUpdate(f);        // 경로 위 위치를 먼저 계산해야 내 차를 도로에 붙일 수 있다
+    motionFix(f, !prev); // 지도·내 차는 매 프레임 부드럽게 따라간다
     evalCameras(f);
     refreshCamMarkers(f);
     autoZoom(f);
@@ -1130,6 +1262,7 @@
     }, (err) => {
       if (state.demoTimer) return;
       if (err.code === 1) {
+        report('warn', { msg: 'gps permission denied' });
         setGps('bad', '위치 권한 꺼짐');
         toast('위치 권한을 허용해야 속도와 현재 위치가 표시됩니다.', 'bad', 0);
       } else {
@@ -1171,16 +1304,39 @@
     $('#locate').classList.toggle('alert', !on);
     clearTimeout(state.refollowTimer);
     const jumped = layoutView(); // 주행 화면 ↔ 평면 지도 전환
-    if (on && state.fix && mapA && !jumped) mapA.center(state.fix.lat, state.fix.lng, false);
+    if (on && state.fix && mapA && !jumped) { const p = mePos(); mapA.center(p.lat, p.lng, false); }
     if (!on && !noAutoReturn) state.refollowTimer = setTimeout(() => setFollowing(true), 15000); // 15초 손 안 대면 복귀
   }
   function onUserPan() { setFollowing(false, nav.preview); }
   // 주행 화면에서 지도를 만지면 먼저 평면(북쪽 위) 지도로 바꾼 뒤 끌기를 이어간다
   function leaveDrive(e) {
+    if (e.target.closest && e.target.closest('.btn, .searchbtn, .navpanel, .routecard, .toast, #diagBox, .ctrls, .topctrls, .badge, .soundpill')) return;
+    // 손으로 지도를 만지면(끌기·두 손가락 확대/축소) 30초 동안 자동 줌이 그 배율을 덮어쓰지 않게 한다
+    zoomCtl.manualUntil = (state.fix ? state.fix.t : Date.now()) + 30000;
     if (!view.drive) return;
-    if (e.target.closest && e.target.closest('.btn, .searchbtn, .navpanel, .routecard, .toast, #diagBox, .ctrls, .topctrls, .badge')) return;
     setFollowing(false);
   }
+
+  // 지도 방향: 진행 방향이 위(주행 화면) ↔ 북쪽 고정. 지도 오른쪽 버튼으로 바로 바꾼다.
+  const ICON_HUP = '<svg viewBox="0 0 24 24"><path d="M12 3.5 18 19l-6-3.4L6 19z" fill="currentColor" stroke="none"/></svg>';
+  const ICON_NUP = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.2 15.5v-7l5.6 7v-7"/></svg>';
+  function renderHupBtn() {
+    const b = $('#hupBtn');
+    b.innerHTML = prefs.headingUp ? ICON_HUP : ICON_NUP;
+    b.classList.toggle('on', prefs.headingUp);
+    b.setAttribute('aria-label', prefs.headingUp ? '진행 방향 위로 (누르면 북쪽 고정)' : '북쪽 고정 (누르면 진행 방향 위로)');
+    const opt = $('#optHup');
+    if (opt) { opt.checked = prefs.headingUp; $('#optTilt').disabled = !prefs.headingUp; }
+  }
+  function setHeadingUp(on) {
+    prefs.headingUp = on;
+    store.set('hup', on ? null : '0');
+    renderHupBtn();
+    setFollowing(true);
+    layoutView();
+    toast(on ? '진행 방향이 위로 보이게 바꿨습니다' : '지도를 북쪽 위로 고정했습니다', '', 2000);
+  }
+  $('#hupBtn').onclick = () => setHeadingUp(!prefs.headingUp);
   $('#map').addEventListener('pointerdown', leaveDrive, true);
   $('#map').addEventListener('wheel', leaveDrive, { capture: true, passive: true });
   window.addEventListener('resize', queueLayout);
@@ -1284,14 +1440,50 @@
     { lat: 37.5693, lng: 126.9790 }, // 청계광장
   ];
 
-  let demoSaved = null;
-  function startDemo() {
+  // 데모는 경유지를 직선으로 잇지 않고 네이버 길찾기의 실제 도로 경로를 따라 달린다. 한 번 받아 두고 다시 쓴다.
+  const llStr = (p) => p.lng.toFixed(6) + ',' + p.lat.toFixed(6);
+  let demoRoad = null;
+  async function demoRoadPath() {
+    if (demoRoad) return demoRoad;
+    try {
+      const cached = JSON.parse(store.get('demoRoad') || 'null');
+      if (cached && cached.v === 1 && cached.pts && cached.pts.length > 10) { demoRoad = cached; return demoRoad; }
+    } catch (e) { /* 캐시 없음 */ }
+    const W = DEMO_ROUTE;
+    const r = await api('/route', {
+      start: llStr(W[0]), goal: llStr(W[7]), option: 'trafast',
+      waypoints: [W[2], W[4], W[5]].map(llStr).join('|'),
+    });
+    demoRoad = { v: 1, pts: r.path.map((p) => ({ lat: p[1], lng: p[0] })), turns: (r.guide || []).map((g) => g.i) };
+    store.set('demoRoad', JSON.stringify(demoRoad));
+    return demoRoad;
+  }
+
+  let demoSaved = null, demoGen = 0;
+  async function startDemo() {
     stopDemo(true);
+    const gen = ++demoGen;
     if (nav.preview) { startNav(); nav.byDemo = true; } // 데모가 시작한 안내는 데모가 끝나면 함께 끝낸다
     const onRoute = !!(nav.active && nav.pts);
-    const path = onRoute ? nav.pts.slice() : DEMO_ROUTE.concat([DEMO_ROUTE[0]]);
-    const stops = onRoute ? new Set() : new Set([2, 4, 6]);          // 신호 대기 지점
-    const turns = new Set(onRoute ? nav.guides.map((g) => g.i) : []); // 회전 지점 감속
+    let path, stops, turns;
+    if (onRoute) {
+      path = nav.pts.slice();
+      stops = new Set();
+      turns = new Set(nav.guides.map((g) => g.i)); // 회전 지점 감속
+    } else {
+      let road = null;
+      try { toast('데모 경로(실제 도로)를 불러오는 중…', '', 3000); road = await demoRoadPath(); } catch (e) { road = null; }
+      if (gen !== demoGen) return; // 불러오는 사이에 멈추거나 다시 시작함
+      if (road) {
+        path = road.pts;
+        turns = new Set(road.turns);
+        stops = new Set(road.turns.filter((_, k) => k % 3 === 1)); // 몇몇 교차로에서 신호 대기
+      } else {
+        path = DEMO_ROUTE.concat([DEMO_ROUTE[0]]); // 서버에 못 닿으면 예전 방식
+        turns = new Set();
+        stops = new Set([2, 4, 6]);
+      }
+    }
     const cruise = onRoute ? 17 : 15;                                   // m/s
     demoSaved = { trip: state.trip, driveMs: state.driveMs, odo: state.odo }; // 실제 주행 기록은 보관
     state.fix = null; state.trip = 0; state.driveMs = 0; state.heading = null;
@@ -1348,6 +1540,7 @@
   }
 
   function stopDemo(silent) {
+    demoGen++; // 경로를 불러오는 중인 데모도 취소
     if (!state.demoTimer) return;
     clearInterval(state.demoTimer);
     state.demoTimer = 0;
@@ -1442,7 +1635,7 @@
   };
   $('#optHup').onchange = (e) => {
     prefs.headingUp = e.target.checked; store.set('hup', prefs.headingUp ? null : '0');
-    $('#optTilt').disabled = !prefs.headingUp;
+    renderHupBtn();
     layoutView();
   };
   $('#optTilt').onchange = (e) => { prefs.tilt = e.target.checked; store.set('tilt', prefs.tilt ? null : '0'); layoutView(); };
@@ -1474,8 +1667,15 @@
   $('#diagUpload').onclick = uploadDiag;
 
   // ---------- 시작 ----------
+  tele.ctx = () => ({
+    map: mapA === NaverAdapter ? 'naver' : (mapA ? 'osm' : 'none'),
+    kmh: Math.round(state.speedKmh), nav: nav.active, demo: !!state.demoTimer, drive: view.drive,
+    gps: $('#gpsText').textContent, screen: [innerWidth, innerHeight, devicePixelRatio],
+  });
   applyNight();
   updateSoundPill();
+  renderHupBtn();
+  setTimeout(() => report('session', { msg: 'open', debug: params.has('debug') }), 6000); // 지도·GPS 상태가 잡힌 뒤 접속 기록
   render();
   tickClock();
   setInterval(tickClock, 1000);
@@ -1489,7 +1689,7 @@
     window.__tnc = {
       state, camState, nav, cams, prefs, onFix, setRoute, startNav, endNav, startDemo, stopDemo, renderNav,
       planRoute, doSearch, setFollowing, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
-      view, layoutView, zoomCtl, autoZoom,
+      view, layoutView, zoomCtl, autoZoom, motion, alertLog,
     };
   }
 })();

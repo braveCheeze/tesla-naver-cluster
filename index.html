@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>지도 클러스터</title>
 <meta name="theme-color" content="#0b0d10">
 <style>
@@ -113,7 +113,9 @@
   .stat small { font-size: 14px; color: var(--muted); font-weight: 500; }
 
   /* ---------- 지도 ---------- */
-  #map { position: relative; overflow: hidden; background: #1a1d22; min-width: 0; }
+  /* 두 손가락 확대·축소가 페이지 전체 확대로 새지 않고 지도로 가게 한다 */
+  #map { position: relative; overflow: hidden; background: #1a1d22; min-width: 0; touch-action: none; }
+  #hupBtn.on { color: var(--accent); }
   .mapcanvas { position: absolute; inset: 0; }
   #map.night .mapcanvas { filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.9); }
   #map.night .me, #map.night .cammk { filter: invert(1) hue-rotate(180deg); }
@@ -131,15 +133,18 @@
   #map.snap .mapcanvas, #map.snap .me-arrow, #map.snap .cammk { transition: none !important; }
 
   .me { position: relative; width: 56px; height: 56px; pointer-events: none; }
-  .me-halo { position: absolute; inset: 6px; border-radius: 50%; background: rgba(3, 199, 90, .18); }
+  .me-halo {
+    position: absolute; inset: 4px; border-radius: 50%; background: rgba(3, 199, 90, .22);
+    animation: mepulse 2.2s ease-out infinite;
+  }
+  @keyframes mepulse { 0% { transform: scale(.75); opacity: .9; } 100% { transform: scale(1.35); opacity: 0; } }
   .me-dot {
     position: absolute; left: 18px; top: 18px; width: 20px; height: 20px; border-radius: 50%;
     background: var(--accent); border: 3px solid #fff; box-shadow: 0 1px 6px rgba(0,0,0,.35);
   }
   .me-arrow {
-    position: absolute; left: 8px; top: 8px; width: 40px; height: 40px;
-    fill: var(--accent); stroke: #fff; stroke-width: 2.5; stroke-linejoin: round;
-    filter: drop-shadow(0 1px 3px rgba(0,0,0,.4));
+    position: absolute; left: 11px; top: 4px; width: 34px; height: 48px; overflow: visible;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,.45));
     transition: transform .5s ease;
   }
   .me.nohead .me-arrow { display: none; }
@@ -402,6 +407,7 @@
       <button class="btn" id="setBtn" aria-label="설정"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2.2"/><circle cx="10" cy="17" r="2.2"/></svg></button>
     </div>
     <div class="ctrls">
+      <button class="btn" id="hupBtn" aria-label="지도 방향"></button>
       <button class="btn" id="zin" aria-label="확대"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
       <button class="btn" id="zout" aria-label="축소"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
       <button class="btn" id="locate" aria-label="내 위치 따라가기"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.4" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>

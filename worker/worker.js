@@ -46,7 +46,8 @@ export default {
     const url = new URL(req.url);
     const p = url.searchParams;
     const isLogPost = req.method === 'POST' && url.pathname === '/log';
-    if (req.method !== 'GET' && !isLogPost) return json({ error: 'method' }, 405, cors);
+    const isEventPost = req.method === 'POST' && url.pathname === '/event';
+    if (req.method !== 'GET' && !isLogPost && !isEventPost) return json({ error: 'method' }, 405, cors);
 
     if (url.pathname === '/health') {
       return json({
@@ -65,6 +66,33 @@ export default {
       // 지도 표시용 Client ID 는 원래 웹페이지에 공개되는 값이라 내려준다 (Secret 은 절대 내려주지 않음)
       if (url.pathname === '/config') {
         return json({ mapKeyId: env.NCP_KEY_ID || '' }, 200, cors, 300);
+      }
+
+      // 운영 모니터링: 페이지가 보내는 접속·오류 이벤트 (위치 없음, 7일 보관)
+      if (url.pathname === '/event' && isEventPost) {
+        if (!env.LOGS) return json({ ok: false }, 200, cors);
+        const text = await req.text();
+        if (text.length > 20000) return json({ error: 'too large' }, 413, cors);
+        let ev;
+        try { ev = JSON.parse(text); } catch (e) { return json({ error: 'bad json' }, 400, cors); }
+        if (!ev || typeof ev !== 'object') return json({ error: 'bad event' }, 400, cors);
+        Object.keys(ev).forEach((k) => { if (typeof ev[k] === 'string') ev[k] = ev[k].slice(0, 1000); });
+        const ts = Date.now();
+        ev.serverAt = ts;
+        ev.country = (req.cf && req.cf.country) || '';
+        const key = 'evt:' + String(ts).padStart(15, '0') + ':' + crypto.randomUUID().slice(0, 6);
+        await env.LOGS.put(key, JSON.stringify(ev), { expirationTtl: 60 * 60 * 24 * 7 });
+        return json({ ok: true }, 200, cors);
+      }
+      if (url.pathname === '/events') {
+        if (!env.LOGS) return json({ items: [] }, 200, cors);
+        const since = Number(p.get('since')) || 0;
+        const listed = await env.LOGS.list({ prefix: 'evt:', limit: 1000 });
+        const keys = listed.keys.map((k) => k.name).filter((n) => Number(n.split(':')[1]) > since).sort().slice(-50);
+        const items = (await Promise.all(keys.map((k) => env.LOGS.get(k)))).filter(Boolean).map((v) => {
+          try { return JSON.parse(v); } catch (e) { return { raw: v }; }
+        });
+        return json({ items }, 200, cors);
       }
 
       if (url.pathname === '/log') {
