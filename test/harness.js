@@ -981,6 +981,90 @@
   }
   const C_A = () => CAM_ISO_A;
 
+  // S28: 자동 야간 — 서울의 해 높이(2026-11-13: 해 뜸 07:09, 해 짐 17:20 무렵)로 낮·밤을 가르고,
+  //      야간 버튼은 자동 → 항상 어둡게 → 항상 밝게 → 자동. 다크 필터는 지도 타일에만 (경로선·아이콘은 그대로)
+  async function s28() {
+    const t = T(), seoul = { lat: 37.5665, lng: 126.978 };
+    const el = (iso) => t.sunElevation(new Date(iso), seoul.lat, seoul.lng);
+    const e = { noon: el('2026-11-13T03:30:00Z'), evening: el('2026-11-13T09:00:00Z'), dawn: el('2026-11-13T21:30:00Z'), morning: el('2026-11-13T23:30:00Z') };
+    const sunOk = e.noon > 25 && e.evening < -2 && e.dawn < -2 && e.morning > 0;
+    feed(seoul, 0, null);
+    const btn = document.getElementById('nightBtn'), map = document.getElementById('map');
+    const seq = [];
+    t.setNightMode('auto');
+    for (let k = 0; k < 3; k++) { btn.click(); seq.push(map.classList.contains('night') ? 'night' : 'day'); }
+    // 순서: 항상 어둡게(night) → 항상 밝게(day) → 자동(지금 시각에 따라)
+    const autoNow = t.isNightAt(new Date()) ? 'night' : 'day';
+    const cycleOk = seq[0] === 'night' && seq[1] === 'day' && seq[2] === autoNow && btn.classList.contains('auto');
+    // 다크 필터 범위
+    t.setNightMode('on');
+    const tile = document.querySelector('#map img[src*="map.naver.net/styles"]');
+    const tileF = tile ? getComputedStyle(tile).filter : '(no tile)';
+    const me = document.querySelector('#map .me');
+    const meF = me ? getComputedStyle(me).filter : 'none';
+    const canvasF = getComputedStyle(document.querySelector('#map .mapcanvas')).filter;
+    const filterOk = (!tile || /invert/.test(tileF)) && !/invert/.test(meF) && !/invert/.test(canvasF);
+    t.setNightMode('auto');
+    return {
+      pass: sunOk && cycleOk && filterOk,
+      detail: 'Seoul sun elevation 12:30 ' + e.noon.toFixed(1) + '°, 18:00 ' + e.evening.toFixed(1) + '°, 06:30 ' + e.dawn.toFixed(1) + '°, 08:30 ' + e.morning.toFixed(1) + '°' + (sunOk ? '✓' : '✗') +
+        '; button cycle ' + seq.join('→') + ' (auto now ' + autoNow + ')' + (cycleOk ? '✓' : '✗') +
+        '; dark filter on tiles only ' + (filterOk ? '✓' : '✗ tile=' + tileF + ' me=' + meF + ' canvas=' + canvasF),
+    };
+  }
+
+  // S29: 즐겨찾기 — 검색 결과의 ☆ → '집으로' → 검색창 첫 화면의 '집' 버튼으로 바로 안내, ★ 즐겨찾기는 목록에 뜬다
+  async function s29() {
+    const t = T();
+    const before = JSON.stringify(t.favs());
+    const place = { name: '테스트집', category: '아파트', addr: '테스트시 집로 1', lng: 127.001, lat: 37.501 };
+    const place2 = { name: '테스트단골카페', category: '카페', addr: '테스트시 커피로 2', lng: 127.003, lat: 37.503 };
+    stub.canned['/search'] = { items: [place, place2] };
+    stub.canned['/geocode'] = { items: [] };
+    stub.canned['/route'] = buildNavRoute().route;
+    feed({ lat: 37.5, lng: 127.0 }, 0, null);
+    const r = {};
+    try {
+      t.openSearch();
+      r.unsetChips = document.querySelectorAll('#results .qchip.unset').length;
+      document.getElementById('q').value = '테스트';
+      await t.doSearch(false);
+      const stars = document.querySelectorAll('#results .star');
+      r.stars = stars.length;
+      stars[0].click();
+      const homeBtn = document.querySelector('#results .favmenu:not([hidden]) button[data-a="home"]');
+      if (homeBtn) homeBtn.click();
+      document.querySelectorAll('#results .star')[1].click();
+      const favBtn = document.querySelector('#results .favmenu:not([hidden]) button[data-a="fav"]');
+      if (favBtn) favBtn.click();
+      r.home = (t.favs().home || {}).name;
+      r.favList = t.favs().list.map((x) => x.name);
+      // 첫 화면: 집 버튼에 이름, 즐겨찾기 목록에 카페
+      document.getElementById('q').value = '';
+      t.openSearch();
+      const homeChip = document.querySelector('#results .qchip[data-q="home"]');
+      r.homeChip = homeChip ? homeChip.textContent : '';
+      r.favShown = [...document.querySelectorAll('#results .result .nm')].some((n) => /테스트단골카페/.test(n.textContent));
+      const c0 = stub.calls.length;
+      homeChip.click();
+      await waitFor(() => stub.count('/route', c0) >= 1, 2000, 20);
+      const q = (stub.since(c0, '/route')[0] || {}).query || {};
+      r.routedHome = q.goal === place.lng.toFixed(6) + ',' + place.lat.toFixed(6);
+      await waitFor(() => !t.nav.busy, 2000, 20);
+    } finally {
+      // 원래 즐겨찾기로 되돌린다
+      t.setFav(place, 'remove'); t.setFav(place2, 'remove');
+      const b = JSON.parse(before);
+      if (b.home) t.setFav(b.home, 'home');
+      if (b.work) t.setFav(b.work, 'work');
+      t.endNav();
+      document.getElementById('searchSheet').hidden = true;
+    }
+    const ok = r.unsetChips >= 0 && r.stars === 2 && r.home === '테스트집' && r.favList.includes('테스트단골카페') &&
+      /테스트집/.test(r.homeChip) && r.favShown && r.routedHome;
+    return { pass: ok, detail: JSON.stringify(r) };
+  }
+
   // S27: 실제 경로로 구간단속 — 수도권제1순환고속도로 판교 부근 구간(시작 [37.39568,127.04752] → 끝 [37.40004,127.08276], 약 3.1km, 제한 100).
   //      test/fixtures/route-ring1-pangyo.json 은 2026-11-13 에 받은 실제 네이버 경로(평촌 → 성남).
   //      길안내 주행(97 km/h, 112 km/h 과속)과 길안내 없는 주행에서 시작 안내 → 평균 속도 카드 → 끝 안내가 맞게 나오는지
@@ -1400,6 +1484,8 @@
     { id: 'S25', name: 'S25 toll gate (하이패스) card + voice', fn: s25 },
     { id: 'S26', name: 'S26 map shows only my-direction cameras', fn: s26 },
     { id: 'S27', name: 'S27 section enforcement on a real route', fn: s27 },
+    { id: 'S28', name: 'S28 auto night (sun) + dark map', fn: s28 },
+    { id: 'S29', name: 'S29 favourites: 집 · 회사 · ★', fn: s29 },
   ];
 
   // ---------------------------------------------------------------- runner

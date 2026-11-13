@@ -38,7 +38,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.13-23'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.13-24'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -1200,22 +1200,104 @@
     store.set('recent', JSON.stringify(list.slice(0, 8)));
   }
 
+  // ---------- 즐겨찾기: 집 · 회사 · 별표 장소 (이 차 브라우저에 저장) ----------
+  function favs() {
+    try {
+      const f = JSON.parse(store.get('favs') || '{}');
+      return { home: f.home || null, work: f.work || null, list: Array.isArray(f.list) ? f.list : [] };
+    } catch (e) { return { home: null, work: null, list: [] }; }
+  }
+  const samePlace = (a, b) => !!a && !!b && a.name === b.name && Math.abs(a.lat - b.lat) < 1e-4 && Math.abs(a.lng - b.lng) < 1e-4;
+  const slimPlace = (p) => ({ name: p.name, addr: p.addr || '', category: p.category || '', lat: p.lat, lng: p.lng });
+  function favKind(p) {
+    const f = favs();
+    if (samePlace(f.home, p)) return 'home';
+    if (samePlace(f.work, p)) return 'work';
+    return f.list.some((x) => samePlace(x, p)) ? 'fav' : '';
+  }
+  // kind: 'fav' 별표 · 'home' 집 · 'work' 회사 · 'remove' 빼기
+  function setFav(p, kind) {
+    const f = favs(), it = slimPlace(p);
+    if (kind === 'home') f.home = it;
+    else if (kind === 'work') f.work = it;
+    else if (kind === 'fav') { if (!f.list.some((x) => samePlace(x, it))) f.list.unshift(it); f.list = f.list.slice(0, 20); }
+    else {
+      f.list = f.list.filter((x) => !samePlace(x, it));
+      if (samePlace(f.home, it)) f.home = null;
+      if (samePlace(f.work, it)) f.work = null;
+    }
+    store.set('favs', JSON.stringify(f));
+  }
+  const FAV_DONE = { fav: '즐겨찾기에 넣었어요', home: '집으로 저장했어요', work: '회사로 저장했어요', remove: '즐겨찾기에서 뺐어요' };
+
+  let searchView = null; // 지금 보이는 목록 (별표를 바꾼 뒤 그대로 다시 그리기 위해)
   function openSearch() {
     $('#searchSheet').hidden = false;
-    renderResults(recents(), '최근 목적지', '최근 목적지가 없습니다. 장소 이름이나 주소를 검색하세요.');
+    renderStart();
     setTimeout(() => $('#q').focus(), 50);
   }
   function closeSearch() { $('#searchSheet').hidden = true; }
+  // 검색창을 열었을 때: 집·회사 바로가기, 즐겨찾기, 최근 목적지
+  function renderStart() {
+    const f = favs();
+    const chip = (key, label, it) => '<button class="qchip' + (it ? '' : ' unset') + '" data-q="' + key + '">' +
+      '<b>' + label + '</b><span>' + esc(it ? it.name : '검색 결과의 ☆ 로 지정') + '</span></button>';
+    const head = '<div class="quick">' + chip('home', '집', f.home) + chip('work', '회사', f.work) + '</div>';
+    const rec = recents().filter((r) => !f.list.some((x) => samePlace(x, r)));
+    renderSections([{ title: '즐겨찾기', items: f.list }, { title: '최근 목적지', items: rec }],
+      '즐겨찾기와 최근 목적지가 없습니다. 장소 이름이나 주소를 검색하세요.', head);
+    $('#results').querySelectorAll('.qchip').forEach((b) => {
+      b.onclick = () => {
+        const it = favs()[b.dataset.q];
+        if (it) pickDest(it);
+        else toast('장소를 검색한 뒤 결과 옆 ☆ 를 눌러 "' + (b.dataset.q === 'home' ? '집' : '회사') + '으로"를 고르세요.', '', 4500);
+      };
+    });
+  }
   function renderResults(items, title, emptyNote) {
+    renderSections([{ title, items }], emptyNote);
+  }
+  // 목록 그리기: 장소마다 [장소 버튼][☆ 버튼], ☆ 를 누르면 그 밑에 즐겨찾기·집·회사·빼기 고르기
+  function renderSections(sections, emptyNote, head) {
     const box = $('#results');
-    if (!items.length) { box.innerHTML = '<div class="empty">' + esc(emptyNote || '결과가 없습니다.') + '</div>'; return; }
-    box.innerHTML = (title ? '<div class="rtitle">' + esc(title) + '</div>' : '') + items.map((it, k) => {
-      const dist = state.fix ? fmtDist(haversine(state.fix, it)) : '';
-      const sub = [it.category, it.addr].filter(Boolean).join(' · ');
-      return '<button class="result" data-k="' + k + '"><div><div class="nm">' + esc(it.name) + '</div>' +
-        (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') + '</div><div class="dist">' + dist + '</div></button>';
-    }).join('');
-    box.querySelectorAll('.result').forEach((b) => { b.onclick = () => pickDest(items[+b.dataset.k]); });
+    searchView = { sections, emptyNote, head };
+    const flat = [];
+    let html = head || '';
+    sections.forEach((s) => {
+      if (!s.items || !s.items.length) return;
+      html += (s.title ? '<div class="rtitle">' + esc(s.title) + '</div>' : '') + s.items.map((it) => {
+        const k = flat.push(it) - 1;
+        const dist = state.fix ? fmtDist(haversine(state.fix, it)) : '';
+        const sub = [it.category, it.addr].filter(Boolean).join(' · ');
+        const fk = favKind(it);
+        const tag = fk === 'home' ? '<span class="ftag">집</span>' : fk === 'work' ? '<span class="ftag">회사</span>' : '';
+        return '<div class="rrow"><button class="result" data-k="' + k + '"><div><div class="nm">' + tag + esc(it.name) + '</div>' +
+          (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') + '</div><div class="dist">' + dist + '</div></button>' +
+          '<button class="star' + (fk ? ' on' : '') + '" data-k="' + k + '" aria-label="즐겨찾기">' + (fk ? '★' : '☆') + '</button></div>' +
+          '<div class="favmenu" data-k="' + k + '" hidden>' +
+          '<button data-a="fav">★ 즐겨찾기</button><button data-a="home">집으로</button><button data-a="work">회사로</button>' +
+          (fk ? '<button data-a="remove">빼기</button>' : '') + '</div>';
+      }).join('');
+    });
+    if (!flat.length) { box.innerHTML = (head || '') + '<div class="empty">' + esc(emptyNote || '결과가 없습니다.') + '</div>'; return; }
+    box.innerHTML = html;
+    box.querySelectorAll('.result').forEach((b) => { b.onclick = () => pickDest(flat[+b.dataset.k]); });
+    box.querySelectorAll('.star').forEach((b) => {
+      b.onclick = () => {
+        const m = box.querySelector('.favmenu[data-k="' + b.dataset.k + '"]');
+        box.querySelectorAll('.favmenu').forEach((x) => { if (x !== m) x.hidden = true; });
+        m.hidden = !m.hidden;
+      };
+    });
+    box.querySelectorAll('.favmenu button').forEach((b) => {
+      b.onclick = () => {
+        const it = flat[+b.parentNode.dataset.k], a = b.dataset.a;
+        setFav(it, a);
+        toast(FAV_DONE[a], '', 2000);
+        // 검색창이 비어 있으면 첫 화면(집·회사·즐겨찾기)을, 아니면 지금 목록을 다시 그린다
+        if (!$('#q').value.trim()) renderStart(); else renderSections(searchView.sections, searchView.emptyNote, searchView.head);
+      };
+    });
   }
   let searchSeq = 0;
   async function doSearch(live) {
@@ -1262,7 +1344,7 @@
     const v = $('#q').value.trim();
     if (v.length < 2) {
       searchSeq++;
-      renderResults(recents(), '최근 목적지', '최근 목적지가 없습니다. 장소 이름이나 주소를 검색하세요.');
+      renderStart();
       return;
     }
     qTimer = setTimeout(() => doSearch(true), 450);
@@ -1876,6 +1958,7 @@
     if (h !== null && state.speedKmh >= 3) state.heading = h; // 정지 중 GPS 방향은 믿지 않음
     state.fix = f;
     updateCurvature();
+    if (!prev) applyNight(); // 첫 위치를 알게 되면 그 곳의 해 지는 시각으로 다시 본다
 
     const acc = Math.round(f.acc || 0);
     setGps(acc <= 25 ? 'ok' : 'warn', 'GPS ±' + acc + 'm');
@@ -2016,6 +2099,8 @@
     // 1초마다 도는 시계가 5분 넘게 멈췄다면 차가 잠들었다 깨어난 것: 새 버전을 확인한다
     if (upd.lastTick && now - upd.lastTick > 5 * 60000) checkForUpdate('wake');
     upd.lastTick = now.getTime();
+    // 자동 야간: 1분마다 해의 높이를 다시 본다
+    if (!upd.nightAt || now - upd.nightAt > 60000) { upd.nightAt = now.getTime(); applyNight(); }
     $('#clock').textContent = hhmm(now);
     $('#dateText').textContent = (now.getMonth() + 1) + '월 ' + now.getDate() + '일 (' + '일월화수목금토'[now.getDay()] + ')';
     mapWatchdog();
@@ -2343,15 +2428,48 @@
     queueLayout(); // 지도 칸 너비가 바뀌므로 다시 배치
     placeAlerts();
   }
-  function applyNight() {
-    $('#map').classList.toggle('night', state.night);
-    $('#nightBtn').innerHTML = state.night ? ICON_SUN : ICON_MOON;
-    $('#nightBtn').setAttribute('aria-label', state.night ? '주간 지도' : '야간 지도');
+  // ---------- 야간 지도: 자동(해가 지면 어둡게) / 항상 밤 / 항상 낮 ----------
+  // 해의 높이(고도)를 지금 위치와 시각으로 계산한다 (NOAA 간이식, 오차 1분 안팎). 해가 지평선 아래 2° 보다 내려가면 밤
+  function sunElevation(date, lat, lng) {
+    const rad = Math.PI / 180;
+    const d = date.getTime() / 86400000 + 2440587.5 - 2451545.0; // 2000-01-01 12:00 UTC 부터 지난 날
+    const g = (357.529 + 0.98560028 * d) * rad;
+    const q = 280.459 + 0.98564736 * d;
+    const L = (q + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * rad;
+    const e = (23.439 - 0.00000036 * d) * rad;
+    const dec = Math.asin(Math.sin(e) * Math.sin(L));
+    const ra = Math.atan2(Math.cos(e) * Math.sin(L), Math.cos(L));
+    const gmst = ((18.697374558 + 24.06570982441908 * d) % 24 + 24) % 24;
+    const ha = (gmst * 15 + lng) * rad - ra;
+    return Math.asin(Math.sin(lat * rad) * Math.sin(dec) + Math.cos(lat * rad) * Math.cos(dec) * Math.cos(ha)) / rad;
   }
-  $('#nightBtn').onclick = () => {
-    state.night = !state.night;
-    store.set('night', state.night ? '1' : null);
+  const NIGHT_LABEL = { auto: '자동 (해 지면 어둡게)', on: '항상 어둡게', off: '항상 밝게' };
+  function nightMode() { const m = store.get('nightMode'); return m === 'on' || m === 'off' ? m : 'auto'; }
+  function isNightAt(date) {
+    const m = nightMode();
+    if (m !== 'auto') return m === 'on';
+    const p = state.fix || DEFAULT_CENTER;
+    return sunElevation(date || new Date(), p.lat, p.lng) < -2;
+  }
+  function applyNight() {
+    state.night = isNightAt(new Date());
+    const m = nightMode(), b = $('#nightBtn');
+    $('#map').classList.toggle('night', state.night);
+    b.innerHTML = state.night ? ICON_MOON : ICON_SUN;
+    b.classList.toggle('auto', m === 'auto');
+    b.setAttribute('aria-label', '야간 지도: ' + NIGHT_LABEL[m]);
+    const sel = $('#optNight');
+    if (sel && sel.value !== m) sel.value = m;
+  }
+  function setNightMode(m) {
+    store.set('nightMode', m === 'auto' ? null : m);
     applyNight();
+  }
+  // 버튼: 자동 → 항상 어둡게 → 항상 밝게 → 자동
+  $('#nightBtn').onclick = () => {
+    const next = { auto: 'on', on: 'off', off: 'auto' }[nightMode()];
+    setNightMode(next);
+    toast('야간 지도: ' + NIGHT_LABEL[next], '', 2500);
   };
 
   const d = document;
@@ -2393,6 +2511,7 @@
     $('#optWeather').checked = prefs.weather;
     $('#optHup').checked = prefs.headingUp;
     $('#optTesla').checked = prefs.tesla;
+    $('#optNight').value = nightMode();
     $('#optTilt').checked = prefs.tilt;
     $('#optTilt').disabled = !prefs.headingUp;
     $('#optRoute').value = prefs.routeOpt;
@@ -2409,6 +2528,7 @@
   $('#clearKey').onclick = () => { store.set('key', null); location.reload(); };
   $('#optVoice').onchange = (e) => { prefs.voice = e.target.checked; store.set('voice', prefs.voice ? null : '0'); updateSoundPill(); };
   $('#optBeep').onchange = (e) => { prefs.beep = e.target.checked; store.set('beep', prefs.beep ? null : '0'); updateSoundPill(); };
+  $('#optNight').onchange = (e) => setNightMode(e.target.value);
   $('#optTesla').onchange = (e) => {
     prefs.tesla = e.target.checked; store.set('tesla', prefs.tesla ? '1' : '0');
     applyTesla();
@@ -2475,7 +2595,7 @@
   updateSoundPill();
   renderHupBtn();
   showChrome(); // 처음 3초 동안 버튼을 보여 준 뒤 숨긴다
-  setTimeout(() => report('session', { msg: 'open', debug: params.has('debug') }), 6000); // 지도·GPS 상태가 잡힌 뒤 접속 기록
+  setTimeout(() => report('session', { msg: 'open', debug: params.has('debug'), scheme: (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light', night: nightMode() }), 6000); // 지도·GPS 상태가 잡힌 뒤 접속 기록
   render();
   tickClock();
   setInterval(tickClock, 1000);
@@ -2496,6 +2616,7 @@
       state, camState, nav, cams, prefs, onFix, setRoute, startNav, endNav, startDemo, stopDemo, renderNav,
       planRoute, doSearch, setFollowing, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
+      sunElevation, isNightAt, setNightMode, openSearch, favs, setFav,
     };
   }
 })();

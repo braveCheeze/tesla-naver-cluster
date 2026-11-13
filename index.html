@@ -136,8 +136,17 @@
   /* 네이버 지도가 이 칸에 style="position: relative" 를 직접 넣으므로 !important 로 위치·크기를 지킨다.
      (안 그러면 정지 중 평면 지도에서 높이가 0이 되어 지도가 안 보인다) */
   .mapcanvas { position: absolute !important; inset: 0; }
-  #map.night .mapcanvas { filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.9); }
-  #map.night .me, #map.night .cammk { filter: invert(1) hue-rotate(180deg); }
+  /* 야간(다크) 지도: 지도 바탕 타일에만 색 반전 + 채도 낮춤을 걸어 검정·회색 톤으로 만든다.
+     (예전처럼 지도 전체에 걸면 산이 짙은 초록·강이 갈색이 되고, 경로선·카메라·내 차 색까지 뒤집혔다)
+     교통 정보는 타일에 같이 그려져 있어 은은하게 남고, 경로선·아이콘은 원래 색 그대로 */
+  #map.night { background: #11151b; }
+  #map.night .mapcanvas img[src*="map.naver.net/styles"], #map.night .leaflet-tile {
+    filter: invert(1) hue-rotate(180deg) saturate(.4) brightness(.9) contrast(1.08);
+  }
+  #nightBtn { position: relative; }
+  #nightBtn.auto::after { /* 자동 모드 표시 */
+    content: "A"; position: absolute; right: 3px; bottom: 2px; font-size: 9px; font-weight: 800; line-height: 1; color: var(--accent);
+  }
 
   /* 주행 화면: 캔버스를 차 위치(회전 중심)를 가운데로 한 큰 정사각형으로 키워 돌리고 기울인다 (값은 app.js) */
   #map { --cl: 0px; --ct: 0px; --cs: 100%; --rot: 0deg; --crot: 0deg; --tilt: 0deg; --persp: 1400px; }
@@ -362,6 +371,22 @@
   .result .nm { font-size: 17px; font-weight: 650; }
   .result .sub { font-size: 13px; color: var(--muted); margin-top: 4px; }
   .result .dist { color: var(--muted); white-space: nowrap; font-size: 14px; }
+  /* 즐겨찾기: 집·회사 바로가기 + 장소마다 ☆ */
+  .quick { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 6px; }
+  .sheet-card button.qchip {
+    text-align: left; min-height: 64px; padding: 10px 14px; display: flex; flex-direction: column; justify-content: center; gap: 3px;
+    background: rgba(3, 199, 90, .12); border-color: rgba(3, 199, 90, .45);
+  }
+  .sheet-card button.qchip.unset { background: var(--soft); border-color: var(--soft-line); }
+  .qchip b { font-size: 17px; font-weight: 800; }
+  .qchip span { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rrow { display: flex; gap: 6px; align-items: stretch; }
+  .rrow .result { flex: 1; min-width: 0; }
+  .sheet-card button.star { flex: none; width: 54px; min-height: 64px; padding: 0; font-size: 24px; color: #8b93a1; }
+  .sheet-card button.star.on { color: #ffc93c; }
+  .favmenu { display: flex; gap: 6px; flex-wrap: wrap; margin: -2px 0 4px; }
+  .sheet-card .favmenu button { min-height: 44px; padding: 0 14px; font-size: 15px; font-weight: 700; }
+  .ftag { display: inline-block; font-size: 12px; font-weight: 800; color: #04130b; background: var(--accent); border-radius: 6px; padding: 1px 6px; margin-right: 6px; vertical-align: 2px; }
 
   /* ================= 디자인 레이어 =================
      한 가지 글꼴(Pretendard) · 8px 간격 · 모서리 3단계(12/16/20) · 유리(반투명+흐림) 표면으로 통일 */
@@ -794,6 +819,13 @@
 
     <hr>
     <label class="check"><input type="checkbox" id="optTesla"> 테슬라 모드 (왼쪽 계기판을 없애고 지도를 넓게 · 속도는 차 화면으로)</label>
+    <label class="lbl" for="optNight">야간 지도</label>
+    <select id="optNight">
+      <option value="auto">자동 (해 지면 어둡게)</option>
+      <option value="on">항상 어둡게</option>
+      <option value="off">항상 밝게</option>
+    </select>
+    <p class="hint">자동이면 지금 위치의 해 지는 시각에 맞춰 지도를 어둡게 바꿉니다. 지도 위 달·해 버튼으로도 자동 → 항상 어둡게 → 항상 밝게 순서로 바꿀 수 있습니다.</p>
     <label class="check"><input type="checkbox" id="optHup"> 진행 방향이 위로</label>
     <label class="check"><input type="checkbox" id="optTilt"> 3D 기울기</label>
     <p class="hint">주행 중에는 차가 화면 아래쪽에 오고 앞쪽 길이 더 넓게 보입니다. 지도를 만지면 북쪽이 위인 평면 지도로 바뀌고, 위치 버튼을 누르거나 15초가 지나면 돌아옵니다.</p>
@@ -829,6 +861,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.13-23"></script>
+<script src="app.js?v=2026.11.13-24"></script>
 </body>
 </html>
