@@ -1290,8 +1290,10 @@
   }
   function tickClock() {
     $('#clock').textContent = hhmm(new Date());
-    // 5초 넘게 위치가 안 오면 (터널 등) 속도를 흐리게 하고 알린다
-    if (state.fix && !state.demoTimer && Date.now() - lastFixWall > 5000) {
+    // 달리는 중 5초 넘게 위치가 안 오면 (터널 등) 속도를 흐리게 하고 알린다.
+    // 멈춰 있으면 브라우저가 위치를 잘 안 보내므로 1분까지 기다린다.
+    const silentMs = Date.now() - lastFixWall;
+    if (state.fix && !state.demoTimer && silentMs > (state.speedKmh >= 3 ? 5000 : 60000)) {
       $('#speed').classList.add('stale');
       setGps('warn', 'GPS 신호 없음');
     }

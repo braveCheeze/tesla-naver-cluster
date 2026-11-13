@@ -116,14 +116,16 @@
   /* 두 손가락 확대·축소가 페이지 전체 확대로 새지 않고 지도로 가게 한다 */
   #map { position: relative; overflow: hidden; background: #1a1d22; min-width: 0; touch-action: none; }
   #hupBtn.on { color: var(--accent); }
-  .mapcanvas { position: absolute; inset: 0; }
+  /* 네이버 지도가 이 칸에 style="position: relative" 를 직접 넣으므로 !important 로 위치·크기를 지킨다.
+     (안 그러면 정지 중 평면 지도에서 높이가 0이 되어 지도가 안 보인다) */
+  .mapcanvas { position: absolute !important; inset: 0; }
   #map.night .mapcanvas { filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.9); }
   #map.night .me, #map.night .cammk { filter: invert(1) hue-rotate(180deg); }
 
   /* 주행 화면: 캔버스를 차 위치(회전 중심)를 가운데로 한 큰 정사각형으로 키워 돌리고 기울인다 (값은 app.js) */
   #map { --cl: 0px; --ct: 0px; --cs: 100%; --rot: 0deg; --crot: 0deg; --tilt: 0deg; --persp: 1400px; }
   #map.drive .mapcanvas {
-    inset: auto; left: var(--cl); top: var(--ct); width: var(--cs); height: var(--cs);
+    inset: auto; left: var(--cl) !important; top: var(--ct) !important; width: var(--cs) !important; height: var(--cs) !important;
     transform-origin: 50% 50%;
     transform: perspective(var(--persp)) rotateX(var(--tilt)) rotate(var(--rot));
     transition: transform .9s linear;
