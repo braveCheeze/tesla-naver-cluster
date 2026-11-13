@@ -34,7 +34,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.13-7'; // index.html 의 app.js?v= 와 같이 올린다
+  const APP_VERSION = '2026.11.13-8'; // index.html 의 app.js?v= 와 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -887,11 +887,12 @@
     box.querySelectorAll('.result').forEach((b) => { b.onclick = () => pickDest(items[+b.dataset.k]); });
   }
   let searchSeq = 0;
-  async function doSearch() {
+  async function doSearch(live) {
     const q = $('#q').value.trim();
     if (!q) return;
     const seq = ++searchSeq;
-    $('#results').innerHTML = '<div class="empty">검색 중…</div>';
+    // 입력 중 자동 검색은 이전 결과를 그대로 두고 조용히 바꾼다 (깜빡임 방지)
+    if (!live || !$('#results .result')) $('#results').innerHTML = '<div class="empty">검색 중…</div>';
     const near = state.fix ? state.fix.lng.toFixed(6) + ',' + state.fix.lat.toFixed(6) : null;
     const [poi, geo] = await Promise.allSettled([
       api('/search', { query: q }),
@@ -909,15 +910,31 @@
         items.push(it);
       });
     });
+    // 장소 이름 검색(네이버 검색 API)이 아직 설정되지 않았으면 주소만 찾힌다는 것을 알려 준다
+    const poiOff = poi.status === 'fulfilled' && poi.value.note === 'search api not configured';
+    const hint = poiOff ? '지금은 주소만 찾을 수 있어요 (예: 진황도로 14). 가게·건물 이름 검색은 장소 검색 키를 연결하면 됩니다.' : '';
     if (!items.length) {
       const err = geo.status === 'rejected' ? geo.reason : (poi.status === 'rejected' ? poi.reason : null);
       renderResults([], '', err
         ? '검색 서버 오류: ' + err.message
-        : '결과가 없습니다. 다른 이름이나 정확한 주소로 검색해 보세요.');
+        : (hint || '결과가 없습니다. 다른 이름이나 정확한 주소로 검색해 보세요.'));
       return;
     }
     if (state.fix) items.sort((a, b) => haversine(state.fix, a) - haversine(state.fix, b));
     renderResults(items, '검색 결과');
+    if (hint) $('#results').insertAdjacentHTML('beforeend', '<div class="empty">' + esc(hint) + '</div>');
+  }
+  // 입력하는 동안 0.45초 멈추면 자동으로 찾는다 (2글자부터)
+  let qTimer = 0;
+  function onQueryInput() {
+    clearTimeout(qTimer);
+    const v = $('#q').value.trim();
+    if (v.length < 2) {
+      searchSeq++;
+      renderResults(recents(), '최근 목적지', '최근 목적지가 없습니다. 장소 이름이나 주소를 검색하세요.');
+      return;
+    }
+    qTimer = setTimeout(() => doSearch(true), 450);
   }
   function pickDest(it) {
     closeSearch();
@@ -1725,7 +1742,8 @@
   $('#searchClose').onclick = closeSearch;
   $('#searchSheet').addEventListener('click', (e) => { if (e.target === $('#searchSheet')) closeSearch(); });
   $('#qBtn').onclick = doSearch;
-  $('#q').addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(); });
+  $('#q').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { clearTimeout(qTimer); doSearch(); } });
+  $('#q').addEventListener('input', onQueryInput);
   $('#rcStart').onclick = startNav;
   $('#rcCancel').onclick = endNav;
   $('#navEnd').onclick = () => { endNav(); say('안내를 종료합니다.', 1); };
