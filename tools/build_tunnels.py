@@ -8,7 +8,8 @@
   way(area.kr)[highway~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|road|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$"][tunnel=yes];
   out tags geom qt;
 
-사용: py -I tools/build_tunnels.py <overpass.json> data/tunnels.json
+사용: py -I tools/build_tunnels.py <overpass.json> data/tunnels.json [tools/kec_tunnel_names.json]
+  셋째 파일(선택): 이름 없는 고속도로 터널에 붙일 한국도로공사 공식 이름 (tools/kec_tunnel_names.py 가 만든다, OSM way id → 이름)
 
 출력: {"v":1,"src":"© OpenStreetMap contributors (ODbL)","date","count","scale":1e5,"names":[...],
        "w":[[이름번호(-1 없음), 일방(0/1), lat0, lng0, dLat1, dLng1, ...], ...]}  (정수, 1e5 배)
@@ -69,8 +70,10 @@ def length_m(pts):
     return sum(math.hypot(xy[i + 1][0] - xy[i][0], xy[i + 1][1] - xy[i][1]) for i in range(len(xy) - 1))
 
 
-def main(src, dst):
+def main(src, dst, kec_names=None):
     j = json.load(io.open(src, encoding='utf-8'))
+    kec = json.load(io.open(kec_names, encoding='utf-8')).get('names', {}) if kec_names else {}
+    from_kec = 0
     date = (j.get('osm3s') or {}).get('timestamp_osm_base', '')[:10]
     names, name_idx, rows = [], {}, []
     skipped = {'underpass': 0, 'short': 0}
@@ -83,6 +86,9 @@ def main(src, dst):
             continue
         raw_name = tg.get('name', '') or ''
         tname = tg.get('tunnel:name') or tg.get('tunnel:name:ko') or (raw_name if '터널' in raw_name else '')
+        if not tname and str(el.get('id')) in kec:
+            tname = kec[str(el['id'])]
+            from_kec += 1
         if UNDERPASS.search(tname) or UNDERPASS.search(raw_name):
             skipped['underpass'] += 1
             continue
@@ -117,8 +123,8 @@ def main(src, dst):
            'scale': SCALE, 'names': names, 'w': rows}
     with io.open(dst, 'w', encoding='utf-8', newline='\n') as f:
         json.dump(out, f, ensure_ascii=False, separators=(',', ':'))
-    print('ways', len(rows), 'names', len(names), 'km', round(total_len / 1000), 'skipped', skipped, 'date', date)
+    print('ways', len(rows), 'names', len(names), 'km', round(total_len / 1000), 'skipped', skipped, 'date', date, 'named from KEC', from_kec)
 
 
 if __name__ == '__main__':
-    main(sys.argv[1], sys.argv[2])
+    main(sys.argv[1], sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else None)

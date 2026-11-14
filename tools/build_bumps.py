@@ -2,6 +2,7 @@
 
 원본: 공공데이터포털 '전국과속방지턱표준데이터'(data.go.kr 15028195, 행정안전부·국토교통부, 이용 제한 없음).
       파일은 https://file.localdata.go.kr/file/speed_bump_info/info 의 '전체 파일 다운로드' (cp949 CSV, WGS84 위도·경도 포함)
+      그 사이트가 막혀 있으면 tools/fetch_bumps.py 로 오픈API(data.go.kr 15155087)에서 같은 모양의 CSV 를 받는다
 사용법: py -I tools/build_bumps.py <과속방지턱정보.csv> data/bumps.json
 
 출력: {"v":2, "scale":100000, "date":"YYYY-MM-DD", "count":N, "names":["", "중앙로", ...], "d":[dLat, dLng, road*2+flag, ...]}
