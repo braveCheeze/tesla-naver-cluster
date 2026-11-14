@@ -1601,6 +1601,45 @@
     return { pass: bad.length === 0 && Object.keys(r).length === 11, detail: Object.keys(r).map((k) => k + (r[k] ? '✓' : '✗')).join(', ') };
   }
 
+  // S40: 새 버전 (2026-11-14: 차에서 새로고침했다고 생각했지만 열려 있던 화면 그대로라 예전 버전).
+  //      운전·길안내 중에는 바꾸지 않고 하단 띠 버튼에 '새 버전'만 띄운다. 누르면 목적지·경유지를 남기고 새 버전으로 가며,
+  //      새 버전은 첫 위치를 받는 대로 경로 카드 없이 같은 목적지(경유지 포함)로 이어서 안내한다
+  async function s40() {
+    const t = T(), wait = (ms) => new Promise((res) => setTimeout(res, ms));
+    const vis = (q) => { const e = document.querySelector(q); return !!e && !e.hidden && e.getClientRects().length > 0; };
+    const r = {};
+    const prevNewer = t.upd.newer;
+    try {
+      softReset();
+      const R = buildNavRoute();
+      feed(R.P[0], 0, null);
+      t.upd.newer = null;
+      t.openTray(); await wait(40);
+      r.noButton = !vis('#ntUpdate');
+      t.closeTray(); await wait(220);
+      t.upd.newer = '2026.11.14-99';
+      t.openTray(); await wait(40);
+      r.button = vis('#ntUpdate') && /새 버전 11\.14-99/.test(text('#ntVer'));
+      t.closeTray(); await wait(220);
+      // 이어서 안내
+      stub.canned['/route'] = R.route;
+      const W = dest(NAV_ORIGIN, 90, 300), c0 = stub.calls.length;
+      t.resumeFrom({ dest: { name: '이어가기 테스트', addr: '', lat: R.dest.lat, lng: R.dest.lng }, via: [{ name: '경유', lat: W.lat, lng: W.lng }], option: 'traoptimal', t: Date.now() });
+      await waitFor(() => !t.nav.busy && t.nav.active, 3000, 20);
+      const calls = stub.since(c0, '/route');
+      r.resumed = t.nav.active && !t.nav.preview && !vis('#routeCard') && t.nav.dest.name === '이어가기 테스트' &&
+        calls.length === 1 && calls[0].query.waypoints === W.lng.toFixed(6) + ',' + W.lat.toFixed(6);
+    } finally {
+      t.upd.newer = prevNewer;
+      t.endNav();
+      stub.reset();
+      t.closeTray();
+      softReset();
+    }
+    const bad = Object.keys(r).filter((k) => !r[k]);
+    return { pass: bad.length === 0 && Object.keys(r).length === 3, detail: Object.keys(r).map((k) => k + (r[k] ? '✓' : '✗')).join(', ') };
+  }
+
   // S25: 하이패스 — 경로 안내에 톨게이트(type 121)가 있으면 2km 앞부터 카드(이름·거리·통행료·하이패스 차로 이용)와 음성
   async function s25() {
     const t = T();
@@ -1939,6 +1978,7 @@
     { id: 'S37', name: 'S37 가평→청평 real route: every camera in our direction alerts (signal→신호·과속, lone intersection cams both ways)', fn: s37 },
     { id: 'S38', name: 'S38 wide roads: cameras 20–40 m off the route line (same section name / current road name)', fn: s38 },
     { id: 'S39', name: 'S39 bottom location bar → 경로 비교 · 재추천 · 경유지', fn: s39 },
+    { id: 'S40', name: 'S40 new version while driving: tray button, resume the same guidance after updating', fn: s40 },
   ];
 
   // ---------------------------------------------------------------- runner

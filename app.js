@@ -40,7 +40,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-39'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-40'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -1499,7 +1499,7 @@
       else if (reroute === 'compare' || !reroute) q.options = ALT_OPTIONS;
       else q.option = rerouteOption();
       // 경유지가 있으면 모든 길찾기(재탐색·교통 갱신·비교 포함)에 같이 보낸다
-      if (reroute && nav.via && nav.via.length) q.waypoints = nav.via.map((v) => v.lng.toFixed(6) + ',' + v.lat.toFixed(6)).join('|');
+      if (nav.via && nav.via.length) q.waypoints = nav.via.map((v) => v.lng.toFixed(6) + ',' + v.lat.toFixed(6)).join('|');
       if (reroute === 'compare' || reroute === 'manual') toast(reroute === 'compare' ? '다른 경로를 찾는 중…' : '추천 경로를 다시 찾는 중…', '', 3000);
       // 차량 LTE 가 느릴 수 있어 20초까지 기다리고, 시간 초과면 한 번 더 시도한다
       let res;
@@ -1530,7 +1530,8 @@
       let r = res;
       if (!reroute) {
         nav.alts = dedupAlts(res.alternatives || [res]);
-        const pref = nav.alts.findIndex((a) => a.options.indexOf(prefs.routeOpt) >= 0);
+        const want = nav.resumeOpt || prefs.routeOpt; // 이어서 안내할 때는 전에 고른 옵션
+        const pref = nav.alts.findIndex((a) => a.options.indexOf(want) >= 0);
         nav.altIdx = pref >= 0 ? pref : 0;
         r = nav.alts[nav.altIdx];
       }
@@ -1550,6 +1551,11 @@
         toast((viaNow ? '경유지 ' + viaNow.name + ' 경유 · ' : '새 경로로 안내합니다 · ' + (ALT_LABEL[q.option] || '추천') + ' · ') +
           fmtDist(r.distance || nav.total) + ' · ' + fmtMin(r.duration), '', 4000);
         navUpdate(state.fix);
+      } else if (nav.autoStart) {
+        // 새 버전으로 바꾸기 전에 안내하던 목적지: 경로 카드 없이 바로 이어서 안내
+        nav.autoStart = false; nav.resumeOpt = null;
+        $('#toast').hidden = true;
+        startNav();
       } else {
         nav.preview = true; nav.active = false;
         $('#toast').hidden = true;
@@ -1681,6 +1687,9 @@
     const v = nav.via && nav.via[0];
     $('#ntViaLabel').textContent = v ? '경유지 빼기' : '경유지 추가';
     $('#ntVia').classList.toggle('on', !!v);
+    // 새 버전이 나와 있으면 '새 버전' 버튼 (누르면 바꾸고, 길안내 중이었으면 같은 목적지로 이어서 안내)
+    $('#ntUpdate').hidden = !upd.newer;
+    $('#ntVer').textContent = '버전 ' + APP_VERSION.slice(5) + (upd.newer ? ' · 새 버전 ' + upd.newer.slice(5) + ' 있음' : '');
     el.hidden = false;
     setTimeout(() => el.classList.add('open'), 16);
     clearTimeout(tray.timer);
@@ -2374,6 +2383,48 @@
   const busyDriving = () => nav.active || nav.busy || state.speedKmh >= 3 || !!state.demoTimer;
   // 돌려주는 값: 'reload' 새로고침함 · 'latest' 이미 최신 · 'driving' 운전 중이라 미룸 · 'tried' 이번 창에서 이미 시도함 · 'skip' · 'error'
   // opt.dry: 새로고침 없이 판단만 (테스트용), opt.latest: version.json 대신 쓸 값 (테스트용)
+  // 운전·길안내 중에는 바꾸지 않고, 10분마다 새 버전이 있는지 보기만 한다. 있으면 하단 띠 버튼에 '새 버전'이 생긴다
+  async function peekVersion() {
+    try {
+      const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) return;
+      const j = await r.json();
+      if (j && verNewer(j.v, APP_VERSION)) upd.newer = String(j.v);
+    } catch (e) { /* 오프라인 */ }
+  }
+  // '새 버전' 버튼: 길안내 중이면 목적지·경유지·옵션을 남겨 두고 새 버전으로. 새 버전이 뜨면 같은 목적지로 바로 이어서 안내한다
+  function goUpdate() {
+    const v = upd.newer;
+    if (!v) return;
+    try {
+      if (nav.active && nav.dest) {
+        const d = nav.dest;
+        sessionStorage.setItem('tnc.resume', JSON.stringify({ dest: { name: d.name, addr: d.addr || '', lat: d.lat, lng: d.lng },
+          via: nav.via || [], option: nav.option || null, t: Date.now() }));
+      }
+      sessionStorage.setItem('tnc.updTried', v);
+    } catch (e) { /* 저장소 막힘 */ }
+    report('info', { msg: 'manual update', from: APP_VERSION, to: v, nav: !!nav.active });
+    location.replace(updateUrl(v));
+  }
+  // 새 버전으로 바뀐 직후: 남겨 둔 목적지가 있으면(15분 안) 첫 위치를 받는 대로 경로 카드 없이 이어서 안내
+  let resumePending = null;
+  try {
+    const r = JSON.parse(sessionStorage.getItem('tnc.resume') || 'null');
+    sessionStorage.removeItem('tnc.resume');
+    if (r && r.dest && Date.now() - r.t < 15 * 60000) resumePending = r;
+  } catch (e) { /* 저장소 막힘 */ }
+  function maybeResume() {
+    if (!resumePending || !state.fix || nav.active || nav.busy || nav.preview) return;
+    const r = resumePending;
+    resumePending = null;
+    nav.via = r.via || [];
+    nav.autoStart = true;
+    nav.resumeOpt = r.option || null;
+    toast('새 버전에서 ' + r.dest.name + ' 안내를 이어 갑니다…', '', 3000);
+    planRoute(r.dest, false);
+  }
+  const resumeFrom = (r) => { resumePending = r; maybeResume(); }; // 테스트용
   // 새 버전으로 옮겨 갈 주소: 지금 주소의 다른 값(debug 등)은 두고 v 만 새 버전으로
   function updateUrl(v, loc) {
     const l = loc || location;
@@ -2423,6 +2474,8 @@
     // 서 있을 때는 GPS 가 드문드문 와도 북쪽 위 전환이 늦지 않게 시계로도 본다
     if (state.fix && !state.demoTimer) checkStopNorth(state.fix.t + (Date.now() - lastFixWall));
     if (!state.demoTimer && !testPage) idleUpdate(Date.now());
+    if (!testPage && Date.now() - (upd.peekAt || 0) > 10 * 60000) { upd.peekAt = Date.now(); peekVersion(); }
+    maybeResume();
     $('#clock').textContent = hhmm(now);
     $('#dateText').textContent = (now.getMonth() + 1) + '월 ' + now.getDate() + '일 (' + '일월화수목금토'[now.getDay()] + ')';
     mapWatchdog();
@@ -2754,6 +2807,7 @@
     else openSearch('via');
   };
   $('#ntSearch').onclick = () => { closeTray(); openSearch('dest'); };
+  $('#ntUpdate').onclick = () => { closeTray(); goUpdate(); };
   $('#navEnd').onclick = () => { endNav(); say('안내를 종료합니다.', 1); };
 
   function applyTesla() {
@@ -3019,7 +3073,7 @@
       state, camState, nav, cams, prefs, onFix, setRoute, startNav, endNav, startDemo, stopDemo, renderNav,
       planRoute, doSearch, setFollowing, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
-      sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl,
+      sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
     };
