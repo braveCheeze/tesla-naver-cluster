@@ -710,7 +710,32 @@
   #app.tesla .ctrls { right: 46px; gap: 6px; }
   #app.tesla .searchbtn { height: 32px; font-size: 13px; padding: 0 12px 0 9px; gap: 6px; border-radius: 10px; }
   #app.tesla .searchbtn svg { width: 15px; height: 15px; }
-  #app.tesla .toast { bottom: 44px; }
+  #app.tesla .toast { bottom: 64px; }
+
+  /* ---------- 테슬라 모드 글씨: 진한 그림자 대신 지도 글자처럼 얇은 테두리(halo) ----------
+     낮(밝은 지도): 진한 글자 + 얇은 흰 테두리 / 밤(어두운 지도): 흰 글자 + 옅은 검은 테두리 */
+  #app.tesla {
+    --ov-fg: #12161d; --ov-sub: #3a4250; --ov-bad: #d32f2f; --ov-rain: #1565c0; --ov-track: rgba(0, 0, 0, .14);
+    --ov-halo: 0 0 1px #fff, 0 0 2px #fff, 0 0 3px rgba(255, 255, 255, .95);
+  }
+  #app.tesla:has(#map.night) {
+    --ov-fg: #f4f6f9; --ov-sub: #c3cad4; --ov-bad: #ff6b6b; --ov-rain: #6ec1ff; --ov-track: rgba(255, 255, 255, .16);
+    --ov-halo: 0 0 2px rgba(0, 0, 0, .9), 0 0 4px rgba(0, 0, 0, .4);
+  }
+  #app.tesla .timebox, #app.tesla .weather, #app.tesla .gps, #app.tesla .road, #app.tesla .heading,
+  #app.tesla .trip, #app.tesla .alerts { text-shadow: var(--ov-halo); color: var(--ov-fg); }
+  #app.tesla .date, #app.tesla .weather, #app.tesla .road, #app.tesla .camnext, #app.tesla .stat .v,
+  #app.tesla .seccard .sec-top, #app.tesla .seccard .sec-avg small, #app.tesla .seccard .sec-remain, #app.tesla .toll-sub { color: var(--ov-fg); }
+  #app.tesla .gps, #app.tesla .road small, #app.tesla .stat .k, #app.tesla .stat small, #app.tesla .cam-avg small,
+  #app.tesla .toll-hint, #app.tesla .cam-type { color: var(--ov-sub); }
+  #app.tesla .weather .rain { color: var(--ov-rain); }
+  #app.tesla .camcard.over .cam-dist, #app.tesla .cam-avg.over b, #app.tesla .seccard.over .sec-avg { color: var(--ov-bad); }
+  #app.tesla .cam-hint, #app.tesla .seccard.over .sec-remain { color: var(--ov-bad); }
+  #app.tesla .cam-bar { background: var(--ov-track); }
+  #app.tesla:not(:has(#map.night)) .compass { background: rgba(255, 255, 255, .75); border-color: rgba(0, 0, 0, .15); }
+  /* 오른쪽 아래: 네이버 로고·출처 표시 위로 GPS 를 올리고, 가운데 아래 주소는 그 옆과 안 겹치게 폭을 줄인다 */
+  #app.tesla .gps { bottom: 44px; }
+  #app.tesla .road { max-width: 44%; bottom: 10px; }
 </style>
 </head>
 <body>
@@ -917,6 +942,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-28"></script>
+<script src="app.js?v=2026.11.14-29"></script>
 </body>
 </html>

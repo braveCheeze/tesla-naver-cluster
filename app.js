@@ -40,7 +40,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-28'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-29'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -370,6 +370,8 @@
       this.map = new N.Map(el, {
         center: new N.LatLng(c.lat, c.lng), zoom: 17, minZoom: 7,
         zoomControl: false, mapTypeControl: false, scaleControl: false,
+        // 지도 출처 표시(© NAVER Corp. /국토교통부 /경찰청)는 지우지 않고, 주행 기록과 안 겹치게 오른쪽 아래 로고 옆으로
+        mapDataControlOptions: { position: N.Position.BOTTOM_RIGHT },
       });
       this.marker = new N.Marker({
         position: new N.LatLng(c.lat, c.lng), map: this.map, visible: false, clickable: false, zIndex: 1000,
@@ -670,7 +672,12 @@
     b.textContent = text;
     b.classList.toggle('warn', !!warn);
     b.hidden = !warn; // 정상(네이버 지도)일 때는 숨기고, 테스트 지도·오류일 때만 보인다
-    attrib.textContent = mapA === NaverAdapter ? '© NAVER Corp.' : (mapA ? '© OpenStreetMap contributors' : '');
+    updateAttrib();
+  }
+  // 주행 화면(지도를 돌린 화면)에서는 네이버 출처 표시가 화면 밖으로 밀리므로 같은 문구를 따로 띄운다
+  function updateAttrib() {
+    attrib.textContent = mapA === NaverAdapter ? '© NAVER Corp. /국토교통부' + (prefs.traffic ? ' /경찰청(UTIC)' : '')
+      : (mapA ? '© OpenStreetMap contributors' : '');
   }
 
   let fallbackStarted = false;
@@ -2746,6 +2753,7 @@
   $('#optTraffic').onchange = (e) => {
     prefs.traffic = e.target.checked; store.set('traffic', prefs.traffic ? null : '0');
     if (mapA && mapA.setTraffic) mapA.setTraffic(prefs.traffic);
+    updateAttrib();
   };
   $('#optWeather').onchange = (e) => {
     prefs.weather = e.target.checked; store.set('weather', prefs.weather ? null : '0');
