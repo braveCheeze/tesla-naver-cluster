@@ -1213,6 +1213,19 @@
   .tollcard.is-next.has-lanes .toll-lanes { margin-left: 4px; }
   .tl-unit { margin-left: 4px; font-size: 14px; font-weight: 700; opacity: .8; white-space: nowrap; }
   #app.tesla .cd-in .tl-unit { color: var(--nv-sub); opacity: 1; }
+  /* ================= 2026-11-14 요청 세 가지 =================
+     ① 날씨: '비 93%' 파란 글자 대신 흰 글자 + 우산 표지 + 숫자 */
+  .wxumb { width: 1.05em; height: 1.05em; vertical-align: -0.15em; margin-right: 2px; }
+  #app.tesla .weather .wxpp, #app.tesla .weather .wxpp.rain { color: var(--ov-fg); }
+  #app.tesla .weather .wxumb { filter: drop-shadow(0 0 1px rgba(0, 0, 0, .9)) drop-shadow(0 1px 2px rgba(0, 0, 0, .45)); }
+  /* ② 오른쪽 버튼(방향·확대·축소·내 위치): 길안내가 없으면 화면 오른쪽 끝(시계·GPS 와 같은 줄),
+        목적지를 찍어 오른쪽 경로 막대가 나오면 그 왼쪽으로 스르륵 밀려난다. 경로 막대는 오른쪽에서 미끄러져 들어온다 */
+  #app.tesla .ctrls { right: 38px; transition: right .5s cubic-bezier(.2, .8, .2, 1), opacity .25s ease; }
+  #app.tesla:has(#routeStrip:not([hidden])) .ctrls { right: 84px; }
+  @keyframes rstripIn { from { opacity: 0; transform: translate(46px, -50%); } to { opacity: 1; transform: translate(0, -50%); } }
+  #app.tesla .rstrip:not([hidden]) { animation: rstripIn .5s cubic-bezier(.2, .8, .2, 1); }
+  /* ③ 야간 지도 버튼의 자동 'A': 해 아이콘에 바짝 붙이고 크게 */
+  #app.tesla #nightBtn.auto::after { right: 6px; bottom: 5px; font-size: 12px; font-weight: 900; color: var(--nv-green-ink, var(--accent)); }
 </style>
 </head>
 <body>
@@ -1455,6 +1468,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-66"></script>
+<script src="app.js?v=2026.11.14-67"></script>
 </body>
 </html>

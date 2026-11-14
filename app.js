@@ -43,7 +43,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-66'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-67'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -2592,6 +2592,9 @@
     else g = WX_CLOUD(-3, '#cfd6df') + '<path d="M12.6 16.2l-2.6 4h2.4l-1.2 3.6 3.6-5h-2.5l1.4-2.6z" fill="#ffc83d"/>'; // 뇌우
     return '<svg class="wxicon" viewBox="0 0 24 24" aria-hidden="true">' + g + '</svg>';
   }
+  // 우산 표지 (비 확률 앞): 지붕 + 손잡이 + 빗방울 두 개
+  const RAIN_ICON = '<svg class="wxumb" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 0 1 18 0z" fill="currentColor"/>' +
+    '<path d="M12 12v6.5a2 2 0 0 1-4 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
   function renderWeather() {
     const w = weather.last, el = $('#weather');
     if (!w) return;
@@ -2601,7 +2604,8 @@
     const desc = wmoText(w.code);
     el.innerHTML = '<b>' + Math.round(w.temp) + '°</b><span class="wxi" title="' + esc(desc) + '" aria-label="' + esc(desc) + '">' + wxIcon(w.code, night) +
       '</span><span class="wxt">' + esc(desc) + '</span>' +
-      (w.pp != null ? '<span class="wxsep"> · </span><span class="' + (w.pp >= 50 ? 'rain' : '') + '">비 ' + w.pp + '%</span>' : '');
+      // 비 확률: '비' 글자 대신 우산 표지 + 숫자, 흰 글자 (2026-11-14 요청: 파란 '비 93%' 보다 낫다)
+      (w.pp != null ? '<span class="wxsep"> · </span><span class="wxpp' + (w.pp >= 50 ? ' rain' : '') + '" aria-label="비 ' + w.pp + '%">' + RAIN_ICON + w.pp + '%</span>' : '');
     el.hidden = !prefs.weather;
   }
   async function updateWeather(f) {

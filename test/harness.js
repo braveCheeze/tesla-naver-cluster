@@ -1112,6 +1112,8 @@
     t.renderWeather();
     const w = document.getElementById('weather');
     checks.rendered = !!w.querySelector('svg.wxicon') && /10°/.test(w.textContent) && /이슬비/.test(w.textContent);
+    // 비 확률은 '비' 글자 대신 우산 표지 + 숫자 (2026-11-14)
+    checks.rainUmbrella = !!w.querySelector('.wxpp svg.wxumb') && w.querySelector('.wxpp').textContent === '25%' && !/비 25/.test(w.textContent);
     const box = TESLA_ONLY, prevT = t.prefs.tesla, prevW = t.prefs.weather;
     try {
       box.checked = true; box.dispatchEvent(new Event('change'));
