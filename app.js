@@ -34,6 +34,7 @@
     junction: store.get('junction') !== '0', // 고속도로 진출입·갈림길 그림 (기본 켬)
     traffic: store.get('traffic') !== '0',
     weather: store.get('weather') !== '0',
+    car: store.get('car') || 'cute',             // 내 차 아이콘 (설정에서 고름)
     headingUp: store.get('hup') !== '0',
     // 멈추면 북쪽 위로: 진행 방향 위 화면은 지도 그림째 돌려서 가게 글자도 눕는다. 3초 넘게 서 있으면 북쪽 위로 돌려 글자를 바로 세운다
     stopNorth: store.get('stopNorth') !== '0',
@@ -48,7 +49,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-88'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-89'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   // 브라우저에 저장된 예전 index.html 이 새 app.js 를 불러온 경우(화면 요소가 맞지 않아 버튼 연결에서 멈춘다):
@@ -349,11 +350,28 @@
   }
 
   // ---------- 마커 요소 ----------
-  const meEl = document.createElement('div');
-  meEl.className = 'me nohead';
-  // 내 차: 위에서 내려다본 동글동글한 초록 자동차 (헤드라이트 눈, 볼터치, 웃는 입). 앞쪽이 위를 향한다.
-  meEl.innerHTML = '<div class="me-halo"></div><div class="me-dot"></div>' +
-    '<svg class="me-arrow" viewBox="0 0 40 56">' +
+  // 내 차 아이콘 (2026-11-14 요청: 네이버 지도처럼 고를 수 있게, 우리 차 모양도). 모두 앞쪽이 위, viewBox 40×56
+  // 테슬라 모델 Y 를 위에서 본 모양: 차체 색만 바꾼다. 같은 그림이 지도와 설정 미리보기에 같이 있어도 그라데이션이
+  // 서로 엉키지 않게 id 뒤에 붙일 글자(sfx)를 받는다
+  function modelY(id, c, sfx) {
+    const g = 'cy-' + id + sfx, gl = 'cg-' + id + sfx;
+    return '<svg class="me-arrow car-' + id + '" viewBox="0 0 40 56"><defs>' +
+      '<linearGradient id="' + g + '" x1="0" x2="1"><stop offset="0" stop-color="' + c[2] + '"/><stop offset=".2" stop-color="' + c[1] + '"/>' +
+      '<stop offset=".5" stop-color="' + c[0] + '"/><stop offset=".8" stop-color="' + c[1] + '"/><stop offset="1" stop-color="' + c[2] + '"/></linearGradient>' +
+      '<linearGradient id="' + gl + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5f6d7c"/><stop offset=".3" stop-color="#171c23"/>' +
+      '<stop offset="1" stop-color="#0a0d11"/></linearGradient></defs>' +
+      '<path d="M9.2 15.4 6.3 16.5c-.7.3-.7 1.2 0 1.5l2.9 1zM30.8 15.4l2.9 1.1c.7.3.7 1.2 0 1.5l-2.9 1z" fill="' + c[2] + '"/>' +
+      '<path d="M20 2.2c6.2 0 9.4 1.7 10.3 6.6l.9 9.6c.4 6 .6 15.5.4 25.4-.2 6-3.6 10-11.6 10s-11.4-4-11.6-10c-.2-9.9 0-19.4.4-25.4l.9-9.6C10.6 3.9 13.8 2.2 20 2.2z" ' +
+      'fill="url(#' + g + ')" stroke="rgba(0,0,0,.4)" stroke-width=".5"/>' +
+      '<path d="M13.2 14.6c4.4-1.4 9.2-1.4 13.6 0l1.7 7.6.3 17.6c-.3 3.6-2.6 5.6-8.8 5.8-6.2-.2-8.5-2.2-8.8-5.8l.3-17.6z" fill="url(#' + gl + ')"/>' +
+      '<path d="M11.6 22.4h16.8M11.5 37.4h17" stroke="' + c[1] + '" stroke-width=".9" opacity=".85"/>' +
+      '<path d="M15 16.2c3.4-.8 6.6-.8 10 0l.6 3c-3.6-.7-7.6-.7-11.2 0z" fill="#fff" opacity=".13"/>' +
+      '<path d="M11.4 5.6c1.6-1.4 3.6-2 5.6-2.2-1.6 1-3.4 2.1-5 3.3zM28.6 5.6c-1.6-1.4-3.6-2-5.6-2.2 1.6 1 3.4 2.1 5 3.3z" fill="#eaf5ff" opacity=".95"/>' +
+      '<path d="M11.6 49.8c5.4 1.6 11.4 1.6 16.8 0l-.4 1.3c-5.3 1.3-10.7 1.3-16 0z" fill="#e0242f"/>' +
+      '<path d="M20 3.8v9.2" stroke="#fff" stroke-width=".6" opacity=".2"/></svg>';
+  }
+  const CAR_ICONS = [
+    { id: 'cute', name: '초록 꼬마차', svg: () => '<svg class="me-arrow car-cute" viewBox="0 0 40 56">' +
       '<rect x="2.5" y="12" width="6" height="11" rx="3" fill="#232a35"/>' +
       '<rect x="31.5" y="12" width="6" height="11" rx="3" fill="#232a35"/>' +
       '<rect x="2.5" y="37" width="6" height="11" rx="3" fill="#232a35"/>' +
@@ -366,9 +384,43 @@
       '<circle cx="13.5" cy="9.5" r="2.1" fill="#1b2330"/><circle cx="27.5" cy="9.5" r="2.1" fill="#1b2330"/>' +
       '<circle cx="14.3" cy="8.8" r=".75" fill="#fff"/><circle cx="28.3" cy="8.8" r=".75" fill="#fff"/>' +
       '<circle cx="9.3" cy="16.5" r="1.9" fill="#ff8fa3" opacity=".8"/><circle cx="30.7" cy="16.5" r="1.9" fill="#ff8fa3" opacity=".8"/>' +
-      '<path d="M16.8 16.2 Q20 19 23.2 16.2" fill="none" stroke="#0b4a2b" stroke-width="1.7" stroke-linecap="round"/>' +
-    '</svg>';
-  const rotateMe = makeRotator(meEl.querySelector('.me-arrow'));
+      '<path d="M16.8 16.2 Q20 19 23.2 16.2" fill="none" stroke="#0b4a2b" stroke-width="1.7" stroke-linecap="round"/></svg>' },
+    // 사용자 차 (테슬라 앱의 짙은 회색 모델 Y)
+    { id: 'my', name: '내 차 (모델 Y 그레이)', svg: (sfx) => modelY('my', ['#545c68', '#323842', '#1c2027'], sfx) },
+    { id: 'red', name: '모델 Y 레드', svg: (sfx) => modelY('red', ['#f2555c', '#c5121f', '#7c0b13'], sfx) },
+    { id: 'white', name: '모델 Y 화이트', svg: (sfx) => modelY('white', ['#ffffff', '#e8ebef', '#b3bac3'], sfx) },
+    // 네이버 지도 같은 내비 화살표
+    { id: 'arrow', name: '파란 화살표', svg: () => '<svg class="me-arrow car-arrow" viewBox="0 0 40 56">' +
+      '<circle cx="20" cy="28" r="15.5" fill="#fff" stroke="#d7dde5" stroke-width="1.2"/>' +
+      '<path d="M20 15.5 28.6 38.4 20 33.6 11.4 38.4z" fill="#2f6fe4" stroke="#2f6fe4" stroke-width="1.2" stroke-linejoin="round"/></svg>' },
+    { id: 'arrow3d', name: '입체 화살표', svg: () => '<svg class="me-arrow car-arrow3d" viewBox="0 0 40 56">' +
+      '<path d="M20 8 31.5 45 20 37.6z" fill="#3d86ff"/><path d="M20 8 8.5 45 20 37.6z" fill="#1c55cf"/>' +
+      '<path d="M20 8v29.6" stroke="#0f3c9c" stroke-width=".6" opacity=".6"/></svg>' },
+  ];
+  const carIcon = (id) => CAR_ICONS.find((c) => c.id === id) || CAR_ICONS[0];
+  const meEl = document.createElement('div');
+  meEl.className = 'me nohead';
+  meEl.innerHTML = '<div class="me-halo"></div><div class="me-dot"></div>' + carIcon(prefs.car).svg('');
+  let rotateMe = makeRotator(meEl.querySelector('.me-arrow'));
+  // 아이콘을 바꾸면 그림만 갈아 끼우고 지금 방향으로 바로 돌려 둔다
+  function setCarIcon(id) {
+    prefs.car = carIcon(id).id;
+    store.set('car', prefs.car === 'cute' ? null : prefs.car);
+    const old = meEl.querySelector('.me-arrow');
+    const tmp = document.createElement('div');
+    tmp.innerHTML = carIcon(prefs.car).svg('');
+    old.replaceWith(tmp.firstChild);
+    rotateMe = makeRotator(meEl.querySelector('.me-arrow'));
+    if (state.heading !== null) rotateMe(state.heading - (typeof glOn === 'function' && glOn() ? glView.rot : 0));
+    renderCarIcons();
+  }
+  function renderCarIcons() {
+    const box = $('#carIcons');
+    if (!box) return;
+    box.innerHTML = CAR_ICONS.map((c) => '<button type="button" class="ci' + (c.id === prefs.car ? ' on' : '') + '" data-k="' + c.id + '" aria-pressed="' +
+      (c.id === prefs.car) + '">' + c.svg('-p').replace('class="me-arrow ', 'class="') + '<span>' + c.name + '</span></button>').join('');
+    box.querySelectorAll('.ci').forEach((el) => { el.onclick = () => setCarIcon(el.dataset.k); });
+  }
   const rotateCompass = makeRotator($('#compassArrow'));
   function camEl(c) {
     const el = document.createElement('div');
@@ -4598,6 +4650,7 @@
     $('#optStopNorth').checked = prefs.stopNorth;
     $('#optStopNorth').disabled = glOn();
     $('#optGl').checked = prefs.gl;
+    renderCarIcons();
     $('#optNight').value = nightMode();
     $('#optTilt').checked = prefs.tilt;
     $('#optTilt').disabled = !prefs.headingUp;
@@ -4812,7 +4865,7 @@
       planRoute, doSearch, setFollowing, canvasPoint, gesture, glView, glOn, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
       sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
-      saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassNums, hipassLayout, laneNums, laneStripHtml, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, parking, parkState, setParkingData, loadParking, evalParking, rest, setRestData, loadRest, ensureRouteRest, renderRest, placeBase, findParking, renderTurnArrow,
+      saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassNums, hipassLayout, laneNums, laneStripHtml, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, setCarIcon, carIcons: CAR_ICONS, parking, parkState, setParkingData, loadParking, evalParking, rest, setRestData, loadRest, ensureRouteRest, renderRest, placeBase, findParking, renderTurnArrow,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },

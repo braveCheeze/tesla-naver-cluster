@@ -2712,6 +2712,7 @@
     { id: 'S60', name: 'S60 white turn arrow on the map at the next turn (400 m before), destination pin + dots from the route end', fn: s60 },
     { id: 'S61', name: 'S61 highway rest areas on the route: only my side (right) or both-way ones, duplicates merged, next within 30 km + the one after; not on local roads', fn: s61 },
     { id: 'S62', name: 'S62 Naver guide codes → icons: roundabout exits, overpass/underpass/side road not as turns, hi-pass/one-toll gates, rest area, entry/exit ahead', fn: s62 },
+    { id: 'S63', name: 'S63 car icon choice (cute car, my Model Y grey, red, white, arrows): marker swaps, keeps the heading, saved', fn: s63 },
     { id: 'S58', name: "S58 no-parking cameras: '주정차 단속' only ahead in my direction, when slow (no sound); not behind or on a side street; setting off", fn: s58 },
     { id: 'S57', name: 'S57 fast reroute: wrong-way turn caught in 2 fixes, start asked ahead of the car, a new route that starts behind the car is retried at once (only once)', fn: s57 },
   ];
@@ -3033,6 +3034,27 @@
     const ok = !bad.length && txt.r3 && txt.l9 && txt.u6 && !noIcon.length && rbIcons;
     return { pass: ok, detail: (bad.length ? 'wrong: ' + bad.join(', ') : Object.keys(want).length + ' codes ✓') +
       ' | text ' + JSON.stringify(txt) + ' | icons ' + (noIcon.length ? 'missing ' + noIcon.join(',') : 'all ✓') + ' | roundabout icons ' + (rbIcons ? '✓' : '✗') };
+  }
+
+  // S63: 내 차 아이콘 고르기 (2026-11-14 요청: 네이버 지도처럼, 우리 차 모양으로)
+  async function s63() {
+    const t = T(), r = {}, prev = localStorage.getItem('tnc.car');
+    const arrow = () => document.querySelector('.me .me-arrow');
+    try {
+      feed(dest(TRIP_ORIGIN, 90, 30), 10, 90);
+      t.setCarIcon('my');
+      r.swapped = /car-my/.test(arrow().getAttribute('class'));
+      r.saved = localStorage.getItem('tnc.car') === 'my';
+      feed(dest(TRIP_ORIGIN, 90, 45), 10, 90);
+      r.rotated = /rotate\(/.test(arrow().style.transform);
+      r.options = t.carIcons.map((c) => c.id).join(',');
+      t.setCarIcon('cute');
+      r.back = /car-cute/.test(arrow().getAttribute('class')) && localStorage.getItem('tnc.car') === null;
+    } finally {
+      if (prev) t.setCarIcon(prev); else t.setCarIcon('cute');
+    }
+    const ok = r.swapped && r.saved && r.rotated && r.back && r.options === 'cute,my,red,white,arrow,arrow3d';
+    return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + r[k]).join(', ') };
   }
 
   async function s55() {
