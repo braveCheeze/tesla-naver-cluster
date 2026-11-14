@@ -992,6 +992,21 @@
   /* 알림도 어두운 유리 */
   #app.tesla .toast { background: rgba(36, 38, 42, .82); -webkit-backdrop-filter: var(--nv-blur); backdrop-filter: var(--nv-blur); }
   body:has(#app.tesla) .sheet { -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+  /* ================= 화면이 넓을 때 왼쪽 속도계 (2026-11-14 요청) =================
+     테슬라 브라우저를 크게 펼치면(실측 1307×747) 차 화면의 속도계가 가려진다. 그때만 왼쪽(나침반 위)에 속도계를 띄운다.
+     보통 크기(804×638)에서는 차 속도계가 보이므로 그대로 숨김 */
+  @media (min-width: 1000px) {
+    #app.tesla .speedbox {
+      display: block; position: absolute; left: 28px; bottom: 172px; z-index: 990; margin: 0; pointer-events: none;
+      color: var(--ov-fg); text-shadow: var(--ov-halo);
+    }
+    #app.tesla .speedbox .speedrow { gap: 14px; align-items: center; }
+    #app.tesla #speed { font-size: 88px; font-weight: 800; line-height: .9; }
+    #app.tesla #speed.over { color: var(--ov-bad); }
+    #app.tesla #speed.stale { color: var(--ov-sub); opacity: .7; }
+    #app.tesla .speedbox .limit { width: 60px; height: 60px; border-width: 6px; font-size: 24px; text-shadow: none; box-shadow: 0 3px 10px rgba(0, 0, 0, .3); }
+    #app.tesla .speedbox .unit { font-size: 16px; font-weight: 700; color: var(--ov-sub); margin-top: 4px; }
+  }
 </style>
 </head>
 <body>
@@ -1215,6 +1230,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-45"></script>
+<script src="app.js?v=2026.11.14-46"></script>
 </body>
 </html>

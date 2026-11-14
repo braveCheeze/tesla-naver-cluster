@@ -978,11 +978,13 @@
     } finally {
       set(prev);
     }
-    const okOn = on.pos === 'absolute' && on.mapW >= on.appW - 2 && !on.speedShown && /월 \d+일/.test(on.date) && on.clockShown;
+    // 속도는 차 화면에 나오므로 테슬라 모드에서는 숨김. 단, 화면이 넓으면(1000px 이상: 브라우저를 크게 펼쳐 차 속도계가 가려짐) 왼쪽에 보인다
+    const wantSpeed = innerWidth >= 1000;
+    const okOn = on.pos === 'absolute' && on.mapW >= on.appW - 2 && on.speedShown === wantSpeed && /월 \d+일/.test(on.date) && on.clockShown;
     const okOff = off.pos !== 'absolute' && off.mapW < off.appW - 100 && off.speedShown && !off.date;
     return {
       pass: okOn && okOff,
-      detail: 'on: map ' + on.mapW + '/' + on.appW + ' px, cluster ' + on.pos + ', speed ' + (on.speedShown ? 'SHOWN' : 'hidden') + ', date "' + on.date + '"' + (okOn ? '✓' : '✗') +
+      detail: 'on: map ' + on.mapW + '/' + on.appW + ' px, cluster ' + on.pos + ', speed ' + (on.speedShown ? 'shown' : 'hidden') + ' (want ' + (wantSpeed ? 'shown, wide' : 'hidden') + '), date "' + on.date + '"' + (okOn ? '✓' : '✗') +
         '; off: map ' + off.mapW + '/' + off.appW + ' px, speed ' + (off.speedShown ? 'shown' : 'HIDDEN') + (okOff ? '✓' : '✗'),
     };
   }
@@ -1297,6 +1299,10 @@
         rightGap: app.right - clock.right >= 30 && clock.top - app.top >= 16 && app.right - strip.right >= 30,
         alertsUnderNav: alerts.top >= np.bottom && alerts.top - np.bottom < 30 && alerts.left < app.left + 40,
         buttons70: btn.width >= 36 && btn.width <= 42,
+        // 화면이 넓으면(1000px 이상, 테슬라 브라우저를 크게 펼친 1307×747) 왼쪽 나침반 위에 속도계, 보통 크기(804)에서는 숨김
+        speedWhenWide: (() => { const sb = document.querySelector('.speedbox'), on = sb.getClientRects().length > 0 && getComputedStyle(sb).display !== 'none';
+          if (innerWidth < 1000) return !on;
+          const r = sb.getBoundingClientRect(); return on && r.left < app.left + 60 && r.bottom <= head.top + 4; })(),
         // 야간·전체화면·설정 버튼은 길안내 패널 바로 오른쪽, 패널 위쪽 높이에
         topButtonsNextToNav: tc.left >= np.right && tc.left - np.right <= 16 && Math.abs(tc.top - np.top) <= 4,
       };
