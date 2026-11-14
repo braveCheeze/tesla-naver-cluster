@@ -51,7 +51,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-111'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-112'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -506,7 +506,7 @@
   function camEl(c) {
     const el = document.createElement('div');
     el.className = 'cammk k' + c[3] + (c[6] ? ' z' + c[6] : ''); // z2 어린이·z1 노인 보호구역은 노란 바탕
-    el.textContent = c[2];
+    el.textContent = c[2] || '?';
     return el;
   }
   // 과속방지턱 주의 표지: 빨간 테두리 흰 삼각형 안에 검은 둔덕
@@ -2007,8 +2007,22 @@
   async function loadCameras() {
     try {
       // 버전을 붙여 새 버전과 함께 바뀐 카메라 데이터를 바로 받는다 (브라우저 10분 캐시 우회)
-      const r = await fetch('data/cameras.json?v=' + APP_VERSION);
+      const [r, rm] = await Promise.all([fetch('data/cameras.json?v=' + APP_VERSION), fetch('data/mobile.json?v=' + APP_VERSION).catch(() => null)]);
       const j = await r.json();
+      // 박스형(단속 부스)·이동식 과속 단속 (v112, tools/build_mobile.py): 행 모양이 같아 그대로 붙인다. 도로 이름은 모름(-1)
+      try {
+        const m = rm && rm.ok ? await rm.json() : null;
+        if (m && Array.isArray(m.rows)) {
+          const base = j.rows.length, nb = (j.arrowNames || []).length;
+          j.rows = j.rows.concat(m.rows);
+          j.arrowNames = (j.arrowNames || []).concat(m.arrowNames || []);
+          const ma = m.arrows || [];
+          const add = [];
+          for (let k = 0; k + 2 < ma.length; k += 3) add.push(ma[k] + base, ma[k + 1] + nb, ma[k + 2] + nb);
+          j.arrows = (j.arrows || []).concat(add);
+          cams.mobile = m.rows.length;
+        }
+      } catch (e) { /* 박스형 목록 없이 */ }
       const g = new Map();
       j.rows.forEach((c, i) => {
         const k = Math.floor(c[0] / CELL) + ':' + Math.floor(c[1] / CELL);
@@ -2391,12 +2405,12 @@
   function announceCam(tg, f) {
     const c = tg.c, limit = c[2], d = tg.d;
     // 단속 카메라 600m 앞부터 지나갈 때까지 제한을 넘으면 주행 기록에 (카메라마다 한 번, 가장 빨랐던 속도로)
-    if (isSpeedCam(c) && d < 600 && state.speedKmh > limit + 1) {
+    if (isSpeedCam(c) && limit > 0 && d < 600 && state.speedKmh > limit + 1) {
       const kmh = Math.round(state.speedKmh);
       if (!tg.said.evt) tg.said.evt = tripEvent({ kind: 'cam', label: camLabel(c), limit, kmh, lat: c[0], lng: c[1] });
       else if (kmh > tg.said.evt.kmh) { tg.said.evt.kmh = kmh; }
     }
-    if (tg.after && !(state.speedKmh > limit + 1 && isSpeedCam(c))) return;
+    if (tg.after && !(limit > 0 && state.speedKmh > limit + 1 && isSpeedCam(c))) return;
     if (!isSpeedCam(c)) { // 신호 전용 카메라: 짧게 한 번만 알린다 (속도 경고 없음)
       if (!tg.said.far && d <= 300) { tg.said.far = true; say('300미터 앞, 신호 단속 카메라입니다.', 1); }
       return;
@@ -2405,9 +2419,9 @@
     if (!tg.said.far && d <= far + 30) {
       tg.said.far = true;
       const dd = d >= 950 ? Math.round(d / 1000) + '킬로미터' : Math.max(100, Math.round(d / 100) * 100) + '미터';
-      say(dd + ' 앞, ' + camLabel(c).replace('·', ' ') + '. 제한속도 ' + limit + '입니다.', 2);
+      say(dd + ' 앞, ' + camLabel(c).replace('·', ' ') + (limit > 0 ? '. 제한속도 ' + limit + '입니다.' : '입니다.'), 2);
     }
-    const over = state.speedKmh > limit + 1;
+    const over = limit > 0 && state.speedKmh > limit + 1;
     if (!tg.said.near && d <= 250) {
       tg.said.near = true;
       if (over) say('속도를 줄이세요. 제한속도 ' + limit + '.', 3, true);
@@ -2445,7 +2459,7 @@
       const d = pk.at != null && nav.active ? Math.max(0, pk.at - nav.along)
         : state.fix ? haversine(state.fix, { lat: pk.c[0], lng: pk.c[1] }) : pk.d;
       // 테슬라 모드에서는 '다음 단속' 글자 없이 제한속도 표지 + 거리만 (표지만 봐도 안다). 글자는 화면 읽기용으로 남긴다
-      nxEl.innerHTML = '<span class="mini-sign' + (pk.c[3] === 3 ? ' k3' : '') + '">' + pk.c[2] + '</span><span class="nx-label">다음 단속 </span><b>' + fmtDist(d) + '</b>';
+      nxEl.innerHTML = '<span class="mini-sign' + (pk.c[3] === 3 ? ' k3' : '') + '">' + (pk.c[2] || '?') + '</span><span class="nx-label">다음 단속 </span><b>' + fmtDist(d) + '</b>';
       nxEl.setAttribute('aria-label', '다음 단속 ' + fmtDist(d));
     }
     if (!tg || !prefs.cams) {
@@ -2457,13 +2471,13 @@
       cancelDrawerClose();
       card.hidden = false;
       const speedCam = isSpeedCam(tg.c);
-      $('#camLimit').textContent = speedCam ? tg.c[2] : '신호';
+      $('#camLimit').textContent = speedCam ? (tg.c[2] || '?') : '신호';
       // 지나간 뒤에도 CAM_HOLD(30m)까지는 카메라 바로 앞인 것처럼 그대로 보여 주고(오차 거리는 따로 알리지 않음), 그 뒤 사라진다
       $('#camType').textContent = camLabel(tg.c);
       $('#camDist').textContent = tg.after ? '0m' : fmtDist(tg.d);
       const span = Math.max(tg.first, 300);
       $('#camBar').style.width = tg.after ? '100%' : Math.max(0, Math.min(100, (1 - tg.d / span) * 100)) + '%';
-      card.classList.toggle('over', speedCam && state.speedKmh > tg.c[2] + 1 && tg.d < 600);
+      card.classList.toggle('over', speedCam && tg.c[2] > 0 && state.speedKmh > tg.c[2] + 1 && tg.d < 600);
       card.classList.toggle('signal', !speedCam);
       card.classList.toggle('mobile', tg.c[3] === 8); // 이동식 단속은 파란색
       card.classList.toggle('box', isBox(tg.c));       // 박스형은 종류 글자를 주황으로
@@ -2476,7 +2490,7 @@
         if (sign.dataset.zone !== zone) { sign.innerHTML = zone === 'kid' ? SIGN_KID : SIGN_ELDER; sign.dataset.zone = zone; }
         $('#ztDist').textContent = tg.after ? '0m' : fmtDist(tg.d);
         $('#ztLabel').textContent = zone === 'kid' ? '어린이보호' : '노인보호';
-        $('#ztLimit').textContent = speedCam ? tg.c[2] : '신호';
+        $('#ztLimit').textContent = speedCam ? (tg.c[2] || '?') : '신호';
       }
       // 테슬라 모드: 과속 정보 밑에 작은 주의 표지 (CSS 가 테슬라 모드에서만 보여 준다)
       const zb = $('#zoneBadge');
@@ -2567,7 +2581,7 @@
   // 테슬라 모드에서 단속 경고가 떠 있으면 바로 밑에 내 속도 (구간단속 중이거나 속도 카메라 앞). 제한을 넘으면 빨갛게
   function renderMySpeed() {
     const el = $('#mySpeed'), tg = camState.target, s = camState.section;
-    const lim = !prefs.cams ? null : s ? s.limit : tg && isSpeedCam(tg.c) ? tg.c[2] : null;
+    const lim = !prefs.cams ? null : s ? s.limit : tg && isSpeedCam(tg.c) ? (tg.c[2] || null) : null;
     if (!lim) { el.hidden = true; return; }
     el.hidden = false;
     $('#mySpeedVal').textContent = Math.round(state.speedKmh);
@@ -2608,7 +2622,7 @@
   function currentLimit() {
     if (camState.section) return camState.section.limit;
     const tg = camState.target;
-    return tg && tg.d < 1000 && isSpeedCam(tg.c) ? tg.c[2] : null;
+    return tg && tg.d < 1000 && isSpeedCam(tg.c) ? (tg.c[2] || null) : null;
   }
   function renderLimit() {
     const lim = currentLimit();
