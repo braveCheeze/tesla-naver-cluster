@@ -782,6 +782,38 @@
   #app.tesla .ctrls { right: 84px; }
   #app.tesla .searchbtn { height: 40px; font-size: 15px; padding: 0 14px 0 11px; gap: 7px; border-radius: 12px; }
   #app.tesla .searchbtn svg { width: 18px; height: 18px; }
+
+  /* ---------- 하단 위치 띠: 어두운 띠(길안내 패널과 같은 바탕), 누르면 위로 버튼이 올라온다 ---------- */
+  .road { cursor: pointer; }
+  #app.tesla .road {
+    pointer-events: auto; color: #fff; text-shadow: none;
+    background: rgba(11, 13, 16, .62); border-radius: 14px; padding: 7px 34px 8px 16px; box-shadow: 0 6px 18px rgba(0, 0, 0, .25);
+  }
+  #app.tesla .road small { color: #cfd5dd; margin-left: 6px; }
+  #app.tesla .road:empty::before { content: '현재 위치'; color: #cfd5dd; }
+  /* 다음 단속 거리: 낮 지도에서도 보이게 (흰 글씨였음) */
+  #app.tesla .camnext b { color: var(--ov-fg); font-size: 17px; }
+  /* 오른쪽 끝의 작은 위쪽 꺾쇠: 누르면 올라온다는 표시 */
+  #app.tesla .road::after {
+    content: ''; position: absolute; right: 14px; top: 50%; width: 7px; height: 7px; margin-top: -2px;
+    border-left: 2px solid #cfd5dd; border-top: 2px solid #cfd5dd; transform: rotate(45deg);
+  }
+  .navtray {
+    position: absolute; left: 50%; bottom: 84px; z-index: 1060; display: flex; gap: 10px;
+    transform: translate(-50%, 12px); opacity: 0; pointer-events: none; transition: opacity .18s ease, transform .18s ease;
+  }
+  .navtray.open { transform: translate(-50%, 0); opacity: 1; pointer-events: auto; }
+  .navtray[hidden], .navtray button[hidden] { display: none; }
+  .navtray button {
+    display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+    min-width: 88px; height: 66px; padding: 6px 14px; border-radius: 14px;
+    background: rgba(11, 13, 16, .8); color: #fff; border: 1px solid rgba(255, 255, 255, .14);
+    font: inherit; font-size: 14px; font-weight: 800; box-shadow: 0 6px 18px rgba(0, 0, 0, .3); cursor: pointer;
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  }
+  .navtray button:active { transform: scale(.96); }
+  .navtray button.on { border-color: var(--accent); color: #c8f5dc; }
+  .navtray svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 </style>
 </head>
 <body>
@@ -889,6 +921,14 @@
       </div>
     </div>
 
+    <!-- 하단 위치 띠를 누르면 올라오는 버튼: 길안내 중이면 경로 비교·재추천·경유지, 아니면 목적지 검색 -->
+    <div id="navTray" class="navtray" hidden>
+      <button id="ntCompare"><svg viewBox="0 0 24 24"><path d="M6 21V11a4 4 0 0 1 4-4h9"/><path d="M15 3l4 4-4 4"/><path d="M6 21V3"/></svg><span>경로 비교</span></button>
+      <button id="ntReroute"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg><span>재추천</span></button>
+      <button id="ntVia"><svg viewBox="0 0 24 24"><path d="M12 21s-6.5-5.6-6.5-10.5a6.5 6.5 0 0 1 13 0C18.5 15.4 12 21 12 21z"/><path d="M12 7.5v6M9 10.5h6"/></svg><span id="ntViaLabel">경유지 추가</span></button>
+      <button id="ntSearch"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg><span>목적지 검색</span></button>
+    </div>
+
     <div id="toast" class="toast" hidden></div>
     <div class="topctrls">
       <button class="btn" id="nightBtn" aria-label="야간 지도"></button>
@@ -992,6 +1032,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-37"></script>
+<script src="app.js?v=2026.11.14-38"></script>
 </body>
 </html>

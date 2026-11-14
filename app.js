@@ -40,7 +40,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-37'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-38'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -884,7 +884,7 @@
   function isAhead(f, c, d, keep) { // keep: 이미 경고 중인 카메라를 계속 둘지 볼 때 (조금 느슨하게)
     if (!camWanted(c)) return false;
     // 길안내 중에는 안내하는 경로 위의 카메라만 (잠깐 경로를 벗어나도 다른 길 카메라는 알리지 않는다)
-    if (nav.active && nav.pts) return camOnRouteAhead(c);
+    if (nav.active && nav.pts) return camOnRouteAhead(c) || camBesideRouteOnMyRoad(c);
     // 길안내가 없으면 진행 방향 앞(굽은 길이면 휘는 대로 예측한 앞길)의 내 도로 카메라
     if (state.heading === null) return false;
     const same = onSameRoadName(c);
@@ -906,11 +906,14 @@
   }
   // 경로 선분 i 위의 카메라인지 보고, 맞으면 경로 위 거리(m)를 돌려준다.
   // 경로에서 20m 이내면 내 도로로 본다. 단, 도로명이 둘 다 구체적인데 서로 다르면(옆 도로·교차로의 가로 도로) 뺀다.
-  // 도로명이 같다고 확인되면 카메라 좌표 오차를 감안해 30m 까지 인정한다.
+  // 넓은 도로·고속도로는 카메라가 경로선(도로 가운데)에서 20~40m 떨어져 서 있기도 하다(2026-11-14 전국 16개 경로 점검:
+  // 올림픽로 36m·한밭대로 34m·경부고속도로 35m 등). 그래서 내 도로라고 확인되면 40m 까지 인정한다:
+  //   경로 구간 이름이 카메라 도로명과 같거나, 구간 이름을 모를 때는 근처(800m 안) 경로 바로 위(20m 안)에 같은 도로의 카메라가 있을 때
+  const ROUTE_CAM_NEAR = 20, ROUTE_CAM_FAR = 40;
   function camAtSeg(c, i) {
     const p = { lat: c[0], lng: c[1] }, a = nav.pts[i], b = nav.pts[i + 1];
     const pr = projectSeg(p, a, b);
-    if (pr.dist >= 30) return null;
+    if (pr.dist >= ROUTE_CAM_FAR) return null;
     const rn = routeRoadAt(i), cn = camRoad(c);
     if (pr.dist > 6 && roadsDiffer(rn, cn)) return null;
     // 경로 왼쪽으로 8m 넘게 떨어진 한 방향 카메라는 반대편 차로용
@@ -918,8 +921,36 @@
     // 고속도로 구간이면 옆 일반도로의 저속 카메라(제한 70 이하, 고속국도 아님)는 제외
     // ('분당수서고속화도로' 같은 고속화도로는 고속도로가 아니므로 이 규칙을 쓰지 않는다)
     if (/고속도로|고속국도/.test(rn) && c[8] !== 1 && c[2] <= 70) return null;
-    if (!(pr.dist < 20 || (specificRoad(rn) && sameRoad(rn, cn)))) return null;
+    const ok = pr.dist < ROUTE_CAM_NEAR || (specificRoad(rn) ? sameRoad(rn, cn) : specificRoad(cn) && sameRoadCamOnRoute(c, i));
+    if (!ok) return null;
     return nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]);
+  }
+  // 경로 구간 이름을 모르는 곳: 카메라 c 근처(800m 안)에 같은 도로 이름의 다른 카메라가 경로 바로 위(20m 안)에 있으면
+  // 경로가 그 도로를 지나는 것으로 본다 (선분 i 앞뒤 80개 안에서)
+  function sameRoadCamOnRoute(c, i) {
+    const cn = camRoad(c), pts = nav.pts;
+    const lo = Math.max(0, i - 80), hi = Math.min(pts.length - 2, i + 80);
+    for (const it of camsNear(c[0], c[1], 800)) {
+      if (it.c === c || !sameRoad(camRoad(it.c), cn)) continue;
+      const q = { lat: it.c[0], lng: it.c[1] };
+      for (let j = lo; j <= hi; j++) if (projectSeg(q, pts[j], pts[j + 1]).dist < ROUTE_CAM_NEAR) return true;
+    }
+    return false;
+  }
+  // 길안내 중, 경고 거리 안의 카메라가 경로선에서 20~40m 떨어져 있어 경로 위 카메라로 못 잡은 경우의 마지막 확인:
+  // 지금 달리는 도로(역지오코딩) 이름과 카메라 도로명이 같고 남은 경로 앞쪽 옆에 있으면 내 도로 카메라로 본다
+  function camBesideRouteOnMyRoad(c) {
+    if (!onSameRoadName(c)) return false;
+    const p = { lat: c[0], lng: c[1] }, pts = nav.pts;
+    const lo = Math.max(0, nav.seg), hi = Math.min(pts.length - 2, nav.seg + 120);
+    for (let j = lo; j <= hi && nav.cum[j] < nav.along + CAM_SCAN; j++) {
+      const pr = projectSeg(p, pts[j], pts[j + 1]);
+      if (pr.dist >= ROUTE_CAM_FAR) continue;
+      if (nav.cum[j] + pr.t * (nav.cum[j + 1] - nav.cum[j]) < nav.along - 5) continue;
+      if (oneDir(c) && pr.dist > OPP_SIDE && sideOfSeg(p, pts[j], pts[j + 1], pr.dist) < 0) return false;
+      return true;
+    }
+    return false;
   }
   // 경로 위 카메라 목록: 카메라 행 → 경로 위 거리들, 그리고 거리순 목록.
   // 긴 경로를 한 번에 훑으면 그 순간 화면이 멈칫하므로, 차 앞 21km 까지만 찾아 두고 달리면서 조금씩 늘린다.
@@ -1311,7 +1342,12 @@
   const FAV_DONE = { fav: '즐겨찾기에 넣었어요', home: '집으로 저장했어요', work: '회사로 저장했어요', remove: '즐겨찾기에서 뺐어요' };
 
   let searchView = null; // 지금 보이는 목록 (별표를 바꾼 뒤 그대로 다시 그리기 위해)
-  function openSearch() {
+  // 검색 용도: 'dest' 목적지, 'via' 길안내 중 경유지 고르기
+  let searchFor = 'dest';
+  const Q_PLACEHOLDER = $('#q').placeholder;
+  function openSearch(mode) {
+    searchFor = mode === 'via' ? 'via' : 'dest';
+    $('#q').placeholder = searchFor === 'via' ? '경유지 검색 (장소 이름이나 주소)' : Q_PLACEHOLDER;
     $('#searchSheet').hidden = false;
     renderStart();
     setTimeout(() => $('#q').focus(), 50);
@@ -1431,7 +1467,16 @@
   }
   function pickDest(it) {
     closeSearch();
+    // 길안내 중 경유지 고르기: 목적지는 그대로, 고른 곳을 거쳐 가는 경로로 바로 다시 찾는다
+    if (searchFor === 'via' && nav.active && nav.dest) {
+      searchFor = 'dest';
+      nav.via = [{ name: it.name, lat: it.lat, lng: it.lng }];
+      toast('경유지 ' + it.name + ' 을(를) 거쳐 가는 경로를 찾는 중…', '', 3000);
+      planRoute(nav.dest, 'via');
+      return;
+    }
     addRecent(it);
+    nav.via = []; // 새 목적지는 경유지 없이
     planRoute(it, false);
   }
 
@@ -1448,9 +1493,14 @@
         start: state.fix.lng.toFixed(6) + ',' + state.fix.lat.toFixed(6),
         goal: dest.lng.toFixed(6) + ',' + dest.lat.toFixed(6),
       };
+      // reroute: false 새 목적지(추천 경로 여럿) · 'traffic' 교통 갱신 · 'compare' 길안내 중 경로 비교(추천 경로 여럿, 안내는 계속)
+      //          · 'manual' 재추천 버튼 · 'via' 경유지 추가/빼기 · 그 밖 경로 이탈 재탐색
       if (reroute === 'traffic') q.option = nav.option || prefs.routeOpt;
-      else if (reroute) q.option = rerouteOption();
-      else q.options = ALT_OPTIONS;
+      else if (reroute === 'compare' || !reroute) q.options = ALT_OPTIONS;
+      else q.option = rerouteOption();
+      // 경유지가 있으면 모든 길찾기(재탐색·교통 갱신·비교 포함)에 같이 보낸다
+      if (reroute && nav.via && nav.via.length) q.waypoints = nav.via.map((v) => v.lng.toFixed(6) + ',' + v.lat.toFixed(6)).join('|');
+      if (reroute === 'compare' || reroute === 'manual') toast(reroute === 'compare' ? '다른 경로를 찾는 중…' : '추천 경로를 다시 찾는 중…', '', 3000);
       // 차량 LTE 가 느릴 수 있어 20초까지 기다리고, 시간 초과면 한 번 더 시도한다
       let res;
       try { res = await api('/route', q, null, 20000); } catch (e1) {
@@ -1467,6 +1517,16 @@
         throw err;
       }
       if (res.alternatives) res.alternatives = res.alternatives.filter(okRoute);
+      if (reroute === 'compare') { // 길안내는 그대로 두고 경로 카드에 '지금 경로'와 다른 경로들을 띄운다
+        nav.compareBase = { route: nav.route, option: nav.option };
+        nav.alts = dedupAlts(res.alternatives || [res]);
+        nav.altIdx = -1; // -1 = 지금 경로
+        nav.comparing = true;
+        $('#toast').hidden = true;
+        drawAltLines();
+        showRouteCard();
+        return;
+      }
       let r = res;
       if (!reroute) {
         nav.alts = dedupAlts(res.alternatives || [res]);
@@ -1485,8 +1545,10 @@
         navUpdate(state.fix);
       } else if (reroute) {
         nav.option = q.option; // 이후 교통 갱신도 새로 잡은 추천 경로 기준으로
-        say('새 경로로 안내합니다.', 1);
-        toast('새 경로로 안내합니다 · ' + (ALT_LABEL[q.option] || '추천') + ' · ' + fmtDist(r.distance || nav.total) + ' · ' + fmtMin(r.duration), '', 4000);
+        const viaNow = reroute === 'via' && nav.via && nav.via[0];
+        say(viaNow ? '경유지를 거쳐 가는 경로로 안내합니다.' : '새 경로로 안내합니다.', 1);
+        toast((viaNow ? '경유지 ' + viaNow.name + ' 경유 · ' : '새 경로로 안내합니다 · ' + (ALT_LABEL[q.option] || '추천') + ' · ') +
+          fmtDist(r.distance || nav.total) + ' · ' + fmtMin(r.duration), '', 4000);
         navUpdate(state.fix);
       } else {
         nav.preview = true; nav.active = false;
@@ -1551,33 +1613,86 @@
   }
   function drawAltLines() {
     if (!mapA || !mapA.drawAlts) return;
-    const others = (nav.preview || !nav.active) && nav.alts ? nav.alts.filter((_, k) => k !== nav.altIdx) : [];
+    const others = (nav.preview || !nav.active || nav.comparing) && nav.alts ? nav.alts.filter((_, k) => k !== nav.altIdx) : [];
     mapA.drawAlts(others.map((a) => a.path.map((p) => ({ lat: p[1], lng: p[0] }))));
   }
   function selectAlt(k) {
+    if (nav.comparing) { // 길안내 중 비교: 고르는 즉시 그 경로로 안내 (k = -1 은 원래 경로로)
+      if (k === nav.altIdx || (k >= 0 && (!nav.alts || !nav.alts[k]))) return;
+      nav.altIdx = k;
+      const r = k < 0 ? nav.compareBase.route : nav.alts[k];
+      setRoute(r, nav.dest, true);
+      nav.option = k < 0 ? nav.compareBase.option : (r.option || nav.option);
+      if (state.fix) navUpdate(state.fix);
+      drawAltLines();
+      showRouteCard();
+      return;
+    }
     if (!nav.alts || !nav.alts[k] || k === nav.altIdx) return;
     nav.altIdx = k;
     setRoute(nav.alts[k], nav.dest);
     drawAltLines();
     showRouteCard();
   }
+  // 비교 끝내기: keep 이면 지금 고른 경로로 계속, 아니면 원래 경로로 되돌린다
+  function endCompare(keep) {
+    if (!nav.comparing) return;
+    const changed = nav.altIdx >= 0;
+    if (!keep && changed) selectAlt(-1);
+    nav.comparing = false; nav.compareBase = null; nav.alts = null; nav.altIdx = 0;
+    drawAltLines();
+    $('#routeCard').hidden = true;
+    if (keep && changed) say('선택한 경로로 안내합니다.', 1);
+  }
   function showRouteCard() {
-    const r = nav.route;
-    $('#rcTitle').textContent = nav.dest.name;
+    const r = nav.route, cmp = !!nav.comparing;
+    $('#rcTitle').textContent = (cmp ? '경로 비교 · ' : '') + nav.dest.name;
     const alts = nav.alts && nav.alts.length ? nav.alts : [Object.assign({ label: ALT_LABEL[r.option] || '경로' }, r)];
-    const fastest = Math.min(...alts.map((a) => a.duration));
-    $('#rcAlts').innerHTML = alts.map((a, k) => {
+    // 비교 중이면 맨 앞에 '지금 경로'(남은 거리·시간)
+    const base = cmp && nav.compareBase ? nav.compareBase.route : null;
+    const baseLeft = base ? { label: '지금 경로', distance: nav.altIdx < 0 ? nav.total - nav.along : base.distance,
+      duration: nav.altIdx < 0 ? base.duration * ((nav.total - nav.along) / Math.max(1, nav.total)) : base.duration, tollFare: base.tollFare } : null;
+    const rows = (baseLeft ? [[-1, baseLeft]] : []).concat(alts.map((a, k) => [k, a]));
+    const fastest = Math.min(...rows.map(([, a]) => a.duration));
+    const sel = cmp ? nav.altIdx : (nav.altIdx || 0);
+    $('#rcAlts').innerHTML = rows.map(([k, a]) => {
       const diff = a.duration - fastest;
-      return '<button class="alt' + (k === (nav.altIdx || 0) ? ' on' : '') + '" data-k="' + k + '">' +
+      return '<button class="alt' + (k === sel ? ' on' : '') + '" data-k="' + k + '">' +
         '<span class="alt-label">' + esc(a.label) + '</span>' +
         '<b>' + fmtMin(a.duration) + '</b>' +
         '<span class="alt-sub">' + fmtDist(a.distance) + ' · ' + (a.tollFare ? a.tollFare.toLocaleString('ko-KR') + '원' : '무료') +
         (diff >= 60000 ? ' · +' + Math.round(diff / 60000) + '분' : '') + '</span></button>';
     }).join('');
     $('#rcAlts').querySelectorAll('.alt').forEach((b) => { b.onclick = () => selectAlt(+b.dataset.k); });
-    $('#rcMeta').textContent = hhmm(new Date(Date.now() + r.duration)) + ' 도착 예정' + (alts.length > 1 ? ' · 다른 경로는 지도에 회색으로 표시' : '');
+    $('#rcMeta').textContent = cmp
+      ? '고르면 바로 그 경로로 안내합니다 · 다른 경로는 지도에 회색으로'
+      : hhmm(new Date(Date.now() + r.duration)) + ' 도착 예정' + (alts.length > 1 ? ' · 다른 경로는 지도에 회색으로 표시' : '');
+    $('#rcStart').textContent = cmp ? '이 경로로 안내' : '안내 시작';
+    $('#rcCancel').textContent = cmp ? '원래 경로로' : '취소';
     $('#routeCard').hidden = false;
   }
+
+  // ---------- 하단 위치 띠 → 버튼 (경로 비교 · 재추천 · 경유지) ----------
+  // 위치 띠를 누르면 위로 버튼이 올라온다. 8초 동안 안 누르면 다시 내려간다
+  const tray = { timer: 0 };
+  function openTray() {
+    const el = $('#navTray'), on = !!(nav.active && nav.dest);
+    $('#ntCompare').hidden = !on; $('#ntReroute').hidden = !on; $('#ntVia').hidden = !on; $('#ntSearch').hidden = on;
+    const v = nav.via && nav.via[0];
+    $('#ntViaLabel').textContent = v ? '경유지 빼기' : '경유지 추가';
+    $('#ntVia').classList.toggle('on', !!v);
+    el.hidden = false;
+    setTimeout(() => el.classList.add('open'), 16);
+    clearTimeout(tray.timer);
+    tray.timer = setTimeout(closeTray, 8000);
+  }
+  function closeTray() {
+    const el = $('#navTray');
+    clearTimeout(tray.timer);
+    el.classList.remove('open');
+    setTimeout(() => { if (!el.classList.contains('open')) el.hidden = true; }, 200);
+  }
+  const toggleTray = () => ($('#navTray').classList.contains('open') ? closeTray() : openTray());
   function startNav() {
     if (!nav.pts) return;
     $('#routeCard').hidden = true;
@@ -1600,7 +1715,7 @@
     nav.active = false; nav.preview = false;
     nav.route = null; nav.pts = null; nav.cum = null; nav.dest = null; nav.guides = [];
     nav.routeCams = null; nav.routeCamList = []; camState.markerAt = null; camState.peekAt = 0;
-    nav.alts = null; nav.altIdx = 0;
+    nav.alts = null; nav.altIdx = 0; nav.via = []; nav.comparing = false; nav.compareBase = null;
     if (mapA) { mapA.clearRoute(); if (mapA.drawAlts) mapA.drawAlts([]); }
     $('#routeCard').hidden = true;
     $('#map').classList.remove('navigating');
@@ -1652,6 +1767,11 @@
 
   function navUpdate(f) {
     if (!nav.active || !nav.pts || !f) return;
+    // 경유지 근처(150m)를 지나면 목록에서 뺀다 (이후 재탐색이 경유지로 되돌아가지 않게)
+    if (nav.via && nav.via.length && haversine(f, nav.via[0]) < 150) {
+      const v = nav.via.shift();
+      toast('경유지 ' + v.name + ' 을(를) 지났어요', '', 3000);
+    }
     const pts = nav.pts;
     let best = { dist: Infinity, seg: nav.seg, t: 0 };
     // 달리는 방향과 반대인 구간(유턴 뒤 맞은편 차로 등)에는 붙지 않는다
@@ -2233,7 +2353,7 @@
     if (now - upd.movedAt < 120000) return 'just-stopped';
     if (now - upd.touchAt < 120000) return 'touched';
     if (nav.active || nav.preview || nav.busy) return 'nav';
-    if (['#sheet', '#searchSheet', '#tripSheet', '#routeCard'].some((s) => { const e = $(s); return e && !e.hidden; })) return 'screen-open';
+    if (['#sheet', '#searchSheet', '#tripSheet', '#routeCard', '#navTray'].some((s) => { const e = $(s); return e && !e.hidden; })) return 'screen-open';
     if (now - upd.idleAt < 10 * 60000) return 'waiting';
     upd.idleAt = now;
     if (!dry) checkForUpdate('idle');
@@ -2321,7 +2441,7 @@
   // 지도 손 조작: 톡 치기는 화면 버튼만 보여 주고, 실제로 끌거나(10px 이상) 두 손가락을 쓰면
   // 주행 화면을 평면(북쪽 위) 지도로 바꿔 조작을 이어간다
   const gesture = { x: 0, y: 0, used: false, pointers: new Set() };
-  const NOT_MAP = '.btn, .searchbtn, .navpanel, .routecard, .toast, #diagBox, .ctrls, .topctrls, .badge, .soundpill';
+  const NOT_MAP = '.btn, .searchbtn, .navpanel, .routecard, .toast, #diagBox, .ctrls, .topctrls, .badge, .soundpill, .navtray';
   function userMapGesture() {
     gesture.used = true;
     // 손으로 바꾼 배율은 30초 동안 자동 줌이 덮어쓰지 않게 한다
@@ -2605,14 +2725,25 @@
   $('#zin').onclick = () => manualZoom(1);
   $('#zout').onclick = () => manualZoom(-1);
   $('#locate').onclick = () => setFollowing(true);
-  $('#searchBtn').onclick = openSearch;
+  $('#searchBtn').onclick = () => openSearch('dest');
   $('#searchClose').onclick = closeSearch;
   $('#searchSheet').addEventListener('click', (e) => { if (e.target === $('#searchSheet')) closeSearch(); });
   $('#qBtn').onclick = doSearch;
   $('#q').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { clearTimeout(qTimer); doSearch(); } });
   $('#q').addEventListener('input', onQueryInput);
-  $('#rcStart').onclick = startNav;
-  $('#rcCancel').onclick = endNav;
+  $('#rcStart').onclick = () => (nav.comparing ? endCompare(true) : startNav());
+  $('#rcCancel').onclick = () => (nav.comparing ? endCompare(false) : endNav());
+  // 하단 위치 띠를 누르면 버튼이 올라온다
+  $('#roadName').addEventListener('click', toggleTray);
+  $('#ntCompare').onclick = () => { closeTray(); if (nav.active && nav.dest) planRoute(nav.dest, 'compare'); };
+  $('#ntReroute').onclick = () => { closeTray(); if (nav.active && nav.dest) planRoute(nav.dest, 'manual'); };
+  $('#ntVia').onclick = () => {
+    closeTray();
+    if (!nav.active || !nav.dest) return;
+    if (nav.via && nav.via.length) { nav.via = []; planRoute(nav.dest, 'via'); toast('경유지를 뺐어요. 경로를 다시 찾습니다.', '', 3000); }
+    else openSearch('via');
+  };
+  $('#ntSearch').onclick = () => { closeTray(); openSearch('dest'); };
   $('#navEnd').onclick = () => { endNav(); say('안내를 종료합니다.', 1); };
 
   function applyTesla() {
@@ -2870,7 +3001,7 @@
       state, camState, nav, cams, prefs, onFix, setRoute, startNav, endNav, startDemo, stopDemo, renderNav,
       planRoute, doSearch, setFollowing, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
-      sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd,
+      sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
     };

@@ -1470,6 +1470,122 @@
     };
   }
 
+  // S38: 넓은 도로는 카메라가 경로선에서 20~40m 떨어져 있기도 하다 (2026-11-14 전국 16개 경로 점검). 실제 대전 경로
+  //      (test/fixtures/route-daejeon-yuseong.json, 대전역 → 유성)로:
+  //      (a) 한밭대로 카메라는 경로선 왼쪽 34m 지만 경로 구간 이름이 '한밭대로'라 잡혀야 한다
+  //      (b) 대전로 카메라는 왼쪽 30m 이고 그 구간 이름을 모른다: 지금 달리는 도로(역지오코딩)가 '대전로'면 잡고, 다른 도로면 안 잡는다
+  async function s38() {
+    const t = T();
+    const fx = await (await realFetch(harnessDir + 'fixtures/route-daejeon-yuseong.json', { cache: 'no-store' })).json();
+    const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const R = { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '유성', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    const DJ = { lat: 36.33832, lng: 127.42962 }, HB = { lat: 36.35745, lng: 127.40847 };
+    const run = async (roadName) => {
+      softReset();
+      stub.canned['/reverse'] = { road: roadName, area: '대전광역시' };
+      await planAndStart(R);
+      const o = { daejeonro: false, hanbat: false };
+      let k = 0;
+      for (let s = 0; s <= 4700; s += 15) {
+        const a = pointAt(R, s);
+        feed(a.p, 50 / 3.6, a.h);
+        if (++k % 6 === 0) await new Promise((r) => setTimeout(r, 0));   // 역지오코딩 응답이 들어오게
+        const tg = t.camState.target;
+        if (tg && sameCam(tg.c, DJ)) o.daejeonro = true;
+        if (tg && sameCam(tg.c, HB)) o.hanbat = true;
+      }
+      t.endNav();
+      return o;
+    };
+    let a, b;
+    try {
+      a = await run('대전로');
+      b = await run('하네스로');
+    } finally {
+      stub.reset();
+      softReset();
+    }
+    const ok = a.daejeonro && a.hanbat && !b.daejeonro && b.hanbat;
+    return {
+      pass: ok,
+      detail: 'driving on 대전로: ' + JSON.stringify(a) + ' | on another road: ' + JSON.stringify(b) + (ok ? '✓' : '✗'),
+    };
+  }
+
+  // S39: 하단 위치 띠 (2026-11-14 요청: 배경 있는 띠, 누르면 버튼이 올라옴 — 경로 비교·재추천·경유지)
+  //      길안내가 없으면 '목적지 검색'만. 재추천은 추천(traoptimal)으로 다시 찾고, 경로 비교는 안내를 멈추지 않고
+  //      카드에 '지금 경로' + 다른 경로를 띄워 고르면 바로 그 경로로, '원래 경로로'면 되돌린다.
+  //      경유지는 검색해서 고르면 목적지는 그대로 waypoints 를 붙여 다시 찾고, 근처를 지나면 목록에서 빠진다
+  async function s39() {
+    const t = T(), box = document.getElementById('optTesla'), prev = t.prefs.tesla;
+    const set = (on) => { box.checked = on; box.dispatchEvent(new Event('change')); };
+    const vis = (q) => { const e = document.querySelector(q); return !!e && !e.hidden && e.getClientRects().length > 0; };
+    const click = (q) => document.querySelector(q).click();
+    const wait = (ms) => new Promise((res) => setTimeout(res, ms));
+    const r = {};
+    try {
+      set(true);
+      softReset();
+      const bg = getComputedStyle(document.getElementById('roadName')).backgroundColor;
+      r.pillBg = bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent';
+      click('#roadName'); await wait(60);
+      r.idleTray = vis('#navTray') && vis('#ntSearch') && !vis('#ntCompare');
+      t.closeTray(); await wait(250);
+      const R = buildNavRoute();
+      await planAndStart(R);
+      const a30 = pointAt(R, 30);
+      feed(a30.p, 10, a30.h);
+      click('#roadName'); await wait(60);
+      r.navTray = vis('#ntCompare') && vis('#ntReroute') && vis('#ntVia') && !vis('#ntSearch');
+      // 재추천
+      let c0 = stub.calls.length;
+      click('#ntReroute');
+      await waitFor(() => !t.nav.busy, 3000, 20);
+      let calls = stub.since(c0, '/route');
+      r.reroute = calls.length === 1 && calls[0].query.option === 'traoptimal' && t.nav.active;
+      // 경로 비교
+      const baseRoute = t.nav.route;
+      stub.canned['/route'] = { alternatives: [Object.assign({}, R.route, { option: 'traoptimal' }),
+        Object.assign({}, R.route, { option: 'trafast', distance: R.route.distance + 1000, duration: R.route.duration + 120000 })] };
+      c0 = stub.calls.length;
+      click('#roadName'); await wait(60); click('#ntCompare');
+      await waitFor(() => !t.nav.busy, 3000, 20);
+      calls = stub.since(c0, '/route');
+      const alts = [...document.querySelectorAll('#rcAlts .alt')].map((b) => b.textContent);
+      r.compareCard = vis('#routeCard') && t.nav.active && !!t.nav.comparing && calls.length === 1 && !!calls[0].query.options &&
+        alts.length === 3 && /지금 경로/.test(alts[0]) && text('#rcCancel') === '원래 경로로';
+      document.querySelector('#rcAlts .alt[data-k="1"]').click();
+      r.switched = t.nav.active && t.nav.route !== baseRoute && t.nav.route.distance === R.route.distance + 1000;
+      click('#rcCancel');
+      r.restored = !vis('#routeCard') && t.nav.active && t.nav.route === baseRoute && !t.nav.comparing && text('#rcCancel') === '원래 경로로';
+      // 경유지
+      stub.canned['/route'] = R.route;
+      click('#roadName'); await wait(60); click('#ntVia'); await wait(60);
+      r.viaSearch = vis('#searchSheet') && /경유지/.test(document.getElementById('q').placeholder);
+      const W = dest(NAV_ORIGIN, 90, 300);
+      c0 = stub.calls.length;
+      t.pickDest({ name: '경유 테스트', lat: W.lat, lng: W.lng });
+      await waitFor(() => !t.nav.busy, 3000, 20);
+      calls = stub.since(c0, '/route');
+      r.viaRoute = calls.length === 1 && calls[0].query.waypoints === W.lng.toFixed(6) + ',' + W.lat.toFixed(6) && t.nav.active && t.nav.dest.name === R.dest.name;
+      click('#roadName'); await wait(60);
+      r.viaLabel = text('#ntViaLabel') === '경유지 빼기';
+      t.closeTray();
+      feed(W, 10, 90);
+      r.viaPassed = t.nav.via.length === 0;
+    } finally {
+      t.endNav();
+      stub.reset();
+      set(prev);
+      t.closeTray();
+      softReset();
+    }
+    const bad = Object.keys(r).filter((k) => !r[k]);
+    return { pass: bad.length === 0 && Object.keys(r).length === 11, detail: Object.keys(r).map((k) => k + (r[k] ? '✓' : '✗')).join(', ') };
+  }
+
   // S25: 하이패스 — 경로 안내에 톨게이트(type 121)가 있으면 2km 앞부터 카드(이름·거리·통행료·하이패스 차로 이용)와 음성
   async function s25() {
     const t = T();
@@ -1806,6 +1922,8 @@
     { id: 'S35', name: 'S35 Gapyeong 계량교 30 camera (data fix): 신호·과속, alerts when over', fn: s35 },
     { id: 'S36', name: 'S36 rear-enforcement camera (가평 포회촌, added): held 60 m past the pole, one direction only', fn: s36 },
     { id: 'S37', name: 'S37 가평→청평 real route: every camera in our direction alerts (signal→신호·과속, lone intersection cams both ways)', fn: s37 },
+    { id: 'S38', name: 'S38 wide roads: cameras 20–40 m off the route line (same section name / current road name)', fn: s38 },
+    { id: 'S39', name: 'S39 bottom location bar → 경로 비교 · 재추천 · 경유지', fn: s39 },
   ];
 
   // ---------------------------------------------------------------- runner
