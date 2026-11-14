@@ -693,10 +693,11 @@
   #app.tesla .rs-top { min-width: 0; padding: 3px 5px; margin-bottom: 6px; border-radius: 8px; }
   #app.tesla .rs-top b { font-size: 11px; }
   #app.tesla .rs-top span { font-size: 9px; }
-  #app.tesla .rs-track { width: 16px; }
-  #app.tesla .rs-track::before { width: 2px; margin-left: -1px; }
-  #app.tesla .rs-bar { width: 6px; margin-left: -3px; border-width: 1px; border-radius: 3px; }
-  #app.tesla .rs-me { width: 14px; height: 14px; margin: 0 0 -7px -7px; border-width: 2px; }
+  /* 2026-11-14 요청: 막대를 조금 더 두껍게 (6 → 10px) */
+  #app.tesla .rs-track { width: 22px; }
+  #app.tesla .rs-track::before { width: 3px; margin-left: -1.5px; }
+  #app.tesla .rs-bar { width: 10px; margin-left: -5px; border-width: 1.5px; border-radius: 5px; }
+  #app.tesla .rs-me { width: 18px; height: 18px; margin: 0 0 -9px -9px; border-width: 2.5px; }
   #app.tesla .rs-start, #app.tesla .rs-goal { width: 8px; height: 8px; border-width: 1.5px; }
 
   /* 터치하면 나오는 버튼: 절반 크기로. 위쪽 버튼은 길안내 패널(또는 검색 버튼) 바로 오른쪽, 확대·축소는 경로 막대 왼쪽 */
@@ -1281,7 +1282,7 @@
   body:has(#app.tesla):has(#map.night) svg.ramp .rd-s { stroke: #5b6676; }
 
   /* ---------- 지도를 끌어 앞길을 볼 때: 아래 가운데 '내 위치로' (2026-11-14) ----------
-     주행 화면은 방향·기울기 그대로. 손을 떼면 아래 막대가 줄어들고, 다 줄면(주행 중 5초) 저절로 내 위치로 돌아간다 */
+     주행 화면은 방향·기울기 그대로. 손을 떼면 버튼 안이 왼쪽부터 밝게 차오르고(로딩 막대), 다 차면(주행 중 5초) 저절로 내 위치로 돌아간다 */
   #map.drive { touch-action: none; }
   .backme {
     position: absolute; left: 50%; bottom: 84px; z-index: 1065; transform: translateX(-50%);
@@ -1292,15 +1293,16 @@
   }
   .backme[hidden] { display: none; }
   .backme svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+  .backme > * { position: relative; z-index: 1; }
   .backme::after {
-    content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(255, 255, 255, .8);
-    transform-origin: left center; transform: scaleX(1);
+    content: ''; position: absolute; inset: 0; z-index: 0; background: linear-gradient(90deg, rgba(255, 255, 255, .18), rgba(255, 255, 255, .34));
+    transform-origin: left center; transform: scaleX(0);
   }
   .backme.count::after { animation: bmCount var(--bm-ms, 5000ms) linear forwards; }
   .backme:active { transform: translateX(-50%) scale(.96); }
   .navtray.open ~ .backme { bottom: 150px; }
   @keyframes bmIn { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
-  @keyframes bmCount { to { transform: scaleX(0); } }
+  @keyframes bmCount { to { transform: scaleX(1); } }
 
   /* ---------- 사용자가 그린 길안내 아이콘 (icons.js, 2026-11-14) ----------
      화살표는 한 색(currentColor)이라 패널 초록을 따른다. 도로·톨게이트·핀은 그림 색 그대로 */
@@ -1580,7 +1582,7 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.14-92"></script>
-<script src="app.js?v=2026.11.14-92"></script>
+<script src="icons.js?v=2026.11.14-93"></script>
+<script src="app.js?v=2026.11.14-93"></script>
 </body>
 </html>

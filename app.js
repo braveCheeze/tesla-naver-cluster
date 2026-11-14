@@ -49,7 +49,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-92'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-93'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   // 브라우저에 저장된 예전 index.html 이 새 app.js 를 불러온 경우(화면 요소가 맞지 않아 버튼 연결에서 멈춘다):
@@ -180,7 +180,13 @@
   }
   // 경로 소통 정보(sections) → 색칠할 구간 [a..b] 목록. 같은 색이 이어지면 합친다.
   // 바탕(교통 정보가 없는 길 = 대개 차가 거의 없는 한산한 길)은 파랑, 원활 초록, 서행 주황, 정체 빨강
-  const ROUTE_BASE = '#2f7dff', ROUTE_EDGE = '#0d2547';
+  const ROUTE_BASE = '#2f7dff';
+  // 2026-11-14 요청: 검은 테두리를 없애고, 네이버 지도처럼 선 안에 흰 점(점점점), 빛나는 레이저 같은 입체감. 색은 그대로.
+  //   빛 번짐(같은 색, 넓고 옅게) → 본선(바탕 파랑 / 교통색) → 가운데 빛(흰색 옅게) → 흰 점
+  //   [굵기 px, 불투명도, 겹침 순서]
+  const ROUTE_STYLE = { glow: [20, 0.28, 47], base: [9, 1, 50], traffic: [9, 1, 51], shine: [3.4, 0.3, 52], dots: [3.4, 0.95, 53] };
+  // 흰 점 무늬 한 칸(굵기 3.4px 의 'dot' = 5배). 차가 움직일 때 점이 차를 따라 흔들리지 않게 이 간격(미터)에 맞춰 자른다
+  const DOT_PERIOD_PX = 17;
   const TRAFFIC_COLOR = { 1: '#03c75a', 2: '#f5a623', 3: '#e53935' }; // 1 원활, 2 서행, 3 정체 (0 은 정보 없음 = 바탕색)
   // 2026-11-14 요청(네이버·다른 내비처럼 빨강을 여러 단계로): 네이버 길찾기 구간의 혼잡도에 그 구간 평균 속도를 더해 다섯 단계로.
   // 네이버 혼잡도 기준(고속도로 서행 40~70·혼잡 40 미만, 일반 도로 서행 15~30·혼잡 15 미만)의 느린 쪽 절반을 한 단계 더 짙게:
@@ -217,20 +223,32 @@
   function routePieces(n, sections) {
     const out = [];
     const split = (a, b, kind, color) => { for (let x = a; x < b; x += ROUTE_CHUNK) out.push({ a: x, b: Math.min(b, x + ROUTE_CHUNK), kind, color }); };
-    split(0, n - 1, 'edge', ROUTE_EDGE);
+    const runs = trafficRuns(sections, n);
+    // 빛 번짐은 색끼리 겹쳐 탁해지지 않게 경로를 색별로 나눠서(교통색 구간 + 그 사이 바탕색) 깐다
+    let x = 0;
+    runs.forEach((r) => {
+      if (r.a > x) split(x, r.a, 'glow', ROUTE_BASE);
+      if (r.b > Math.max(x, r.a)) split(Math.max(x, r.a), r.b, 'glow', r.color);
+      x = Math.max(x, r.b);
+    });
+    if (x < n - 1) split(x, n - 1, 'glow', ROUTE_BASE);
     split(0, n - 1, 'base', ROUTE_BASE);
-    trafficRuns(sections, n).forEach((r) => split(r.a, r.b, 'traffic', r.color));
+    runs.forEach((r) => split(r.a, r.b, 'traffic', r.color));
+    split(0, n - 1, 'shine', '#ffffff');
+    split(0, n - 1, 'dots', '#ffffff');
     return out;
   }
   // 조각마다: 차(점 번호 s, 위치 cur)보다 뒤면 숨기고, 차가 걸친 조각은 cur 부터, 앞이면 원래대로
   // ops: { hide(pc), show(pc), setPath(pc, pathArray), point(cur) }
-  function trimPieces(pieces, path, s, cur, ops) {
-    let c = null;
+  // dot: { s, cur } 흰 점 조각만 따로 자를 곳 (점 간격에 맞춘 차 바로 뒤: 점이 땅에 붙어 있게)
+  function trimPieces(pieces, path, s0, cur0, ops, dot) {
+    const pt = {};
     pieces.forEach((pc) => {
+      const d = pc.kind === 'dots' && dot ? dot : null, s = d ? d.s : s0, key = d ? 'd' : 'c';
       if (pc.b <= s) { if (pc.st !== 'hidden') { ops.hide(pc); pc.st = 'hidden'; } return; }
       if (pc.a <= s) {
-        if (!c) c = ops.point(cur);
-        ops.setPath(pc, [c].concat(path.slice(s + 1, pc.b + 1)));
+        if (!pt[key]) pt[key] = ops.point(d ? d.cur : cur0);
+        ops.setPath(pc, [pt[key]].concat(path.slice(s + 1, pc.b + 1)));
         if (pc.st === 'hidden') ops.show(pc);
         pc.st = 'part';
         return;
@@ -448,8 +466,21 @@
   // 다음 회전 지점의 경로를 따라 흰 화살표(어두운 테두리). 화살촉은 화면에서 같은 크기로 보이게 지금 배율로 계산한다
   // 2026-11-14 피드백('화살표가 너무 두껍고 투박'): 몸통 15→11px(흰 7px), 화살촉은 좁고 뾰족하게(길이 20·폭 24px),
   // 테두리는 어디서나 2px 로 고르게(안쪽 화살촉을 빗변에서 2px 안으로), 꺾이는 곳은 각지지 않게 둥글린다
-  const ARROW_PX = { shaft: 11, inner: 7, len: 20, half: 12, rim: 2 };
-  function arrowGeom(pts, zoom) {
+  // 2026-11-14 피드백('지도를 축소하면 화살표가 지도에 비해 너무 커서 다른 표시를 덮는다'): 배율 17 아래로는 작게(최소 60%),
+  // 14 아래(멀리 보기)는 그리지 않는다. 덮는 길이도 화면 기준: 회전 앞 48px·뒤 30px (최소 45m·30m, 최대 150m·100m)
+  // 2026-11-14 두 번째 피드백: '위에 올린(스티커) 느낌보다 경로를 이어 가는 느낌, 조금 더 작게' → 검은 테두리를 없애고
+  // 몸통은 경로선과 같은 굵기(9px)·같은 색에 가운데만 흰 줄(5px), 화살촉은 흰색에 그 자리 경로 색 테두리. 경로선이 흰 화살표로 이어진다
+  const ARROW_PX = { shaft: 9, inner: 5, len: 16, half: 9.5, rim: 1.6 }, ARROW_STEP = 2.5, ARROW_MIN_ZOOM = 14;
+  const arrowScale = (z) => (z >= 17 ? 1 : Math.max(0.6, 1 - (17 - z) * 0.16));
+  function arrowSpan(lat, zoom) {
+    const mpp = 156543.03392 * Math.cos(toRad(lat)) / Math.pow(2, zoom);
+    return { before: Math.min(150, Math.max(35, 40 * mpp)), after: Math.min(100, Math.max(25, 26 * mpp)) };
+  }
+  function arrowGeom(pts0, zoom, ti) {
+    let pts = pts0;
+    const sp = arrowSpan(pts0[ti != null ? ti : pts0.length - 1].lat, zoom || 17);
+    if (ti != null) pts = pts0.slice(Math.max(0, ti - Math.round(sp.before / ARROW_STEP)), Math.min(pts0.length, ti + Math.round(sp.after / ARROW_STEP) + 1));
+    const sc = arrowScale(zoom || 17);
     const E = pts[pts.length - 1], kx = Math.cos(toRad(E.lat)) * 111320, ky = 110540;
     const loc = (q) => ({ x: (q.lng - E.lng) * kx, y: (q.lat - E.lat) * ky });
     const back = (m) => ({ lat: E.lat + m.y / ky, lng: E.lng + m.x / kx });
@@ -459,7 +490,7 @@
     const A = loc(pts[j]);
     const n0 = Math.hypot(A.x, A.y) || 1, d = { x: -A.x / n0, y: -A.y / n0 }, nn = { x: -d.y, y: d.x };
     const mpp = 156543.03392 * Math.cos(toRad(E.lat)) / Math.pow(2, zoom || 17);
-    const px = (v) => v * mpp;
+    const px = (v) => v * sc * mpp;
     const at = (o, along, side) => ({ x: o.x + d.x * along + nn.x * side, y: o.y + d.y * along + nn.y * side });
     const O = { x: 0, y: 0 }, H = ARROW_PX;
     // 바깥(테두리) 화살촉: 끝점보다 4px 앞이 뾰족한 끝. 안쪽 흰 화살촉은 빗변에서 rim 만큼 안쪽
@@ -469,7 +500,7 @@
     const Ti = at(T, -px(tipIn), 0), Bi = at(Ti, -px(lenIn), 0);
     const tri = (tip, base, w) => [tip, at(base, 0, w), at(base, 0, -w)].map(back);
     // 몸통은 안쪽 화살촉 밑동 조금 안까지만 (둥근 끝이 화살촉 밖으로 삐져나오지 않게)
-    const cut = px(H.len - H.rim - 4 - 3);
+    const cut = px(H.len - H.rim - 4 - 2);
     let sh = pts.slice(0, -1).filter((q) => haversine(q, E) > cut).map(loc);
     sh.push(at(O, -cut, 0));
     // 꺾이는 곳 둥글리기: 앞뒤 몇 점의 평균 (양 끝은 그대로, 곧은 곳은 그대로 곧다)
@@ -483,7 +514,7 @@
         return { x: sx / c, y: sy / c };
       });
     }
-    return { shaft: sh.map(back), headOut: tri(T, Bo, px(H.half)), headIn: tri(Ti, Bi, px(lenIn * tanA)) };
+    return { shaft: sh.map(back), headOut: tri(T, Bo, px(H.half)), headIn: tri(Ti, Bi, px(lenIn * tanA)), sc, pts, span: sp };
   }
   // 목적지 핀 (사용자가 그린 '도착' 핀이 있으면 그것)
   function destPinEl() {
@@ -719,26 +750,28 @@
       this.clearRoute();
       const N = naver.maps;
       const path = pts.map((p) => new N.LatLng(p.lat, p.lng));
-      const STYLE = { edge: [13, 48], base: [9, 50], traffic: [9, 51] };
       this.routePath = path;
       this.route = routePieces(path.length, sections).map((pc) => {
+        const st = ROUTE_STYLE[pc.kind];
         pc.line = new N.Polyline({
-          map: this.map, path: path.slice(pc.a, pc.b + 1), strokeColor: pc.color, strokeWeight: STYLE[pc.kind][0],
-          strokeOpacity: 1, strokeLineCap: 'round', strokeLineJoin: 'round', zIndex: STYLE[pc.kind][1], clickable: false,
+          map: this.map, path: path.slice(pc.a, pc.b + 1), strokeColor: pc.color, strokeWeight: st[0], strokeOpacity: st[1],
+          strokeStyle: pc.kind === 'dots' ? 'dot' : 'solid', strokeLineCap: 'round', strokeLineJoin: 'round', zIndex: st[2], clickable: false,
         });
         pc.st = 'full';
         return pc;
       });
     },
     // 지나온 경로 지우기: 점 번호 s 와 그 사이 위치 cur 부터 앞만 남긴다
-    trimRoute(s, cur) {
+    trimRoute(s, cur, dot) {
       if (!this.route || !this.routePath) return;
       const N = naver.maps, map = this.map;
       trimPieces(this.route, this.routePath, s, cur, {
         hide: (pc) => pc.line.setMap(null), show: (pc) => pc.line.setMap(map),
         setPath: (pc, p) => pc.line.setPath(p), point: (q) => new N.LatLng(q.lat, q.lng),
-      });
+      }, dot);
     },
+    // 지금 배율에서 화면 1px 이 몇 미터인지 (지도 가운데 위도 기준)
+    mpp() { return 156543.03392 * Math.cos(toRad(this.map.getCenter().lat())) / Math.pow(2, this.map.getZoom()); },
     clearRoute() {
       if (this.route) this.route.forEach((pc) => pc.line.setMap(null));
       this.route = null; this.routePath = null;
@@ -781,19 +814,20 @@
       this.restMk = (list || []).map((x) => new N.Marker({ position: new N.LatLng(x.lat, x.lng), map: this.map, clickable: false, zIndex: 88,
         icon: { content: restEl(), anchor: new N.Point(12, 12) } }));
     },
-    setTurnArrow(pts) { this._arrow = pts; this.drawArrow(); },
+    setTurnArrow(pts, ti, color) { this._arrow = pts; this._arrowTi = ti; this._arrowColor = color; this.drawArrow(); },
     drawArrow() {
       (this._arrowObjs || []).forEach((o) => o.setMap(null));
-      this._arrowObjs = [];
-      const pts = this._arrow;
-      if (!pts || pts.length < 2 || !this.map) return;
-      const N = naver.maps, g = arrowGeom(pts, this.map.getZoom()), P = (q) => new N.LatLng(q.lat, q.lng);
+      this._arrowObjs = []; this._arrowShown = null;
+      const pts = this._arrow, z = this.map && this.map.getZoom();
+      if (!pts || pts.length < 2 || !this.map || z < ARROW_MIN_ZOOM) return;
+      const N = naver.maps, g = arrowGeom(pts, z, this._arrowTi), P = (q) => new N.LatLng(q.lat, q.lng);
+      this._arrowShown = g.pts; this._arrowSpan = g.span;
       const line = (w, c, z) => new N.Polyline({ map: this.map, path: g.shaft.map(P), strokeColor: c, strokeWeight: w, strokeOpacity: 1,
         strokeLineCap: 'round', strokeLineJoin: 'round', zIndex: z, clickable: false });
       const head = (tri, c, z) => new N.Polygon({ map: this.map, paths: [tri.map(P)], fillColor: c, fillOpacity: 1, strokeColor: c, strokeOpacity: 1,
         strokeWeight: 1, zIndex: z, clickable: false });
-      const H = ARROW_PX, RIM = '#1e2a38';
-      this._arrowObjs.push(line(H.shaft, RIM, 70), head(g.headOut, RIM, 70), line(H.inner, '#ffffff', 71), head(g.headIn, '#ffffff', 71));
+      const H = ARROW_PX, RIM = this._arrowColor || ROUTE_BASE;
+      this._arrowObjs.push(line(H.shaft * g.sc, RIM, 70), head(g.headOut, RIM, 70), line(H.inner * g.sc, '#ffffff', 71), head(g.headIn, '#ffffff', 71));
     },
     setDest(d, end) {
       const N = naver.maps;
@@ -882,29 +916,31 @@
     drawRoute(pts, sections) {
       this.clearRoute();
       const path = pts.map((p) => [p.lat, p.lng]);
-      const WEIGHT = { edge: 13, base: 9, traffic: 9 };
       this.routePath = path;
-      // Leaflet 은 나중에 더한 선이 위에 그려지므로 테두리 → 본선 → 교통색 순서(routePieces 순서)를 지킨다
+      // Leaflet 은 나중에 더한 선이 위에 그려지므로 빛 번짐 → 본선 → 교통색 → 가운데 빛 → 흰 점 순서(routePieces 순서)를 지킨다
       this.route = routePieces(path.length, sections).map((pc) => {
+        const st = ROUTE_STYLE[pc.kind];
         pc.line = L.polyline(path.slice(pc.a, pc.b + 1), {
-          color: pc.color, weight: WEIGHT[pc.kind], opacity: 1, lineCap: 'round', lineJoin: 'round', interactive: false,
+          color: pc.color, weight: st[0], opacity: st[1], lineCap: 'round', lineJoin: 'round', interactive: false,
+          dashArray: pc.kind === 'dots' ? '0 ' + DOT_PERIOD_PX : null,
         }).addTo(this.map);
         pc.st = 'full';
         return pc;
       });
     },
-    trimRoute(s, cur) {
+    trimRoute(s, cur, dot) {
       if (!this.route || !this.routePath) return;
       const map = this.map;
       trimPieces(this.route, this.routePath, s, cur, {
         hide: (pc) => pc.line.remove(),
         show: (pc) => { // 다시 보일 때 겹침 순서를 되돌린다 (차가 잠깐 뒤로 잡힌 경우)
           pc.line.addTo(map);
-          if (pc.kind === 'edge') pc.line.bringToBack(); else if (pc.kind === 'traffic') pc.line.bringToFront();
+          if (pc.kind === 'glow') pc.line.bringToBack(); else if (pc.kind !== 'base') pc.line.bringToFront();
         },
         setPath: (pc, p) => pc.line.setLatLngs(p), point: (q) => [q.lat, q.lng],
-      });
+      }, dot);
     },
+    mpp() { return 156543.03392 * Math.cos(toRad(this.map.getCenter().lat)) / Math.pow(2, this.map.getZoom()); },
     clearRoute() {
       if (this.route) this.route.forEach((pc) => pc.line.remove());
       this.route = null; this.routePath = null;
@@ -944,17 +980,18 @@
         interactive: false, keyboard: false,
       }).addTo(this.map));
     },
-    setTurnArrow(pts) { this._arrow = pts; this.drawArrow(); },
+    setTurnArrow(pts, ti, color) { this._arrow = pts; this._arrowTi = ti; this._arrowColor = color; this.drawArrow(); },
     drawArrow() {
       (this._arrowObjs || []).forEach((o) => o.remove());
-      this._arrowObjs = [];
-      const pts = this._arrow;
-      if (!pts || pts.length < 2 || !this.map) return;
-      const g = arrowGeom(pts, this.map.getZoom()), P = (q) => [q.lat, q.lng];
+      this._arrowObjs = []; this._arrowShown = null;
+      const pts = this._arrow, z = this.map && this.map.getZoom();
+      if (!pts || pts.length < 2 || !this.map || z < ARROW_MIN_ZOOM) return;
+      const g = arrowGeom(pts, z, this._arrowTi), P = (q) => [q.lat, q.lng];
+      this._arrowShown = g.pts; this._arrowSpan = g.span;
       const line = (w, c) => L.polyline(g.shaft.map(P), { color: c, weight: w, opacity: 1, lineCap: 'round', lineJoin: 'round', interactive: false }).addTo(this.map);
       const head = (tri, c) => L.polygon(tri.map(P), { color: c, weight: 1, fillColor: c, fillOpacity: 1, interactive: false }).addTo(this.map);
-      const H = ARROW_PX, RIM = '#1e2a38';
-      this._arrowObjs.push(line(H.shaft, RIM), head(g.headOut, RIM), line(H.inner, '#ffffff'), head(g.headIn, '#ffffff'));
+      const H = ARROW_PX, RIM = this._arrowColor || ROUTE_BASE;
+      this._arrowObjs.push(line(H.shaft * g.sc, RIM), head(g.headOut, RIM), line(H.inner * g.sc, '#ffffff'), head(g.headIn, '#ffffff'));
     },
     setDest(d, end) {
       (this.destMk || []).forEach((m) => m.remove());
@@ -1518,6 +1555,9 @@
   const parking = { loaded: false, n: 0, lat: null, lng: null, grid: new Map(), date: '' };
   const parkState = { near: null, markerAt: null, markerKey: '', h: null };
   const PARK_SHOW = 100, PARK_KEEP = 120, PARK_SLOW = 30, PARK_FAST = 40, PARK_MAP_KMH = 45, PARK_MAP_AHEAD = 300;
+  // 2026-11-14 요청: 주정차 단속은 차를 세울 목적지 근처에서 필요한 자세한 정보. 길안내 중에는 가는 길 내내 띄우지 않고
+  // 목적지까지 700m 안에 들어와서야 보여 준다(카드는 그대로 천천히 갈 때 앞쪽 것, 지도에는 앞쪽 것 + 목적지 둘레 250m 안의 것)
+  const PARK_DEST_NEAR = 700, PARK_DEST_R = 250;
   async function loadParking() {
     try {
       const r = await fetch('data/parking.json?v=' + APP_VERSION);
@@ -1589,13 +1629,20 @@
   function evalParking(f) {
     let near = null, markers = [];
     if (state.heading !== null && state.speedKmh >= 5) parkState.h = state.heading; // 멈춰 있을 때는 마지막 방향
-    if (parking.loaded && prefs.parking) {
+    const routing = !!(nav.active && nav.dest);
+    const nearDest = routing && nav.remain <= PARK_DEST_NEAR;   // 길 따라 남은 거리 (강 건너 직선 거리로는 가까워도 아니다)
+    if (parking.loaded && prefs.parking && (!routing || nearDest)) {
       const list = parkingNear(f.lat, f.lng, PARK_MAP_AHEAD + 20);
       const ahead = parkAhead(f, list, PARK_MAP_AHEAD, 30);
       const showing = !!parkState.near;
       const first = parkAhead(f, list, PARK_KEEP, 15)[0];
       if (first && ((state.speedKmh < PARK_SLOW && first.d <= PARK_SHOW) || (showing && state.speedKmh <= PARK_FAST))) near = first;
       if (state.speedKmh < PARK_MAP_KMH) markers = ahead.slice(0, 40);
+      if (nearDest) {
+        const have = new Set(markers.map((x) => x.k));
+        parkingNear(nav.dest.lat, nav.dest.lng, PARK_DEST_R).sort((x, y) => x.d - y.d)
+          .forEach((x) => { if (!have.has(x.k) && markers.length < 40) { have.add(x.k); markers.push(x); } });
+      }
     }
     parkState.near = near;
     renderPark();
@@ -3141,7 +3188,8 @@
   }
   const pinIco = (via) => (window.TNC_ICONS && window.TNC_ICONS[via ? 'via' : 'goal'] ? ico(via ? 'via' : 'goal') : PIN_ICON);
 
-  // 다음 회전 지점 화살표: 회전·비켜 가기·나가기/들어가기·유턴·회전교차로이고 400m 안이면 그 지점 45m 앞부터 30m 뒤까지
+  // 다음 회전 지점 화살표: 회전·비켜 가기·나가기/들어가기·유턴·회전교차로이고 400m 안이면 그 지점 앞뒤 (가까이 보면 35m 앞~25m 뒤,
+  // 멀리 볼수록 화면 기준으로 더 길게: 지도 쪽 drawArrow 가 배율에 맞춰 잘라 쓰도록 앞 150m·뒤 100m 를 넘긴다)
   const ARROW_KINDS = new Set(['l', 'r', 'u', 'sl', 'sr', 'sharp_l', 'sharp_r', 'kl', 'kr', 'outl', 'outr', 'outs', 'inl', 'inr', 'ins',
     'rb', 'rb_l', 'rb_s', 'rb_r', 'rb_u', 'over_l', 'over_r', 'over_s', 'under_l', 'under_r', 'under_s', 'side_l', 'side_r', 'rest']);
   function renderTurnArrow() {
@@ -3153,11 +3201,16 @@
     nav.arrowKey = key;
     if (!want) { mapA.setTurnArrow(null); return; }
     const c = nav.cum[Math.min(g.i, nav.cum.length - 1)], pts = [];
-    for (let at = Math.max(0, c - 45); at <= Math.min(nav.total, c + 30) + 0.01; at += 2.5) {
+    let ti = 0;
+    for (let at = Math.max(0, c - 150); at <= Math.min(nav.total, c + 100) + 0.01; at += ARROW_STEP) {
       const q = routePointAt(at);
-      if (q) pts.push(q);
+      if (!q) continue;
+      if (at <= c + 0.01) ti = pts.length;
+      pts.push(q);
     }
-    mapA.setTurnArrow(pts.length >= 2 ? pts : null);
+    // 테두리는 회전 지점 경로 색(교통색 또는 바탕 파랑): 경로선이 흰 화살표로 이어지는 느낌
+    const run = trafficRuns(nav.route && nav.route.sections, nav.pts.length).find((x) => x.a <= g.i && g.i <= x.b);
+    mapA.setTurnArrow(pts.length >= 2 ? pts : null, ti, run ? run.color : ROUTE_BASE);
   }
 
   // 남은 경로만 다시 그린다: 지금 위치(경로 위로 붙인 점)부터 목적지까지, 교통 색 구간도 번호를 맞춰 옮긴다
@@ -3168,8 +3221,18 @@
     let s = Math.max(0, Math.min(nav.seg, nav.pts.length - 2));
     while (s < nav.pts.length - 2 && nav.cum[s + 1] <= at) s++;
     const cur = routePointAt(at) || nav.pts[s];
+    // 흰 점: 경로 처음부터 점 간격(미터)의 배수 자리에서 자르면 점이 땅에 붙어 있다. 색 선이 시작하는 곳 바로 앞 칸부터
+    // (뒤 칸부터 자르면 색 선 없이 점만 차 뒤에 남는다)
+    let dot = null;
+    const mpp = mapA.mpp ? mapA.mpp() : 0;
+    if (mpp > 0) {
+      const P = DOT_PERIOD_PX * mpp, at2 = Math.min(nav.total, Math.ceil(at / P) * P);
+      let s2 = s;
+      while (s2 < nav.pts.length - 2 && nav.cum[s2 + 1] <= at2) s2++;
+      dot = { s: s2, cur: routePointAt(at2) || nav.pts[s2] };
+    }
     // 지도에 그려 둔 경로 조각 중 차가 걸친 조각만 고쳐 그린다 (setRoute 에서 nav.pts 전체를 그려 둠)
-    if (mapA.trimRoute) mapA.trimRoute(s, cur);
+    if (mapA.trimRoute) mapA.trimRoute(s, cur, dot);
     nav.drawnSeg = nav.seg;
     nav.drawnAlong = nav.along;
     nav.drawnAt = state.fix ? state.fix.t : Date.now();
@@ -4968,7 +5031,7 @@
       planRoute, doSearch, setFollowing, canvasPoint, gesture, glView, glOn, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
       sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
-      saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassNums, hipassLayout, laneNums, laneStripHtml, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, setCarIcon, carIcons: CAR_ICONS, parking, parkState, setParkingData, loadParking, evalParking, rest, setRestData, loadRest, ensureRouteRest, renderRest, placeBase, findParking, renderTurnArrow,
+      saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassNums, hipassLayout, laneNums, laneStripHtml, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, arrowSpan, routeStyle: ROUTE_STYLE, setCarIcon, carIcons: CAR_ICONS, parking, parkState, setParkingData, loadParking, evalParking, rest, setRestData, loadRest, ensureRouteRest, renderRest, placeBase, findParking, renderTurnArrow,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },

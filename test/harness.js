@@ -1311,7 +1311,8 @@
         // 주행 기록은 맨 아래지만 화면 테두리에서 띄워서(아래 24px 이상, 왼쪽 20px 이상), 나침반은 그 위
         tripAtBottom: (() => { const tr = document.querySelector('.trip').getBoundingClientRect();
           return tr.bottom <= app.bottom - 24 && tr.bottom > app.bottom - 60 && tr.left >= app.left + 20 && head.bottom <= tr.top + 6; })(),
-        stripRight: strip.left > app.right - 80 && bar.width <= 8,
+        // 오른쪽 끝의 가는 막대 (2026-11-14 요청으로 6 → 10px: 그래도 12px 이하)
+        stripRight: strip.left > app.right - 80 && bar.width <= 12,
         // 경로 막대는 세로 가운데
         stripMiddle: Math.abs((strip.top + strip.bottom) / 2 - (app.top + app.bottom) / 2) < 12,
         // 오른쪽·위 테두리에서 띄우기: 시계·경로 막대가 테두리에 붙지 않는다
@@ -2730,6 +2731,7 @@
     { id: 'S61', name: 'S61 highway rest areas on the route: only my side (right) or both-way ones, duplicates merged, next within 30 km + the one after; not on local roads', fn: s61 },
     { id: 'S62', name: 'S62 Naver guide codes → icons: roundabout exits, overpass/underpass/side road not as turns, hi-pass/one-toll gates, rest area, entry/exit ahead', fn: s62 },
     { id: 'S63', name: 'S63 car icon choice (cute car, my Model Y grey, red, white, arrows): marker swaps, keeps the heading, saved', fn: s63 },
+    { id: 'S64', name: 'S64 no-parking cameras while navigating: nothing on the way, only within 700 m of the destination (ahead + around the destination)', fn: s64 },
     { id: 'S58', name: "S58 no-parking cameras: '주정차 단속' only ahead in my direction, when slow (no sound); not behind or on a side street; setting off", fn: s58 },
     { id: 'S57', name: 'S57 fast reroute: wrong-way turn caught in 2 fixes, start asked ahead of the car, a new route that starts behind the car is retried at once (only once)', fn: s57 },
   ];
@@ -2920,6 +2922,33 @@
     return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + r[k]).join(', ') };
   }
 
+  // S64: 길안내 중 주정차 단속은 목적지 가까이(남은 길 700m)에서만 (2026-11-14 요청: 목적지에 거의 다 와서 필요한 자세한 정보)
+  async function s64() {
+    const t = T(), R = buildNavRoute(), r = {}, prev = t.prefs.parking;
+    const cams = [pointAt(R, 200).p, pointAt(R, R.total - 150).p, dest(R.dest, 180, 120)];   // 가는 길 · 목적지 150m 앞 · 목적지 남쪽 120m(경로 밖)
+    const d = [];
+    let la = 0, ln = 0;
+    cams.forEach((c) => { const a = Math.round(c.lat * 1e5), b = Math.round(c.lng * 1e5); d.push(a - la, b - ln); la = a; ln = b; });
+    const marks = () => { const m = t.getMap(); return m && m.parks ? m.parks.size : -1; };
+    try {
+      t.prefs.parking = true;
+      t.setParkingData({ count: cams.length, scale: 1e5, d });
+      await planAndStart(R);
+      // 출발 130m (목적지까지 950m): 천천히 가고 카메라가 70m 앞이어도 안 띄운다
+      let a = pointAt(R, 120); feed(a.p, 4, a.h); a = pointAt(R, 130); feed(a.p, 4, a.h);
+      r.farCard = visible('#parkCard'); r.farMarks = marks();
+      // 목적지 220m 앞: 앞 70m 카메라 카드 + 지도에는 그것과 목적지 둘레 것
+      a = pointAt(R, R.total - 230); feed(a.p, 4, a.h); a = pointAt(R, R.total - 220); feed(a.p, 4, a.h);
+      r.nearCard = visible('#parkCard'); r.nearDist = text('#parkDist'); r.nearMarks = marks();
+    } finally {
+      t.endNav(); softReset();
+      t.prefs.parking = prev;
+      try { const j = await (await realFetch(new URL('../data/parking.json', location.href).href)).json(); t.setParkingData(j); } catch (e) { /* 다음 실행 때 다시 */ }
+    }
+    const ok = !r.farCard && r.farMarks === 0 && r.nearCard && /^(6\d|7\d)m$/.test(r.nearDist) && r.nearMarks === 2;
+    return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + r[k]).join(', ') };
+  }
+
   // S59: 목적지 주차장 입구 (2026-11-14 요청: 사람이 들어가는 정문이 아니라 차가 들어가는 주차장 입구로)
   async function s59() {
     const t = T(), R = buildNavRoute(), r = {}, D = R.dest;
@@ -2974,12 +3003,22 @@
       const m = t.getMap();
       r.pin = !!document.querySelector('.destpin');
       r.dots = document.querySelectorAll('.destdot').length;
+      // 경로선 (v92 요청): 검은 테두리 없이 빛 번짐·본선·가운데 빛·흰 점
+      r.kinds = [...new Set((m.route || []).map((pc) => pc.kind))].sort().join('+');
       let a = pointAt(R, 100); feed(a.p, 15, a.h); t.renderNav();
       r.farNone = !(m._arrowObjs || []).length;                 // 다음 안내가 직진이거나 400m 밖
       a = pointAt(R, 300); feed(a.p, 15, a.h); t.renderNav();   // 우회전 300m 앞
       r.near = (m._arrowObjs || []).length;                     // 테두리 몸통·화살촉 + 흰 몸통·화살촉
-      const end = m._arrow && m._arrow[m._arrow.length - 1];
-      r.endFromTurn = end ? Math.round(hav(end, dest(R.P[5], 90, 30))) : -1;   // 회전 지점 30m 뒤까지
+      // 회전 지점 뒤로 배율에 맞춘 길이(가까이 30m, 멀리 볼수록 화면 30px 만큼·최대 100m)까지
+      const shown = m._arrowShown || [], end = shown[shown.length - 1], span = m._arrowSpan || {};
+      r.span = Math.round(span.after || -1);
+      r.endFromTurn = end ? Math.round(hav(end, dest(R.P[5], 90, span.after))) : -1;
+      // 멀리 보면(배율 14 아래) 화살표를 그리지 않고, 다시 가까이 보면 다시 그린다 (v92 피드백: 축소하면 지도에 비해 너무 큼)
+      const z0 = m.map.getZoom();
+      m.map.setZoom(13, false); m.drawArrow();
+      r.zoomOutHidden = !(m._arrowObjs || []).length;
+      m.map.setZoom(z0, false); m.drawArrow();
+      r.zoomBack = (m._arrowObjs || []).length;
       a = pointAt(R, R.cum[5] + 40); feed(a.p, 15, a.h); t.renderNav();
       r.after = (m._arrowObjs || []).length;                    // 그다음은 목적지: 화살표 없음
       t.endNav();
@@ -2987,7 +3026,8 @@
     } finally {
       softReset();
     }
-    const ok = r.pin && r.dots >= 3 && r.farNone && r.near === 4 && r.endFromTurn >= 0 && r.endFromTurn <= 3 && r.after === 0 && r.cleared;
+    const ok = r.pin && r.dots >= 3 && /^base\+dots\+glow\+shine/.test(r.kinds) && r.farNone && r.near === 4 && r.span >= 25 && r.span <= 100 && r.endFromTurn >= 0 && r.endFromTurn <= 3 &&
+      r.zoomOutHidden && r.zoomBack === 4 && r.after === 0 && r.cleared;
     return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + r[k]).join(', ') };
   }
 
