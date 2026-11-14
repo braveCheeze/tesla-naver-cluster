@@ -28,6 +28,7 @@
     signalCams: store.get('sigcam') === '1', // 신호 전용 카메라 알림 (기본 끔)
     bumps: store.get('bumps') !== '0',       // 과속방지턱 알림 (기본 켬)
     tunnels: store.get('tunnels') !== '0',   // 길안내 중 터널 진입·출구 거리 (기본 켬)
+    junction: store.get('junction') !== '0', // 고속도로 진출입·갈림길 그림 (기본 켬)
     traffic: store.get('traffic') !== '0',
     weather: store.get('weather') !== '0',
     headingUp: store.get('hup') !== '0',
@@ -42,7 +43,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-60'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-61'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -1499,10 +1500,10 @@
   // ---------- 단속 서랍 (테슬라 모드: 길안내 패널 밑에서 스르륵) ----------
   // 안의 것(단속 카드·내 속도·보호구역 표지·구간단속 카드·하이패스) 중 하나라도 보이면 열고, 다 숨으면 접는다
   const drawer = { t: 0, hideT: 0, closing: false };
-  const DRAWER_ITEMS = ['#camCard', '#mySpeed', '#zoneBadge', '#secCard', '#tollCard'];
+  const DRAWER_ITEMS = ['#juncCard', '#camCard', '#mySpeed', '#zoneBadge', '#secCard', '#tollCard'];
   const drawerAnimated = () => !testPage && $('#app').classList.contains('tesla') && $('#camDrawer').classList.contains('open');
   // q 를 빼도 서랍에 남는 것이 있는지 (내 속도·보호구역 표지는 단속 카드에 딸려 함께 빠진다)
-  const drawerKeeps = (q) => ['#secCard', '#tollCard'].some((x) => x !== q && !$(x).hidden) ||
+  const drawerKeeps = (q) => ['#juncCard', '#secCard', '#tollCard'].some((x) => x !== q && !$(x).hidden) ||
     (q !== '#camCard' && !$('#camCard').hidden);
   function syncDrawer() {
     const dr = $('#camDrawer');
@@ -1522,6 +1523,7 @@
       drawer.closing = false;
       if (!camState.target) $('#camCard').hidden = true;
       if (!tollState.g) $('#tollCard').hidden = true;
+      if (!juncState.g) $('#juncCard').hidden = true;
       syncDrawer();
     }, 360);
   }
@@ -2232,6 +2234,74 @@
     }
   }
   // 하이패스(톨게이트) 카드: 경로 위 다음 톨게이트가 2km 안이면 이름·남은 거리·통행료를 보여 준다
+  // ---------- 분기점 그림 (2026-11-14 요청: 다른 내비의 IC·분기점 확대 그림처럼) ----------
+  // 실제 교차로 그림은 공개 데이터가 없어서, 네이버 안내 종류(왼쪽/오른쪽 방향, 고속도로·자동차전용도로 진입·진출)로
+  // 단순한 갈림길 그림을 그린다: 가야 할 쪽 도로를 파랗게 + 흰 화살표, 위에 방면 이름, 밑에 안내 지점 이름과 남은 거리.
+  // 차로 수는 모르므로 그리지 않는다. 길안내 패널 밑 서랍 맨 위에, 안내 지점 800m 앞부터
+  const JUNC_FORK = new Set([4, 5, 41, 42, 54]);                                  // 갈림길: 두 갈래
+  const JUNC_RAMP = new Set([57, 58, 59, 60, 66, 67, 68, 69, 76, 77, 79, 80]);   // 진입·진출로: 본선 옆으로 빠짐
+  const JUNC_LEFT = new Set([4, 41, 57, 58, 59, 60, 76, 79]);
+  const JUNC_SHOW = 800;
+  const juncState = { g: null, key: '' };
+  function juncInfo(g) {
+    if (!g || (!JUNC_FORK.has(g.t) && !JUNC_RAMP.has(g.t))) return null;
+    const s = String(g.s || '');
+    let left = JUNC_LEFT.has(g.t);
+    if (g.t === 54) { if (/왼쪽/.test(s)) left = true; else if (/오른쪽/.test(s)) left = false; else return null; }
+    const m = s.match(/^(.*?)에서\s/);
+    const q = s.match(/'([^']+)'/);
+    const names = q ? q[1].split(',').map((x) => x.trim()).filter(Boolean) : [];
+    const short = names.filter((x) => x.length <= 5);   // '수도권제1순환선'·'중부고속도로' 같은 긴 이름보다 '판교'·'호법'
+    const label = (short.length ? short : names.map((x) => x.slice(0, 6))).slice(0, 2).join(' · ');
+    return { kind: JUNC_RAMP.has(g.t) ? 'ramp' : 'fork', left, place: m ? m[1] : '', label,
+      hwy: /고속|분기점|IC\b|JC\b|IC에서|JC에서/i.test(s) || (g.t >= 57 && g.t <= 69) };
+  }
+  // 오른쪽으로 갈 때를 그리고, 왼쪽이면 길만 좌우로 뒤집는다 (글자는 CSS 로 반대쪽에)
+  function juncSvg(j) {
+    const P = j.kind === 'fork'
+      ? { base: 'M160 100 L160 68 C160 50 122 36 80 4 M160 68 C160 50 198 36 240 4', bw: 40,
+          hi: 'M160 100 L160 68 C160 50 198 36 240 4', hw: 30,
+          arrow: 'M160 92 L160 70 C160 54 192 40 226 16', dash: '' }
+      : { base: 'M138 100 L138 0', bw: 50, ramp: 'M150 92 C152 72 176 56 226 32 L272 8', rw: 30,
+          hi: 'M154 100 L154 90 C156 72 178 56 226 32 L272 8', hw: 22,
+          arrow: 'M154 94 C156 74 180 56 222 34 L252 18', dash: 'M124 100 L124 0' };
+    const flip = j.left ? ' transform="matrix(-1 0 0 1 320 0)"' : '';
+    return '<svg viewBox="0 0 320 100" class="jc"><defs><marker id="jcArrow" markerUnits="userSpaceOnUse" markerWidth="20" markerHeight="20" refX="9" refY="10" orient="auto">' +
+      '<path d="M3 3 L17 10 L3 17 Z" fill="#fff"/></marker></defs><rect class="jc-ground" width="320" height="100"/><g' + flip + ' fill="none" stroke-linejoin="round">' +
+      '<path class="jc-edge" d="' + P.base + '" stroke-width="' + (P.bw + 6) + '"/>' +
+      (P.ramp ? '<path class="jc-edge" d="' + P.ramp + '" stroke-width="' + (P.rw + 6) + '"/>' : '') +
+      '<path class="jc-road" d="' + P.base + '" stroke-width="' + P.bw + '"/>' +
+      (P.ramp ? '<path class="jc-road" d="' + P.ramp + '" stroke-width="' + P.rw + '"/>' : '') +
+      (P.dash ? '<path class="jc-lane" d="' + P.dash + '" stroke-width="2.5" stroke-dasharray="10 9"/>' : '') +
+      '<path class="jc-hi" d="' + P.hi + '" stroke-width="' + P.hw + '"/>' +
+      '<path class="jc-arrow" d="' + P.arrow + '" stroke-width="6" stroke-linecap="round" marker-end="url(#jcArrow)"/></g></svg>';
+  }
+  function renderJunction() {
+    const el = $('#juncCard');
+    const g = nav.active && prefs.junction ? nav.next : null;
+    const j = g && nav.dg != null && nav.dg <= JUNC_SHOW ? juncInfo(g) : null;
+    juncState.g = j ? g : null;
+    if (!j) {
+      // 서랍에 분기점 그림만 있으면 접히는 동안은 그대로 두었다가 숨긴다
+      if (!el.hidden && drawerAnimated() && !drawerKeeps('#juncCard')) startDrawerClose();
+      else if (!drawer.closing) el.hidden = true;
+      syncDrawer();
+      return;
+    }
+    cancelDrawerClose();
+    const key = g.i + ':' + g.t + ':' + g.s;
+    if (juncState.key !== key) {
+      juncState.key = key;
+      $('#juncSvg').innerHTML = juncSvg(j);
+      $('#juncLabel').textContent = j.label || (j.left ? '왼쪽' : '오른쪽');
+      $('#juncPlace').textContent = j.place;
+      el.classList.toggle('left', j.left);
+      el.classList.toggle('hwy', j.hwy);
+    }
+    $('#juncDist').textContent = fmtDist(nav.dg);
+    el.hidden = false;
+    syncDrawer();
+  }
   const tollState = { g: null };
   function renderToll() {
     const el = $('#tollCard');
@@ -2324,8 +2394,18 @@
 
   function renderNav() {
     renderToll();
+    renderJunction();
     renderNavPanel();
     placeAlerts(); // 안내 패널 높이가 바뀌면 그 밑의 단속 경고도 따라 움직인다
+    checkTripCover();
+  }
+  // 테슬라 모드: 서랍(분기점 그림·단속·하이패스)이 길어져 왼쪽 아래 주행 기록·나침반에 닿으면 그동안 그 둘을 숨긴다 (글자가 겹치지 않게)
+  function checkTripCover() {
+    const app = $('#app');
+    if (!app.classList.contains('tesla')) { app.classList.remove('trip-covered'); return; }
+    const dr = $('#camDrawer'), tops = [$('.trip'), $('.heading')].filter(Boolean).map((e) => e.getBoundingClientRect().top).filter((v) => v > 0);
+    const covered = dr.classList.contains('open') && tops.length > 0 && dr.getBoundingClientRect().bottom > Math.min(...tops) - 6;
+    app.classList.toggle('trip-covered', covered);
   }
   function renderNavPanel() {
     const p = $('#navPanel');
@@ -2876,7 +2956,7 @@
       $('#speed').classList.add('stale');
       setGps('warn', 'GPS 신호 없음');
     }
-    if (nav.active) renderNav();
+    if (nav.active) renderNav(); else checkTripCover();
     if (camState.section) renderSection();
   }
 
@@ -3287,6 +3367,7 @@
     $('#optSigCams').checked = prefs.signalCams;
     $('#optBumps').checked = prefs.bumps;
     $('#optTunnels').checked = prefs.tunnels;
+    $('#optJunction').checked = prefs.junction;
     $('#optTraffic').checked = prefs.traffic;
     $('#optWeather').checked = prefs.weather;
     $('#optHup').checked = prefs.headingUp;
@@ -3368,6 +3449,10 @@
   $('#optTesla').onchange = (e) => {
     prefs.tesla = e.target.checked; store.set('tesla', prefs.tesla ? '1' : '0');
     applyTesla();
+  };
+  $('#optJunction').onchange = (e) => {
+    prefs.junction = e.target.checked; store.set('junction', prefs.junction ? null : '0');
+    if (nav.active) renderNav();
   };
   $('#optTunnels').onchange = (e) => {
     prefs.tunnels = e.target.checked; store.set('tunnels', prefs.tunnels ? null : '0');
@@ -3477,7 +3562,7 @@
       planRoute, doSearch, setFollowing, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
       sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
-      tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel,
+      tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, renderJunction,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
     };

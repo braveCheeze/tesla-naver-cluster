@@ -1930,6 +1930,56 @@
       ' | 하남→팔당대교: J2735 ' + (north.J2735 ? 'alerted✓' : 'MISSED✗') };
   }
 
+  // S48: 분기점 그림 (2026-11-14 요청). 고속도로 진입(66: 오른쪽)과 분기점(4: 왼쪽 방향)이 있는 경로로, 테슬라 모드에서
+  //      안내 지점 800m 앞부터 서랍 맨 위에 그림: 진입로는 'ramp'·오른쪽, 방면 '서울 · 대전', 지점 '하남IC'.
+  //      분기점은 'fork'·왼쪽, 방면은 짧은 이름 '대전 · 호법'. 900m 앞·지난 뒤에는 없음
+  async function s48() {
+    const t = T(), box = document.getElementById('optTesla'), prev = t.prefs.tesla;
+    const set = (on) => { box.checked = on; box.dispatchEvent(new Event('change')); };
+    const raw = [];
+    for (let k = 0; k <= 30; k++) raw.push(dest(NAV_ORIGIN, 0, 100 * k));
+    const path = raw.map((p) => [round6(p.lng), round6(p.lat)]);
+    const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const total = cum[cum.length - 1];
+    const R = {
+      route: { distance: r0(total), duration: r0(total / 20 * 1000), tollFare: 0, fuelPrice: 300, path,
+        guide: [{ i: 12, t: 66, s: "하남IC에서 '서울, 대전' 방면으로 오른쪽 고속도로 진입", d: r0(cum[12]), ms: 60000 },
+                { i: 20, t: 4, s: "하남분기점에서 '중부고속도로, 대전, 호법' 방면으로 왼쪽 방향", d: r0(cum[20] - cum[12]), ms: 40000 },
+                { i: 30, t: 88, s: '목적지', d: r0(total - cum[20]), ms: 50000 }],
+        sections: [{ i: 0, n: 31, name: '테스트로', speed: 60, cong: 1 }] },
+      P, cum, total, dest: { name: '분기 테스트', addr: '', lat: P[30].lat, lng: P[30].lng },
+    };
+    const snap = () => { const el = document.getElementById('juncCard');
+      return { shown: visible('#juncCard'), kind: (el.querySelector('#juncSvg path.jc-edge + path.jc-edge') ? 'ramp' : 'fork'), left: el.classList.contains('left'),
+        hwy: el.classList.contains('hwy'), label: text('#juncLabel'), place: text('#juncPlace'), dist: text('#juncDist'),
+        inDrawer: !!el.closest('#camDrawer .cd-in'), open: document.getElementById('camDrawer').classList.contains('open') }; };
+    const go = (s) => { const a = pointAt(R, s); feed(a.p, 20, a.h); t.renderNav(); };
+    const r = {};
+    try {
+      set(true);
+      softReset();
+      await planAndStart(R);
+      for (let s = 20; s <= 300; s += 20) go(s);
+      r.far = snap();                                   // 하남IC 900m 앞
+      for (let s = 320; s <= 600; s += 20) go(s);
+      r.ramp = snap();                                  // 하남IC 600m 앞
+      for (let s = 620; s <= 1300; s += 20) go(s);
+      r.fork = snap();                                  // 하남분기점 700m 앞
+      for (let s = 1320; s <= 2100; s += 20) go(s);
+      r.after = snap();                                 // 분기점 지난 뒤 (그다음은 목적지)
+      t.endNav();
+    } finally {
+      set(prev);
+      softReset();
+    }
+    const ok = !r.far.shown && r.ramp.shown && r.ramp.kind === 'ramp' && !r.ramp.left && r.ramp.hwy && r.ramp.label === '서울 · 대전' &&
+      r.ramp.place === '하남IC' && /^600m$/.test(r.ramp.dist) && r.ramp.inDrawer && r.ramp.open &&
+      r.fork.shown && r.fork.kind === 'fork' && r.fork.left && r.fork.label === '대전 · 호법' && r.fork.place === '하남분기점' && !r.after.shown;
+    return { pass: ok, detail: JSON.stringify(r) + (ok ? '✓' : '✗') };
+  }
+
   // S25: 하이패스 — 경로 안내에 톨게이트(type 121)가 있으면 2km 앞부터 카드(이름·거리·통행료·하이패스 차로 이용)와 음성
   async function s25() {
     const t = T();
@@ -2276,6 +2326,7 @@
     { id: 'S45', name: 'S45 hi-pass card sits in the camera drawer under the nav panel (Tesla mode) + toll gate icon', fn: s45 },
     { id: 'S46', name: 'S46 box-type speed camera added by hand (팔당 다산로): shown as 박스형 one way only', fn: s46 },
     { id: 'S47', name: "S47 one-way camera direction from its 'A→B' place text vs the route's guide text (하남 창우로)", fn: s47 },
+    { id: 'S48', name: 'S48 junction picture: highway ramp / fork drawn from the guide type, in the drawer 800m ahead', fn: s48 },
   ];
 
   // ---------------------------------------------------------------- runner

@@ -1141,6 +1141,42 @@
   body:has(#app.tesla):has(#map.night) #app.tesla .cd-in .camcard.box .cam-type { color: #fbbf24; }
   /* 톨게이트 표지: 밤에는 도로 부분을 조금 밝게 (어두운 패널 위에서 보이게) */
   body:has(#app.tesla):has(#map.night) svg.toll .tg-road { fill: #5b6676; }
+  /* ================= 분기점 그림 (2026-11-14 요청) =================
+     위에서 내려다본 단순한 갈림길: 회색 길·흰 가장자리, 가야 할 쪽 파랗게 + 흰 화살표. 방면 이름은 가는 쪽 위 모서리에
+     (고속도로·분기점이면 초록 표지, 아니면 파란 표지), 안내 지점 이름·남은 거리는 반대쪽 아래 모서리 */
+  .junccard { position: relative; border-radius: 12px; overflow: hidden; }
+  #app.tesla #juncCard { order: -2; }   /* 서랍 맨 위 (내 속도 띠·단속 카드보다 위) */
+  /* 서랍이 왼쪽 아래 주행 기록·나침반까지 내려오면 그동안 둘을 숨긴다 */
+  #app.tesla .trip, #app.tesla .heading { transition: opacity .25s ease; }
+  #app.tesla.trip-covered .trip, #app.tesla.trip-covered .heading { opacity: 0; }
+  .jc-svg svg { display: block; width: 100%; height: auto; }
+  .jc-ground { fill: #e4ebe2; }
+  .jc-edge { stroke: #ffffff; }
+  .jc-road { stroke: #3b4351; }
+  .jc-lane { stroke: rgba(255, 255, 255, .8); }
+  .jc-hi { stroke: #1d8cff; }
+  .jc-arrow { stroke: #ffffff; }
+  .jc-label {
+    position: absolute; top: 8px; right: 10px; max-width: 62%; padding: 4px 10px 5px; border-radius: 7px;
+    background: #1565c0; color: #fff; font-size: 16px; font-weight: 800; line-height: 1.2; text-shadow: none;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 1px 4px rgba(0, 0, 0, .25);
+  }
+  .junccard.hwy .jc-label { background: #0f7a3d; }
+  .junccard.left .jc-label { right: auto; left: 10px; }
+  .jc-head {
+    position: absolute; left: 10px; bottom: 8px; display: flex; gap: 6px; align-items: baseline; max-width: 46%;
+    padding: 3px 8px; border-radius: 7px; background: rgba(255, 255, 255, .88); color: #111; text-shadow: none;
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .jc-head b { font-size: 14px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; }
+  .jc-head span { font-size: 15px; font-weight: 800; color: #1565c0; }
+  .jc-head b:empty { display: none; }
+  .junccard.left .jc-head { left: auto; right: 10px; }
+  body:has(#app.tesla):has(#map.night) .jc-ground { fill: #18212c; }
+  body:has(#app.tesla):has(#map.night) .jc-road { stroke: #4a5464; }
+  body:has(#app.tesla):has(#map.night) .jc-edge { stroke: #c9d1db; }
+  body:has(#app.tesla):has(#map.night) .jc-head { background: rgba(0, 0, 0, .55); color: #fff; }
+  body:has(#app.tesla):has(#map.night) .jc-head span { color: #8ab4ff; }
 </style>
 </head>
 <body>
@@ -1166,6 +1202,8 @@
     <div class="alerts">
     <!-- 단속 서랍: 테슬라 모드에서는 길안내 패널 밑에서 스르륵 내려온다 (일반 화면에서는 그대로 풀어 놓음) -->
     <div id="camDrawer" class="camdrawer"><div class="cd-clip"><div class="cd-in">
+          <!-- 분기점 그림: 고속도로 진출입·갈림길 800m 앞부터 (가야 할 쪽 파랗게, 위에 방면, 밑에 안내 지점·남은 거리) -->
+          <div id="juncCard" class="junccard" hidden><div id="juncSvg" class="jc-svg"></div><div id="juncLabel" class="jc-label"></div><div class="jc-head"><b id="juncPlace"></b><span id="juncDist"></span></div></div>
           <div id="camCard" class="camcard" hidden>
             <div class="cam-sign"><span id="camLimit">60</span></div>
             <div class="cam-info">
@@ -1328,6 +1366,7 @@
     <label class="check"><input type="checkbox" id="optCams"> 단속 카메라 경고</label>
     <label class="check"><input type="checkbox" id="optSigCams"> 제한속도 없는 신호 전용 카메라도 알림</label>
     <label class="check"><input type="checkbox" id="optBumps"> 과속방지턱 알림 (전국 과속방지턱 표준데이터)</label>
+    <label class="check"><input type="checkbox" id="optJunction"> 분기점 그림 (고속도로 진출입·갈림길 800m 앞부터)</label>
     <label class="check"><input type="checkbox" id="optTunnels"> 길안내 중 터널 진입·출구 거리 (터널 위치 © OpenStreetMap 기여자, ODbL)</label>
     <label class="check"><input type="checkbox" id="optTraffic"> 실시간 교통 (도로를 막힘 정도로 색칠)</label>
     <label class="check"><input type="checkbox" id="optWeather"> 날씨 표시 (위치는 약 10km 단위로만 보냄)</label>
@@ -1379,6 +1418,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-60"></script>
+<script src="app.js?v=2026.11.14-61"></script>
 </body>
 </html>
