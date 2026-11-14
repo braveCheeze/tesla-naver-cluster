@@ -2738,7 +2738,7 @@
     { id: 'S60', name: 'S60 white turn arrow on the map at the next turn (400 m before), destination pin + dots from the route end', fn: s60 },
     { id: 'S61', name: 'S61 highway rest areas on the route: only my side (right) or both-way ones, duplicates merged, next within 30 km + the one after; not on local roads', fn: s61 },
     { id: 'S62', name: 'S62 Naver guide codes → icons: roundabout exits, overpass/underpass/side road not as turns, hi-pass/one-toll gates, rest area, entry/exit ahead', fn: s62 },
-    { id: 'S63', name: 'S63 car icon choice (cute car, my Model Y grey, red, white, arrows): marker swaps, keeps the heading, saved', fn: s63 },
+    { id: 'S63', name: 'S63 car icon choice (cute car, AI photo Model Y grey/red/white, drawn Model Y, arrows): marker swaps, keeps the heading, saved', fn: s63 },
     { id: 'S64', name: 'S64 no-parking cameras while navigating: nothing on the way, only within 700 m of the destination (ahead + around the destination)', fn: s64 },
     { id: 'S65', name: 'S65 auto zoom: 17 while driving even before a turn; the close-up 18 only within 300 m of the destination', fn: s65 },
     { id: 'S58', name: "S58 no-parking cameras: '주정차 단속' only ahead in my direction, when slow (no sound); not behind or on a side street; setting off", fn: s58 },
@@ -3140,12 +3140,19 @@
       feed(dest(TRIP_ORIGIN, 90, 45), 10, 90);
       r.rotated = /rotate\(/.test(arrow().style.transform);
       r.options = t.carIcons.map((c) => c.id).join(',');
+      // AI 실사 차(PNG): 그림이 실제로 불러와지고, 바꿔도 방향은 그대로
+      t.setCarIcon('tesla_grey');
+      const im = arrow();
+      r.aiImg = im.tagName === 'IMG' && /car-tesla_grey/.test(im.getAttribute('class')) && /rotate\(/.test(im.style.transform);
+      await waitFor(() => im.complete, 3000);
+      r.aiLoaded = im.complete && im.naturalWidth === 200 && im.naturalHeight === 280;
       t.setCarIcon('cute');
       r.back = /car-cute/.test(arrow().getAttribute('class')) && localStorage.getItem('tnc.car') === null;
     } finally {
       if (prev) t.setCarIcon(prev); else t.setCarIcon('cute');
     }
-    const ok = r.swapped && r.saved && r.rotated && r.back && r.options === 'cute,my,red,white,arrow,arrow3d';
+    const ok = r.swapped && r.saved && r.rotated && r.back && r.options === 'cute,tesla_grey,tesla_red,tesla_white,my,red,white,arrow,arrow3d' &&
+      r.aiImg && r.aiLoaded;
     return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + r[k]).join(', ') };
   }
 

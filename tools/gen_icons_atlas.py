@@ -11,7 +11,8 @@
 - 내 차 아이콘만:  py -X utf8 tools\gen_icons_atlas.py --icons car_my,car_red,car_white --per 2   (12장 ≈ $0.06)
 - 차 아이콘 전부(테슬라 7색 + 귀여운 차 4색): --icons cars --per 2
 - 안내 아이콘 전부(나가기/들어가기·급회전·고가/지하차도·회전교차로·유턴·터널·톨게이트·하이패스·분기점·도착/경유 핀·분기점 그림): --icons guide --per 2
-- 둘 다: --icons cars,guide --per 2
+- 주의 표지 11가지(미끄러운 도로·낙석·오르막·내리막·노면 고르지 못함·횡풍·야생동물·도로 폭 좁아짐·철길 건널목·위험·과속방지턱): --icons signs --per 2
+- 전부: --icons cars,guide,signs --per 2
   테슬라 앱 차 사진을 tools\icon-src
 ef
 ef_car_app.png 로 저장해 두면 그 느낌을 따라 그린다 (저장소에는 안 올라감)
@@ -61,6 +62,14 @@ def car_ref(c):
     return 'ref/ref_car_app.png' if os.path.exists(CAR_APP) else 'ref/ref_car_%s.png' % c
 
 
+# 주의 표지 (2026-11-14 요청 '이런 것도 다 잘 만들어 줘, 야생동물은 좀… 전체적으로 퀄리티를 올려 줘'):
+# 참고 그림은 빈 삼각형(ref/ref_sign.png: 앱의 빨간 테·노란 바탕). 그림 문자는 문장으로 그리게 한다 → 결과는 세 색으로 따서 SVG 로
+SIGN = ('Korean road caution sign (주의표지) as a clean flat vector icon. Keep exactly the triangle of the reference image: an '
+        'equilateral triangle with softly rounded corners, a thick red border (#E53935) and a bright yellow inside (#FFD200). '
+        'Inside the yellow area draw ONE bold black (#111111) pictogram in the official Korean traffic sign style: ')
+SIGN_END = ('. Bold, simple, well-balanced shapes with an even stroke weight that stay readable at 24 px, centered in the yellow '
+            'area with comfortable margins. Exactly three flat colors (red, yellow, black). No text, no letters, no numbers, '
+            'no extra symbols, no gradients, no shadows, no 3D.' + BG + ' ')
 SHIELD = ' Small interstate-style shield (red top band, blue body, white border, bold white letters) in an empty corner'
 # 그림 이름 → (참고 그림: tools/icon-src 기준 경로, 스타일 문장, 내용)
 JOBS = {
@@ -139,8 +148,12 @@ JOBS = {
              'entered, with a large arrowhead pointing down. Single color, like Naver Map turn icons.'),
     'u': ('u.webp', ARROW, 'U-turn: one bold white arrow goes straight up, makes a tight rounded turn to the left at the top '
           'and comes back down, arrowhead pointing down. Clean and symmetric, like Naver Map.'),
-    'tunnel': ('s.webp', ARROW, 'Tunnel ahead: a simple white tunnel portal (a rounded arch outline) with a dark opening, and a '
-               'bold white arrow pointing straight up into it.'),
+    'tunnel': ('s.webp', 'Flat vector navigation icon of a road TUNNEL entrance, front view, in the clean style of Naver Map '
+               'navigation icons: a rounded concrete tunnel portal (light grey arch with a subtle darker inner rim) set into a '
+               'simple green hillside silhouette, a dark tunnel opening with a few small warm yellow lights inside, and a dark '
+               'charcoal road with white edge lines and a white dashed center line running straight into the opening, drawn in '
+               'gentle perspective. Bold simple shapes that read well at 26 px, crisp edges, no text, no letters, no arrow, '
+               'no cars, no shadows on the background.' + CORP + BG + ' ', ''),
     'toll': ('toll.webp', ROAD, 'Toll gate: a straight road leading up to a row of toll booths under a flat canopy roof; '
              'the arrow passes through the middle booth. Keep the style of the reference.'),
     'hipass': ('toll.webp', ROAD, 'Hi-pass (electronic toll) lane: a straight road leading up to toll booths under a canopy; the '
@@ -155,6 +168,17 @@ JOBS = {
     'via3d': ('via.webp', 'Navigation waypoint pin icon in the style of the reference, but more three-dimensional: glossy '
               'blue map pin with soft highlight and shading, white round center, a soft oval shadow under the tip. '
               'Clean, premium, no text.' + BG + ' ', ''),
+    'sign_slip': ('ref/ref_sign.png', SIGN, 'slippery road: a car seen from behind, with two wavy skid tracks curving below it' + SIGN_END),
+    'sign_rock': ('ref/ref_sign.png', SIGN, 'falling rocks: a steep cliff face on the right with three angular rocks tumbling down toward the lower left' + SIGN_END),
+    'sign_up': ('ref/ref_sign.png', SIGN, 'steep ascent: a solid black right-angled wedge whose slope rises from the lower left to the right' + SIGN_END),
+    'sign_down': ('ref/ref_sign.png', SIGN, 'steep descent: a solid black right-angled wedge whose slope falls from the upper left to the lower right' + SIGN_END),
+    'sign_rough': ('ref/ref_sign.png', SIGN, 'uneven road: a thick road surface line along the bottom with two rounded bumps rising from it' + SIGN_END),
+    'sign_wind': ('ref/ref_sign.png', SIGN, 'crosswind: a windsock on a vertical pole, the sock blowing out horizontally to the right' + SIGN_END),
+    'sign_animal': ('ref/ref_sign.png', SIGN, 'wild animal crossing: a leaping deer silhouette in side view, facing right, elegant and anatomically correct, slim legs stretched mid-jump, small head with short antlers' + SIGN_END),
+    'sign_narrow': ('ref/ref_sign.png', SIGN, 'road narrows: two bold vertical road edge lines that come in symmetrically from wide at the bottom to narrow at the top' + SIGN_END),
+    'sign_rail': ('ref/ref_sign.png', SIGN, 'railway level crossing: a simple steam locomotive silhouette in side view facing left, with a chimney and two big wheels' + SIGN_END),
+    'sign_danger': ('ref/ref_sign.png', SIGN, 'general danger: one bold black exclamation mark' + SIGN_END),
+    'sign_bump': ('ref/ref_sign.png', SIGN, 'speed bump: a thick road line along the bottom with one rounded hump in the middle' + SIGN_END),
 }
 WIDE = {'junc_fork_r', 'junc_exit_r'}
 
@@ -286,9 +310,12 @@ def main():
     models = [m for m in a.models.split(',') if m in MODELS]
     # 묶음 이름: cars = 모든 차 아이콘(car_*·cute_*), guide = 차가 아닌 안내 아이콘·분기점 그림 전부
     is_car = lambda k: k.startswith(('car_', 'cute_'))
+    is_sign = lambda k: k.startswith('sign_')
+    groups = {'cars': [k for k in JOBS if is_car(k)], 'signs': [k for k in JOBS if is_sign(k)],
+              'guide': [k for k in JOBS if not is_car(k) and not is_sign(k)]}
     want = []
     for i in a.icons.split(','):
-        want += [k for k in JOBS if is_car(k)] if i == 'cars' else [k for k in JOBS if not is_car(k)] if i == 'guide' else [i]
+        want += groups.get(i, [i])
     icons = [i for i in dict.fromkeys(want) if i in JOBS]
     jobs = [(i, m, n) for i in icons for m in models for n in range(1, a.per + 1)]
     cost = sum(MODELS[m][1] for _, m, _ in jobs)

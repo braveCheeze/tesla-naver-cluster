@@ -3,6 +3,8 @@
   'use strict';
 
   const $ = (s) => document.querySelector(s);
+  // app.js 가 있는 폴더 주소 (img/ 같은 그림 파일은 이 기준: 테스트 페이지는 /test/ 에서 ../app.js 를 불러온다)
+  const APP_BASE = (() => { try { return new URL('.', document.currentScript.src).href; } catch (e) { return ''; } })();
   const NS = 'tnc.';
   const store = {
     get(k) { try { return localStorage.getItem(NS + k); } catch (e) { return null; } },
@@ -49,7 +51,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-96'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-97'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   // 브라우저에 저장된 예전 index.html 이 새 app.js 를 불러온 경우(화면 요소가 맞지 않아 버튼 연결에서 멈춘다):
@@ -461,6 +463,9 @@
       '<path d="M10.9 50.4C11.3 51.7 12.1 52.6 13.3 53.1M29.1 50.4C28.7 51.7 27.9 52.6 26.7 53.1" fill="none" stroke="#e0242f" stroke-width=".9" stroke-linecap="round" opacity=".9"/>' +
       '</svg>';
   }
+  // AI 로 그린 실사 모델 Y (2026-11-14 요청 '테슬라 그 AI 돌려주라': Atlas GPT Image 2.5 Flare, 테슬라 앱 느낌).
+  // 분홍 바탕을 빼고 가장자리 색을 되돌린 투명 PNG (tools/build_cars.py → img/car_*.png, 40×56 비율, 앞쪽이 위)
+  const carImg = (id) => '<img class="me-arrow car-img car-' + id + '" src="' + APP_BASE + 'img/car_' + id + '.png?v=' + APP_VERSION + '" alt="" draggable="false">';
   const CAR_ICONS = [
     { id: 'cute', name: '초록 꼬마차', svg: () => '<svg class="me-arrow car-cute" viewBox="0 0 40 56">' +
       '<rect x="2.5" y="12" width="6" height="11" rx="3" fill="#232a35"/>' +
@@ -476,8 +481,12 @@
       '<circle cx="14.3" cy="8.8" r=".75" fill="#fff"/><circle cx="28.3" cy="8.8" r=".75" fill="#fff"/>' +
       '<circle cx="9.3" cy="16.5" r="1.9" fill="#ff8fa3" opacity=".8"/><circle cx="30.7" cy="16.5" r="1.9" fill="#ff8fa3" opacity=".8"/>' +
       '<path d="M16.8 16.2 Q20 19 23.2 16.2" fill="none" stroke="#0b4a2b" stroke-width="1.7" stroke-linecap="round"/></svg>' },
-    // 사용자 차 (테슬라 앱의 짙은 회색 모델 Y)
-    { id: 'my', name: '내 차 (모델 Y 그레이)', svg: (sfx) => modelY('my', ['#5a6475', '#2c323c', '#14171c'], sfx) },
+    // 실사 모델 Y (AI): 사용자 차는 짙은 회색
+    { id: 'tesla_grey', name: '모델 Y 그레이 실사', svg: () => carImg('tesla_grey') },
+    { id: 'tesla_red', name: '모델 Y 레드 실사', svg: () => carImg('tesla_red') },
+    { id: 'tesla_white', name: '모델 Y 화이트 실사', svg: () => carImg('tesla_white') },
+    // 그림(SVG) 모델 Y
+    { id: 'my', name: '모델 Y 그레이', svg: (sfx) => modelY('my', ['#5a6475', '#2c323c', '#14171c'], sfx) },
     { id: 'red', name: '모델 Y 레드', svg: (sfx) => modelY('red', ['#f2555c', '#c5121f', '#7c0b13'], sfx) },
     { id: 'white', name: '모델 Y 화이트', svg: (sfx) => modelY('white', ['#ffffff', '#e8ebef', '#b3bac3'], sfx) },
     // 네이버 지도 같은 내비 화살표
@@ -890,7 +899,8 @@
       if (!d || !this.map) return;
       destDots(end, d).forEach((q) => this.destMk.push(new N.Marker({ position: new N.LatLng(q.lat, q.lng), map: this.map, clickable: false, zIndex: 94,
         icon: { content: dotEl(), anchor: new N.Point(4, 4) } })));
-      this.destMk.push(new N.Marker({ position: new N.LatLng(d.lat, d.lng), map: this.map, clickable: false, zIndex: 95,
+      // 도착 핀은 카메라·방지턱·휴게소·주정차 표지보다 늘 위 (2026-11-14: 명동역 '50' 카메라 표지가 핀을 덮었다)
+      this.destMk.push(new N.Marker({ position: new N.LatLng(d.lat, d.lng), map: this.map, clickable: false, zIndex: 300,
         icon: { content: destPinEl(), anchor: new N.Point(17, 33) } }));
     },
     // 주정차 단속 카메라: 작은 주정차 금지 표지
@@ -1056,7 +1066,7 @@
         icon: L.divIcon({ html: '<div class="destdot"></div>', className: 'me-wrap', iconSize: [8, 8], iconAnchor: [4, 4] }), interactive: false, keyboard: false,
       }).addTo(this.map)));
       this.destMk.push(L.marker([d.lat, d.lng], {
-        icon: L.divIcon({ html: destPinEl().outerHTML, className: 'me-wrap', iconSize: [34, 34], iconAnchor: [17, 33] }), interactive: false, keyboard: false, zIndexOffset: 900,
+        icon: L.divIcon({ html: destPinEl().outerHTML, className: 'me-wrap', iconSize: [34, 34], iconAnchor: [17, 33] }), interactive: false, keyboard: false, zIndexOffset: 2000,
       }).addTo(this.map));
     },
     setParks(list) {
