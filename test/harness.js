@@ -2684,6 +2684,7 @@
     { id: 'S54', name: 'S54 keep-left/right arrows for 왼쪽/오른쪽 방향·도로 주행, OUT/IN for highway exit/entry', fn: s54 },
     { id: 'S55', name: "S55 road caution signs (slippery, rockfall…): 300 m ahead on our side of the route, '주의' just after, setting off", fn: s55 },
     { id: 'S56', name: "S56 dragging the heading-up map keeps the direction, shows '내 위치로', returns after 5 s; pinch/wheel zoom keeps following", fn: s56 },
+    { id: 'S58', name: "S58 no-parking cameras: '주정차 단속' only when slow and near (no sound), map signs at low speed, setting off", fn: s58 },
     { id: 'S57', name: 'S57 fast reroute: wrong-way turn caught in 2 fixes, start asked ahead of the car, a new route that starts behind the car is retried at once (only once)', fn: s57 },
   ];
 
@@ -2822,6 +2823,45 @@
       r.counting && r.btnBack && r.btnCenter < 3 && r.peek2 && r.notYet && r.autoBack && r.wheelUp && r.wheelKeeps;
     const m = (v) => (typeof v === 'number' ? Math.round(v * 10) / 10 : v);
     return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + m(r[k])).join(', ') };
+  }
+
+  // S58: 주정차 단속 카메라 (2026-11-14 요청 '주정차금지 저런 것도'). 도심에 아주 많아 지나갈 때는 조용히,
+  //      천천히(25km/h 아래) 갈 때 80m 안이면 칸을 띄우고 35km/h 를 넘으면 내린다. 지도 표지는 40km/h 아래에서만
+  async function s58() {
+    const t = T(), r = {}, prev = t.prefs.parking;
+    const P = dest(TRIP_ORIGIN, 0, 300);
+    t.setParkingData({ count: 1, scale: 1e5, d: [Math.round(P.lat * 1e5), Math.round(P.lng * 1e5)] });
+    const card = () => visible('#parkCard');
+    const marks = () => { const m = t.getMap(); return m && m.parks ? m.parks.size : -1; };
+    try {
+      t.prefs.parking = true;
+      // 시속 60km 로 옆(15m)을 지나간다: 조용히
+      let seen = false;
+      for (let s = 0; s <= 600; s += 17) { feed(dest(dest(TRIP_ORIGIN, 90, 15), 0, s), 16.7, 0); if (card()) seen = true; }
+      r.fastQuiet = !seen;
+      // 천천히(15km/h) 다가가 60m 앞
+      const Q = dest(P, 180, 60);
+      feed(dest(Q, 180, 8), 4.2, 0); feed(Q, 4.2, 0);
+      r.slowShown = card();
+      r.dist = text('#parkDist');
+      r.markers = marks();
+      // 30km/h 로 100m 안: 그대로
+      feed(dest(P, 180, 30), 8.3, 0);
+      r.keep30 = card();
+      // 43km/h: 내린다, 지도 표지도 없앤다 (40km/h 넘으면)
+      feed(dest(P, 0, 10), 12, 0); feed(dest(P, 0, 22), 12, 0);
+      r.gone40 = !card();
+      r.markersFast = marks();
+      // 설정 끔: 천천히 가도 안 뜬다
+      t.prefs.parking = false;
+      feed(dest(P, 180, 20), 3, 0); feed(dest(P, 180, 15), 3, 0);
+      r.offHidden = !card();
+    } finally {
+      t.prefs.parking = prev;
+      try { const j = await (await realFetch(new URL('../data/parking.json', location.href).href)).json(); t.setParkingData(j); } catch (e) { /* 다음 실행 때 다시 */ }
+    }
+    const ok = r.fastQuiet && r.slowShown && /^(5\d|6\d)m$/.test(r.dist) && r.markers === 1 && r.keep30 && r.gone40 && r.markersFast === 0 && r.offHidden;
+    return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + r[k]).join(', ') };
   }
 
   async function s55() {
