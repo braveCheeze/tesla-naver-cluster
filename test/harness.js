@@ -1244,7 +1244,7 @@
   }
 
   // S24: 테슬라 모드 배치 — 시계 오른쪽 위, 주소 가운데 아래, GPS 오른쪽 아래, 나침반 왼쪽 아래,
-  //      경로 막대 오른쪽 끝(얇게), 단속 경고는 길안내 패널 바로 밑, 버튼은 절반 크기
+  //      경로 막대 오른쪽 끝(얇게), 단속 경고는 길안내 패널 바로 밑, 버튼은 70% 크기(40px)
   async function s24() {
     const t = T(), box = document.getElementById('optTesla'), prev = t.prefs.tesla;
     const set = (on) => { box.checked = on; box.dispatchEvent(new Event('change')); };
@@ -1268,7 +1268,7 @@
         tripAtBottom: document.querySelector('.trip').getBoundingClientRect().bottom > app.bottom - 30 && head.bottom <= document.querySelector('.trip').getBoundingClientRect().top + 6,
         stripRight: strip.left > app.right - 60 && bar.width <= 8,
         alertsUnderNav: alerts.top >= np.bottom && alerts.top - np.bottom < 30 && alerts.left < app.left + 40,
-        buttonsHalf: btn.width <= 32,
+        buttons70: btn.width >= 36 && btn.width <= 42,
         // 야간·전체화면·설정 버튼은 길안내 패널 바로 오른쪽, 패널 위쪽 높이에
         topButtonsNextToNav: tc.left >= np.right && tc.left - np.right <= 16 && Math.abs(tc.top - np.top) <= 4,
       };
@@ -1278,6 +1278,50 @@
     }
     const bad = Object.keys(r).filter((k) => !r[k]);
     return { pass: bad.length === 0, detail: Object.keys(r).map((k) => k + (r[k] ? '✓' : '✗')).join(', ') };
+  }
+
+  // S34: 테슬라 모드 — 단속 경고 밑에 '내 속도 / 제한'. 제한을 넘으면 빨갛게, 안 넘으면 평소색, 단속이 없으면 숨김.
+  //      어린이보호 타일은 작게(112px 이하). 테슬라 모드가 꺼져 있으면 안 보인다(왼쪽 속도계가 있으니까)
+  async function s34() {
+    const t = T(), C = CAM_SCHOOL, box = document.getElementById('optTesla'), prev = t.prefs.tesla;
+    const set = (on) => { box.checked = on; box.dispatchEvent(new Event('change')); };
+    const shown = () => { const e = document.getElementById('mySpeed'); return !e.hidden && e.getClientRects().length > 0; };
+    const approach = (kmh) => {
+      softReset();
+      let o = null;
+      for (let s = 0; s <= 400 && !o; s += 10) {
+        feed(dest(C, 180, 600 - s), kmh / 3.6, 0);
+        const tg = t.camState.target;
+        if (tg && sameCam(tg.c, C)) {
+          const tile = document.querySelector('#camCard .zone-tile');
+          o = { shown: shown(), over: hasCls('#mySpeed', 'over'), val: text('#mySpeedVal'), lim: text('#mySpeedLim'), tileW: tile ? r0(tile.getBoundingClientRect().width) : null };
+        }
+      }
+      return o;
+    };
+    let fast, slow, none, off;
+    try {
+      set(true);
+      fast = approach(45);
+      slow = approach(25);
+      softReset();
+      feed(dest(C, 180, 6000), 10, 0);
+      feed(dest(C, 180, 5990), 10, 0);
+      none = shown();
+      set(false);
+      off = approach(45);
+    } finally {
+      set(prev);
+      softReset();
+    }
+    const okFast = !!fast && fast.shown && fast.over && fast.val === '45' && /제한 30/.test(fast.lim) && fast.tileW !== null && fast.tileW <= 112;
+    const okSlow = !!slow && slow.shown && !slow.over && slow.val === '25';
+    const okOff = !!off && !off.shown;
+    return {
+      pass: okFast && okSlow && !none && okOff,
+      detail: '45 km/h: ' + JSON.stringify(fast) + (okFast ? '✓' : '✗') + ' | 25 km/h: ' + JSON.stringify(slow) + (okSlow ? '✓' : '✗') +
+        ' | no camera: ' + (none ? 'SHOWN✗' : 'hidden✓') + ' | tesla off: ' + (okOff ? 'hidden✓' : 'SHOWN✗'),
+    };
   }
 
   // S25: 하이패스 — 경로 안내에 톨게이트(type 121)가 있으면 2km 앞부터 카드(이름·거리·통행료·하이패스 차로 이용)와 음성
@@ -1612,6 +1656,7 @@
     { id: 'S31', name: 'S31 weather icons', fn: s31 },
     { id: 'S32', name: 'S32 stopped → north up (labels upright)', fn: s32 },
     { id: 'S33', name: 'S33 parked & untouched → check for new version', fn: s33 },
+    { id: 'S34', name: 'S34 Tesla mode: my speed under the camera alert, red when over', fn: s34 },
   ];
 
   // ---------------------------------------------------------------- runner

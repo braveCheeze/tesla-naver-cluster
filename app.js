@@ -40,7 +40,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-30'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-31'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -1135,6 +1135,7 @@
     }
     renderSection();
     renderCamAvg();
+    renderMySpeed();
     renderLimit();
   }
   // 구간단속 계산: 평균 속도, 남은 거리, 평균을 넘었을 때 남은 구간에서 지킬 속도(need)
@@ -1172,6 +1173,16 @@
     card.classList.toggle('over', st.over);
   }
   // 경고 카드(예: '구간단속 끝 1.4km') 오른쪽 끝에 구간 평균 속도를 붙인다
+  // 테슬라 모드에서 단속 경고가 떠 있으면 바로 밑에 내 속도 (구간단속 중이거나 속도 카메라 앞). 제한을 넘으면 빨갛게
+  function renderMySpeed() {
+    const el = $('#mySpeed'), tg = camState.target, s = camState.section;
+    const lim = !prefs.cams ? null : s ? s.limit : tg && isSpeedCam(tg.c) ? tg.c[2] : null;
+    if (!lim) { el.hidden = true; return; }
+    el.hidden = false;
+    $('#mySpeedVal').textContent = Math.round(state.speedKmh);
+    $('#mySpeedLim').textContent = '/ 제한 ' + lim;
+    el.classList.toggle('over', state.speedKmh > lim + 1);
+  }
   function renderCamAvg() {
     const el = $('#camAvg'), hint = $('#camHint'), s = camState.section;
     if (!s || !camState.target) { el.hidden = true; hint.hidden = true; return; }

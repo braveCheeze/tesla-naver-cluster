@@ -656,8 +656,6 @@
   #app.tesla .heading { left: 14px; bottom: 92px; font-size: 14px; font-weight: 700; gap: 8px; }
   #app.tesla .compass { width: 30px; height: 30px; background: rgba(0, 0, 0, .35); border-color: rgba(255, 255, 255, .28); }
   #app.tesla .compass svg { width: 16px; height: 16px; }
-  /* 주행 기록을 접어 둘 때(보호구역 표지가 떠 있을 때)는 나침반을 맨 아래로 */
-  #app.tesla:has(#camCard.zonecam:not([hidden])) .heading { bottom: 12px; }
   #app.tesla .stat { background: none; border: 0; padding: 0; }
   #app.tesla .stat .k { color: #d3d8df; font-size: 11px; font-weight: 700; }
   #app.tesla .stat .v { font-size: 16px; font-weight: 800; margin-top: 0; }
@@ -689,8 +687,6 @@
   #app.tesla .camcard.zonecam { width: 150px; }
   #app.tesla .zt-dist { font-size: 26px; padding: 7px 6px 6px; }
   #app.tesla .zt-limit { font-size: 42px; }
-  /* 키가 큰 보호구역 표지가 떠 있는 동안은 주행 기록을 접어 둔다 (화면이 낮아 겹치지 않게) */
-  #app.tesla:has(#camCard.zonecam:not([hidden])) .trip { display: none; }
 
   /* 경로 막대: 오른쪽 끝에 얇은 띠로 */
   #app.tesla .rstrip { left: auto; right: 6px; top: 104px; bottom: auto; height: min(300px, calc(100% - 180px)); width: 34px; }
@@ -736,6 +732,49 @@
   /* 오른쪽 아래: 네이버 로고·출처 표시 위로 GPS 를 올리고, 가운데 아래 주소는 그 옆과 안 겹치게 폭을 줄인다 */
   #app.tesla .gps { bottom: 44px; }
   #app.tesla .road { max-width: 44%; bottom: 10px; }
+
+  /* ---------- 운전 중 잘 보이게 (2026-11-14 주행 피드백) ---------- */
+  /* 시계·날짜·날씨 크게 */
+  #app.tesla .clock { font-size: 42px; }
+  #app.tesla .date { font-size: 16px; font-weight: 800; }
+  #app.tesla .weather { top: 84px; font-size: 15px; font-weight: 700; }
+  #app.tesla .weather b { font-size: 19px; }
+  #app.tesla .rstrip { top: 116px; }
+  /* 왼쪽 아래: 나침반·주행 기록 크게 */
+  #app.tesla .trip { gap: 4px 22px; }
+  #app.tesla .stat .k { font-size: 13px; font-weight: 800; }
+  #app.tesla .stat .v { font-size: 21px; font-weight: 800; }
+  #app.tesla .stat small { font-size: 13px; font-weight: 700; }
+  #app.tesla .heading { bottom: 104px; font-size: 17px; font-weight: 800; }
+  #app.tesla .compass { width: 36px; height: 36px; }
+  #app.tesla .compass svg { width: 20px; height: 20px; }
+  /* 어린이·노인 보호구역 표지는 조금 작게 */
+  #app.tesla .camcard.zonecam { width: 112px; }
+  #app.tesla .zt-sign svg { max-width: 104px; }
+  #app.tesla .zt-dist { font-size: 20px; padding: 6px 4px 5px; }
+  #app.tesla .zt-label { font-size: 13px; }
+  #app.tesla .zt-limit { font-size: 32px; }
+  #app.tesla .zt-body { padding: 5px 4px 7px; }
+  /* 내 속도: 단속 경고 바로 밑. 제한을 넘으면 빨간 바탕에 흰 글씨로 눈에 띄게 */
+  .myspeed { display: none; }
+  #app.tesla .myspeed:not([hidden]) {
+    display: inline-flex; align-items: baseline; gap: 5px; align-self: flex-start;
+    font-variant-numeric: tabular-nums; padding: 4px 10px; border-radius: 10px;
+  }
+  #app.tesla .myspeed span { font-size: 13px; font-weight: 800; color: var(--ov-sub); }
+  #app.tesla .myspeed b { font-size: 28px; font-weight: 800; line-height: 1; }
+  #app.tesla .myspeed i { font-style: normal; font-size: 13px; font-weight: 700; }
+  #app.tesla .myspeed em { font-style: normal; font-size: 13px; font-weight: 800; color: var(--ov-sub); margin-left: 4px; }
+  #app.tesla .myspeed.over { background: #e53935; color: #fff; text-shadow: none; box-shadow: 0 4px 14px rgba(229, 57, 53, .45); animation: overblink2 1s ease-in-out infinite; }
+  #app.tesla .myspeed.over span, #app.tesla .myspeed.over em { color: #ffe0e0; }
+  @keyframes overblink2 { 50% { background: #b71c1c; } }
+  /* 터치하면 나오는 버튼: 원래의 70% */
+  #app.tesla .btn { width: 40px; height: 40px; border-radius: 11px; }
+  #app.tesla .btn svg { width: 20px; height: 20px; }
+  #app.tesla .topctrls, #app.tesla .ctrls { gap: 8px; }
+  #app.tesla .ctrls { right: 48px; }
+  #app.tesla .searchbtn { height: 40px; font-size: 15px; padding: 0 14px 0 11px; gap: 7px; border-radius: 12px; }
+  #app.tesla .searchbtn svg { width: 18px; height: 18px; }
 </style>
 </head>
 <body>
@@ -775,6 +814,8 @@
         <div class="zt-body"><div id="ztLabel" class="zt-label">어린이보호</div><div id="ztLimit" class="zt-limit">30</div></div>
       </div>
     </div>
+    <!-- 테슬라 모드: 단속 경고가 떠 있으면 내 속도를 함께 (제한을 넘으면 빨갛게) -->
+    <div id="mySpeed" class="myspeed" hidden><span>내 속도</span><b id="mySpeedVal">0</b><i>km/h</i><em id="mySpeedLim"></em></div>
     <div id="secCard" class="seccard" hidden>
       <div class="sec-top">구간단속 · 제한 <b id="secLimit">100</b> km/h</div>
       <div class="sec-avg"><span id="secAvg">-</span><small> km/h 평균</small></div>
@@ -942,6 +983,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-30"></script>
+<script src="app.js?v=2026.11.14-31"></script>
 </body>
 </html>
