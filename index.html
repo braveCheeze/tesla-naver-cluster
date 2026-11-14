@@ -1177,6 +1177,27 @@
   body:has(#app.tesla):has(#map.night) .jc-edge { stroke: #c9d1db; }
   body:has(#app.tesla):has(#map.night) .jc-head { background: rgba(0, 0, 0, .55); color: #fff; }
   body:has(#app.tesla):has(#map.night) .jc-head span { color: #8ab4ff; }
+  /* ================= 하이패스·톨게이트 다듬기 (2026-11-14 요청: 다른 내비처럼) =================
+     길안내 패널: TG 표지 + 거리 + 굵은 통행료 ('800원 하남톨게이트').
+     하이패스 칸: 한 줄로 — 왼쪽 'hi-pass' 표지, 가운데 톨게이트 이름·통행료와 '하이패스 차로로', 오른쪽 큰 거리 */
+  .tt-fare { margin-right: 6px; font-size: 1.12em; font-weight: 800; color: inherit; }
+  #app.tesla .tt-fare { color: var(--nv-fg); }
+  .tollcard { align-items: center; }
+  .toll-badge i {
+    font-style: italic; font-weight: 900; font-size: 17px; letter-spacing: -.02em; font-family: 'Arial Black', 'Pretendard', sans-serif;
+  }
+  .toll-info { flex: 1; min-width: 0; }
+  .toll-name { display: flex; gap: 6px; align-items: baseline; min-width: 0; }
+  .toll-name #tollName { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .toll-fare { flex: none; font-size: 13px; font-weight: 700; opacity: .75; }
+  .toll-dist { flex: none; margin-left: auto; font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  #app.tesla .cd-in .tollcard { gap: 10px; }
+  #app.tesla .cd-in .toll-badge { padding: 5px 8px 6px; border-radius: 9px; background: #1565c0; }
+  #app.tesla .cd-in .toll-badge i { font-size: 15px; }
+  .toll-hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #app.tesla .cd-in .toll-fare { color: var(--nv-sub); opacity: 1; }
+  #app.tesla .cd-in .toll-dist { color: var(--nv-fg); }
+  #app.tesla .cd-in .toll-hint { font-size: 13px; margin-top: 2px; }
 </style>
 </head>
 <body>
@@ -1231,12 +1252,12 @@
           </div>
           <!-- 톨게이트(하이패스) 안내: 길안내 경로에 톨게이트가 있으면 2km 앞부터. 테슬라 모드에서는 단속 서랍 맨 밑 (2026-11-14 요청) -->
           <div id="tollCard" class="tollcard" hidden>
-            <div class="toll-badge">하이패스</div>
+            <div class="toll-badge" aria-label="하이패스"><i>hi-pass</i></div>
             <div class="toll-info">
-              <div id="tollName" class="toll-name">톨게이트</div>
-              <div class="toll-sub"><b id="tollDist">0m</b><span id="tollFare"></span></div>
-              <div class="toll-hint">하이패스 차로로 지나가세요</div>
+              <div class="toll-name"><span id="tollName">톨게이트</span><span id="tollFare" class="toll-fare"></span></div>
+              <div class="toll-hint">하이패스 차로 이용</div>
             </div>
+            <b id="tollDist" class="toll-dist">0m</b>
           </div>
     </div></div></div>
     <!-- 과속방지턱: 200m 앞부터 작은 표지 + 거리 (길안내 중이면 경로 위, 아니면 바로 앞) -->
@@ -1418,6 +1439,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-61"></script>
+<script src="app.js?v=2026.11.14-62"></script>
 </body>
 </html>

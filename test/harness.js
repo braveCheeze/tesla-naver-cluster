@@ -1856,6 +1856,8 @@
       r.noHalo = getComputedStyle(document.getElementById('tollName')).textShadow === 'none';
       r.text = text('#tollName') + ' ' + text('#tollDist') + ' ' + text('#tollFare');
       r.tollIcon = !!document.querySelector('#turnIcon svg.toll');   // 직진 화살표 대신 톨게이트 표지
+      const fee = document.querySelector('#turnText .tt-fare');
+      r.fareInPanel = !!fee && fee.textContent === '800원' && /하남톨게이트$/.test(text('#turnText'));   // 패널에 굵은 통행료 + 이름
       for (let s = 1525; s <= 2700; s += 25) { const a = pointAt(R, s); feed(a.p, 25, 0); t.renderNav(); }
       r.goneAfter = !visible('#tollCard') && !dr.classList.contains('open');
       t.endNav();
@@ -1863,7 +1865,7 @@
       set(prev);
       softReset();
     }
-    const ok = r.shown && r.inDrawer && r.open && r.underPanel && r.noHalo && /하남톨게이트 1\.0km/.test(r.text) && r.tollIcon && r.goneAfter;
+    const ok = r.shown && r.inDrawer && r.open && r.underPanel && r.noHalo && /하남톨게이트 1\.0km/.test(r.text) && r.tollIcon && r.fareInPanel && r.goneAfter;
     return { pass: ok, detail: JSON.stringify(r) + (ok ? '✓' : '✗') };
   }
 

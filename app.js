@@ -43,7 +43,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-61'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-62'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -2328,7 +2328,7 @@
     const p = tollParts(g);
     $('#tollName').textContent = p.name;
     $('#tollDist').textContent = fmtDist(ahead);
-    $('#tollFare').textContent = p.fare; // 하이패스 안내 문구는 카드의 셋째 줄에 고정
+    $('#tollFare').textContent = p.fare.replace(/^통행료\s*/, ''); // '800원'만 (한 줄 카드라 짧게). 하이패스 안내 문구는 둘째 줄에 고정
     syncDrawer();
   }
   // 테슬라 모드에서 단속 경고 묶음을 길안내 패널(없으면 검색 버튼) 바로 밑에 붙이고,
@@ -2419,7 +2419,13 @@
     const g = nav.next;
     $('#turnIcon').innerHTML = TURN_ICONS[g ? turnKind(g) : 'goal'];
     $('#turnDist').textContent = fmtDist(nav.dg != null ? nav.dg : nav.total);
-    $('#turnText').textContent = g ? g.s : nav.dest.name;
+    if (g && g.t === 121) {
+      // 톨게이트: 다른 내비처럼 통행료를 굵게 앞에 ('800원 하남톨게이트'), 아이콘은 TG 표지 (2026-11-14 요청)
+      const p = tollParts(g), fee = p.fare.replace(/^통행료\s*/, '');
+      $('#turnText').innerHTML = (fee ? '<b class="tt-fare">' + esc(fee) + '</b>' : '') + esc(p.name);
+    } else {
+      $('#turnText').textContent = g ? g.s : nav.dest.name;
+    }
     // 그다음 칸: 이번 회전을 하고 나서 무엇이 얼마 뒤에 오는지 (거리는 이번 안내 지점 → 그다음 안내 지점).
     //   그다음이 회전이면 네이버 지도처럼 그 회전 아이콘 + 거리만 '↰ 1.2km' (2026-11-14: '직진 … 좌회전'처럼 풀어 쓰지 않음)
     //   그다음이 목적지면 연한 빨강 바탕에 빨간 핀 + '20m', 경유지면 주황 (2026-11-14: '도착' 글자는 빼고 핀·바탕색으로만 구분)
