@@ -775,6 +775,8 @@
   #app.tesla .myspeed b { font-size: 44px; font-weight: 800; line-height: 1; letter-spacing: -0.02em; }
   #app.tesla .myspeed i { font-style: normal; font-size: 16px; font-weight: 700; }
   #app.tesla .myspeed em { font-style: normal; font-size: 23px; font-weight: 800; color: #e6e9ee; margin-left: auto; letter-spacing: -0.01em; }
+  /* 단속 카드에 '내 속도 · 제한 50'이 떠 있으면 왼쪽 아래 큰 속도 옆 제한 표지는 겹치므로 숨긴다 (2026-11-14 요청) */
+  #app.tesla:has(#mySpeed:not([hidden])) #limitSign { display: none !important; }
   #app.tesla .myspeed.over { background: #e53935; box-shadow: 0 6px 18px rgba(229, 57, 53, .45); animation: overblink2 1s ease-in-out infinite; }
   #app.tesla .myspeed.over span, #app.tesla .myspeed.over em { color: #ffe0e0; }
   @keyframes overblink2 { 50% { background: #b71c1c; } }
@@ -1582,7 +1584,7 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.14-93"></script>
-<script src="app.js?v=2026.11.14-93"></script>
+<script src="icons.js?v=2026.11.14-94"></script>
+<script src="app.js?v=2026.11.14-94"></script>
 </body>
 </html>

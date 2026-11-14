@@ -492,10 +492,12 @@
       n1000++;
       const tg = t.camState.target;
       const okTarget = !!tg && sameCam(tg.c, C);
-      const okSign = visible('#limitSign') && text('#limitVal') === String(L);
+      // 제한 속도는 왼쪽 아래 표지 또는 (테슬라 화면) 단속 카드의 '제한 50' 한 곳에만 (2026-11-14: 둘 다 뜨면 겹친다)
+      const inCard = visible('#mySpeed') && text('#mySpeedLim') === '제한 ' + L, onSign = visible('#limitSign') && text('#limitVal') === String(L);
+      const okSign = inCard !== onSign;
       const okSpeed = hasCls('#speed', 'over');
       if (!okTarget || !okSign || !okSpeed) {
-        if (bad.length < 4) bad.push(r0(d) + 'm:' + (!okTarget ? ' no-target' : '') + (!okSign ? ' sign(' + (visible('#limitSign') ? text('#limitVal') : 'hidden') + ')' : '') + (!okSpeed ? ' speed-not-over' : ''));
+        if (bad.length < 4) bad.push(r0(d) + 'm:' + (!okTarget ? ' no-target' : '') + (!okSign ? ' sign(' + (visible('#limitSign') ? text('#limitVal') : 'hidden') + '/card ' + (inCard ? 'shown' : 'hidden') + ')' : '') + (!okSpeed ? ' speed-not-over' : ''));
         else bad.push('…');
       }
       if (d < 590) {
@@ -506,7 +508,7 @@
     return {
       pass: n1000 >= 10 && n600 >= 5 && bad.length === 0,
       detail: 'limit ' + L + ', driving ' + (L + 20) + ' km/h; ' + n1000 + ' samples <390 m, ' + n600 + ' samples <390 m (card over)' +
-        (bad.length ? '; problems: ' + bad.join('; ') : '; #limitSign=' + L + ', #speed.over, #camCard.over all held'),
+        (bad.length ? '; problems: ' + bad.join('; ') : '; limit ' + L + ' shown once, #speed.over, #camCard.over all held'),
     };
   }
 
@@ -2732,6 +2734,7 @@
     { id: 'S62', name: 'S62 Naver guide codes → icons: roundabout exits, overpass/underpass/side road not as turns, hi-pass/one-toll gates, rest area, entry/exit ahead', fn: s62 },
     { id: 'S63', name: 'S63 car icon choice (cute car, my Model Y grey, red, white, arrows): marker swaps, keeps the heading, saved', fn: s63 },
     { id: 'S64', name: 'S64 no-parking cameras while navigating: nothing on the way, only within 700 m of the destination (ahead + around the destination)', fn: s64 },
+    { id: 'S65', name: 'S65 auto zoom: 17 while driving even before a turn; the close-up 18 only within 300 m of the destination', fn: s65 },
     { id: 'S58', name: "S58 no-parking cameras: '주정차 단속' only ahead in my direction, when slow (no sound); not behind or on a side street; setting off", fn: s58 },
     { id: 'S57', name: 'S57 fast reroute: wrong-way turn caught in 2 fixes, start asked ahead of the car, a new route that starts behind the car is retried at once (only once)', fn: s57 },
   ];
@@ -2919,6 +2922,28 @@
     }
     const ok = r.fastQuiet && r.slowShown && /^(5\d|6\d)m$/.test(r.dist) && r.markers === 1 && r.keep30 && r.gone40 && r.markersFast === 0 && r.offHidden &&
       r.behindHidden && r.sideHidden && r.sideMarkers === 0;
+    return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + r[k]).join(', ') };
+  }
+
+  // S65: 자동 배율 — 가는 중에는 회전 앞이라도 17, 건물이 보일 만큼(18)은 목적지 300m 안에서만 (2026-11-14 요청)
+  async function s65() {
+    const t = T(), R = buildNavRoute(), r = {}, m = t.getMap(), orig = m.setZoom;
+    const calls = [];
+    try {
+      await planAndStart(R);
+      t.setFollowing(true);
+      m.setZoom = function (z) { calls.push(z); return orig.call(this, z); };
+      const run = (from, to) => { t.zoomCtl.last = 0; t.zoomCtl.manualUntil = 0; for (let s = from; s <= to; s += 12) { const a = pointAt(R, s); feed(a.p, 12, a.h); } };
+      run(380, 420);                        // 우회전(600m) 200m 앞, 시속 43km
+      r.turn = calls.length ? calls.slice(-1)[0] : Math.round(m.getZoom());   // 이미 17 이면 바꾸지 않는다
+      r.turnNo18 = !calls.includes(18);
+      run(R.total - 300, R.total - 250);    // 목적지 250m 앞
+      r.arrive = calls.slice(-1)[0];
+    } finally {
+      m.setZoom = orig;
+      t.endNav(); softReset();
+    }
+    const ok = r.turn === 17 && r.turnNo18 && r.arrive === 18;
     return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + r[k]).join(', ') };
   }
 

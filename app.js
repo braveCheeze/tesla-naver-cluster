@@ -49,7 +49,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-93'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-94'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   // 브라우저에 저장된 예전 index.html 이 새 app.js 를 불러온 경우(화면 요소가 맞지 않아 버튼 연결에서 멈춘다):
@@ -3778,9 +3778,12 @@
     $('#navEta').textContent = '도착 ' + hhmm(new Date(Date.now() + remMs));
   }
 
-  // 주행 중에는 가까이 보는 것이 기본. 빠를수록 한 단계씩 넓게, 회전 지점 앞에서는 다시 가깝게
+  // 주행 중 배율: 17 이 기본, 시속 100km 넘으면 16.
+  // 2026-11-14 요청('건물이 보일 만큼 가까이 보는 건 도착하는 건물에 가까워질 때, 가는 중 회전마다 할 필요는 없다'):
+  // 예전에는 시속 60km 아래와 회전 300m 앞에서 18 로 당겼다. 이제 18 은 목적지까지 남은 길 300m 안에서만
   const zoomCtl = { last: 0, manualUntil: 0, stillSince: 0 };
-  const speedZoom = (v) => (v < 5 ? 17 : v < 60 ? 18 : v <= 100 ? 17 : 16);
+  const ZOOM_ARRIVE_M = 300;
+  const speedZoom = (v) => (v <= 100 ? 17 : 16);
   function autoZoom(f) {
     const v = state.speedKmh;
     if (v >= 5) zoomCtl.stillSince = 0;
@@ -3789,7 +3792,7 @@
     if (f.t - zoomCtl.last < 4000) return;
     const cur = mapA.getZoom();
     let z;
-    if (nav.active && nav.dg != null && nav.dg < 300) z = 18;
+    if (nav.active && nav.remain != null && nav.remain < ZOOM_ARRIVE_M) z = 18;
     else if (v >= 5) {
       z = speedZoom(v);
       // 경계 속도 근처에서는 줌이 오락가락하지 않게 지금 단계를 유지
