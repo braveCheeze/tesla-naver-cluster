@@ -44,7 +44,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-71'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-72'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   // 브라우저에 저장된 예전 index.html 이 새 app.js 를 불러온 경우(화면 요소가 맞지 않아 버튼 연결에서 멈춘다):
@@ -131,6 +131,11 @@
     return (toDeg(Math.atan2(y, x)) + 360) % 360;
   }
   const angleDiff = (a, b) => Math.abs(((a - b) % 360 + 540) % 360 - 180);
+  // 점 p 에서 방향 h(도)로 d 미터 간 점 (짧은 거리용 평면 근사)
+  function aheadPt(p, h, d) {
+    const kx = Math.cos(toRad(p.lat)) * 111320, ky = 110540;
+    return { lat: p.lat + Math.cos(toRad(h)) * d / ky, lng: p.lng + Math.sin(toRad(h)) * d / kx };
+  }
   const turn = (a) => (a % 360 + 540) % 360 - 180; // -180..180 로 정규화
   // 점 p 를 선분 a-b 에 투영 (짧은 거리용 평면 근사)
   function projectSeg(p, a, b) {
@@ -1857,7 +1862,7 @@
   const nav = {
     active: false, preview: false, dest: null, route: null, pts: null, cum: null, total: 0,
     seg: 0, along: 0, remain: null, next: null, dg: null, gi: 0, guides: [], said: {},
-    off: 0, lastReroute: 0, busy: false, lastTraffic: 0,
+    off: 0, lastReroute: 0, busy: false, lastTraffic: 0, rerouted: false, quickLeft: 0, routeMs: 0,
     onRoute: false, onCount: 0, gap: 12000, gen: 0, byDemo: false,
     routeCams: null, routeCamList: [], // 경로 위 카메라 (경로가 바뀌면 다시 계산)
   };
@@ -2047,8 +2052,11 @@
     try {
       // 처음 길찾기는 추천 경로 여러 개(추천·빠른 길·무료 도로)를 받아 고르게 하고,
       // 교통 갱신은 지금 안내 중인 옵션으로, 경로 이탈 재탐색은 같은 목적지를 '추천' 경로로 다시 묻는다
+      // 달리는 중 다시 찾을 때(경로 이탈·재추천)는 답을 기다리는 동안 갈 거리만큼 앞에서 출발하는 경로를 묻는다
+      const ahead = reroute === true || reroute === 'manual';
+      const startOf = () => { const s0 = ahead ? rerouteStart() : state.fix; return s0.lng.toFixed(6) + ',' + s0.lat.toFixed(6); };
       const q = {
-        start: state.fix.lng.toFixed(6) + ',' + state.fix.lat.toFixed(6),
+        start: startOf(),
         goal: dest.lng.toFixed(6) + ',' + dest.lat.toFixed(6),
       };
       // reroute: false 새 목적지(추천 경로 여럿) · 'traffic' 교통 갱신 · 'compare' 길안내 중 경로 비교(추천 경로 여럿, 안내는 계속)
@@ -2059,13 +2067,18 @@
       // 경유지가 있으면 모든 길찾기(재탐색·교통 갱신·비교 포함)에 같이 보낸다
       if (nav.via && nav.via.length) q.waypoints = nav.via.map((v) => v.lng.toFixed(6) + ',' + v.lat.toFixed(6)).join('|');
       if (reroute === 'compare' || reroute === 'manual') toast(reroute === 'compare' ? '다른 경로를 찾는 중…' : '추천 경로를 다시 찾는 중…', '', 3000);
-      // 차량 LTE 가 느릴 수 있어 20초까지 기다리고, 시간 초과면 한 번 더 시도한다
+      // 차량 LTE 가 느릴 수 있어 20초까지 기다리고, 시간 초과면 한 번 더 시도한다.
+      // 경로 이탈 재탐색은 늦게 온 답이 이미 쓸모없으므로(차가 그만큼 더 갔다) 9초에 끊고, 지금 자리에서 다시 묻는다
+      const waitMs = reroute === true ? 9000 : 20000, t0 = Date.now();
       let res;
-      try { res = await api('/route', q, null, 20000); } catch (e1) {
+      try { res = await api('/route', q, null, waitMs); } catch (e1) {
         if (e1.name !== 'AbortError' && !/abort/i.test(e1.message)) throw e1;
         if (gen !== nav.gen) return;
-        res = await api('/route', q, null, 20000);
+        if (ahead) q.start = startOf();
+        res = await api('/route', q, null, waitMs);
       }
+      const took = Date.now() - t0; // 다음 재탐색 출발점을 얼마나 앞에 둘지 정하는 데 쓴다
+      nav.routeMs = nav.routeMs ? Math.round(nav.routeMs * 0.6 + took * 0.4) : took;
       if (gen !== nav.gen || (reroute && !nav.active)) return;
       // 응답에 경로가 비어 있으면 지금 안내를 그대로 두고 실패로 처리한다
       const okRoute = (x) => x && Array.isArray(x.path) && x.path.length >= 2;
@@ -2147,6 +2160,8 @@
     nav.total = nav.cum[nav.cum.length - 1];
     nav.seg = 0; nav.along = 0; nav.off = 0; nav.gi = 0;
     nav.onRoute = false; nav.onCount = 0;
+    // 달리는 중 다시 찾은 경로(재탐색·재추천·경유지·교통 갱신)는 출발 직후 유예(주차장 출발용 20초) 없이 바로 벗어남을 센다
+    nav.rerouted = !!keepAlerts;
     nav.setAt = state.fix ? state.fix.t : Date.now(); nav.drawnSeg = 0; nav.drawnAlong = 0; nav.drawnAt = 0;
     nav.routeCams = null; nav.routeCamList = []; camState.markerAt = null; // 경로 위 카메라·지도 표시를 새 경로로
     nav.routeBumps = null; bumpState.markerKey = '';
@@ -2164,6 +2179,15 @@
   const ALT_OPTIONS = 'traoptimal:trafast:traavoidtoll'; // 추천을 맨 앞에 (같은 길이면 '추천 · 빠른 길'로 합쳐 보인다)
   // 경로를 벗어나 다시 찾을 때는 같은 목적지를 '추천'(실시간 최적) 경로로. 무료 도로를 골랐으면 그 조건은 지킨다
   const rerouteOption = () => (nav.option === 'traavoidtoll' ? 'traavoidtoll' : 'traoptimal');
+  // 재탐색 출발점: 지금 위치에서 진행 방향으로 (속도 × 답이 오기까지 걸리는 시간) 앞, 최대 60m.
+  // 지금 자리에서 물으면 답이 왔을 때 차는 이미 그 앞 교차로를 지나 있어 새 경로가 차 뒤에서 시작한다
+  // (2026-11-14 신갈: 상갈교사거리를 지나 동쪽으로 가는데 새 경로가 뒤 교차로에서 북쪽으로 시작)
+  function rerouteStart() {
+    const f = state.fix;
+    if (state.heading === null || state.speedKmh < 15) return f;
+    const secs = Math.min(4, Math.max(1.5, (nav.routeMs || 2000) / 1000 + 0.5));
+    return aheadPt(f, state.heading, Math.min(60, state.speedKmh / 3.6 * secs));
+  }
   const ALT_LABEL = { trafast: '빠른 길', traoptimal: '추천', traavoidtoll: '무료 도로', tracomfort: '편한 길', traavoidcaronly: '전용도로 회피' };
   // 사실상 같은 경로(거리·시간이 거의 같음)는 하나로 합치고 이름을 이어 붙인다
   function dedupAlts(list) {
@@ -2402,26 +2426,35 @@
     // 경로에서 이만큼 떨어지면 벗어난 것으로 본다. 테슬라 GPS 는 ±2~5m 로 정확해서
     // 옆으로 나란히 가는 다른 도로(보통 30m 이상)로 잘못 들어선 것도 잡을 수 있게 30m 를 기본으로 한다
     const offLimit = Math.min(50, Math.max(30, (f.acc || 10) * 2));
-    nav.onRoute = best.dist <= offLimit;
+    // 가장 가까운 경로 구간과 달리는 방향이 50° 넘게 다르고 18m 넘게 떨어졌으면 다른 길로 들어선 것 (30m 를 기다리지 않는다)
+    let skew = 0;
+    if (useHeading && best.dist > 18 && best.dist < Infinity && nav.cum[best.seg + 1] - nav.cum[best.seg] > 3) {
+      skew = angleDiff(bearing(pts[best.seg], pts[best.seg + 1]), state.heading);
+    }
+    const wrongWay = skew > 50;
+    nav.onRoute = best.dist <= offLimit && !wrongWay;
     if (nav.onRoute) {
       nav.seg = best.seg;
       nav.along = nav.cum[best.seg] + best.t * (nav.cum[best.seg + 1] - nav.cum[best.seg]);
       nav.off = 0;
-      if (++nav.onCount >= 5) nav.gap = 10000; // 경로 위를 잘 따라가면 재탐색 간격 초기화
+      if (++nav.onCount >= 5) { nav.gap = 10000; nav.quickLeft = 0; } // 경로 위를 잘 따라가면 재탐색 간격 초기화
     } else if ((f.acc || 0) < 60 && state.speedKmh > 3 &&
-               (nav.onCount > 0 || f.t - (nav.setAt || 0) > 20000)) {
+               (nav.onCount > 0 || nav.rerouted || f.t - (nav.setAt || 0) > 20000)) {
       // 출발점이 도로에서 떨어진 곳(주차장 등)이면 경로에 한 번 올라탄 뒤부터 센다.
       // 다만 20초가 지나도 경로에 못 올라탔다면(엉뚱한 경로) 그때부터는 센다
       nav.off++;
     }
-    // 확실히 다른 길(80m 넘게 벗어남)이면 2번, 아니면 3번 연속 확인되면 다시 찾는다
-    const need = best.dist > 80 ? 2 : 3;
-    if (nav.off >= need && f.t - nav.lastReroute > nav.gap && !nav.busy) {
+    // 확실히 다른 길(80m 넘게 벗어남·다른 방향)이면 2번, 아니면 3번 연속 확인되면 다시 찾는다
+    const need = best.dist > 80 || wrongWay ? 2 : 3;
+    // 다시 찾은 경로에 한 번도 못 올라탔으면(답이 오는 사이 차가 경로 시작점을 지나쳤으면) 간격을 기다리지 않고 한 번 바로 다시 찾는다
+    const quick = nav.quickLeft > 0 && nav.rerouted && nav.onCount === 0 && f.t - (nav.setAt || 0) > 2500;
+    if (nav.off >= need && !nav.busy && (quick || f.t - nav.lastReroute > nav.gap)) {
       nav.lastReroute = f.t;
       nav.off = 0; nav.onCount = 0;
-      nav.gap = Math.min(nav.gap * 2, 40000); // 계속 벗어나면 간격을 늘리되 40초를 넘기지 않는다
-      say('경로를 벗어났습니다. 다시 탐색합니다.', 1, true);
-      toast('경로를 벗어나 같은 목적지로 다시 찾는 중… (추천 경로)', '', 4000);
+      if (quick) nav.quickLeft = 0;
+      else { nav.quickLeft = 1; nav.gap = Math.min(nav.gap * 2, 40000); } // 계속 벗어나면 간격을 늘리되 40초를 넘기지 않는다
+      if (!quick) say('경로를 벗어났습니다. 다시 탐색합니다.', 1, true);
+      toast(quick ? '지금 위치에 맞춰 경로를 다시 찾는 중…' : '경로를 벗어나 같은 목적지로 다시 찾는 중… (추천 경로)', '', 4000);
       planRoute(nav.dest, true);
     }
     // 지나온 경로는 지운다 (내 차 앞의 남은 경로만 그린다)

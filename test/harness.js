@@ -626,12 +626,18 @@
     await waitFor(() => !t.nav.busy, 2000, 20);   // let the reroute finish before the next reset
     const calls = stub.since(c0, '/route');
     const rq = calls[1] ? calls[1].query : null;
-    const startOk = !!rq && !!offFix && rq.start === offFix.lng.toFixed(6) + ',' + offFix.lat.toFixed(6);
+    // 출발점은 벗어난 자리에서 진행 방향(북쪽 0°)으로 조금 앞 (답이 오는 동안 갈 거리, 5–60m)
+    let ahead = null;
+    if (rq && offFix) {
+      const [lng, lat] = rq.start.split(',').map(Number), sp = { lat, lng };
+      ahead = { d: r0(hav(offFix, sp)), b: r0(brg(offFix, sp)) };
+    }
+    const startOk = !!ahead && ahead.d >= 5 && ahead.d <= 60 && (ahead.b <= 10 || ahead.b >= 350);
     return {
       pass: before === 1 && !!got && startOk && t.nav.active,
       detail: '/route calls: ' + before + ' before going off-route, ' + calls.length + ' after' +
         (firedAfter ? ' (reroute fired on off-route fix #' + firedAfter + ', seen after ' + waited + ' ms)' : ' (no reroute)') +
-        (rq ? '; reroute start=' + rq.start + (startOk ? ' (= off-route fix)' : ' (MISMATCH)') : '') +
+        (rq ? '; reroute start=' + rq.start + (ahead ? ' (' + ahead.d + ' m ahead of the off-route fix at ' + ahead.b + '°)' : '') + (startOk ? '' : ' (MISMATCH)') : '') +
         '; nav.active=' + t.nav.active,
     };
   }
@@ -2631,6 +2637,7 @@
     { id: 'S54', name: 'S54 keep-left/right arrows for 왼쪽/오른쪽 방향·도로 주행, OUT/IN for highway exit/entry', fn: s54 },
     { id: 'S55', name: "S55 road caution signs (slippery, rockfall…): 300 m ahead on our side of the route, '주의' just after, setting off", fn: s55 },
     { id: 'S56', name: "S56 dragging the heading-up map keeps the direction, shows '내 위치로', returns after 5 s; pinch/wheel zoom keeps following", fn: s56 },
+    { id: 'S57', name: 'S57 fast reroute: wrong-way turn caught in 2 fixes, start asked ahead of the car, a new route that starts behind the car is retried at once (only once)', fn: s57 },
   ];
 
   // S55: 주의 표지 (전국도로안전표지표준데이터의 주의표지, data/signs.json · tools/build_signs.py, 2026-11-14 요청).
@@ -2639,6 +2646,65 @@
   //      (b) 경로 왼쪽 9m 오르막 표지(250m)는 반대 방향용 → 안 알림  (c) 300m 떨어진 표지 → 안 알림
   //      (d) 꺾은 뒤 동쪽 길 오른쪽(남쪽) 7m 낙석 표지 → '낙석 주의'  (e) 길안내 없이 같은 길: 바로 앞 표지만
   //      (f) 설정을 끄면 숨김  (g) 실제 data/signs.json 이 읽힌다 (지자체 자료 있는 곳만)
+  // S57: 길을 벗어나면 빠르게 다시 찾는다 (2026-11-14 신갈 주행: 새 경로가 이미 지나친 교차로에서 북쪽으로 시작해
+  //      차는 동쪽으로 가는데 20초 넘게 엉뚱한 경로를 보여 줌)
+  //   (a) 북쪽으로 가다 오른쪽(동쪽) 길로 꺾으면 30m 를 기다리지 않고 2번(2초) 만에 벗어남으로 본다
+  //   (b) 재탐색 출발점은 차 앞쪽(동쪽)
+  //   (c) 새 경로가 차 뒤에서 시작해(그 교차로에서 북쪽으로) 한 번도 못 올라타면 20초를 기다리지 않고 바로 한 번 더 찾는다
+  //   (d) 그 다음 경로도 엉뚱하면 그때는 간격(20초)을 지킨다 (끝없이 묻지 않게)
+  //   (e) 올바른 경로가 오면 올라타고 더 묻지 않는다
+  async function s57() {
+    const t = T(), R = buildNavRoute(), r = {};
+    const mk = (pts) => {   // 점들로 만든 경로 응답 (Worker 모양)
+      const path = pts.map((p) => [round6(p.lng), round6(p.lat)]);
+      const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
+      let tot = 0; for (let i = 1; i < P.length; i++) tot += hav(P[i - 1], P[i]);
+      return { distance: r0(tot), duration: r0(tot / 12 * 1000), tollFare: 0, fuelPrice: 0, path,
+        guide: [{ i: P.length - 1, t: 88, s: '목적지', d: r0(tot), ms: r0(tot / 12 * 1000) }], sections: [] };
+    };
+    await planAndStart(R);
+    for (let s = 15; s <= 90; s += 15) { const a = pointAt(R, s); feed(a.p, 15, a.h); }
+    const A = pointAt(R, 90).p;   // 여기서 북쪽 경로를 두고 동쪽 길로 꺾는다
+    // 재탐색 답: 1·3번째는 차 뒤 교차로(A)에서 북쪽으로 시작하는 엉뚱한 경로, 4번째는 차 앞에서 동쪽으로 가는 올바른 경로
+    const stale = mk([A, dest(A, 0, 150), dest(A, 0, 300), dest(dest(A, 0, 300), 90, 300)]);
+    let good = null, n = 0;
+    stub.canned['/route'] = () => { n++; return n === 3 && good ? good : stale; };
+    const c0 = stub.calls.length;
+    let pos = A, k = 0, firstAt = null, trigFix = null;
+    const step = () => { k++; pos = dest(pos, 90, 15); return feed(pos, 15, 90); };
+    while (k < 6 && firstAt === null) { const f = step(); if (stub.count('/route', c0) >= 1) { firstAt = k; trigFix = f; } }
+    r.caughtAfter = firstAt;                                         // (a) 꺾은 뒤 몇 번째 GPS 에서
+    const q1 = stub.since(c0, '/route')[0];
+    if (q1) {
+      const [lng, lat] = q1.query.start.split(',').map(Number);
+      r.startAhead = r0(hav(trigFix, { lat, lng })); r.startBrg = r0(brg(trigFix, { lat, lng }));   // (b)
+    }
+    await waitFor(() => !t.nav.busy, 2000, 20);
+    // (c) 새(엉뚱한) 경로가 온 뒤 다시 묻기까지
+    const k1 = k;
+    while (k < k1 + 10 && stub.count('/route', c0) < 2) { step(); await waitFor(() => !t.nav.busy, 2000, 20); }
+    r.retryAfter = stub.count('/route', c0) >= 2 ? k - k1 : null;
+    const q2 = stub.since(c0, '/route')[1];
+    // 다음 답을 위해 올바른 경로(지금 차 자리에서 동쪽)를 준비: 세 번째 질문의 답
+    good = mk([pos, dest(pos, 90, 200), dest(pos, 90, 400), dest(pos, 90, 600)]);
+    // (d) 두 번째 답도 엉뚱한 경로 → 세 번째 질문은 간격(20초)을 지켜야 한다
+    const k2 = k;
+    while (k < k2 + 30 && stub.count('/route', c0) < 3) { step(); await waitFor(() => !t.nav.busy, 2000, 20); }
+    r.thirdAfter = stub.count('/route', c0) >= 3 ? k - k2 : null;
+    // 세 번째 답(올바른 경로)은 질문 때 만든 good 이 아니라 차가 더 간 자리라 차 뒤에서 시작하지만, 같은 길(동쪽) 위라 올라탄다
+    const k3 = k;
+    for (let j = 0; j < 8; j++) { step(); await waitFor(() => !t.nav.busy, 2000, 20); }
+    r.joined = t.nav.onRoute === true;
+    r.extraCalls = stub.count('/route', c0) - 3;
+    r.active = t.nav.active;
+    t.endNav(); softReset();
+    const ok = r.caughtAfter !== null && r.caughtAfter <= 3 && r.startAhead >= 5 && r.startAhead <= 60 && Math.abs(r.startBrg - 90) <= 10 &&
+      r.retryAfter !== null && r.retryAfter <= 5 && r.thirdAfter !== null && r.thirdAfter >= 15 && r.joined && r.extraCalls === 0 && r.active;
+    return { pass: !!ok, detail: 'caught after ' + r.caughtAfter + ' fixes (want ≤3); start ' + r.startAhead + ' m ahead at ' + r.startBrg + '°; ' +
+      'stale route retried after ' + r.retryAfter + ' s (want ≤5); next retry after ' + r.thirdAfter + ' s (want ≥15); joined good route ' + r.joined +
+      ', extra calls ' + r.extraCalls + (k3 ? '' : '') };
+  }
+
   async function s55() {
     const t = T(), R = buildNavRoute();
     const north = (m) => dest(NAV_ORIGIN, 0, m);
