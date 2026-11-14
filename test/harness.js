@@ -1330,6 +1330,32 @@
     };
   }
 
+  // S35: 가평 계량교(가화로) 제한 30 카메라 — 원본은 '신호 전용'이라 안 잡혔다. 보정 후 신호·과속으로 잡히고
+  //      과속이면 빨갛게, 표지 위에 작은 신호등 아이콘. 양방향(마장리→대곡리 H4877, 대곡리→마장리 H4878) 모두
+  async function s35() {
+    const t = T(), A = { lat: 37.83903, lng: 127.5067 }, B = { lat: 37.84072, lng: 127.50646 };
+    const run = (cam, bearing) => {
+      softReset();
+      const from = dest(cam, (bearing + 180) % 360, 600);
+      let o = null;
+      for (let s = 0; s <= 590 && !o; s += 10) {
+        feed(dest(from, bearing, s), 45 / 3.6, bearing);
+        const tg = t.camState.target;
+        if (tg && sameCam(tg.c, cam) && tg.d < 300) {
+          o = { kind: tg.c[3], limit: tg.c[2], label: text('#camType'), sig: hasCls('#camCard', 'sigspeed'), over: hasCls('#camCard', 'over') };
+        }
+      }
+      return o;
+    };
+    const south = run(A, 180), north = run(B, 0);
+    softReset();
+    const ok = (o) => !!o && o.kind === 3 && o.limit === 30 && o.label === '신호·과속 단속' && o.sig && o.over;
+    return {
+      pass: ok(south) && ok(north),
+      detail: '계량교 남행(H4877): ' + JSON.stringify(south) + (ok(south) ? '✓' : '✗') + ' | 승안삼거리 북행(H4878): ' + JSON.stringify(north) + (ok(north) ? '✓' : '✗'),
+    };
+  }
+
   // S25: 하이패스 — 경로 안내에 톨게이트(type 121)가 있으면 2km 앞부터 카드(이름·거리·통행료·하이패스 차로 이용)와 음성
   async function s25() {
     const t = T();
@@ -1663,6 +1689,7 @@
     { id: 'S32', name: 'S32 stopped → north up (labels upright)', fn: s32 },
     { id: 'S33', name: 'S33 parked & untouched → check for new version', fn: s33 },
     { id: 'S34', name: 'S34 Tesla mode: camera → my speed → small zone sign, red when over', fn: s34 },
+    { id: 'S35', name: 'S35 Gapyeong 계량교 30 camera (data fix): 신호·과속, alerts when over', fn: s35 },
   ];
 
   // ---------------------------------------------------------------- runner

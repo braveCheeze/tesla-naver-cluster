@@ -204,6 +204,15 @@
   .cammk.k8 { border-color: #2979ff; } /* 이동식 */
   .cammk.k9 { border-color: #7c4dff; }
   .cammk.z1, .cammk.z2 { background: #ffd200; } /* 노인·어린이 보호구역 */
+  /* 신호·과속 카메라: 제한속도 표지 오른쪽 위에 작은 가로 신호등(빨강·노랑·초록) */
+  .cammk.k3, .camcard.sigspeed .cam-sign, .mini-sign.k3 { position: relative; }
+  .cammk.k3::after, .camcard.sigspeed .cam-sign::after, .mini-sign.k3::after {
+    content: ''; position: absolute; width: 20px; height: 8px; left: 50%; top: -7px; transform: translateX(-50%);
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 12'%3E%3Crect x='.6' y='.6' width='28.8' height='10.8' rx='4' fill='%23222' stroke='%23fff' stroke-width='1.2'/%3E%3Ccircle cx='7.5' cy='6' r='2.8' fill='%23ff3b30'/%3E%3Ccircle cx='15' cy='6' r='2.8' fill='%23ffcc00'/%3E%3Ccircle cx='22.5' cy='6' r='2.8' fill='%2334c759'/%3E%3C/svg%3E") center / contain no-repeat;
+    filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, .45));
+  }
+  .camcard.sigspeed .cam-sign::after { width: 32px; height: 13px; top: -10px; }
+  .mini-sign.k3::after { width: 16px; height: 6.5px; top: -5px; }
 
   .searchbtn {
     position: absolute; left: 16px; top: 16px; z-index: 1000;
@@ -990,6 +999,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-32"></script>
+<script src="app.js?v=2026.11.14-33"></script>
 </body>
 </html>

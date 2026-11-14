@@ -40,7 +40,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-32'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-33'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -1106,7 +1106,7 @@
       // 길안내 중이면 경로를 따라간 거리, 아니면 직선 거리
       const d = pk.at != null && nav.active ? Math.max(0, pk.at - nav.along)
         : state.fix ? haversine(state.fix, { lat: pk.c[0], lng: pk.c[1] }) : pk.d;
-      nxEl.innerHTML = '<span class="mini-sign">' + pk.c[2] + '</span>다음 단속 <b>' + fmtDist(d) + '</b>';
+      nxEl.innerHTML = '<span class="mini-sign' + (pk.c[3] === 3 ? ' k3' : '') + '">' + pk.c[2] + '</span>다음 단속 <b>' + fmtDist(d) + '</b>';
     }
     if (!tg || !prefs.cams) {
       card.hidden = true;
@@ -1122,6 +1122,7 @@
       card.classList.toggle('over', speedCam && state.speedKmh > tg.c[2] + 1 && tg.d < 600);
       card.classList.toggle('signal', !speedCam);
       card.classList.toggle('mobile', tg.c[3] === 8); // 이동식 단속은 파란색
+      card.classList.toggle('sigspeed', tg.c[3] === 3); // 신호·과속: 표지 위에 작은 신호등
       // 어린이·노인 보호구역: 도로 주의 표지 모양 타일 (삼각 표지 + 빨간 띠에 남은 거리 + '어린이보호' 와 제한속도)
       const zone = tg.c[6] === 2 ? 'kid' : tg.c[6] === 1 ? 'elder' : '';
       card.classList.toggle('zonecam', !!zone);
