@@ -2686,7 +2686,8 @@
     { id: 'S56', name: "S56 dragging the heading-up map keeps the direction, shows '내 위치로', returns after 5 s; pinch/wheel zoom keeps following", fn: s56 },
     { id: 'S59', name: "S59 destination → its parking entrance ('…주차장입구' from place search), '정문으로' switches back; no entrance = unchanged", fn: s59 },
     { id: 'S60', name: 'S60 white turn arrow on the map at the next turn (400 m before), destination pin + dots from the route end', fn: s60 },
-    { id: 'S58', name: "S58 no-parking cameras: '주정차 단속' only when slow and near (no sound), map signs at low speed, setting off", fn: s58 },
+    { id: 'S61', name: 'S61 highway rest areas on the route: only my side (right) or both-way ones, duplicates merged, next within 30 km + the one after; not on local roads', fn: s61 },
+    { id: 'S58', name: "S58 no-parking cameras: '주정차 단속' only ahead in my direction, when slow (no sound); not behind or on a side street; setting off", fn: s58 },
     { id: 'S57', name: 'S57 fast reroute: wrong-way turn caught in 2 fixes, start asked ahead of the car, a new route that starts behind the car is retried at once (only once)', fn: s57 },
   ];
 
@@ -2858,11 +2859,21 @@
       t.prefs.parking = false;
       feed(dest(P, 180, 20), 3, 0); feed(dest(P, 180, 15), 3, 0);
       r.offHidden = !card();
+      t.prefs.parking = true;
+      // 진행 방향 뒤 (지나와서 멀어지는 중, 40m 뒤): 안 뜬다 (2026-11-14 요청: 내 진행 방향 앞쪽 것만)
+      feed(dest(P, 0, 35), 3, 0); feed(dest(P, 0, 40), 3, 0);
+      r.behindHidden = !card();
+      // 옆길 (60m 옆을 나란히 북쪽으로): 안 뜬다
+      const side = dest(P, 90, 60);
+      feed(dest(side, 180, 50), 3, 0); feed(dest(side, 180, 45), 3, 0);
+      r.sideHidden = !card();
+      r.sideMarkers = marks();
     } finally {
       t.prefs.parking = prev;
       try { const j = await (await realFetch(new URL('../data/parking.json', location.href).href)).json(); t.setParkingData(j); } catch (e) { /* 다음 실행 때 다시 */ }
     }
-    const ok = r.fastQuiet && r.slowShown && /^(5\d|6\d)m$/.test(r.dist) && r.markers === 1 && r.keep30 && r.gone40 && r.markersFast === 0 && r.offHidden;
+    const ok = r.fastQuiet && r.slowShown && /^(5\d|6\d)m$/.test(r.dist) && r.markers === 1 && r.keep30 && r.gone40 && r.markersFast === 0 && r.offHidden &&
+      r.behindHidden && r.sideHidden && r.sideMarkers === 0;
     return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + r[k]).join(', ') };
   }
 
@@ -2934,6 +2945,44 @@
       softReset();
     }
     const ok = r.pin && r.dots >= 3 && r.farNone && r.near === 4 && r.endFromTurn >= 0 && r.endFromTurn <= 3 && r.after === 0 && r.cleared;
+    return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + r[k]).join(', ') };
+  }
+
+  // S61: 고속도로 휴게소 (2026-11-14 요청). 북쪽→동쪽으로 가는 경로 옆: 오른쪽 휴게소·양방향 휴게소만, 왼쪽(반대 방향)·먼 것은 빼고,
+  //      같은 자리 두 이름(복합휴게소 + 방향 휴게소)은 하나로
+  async function s61() {
+    const t = T(), r = {};
+    const mkRest = (R) => {
+      const at = (s, side, m) => dest(pointAt(R, s).p, side, m);
+      const D = at(100, 270, 100), B = at(300, 270, 150), A = at(760, 180, 120), A2 = at(780, 180, 110), E = at(350, 90, 900);
+      return { count: 5, items: [[D.lat, D.lng, '양방향휴게소', '', '테스트선'], [B.lat, B.lng, '왼쪽휴게소', '서울', '테스트선'],
+        [A.lat, A.lng, '오른쪽휴게소', '부산', '테스트선'], [A2.lat, A2.lng, '오른쪽복합휴게소', '', '테스트선'], [E.lat, E.lng, '먼휴게소', '부산', '테스트선']] };
+    };
+    try {
+      const R = buildNavRoute();
+      R.route.sections = [{ i: 0, n: 9, name: '테스트고속도로', speed: 90, cong: 1 }];
+      t.setRestData(mkRest(R));
+      await planAndStart(R);
+      let a = pointAt(R, 50); feed(a.p, 25, a.h); t.renderNav();
+      r.found = (t.ensureRouteRest() || []).map((x) => x.name).join(',');
+      r.card1 = visible('#restCard') ? text('#restName') + ' ' + text('#restDist') + ' / ' + text('#restNext') : 'hidden';
+      r.markers = (t.getMap().restMk || []).length;
+      a = pointAt(R, 330); feed(a.p, 25, a.h); t.renderNav();
+      r.card2 = visible('#restCard') ? text('#restName') + ' ' + text('#restDist') : 'hidden';
+      t.endNav(); softReset();
+      r.endHidden = !visible('#restCard') && !(t.getMap().restMk || []).length;
+      // 같은 경로가 일반도로면 휴게소 없음
+      const R2 = buildNavRoute();
+      t.setRestData(mkRest(R2));
+      await planAndStart(R2);
+      a = pointAt(R2, 50); feed(a.p, 15, a.h); t.renderNav();
+      r.localNone = !visible('#restCard') && !(t.ensureRouteRest() || []).length;
+    } finally {
+      t.endNav(); softReset();
+      try { const j = await (await realFetch(new URL('../data/rest.json', location.href).href)).json(); t.setRestData(j); } catch (e) { /* 다음 실행 때 */ }
+    }
+    const ok = r.found === '양방향휴게소,오른쪽휴게소' && /^양방향휴게소 50m \/ 다음 오른쪽 7\d0m$/.test(r.card1) && r.markers === 2 &&
+      /^오른쪽휴게소 4\d0m$/.test(r.card2) && r.endHidden && r.localNone;
     return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + r[k]).join(', ') };
   }
 

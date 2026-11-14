@@ -28,6 +28,7 @@
     signalCams: store.get('sigcam') === '1', // 신호 전용 카메라 알림 (기본 끔)
     bumps: store.get('bumps') !== '0',       // 과속방지턱 알림 (기본 켬)
     parking: store.get('parking') !== '0',   // 주정차 단속 카메라: 천천히 갈 때만 표시, 소리 없음 (기본 켬)
+    rest: store.get('rest') !== '0',         // 길안내 중 고속도로 휴게소 (기본 켬)
     signs: store.get('signs') !== '0',       // 주의 표지 알림: 미끄러운 도로·낙석·급경사 등 (기본 켬)
     tunnels: store.get('tunnels') !== '0',   // 길안내 중 터널 진입·출구 거리 (기본 켬)
     junction: store.get('junction') !== '0', // 고속도로 진출입·갈림길 그림 (기본 켬)
@@ -47,7 +48,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-85'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-86'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   // 브라우저에 저장된 예전 index.html 이 새 app.js 를 불러온 경우(화면 요소가 맞지 않아 버튼 연결에서 멈춘다):
@@ -422,6 +423,16 @@
     return out;
   }
   function dotEl() { const el = document.createElement('div'); el.className = 'destdot'; return el; }
+  // 휴게소 표지: 파란 네모 + 흰 포크·나이프 (고속도로 휴게소 안내 표지처럼)
+  const REST_SVG = '<svg viewBox="0 0 40 40" aria-hidden="true"><rect x="1.5" y="1.5" width="37" height="37" rx="8" fill="#1d4fb8" stroke="#fff" stroke-width="2.5"/>' +
+    '<path d="M13 9v9.5c0 1.6 1.2 2.8 2.6 3.1V31c0 1.1.8 1.9 1.7 1.9s1.7-.8 1.7-1.9v-9.4c1.4-.3 2.6-1.5 2.6-3.1V9M15.5 9v7.5M18.5 9v7.5" fill="none" stroke="#fff" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>' +
+    '<path d="M27.6 9c-2.6 1.2-4.1 4.4-4.1 8.6 0 2 .9 3.3 2.4 3.8V31c0 1.1.8 1.9 1.7 1.9s1.7-.8 1.7-1.9V9z" fill="#fff"/></svg>';
+  function restEl() {
+    const el = document.createElement('div');
+    el.className = 'restmk';
+    el.innerHTML = REST_SVG;
+    return el;
+  }
   // 주정차 금지 표지: 파란 원 + 빨간 테두리 + 빨간 X
   const PARK_SVG = '<svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="42" fill="#1d4fb8" stroke="#e53935" stroke-width="12"/>' +
     '<path d="M24 24 L76 76 M76 24 L24 76" stroke="#e53935" stroke-width="10" stroke-linecap="round"/></svg>';
@@ -681,6 +692,12 @@
         }));
       });
     },
+    setRests(list) {
+      const N = naver.maps;
+      (this.restMk || []).forEach((m) => m.setMap(null));
+      this.restMk = (list || []).map((x) => new N.Marker({ position: new N.LatLng(x.lat, x.lng), map: this.map, clickable: false, zIndex: 88,
+        icon: { content: restEl(), anchor: new N.Point(12, 12) } }));
+    },
     setTurnArrow(pts) { this._arrow = pts; this.drawArrow(); },
     drawArrow() {
       (this._arrowObjs || []).forEach((o) => o.setMap(null));
@@ -724,6 +741,7 @@
       if (this.parks) this.parks.forEach((m) => m.setMap(null));
       this.parks = new Map();
       (this.destMk || []).forEach((m) => m.setMap(null)); this.destMk = [];
+      (this.restMk || []).forEach((m) => m.setMap(null)); this.restMk = [];
       (this._arrowObjs || []).forEach((o) => o.setMap(null)); this._arrowObjs = []; this._arrow = null;
       this.cams = new Map(); this.bumps = new Map();
       this.clearRoute();
@@ -835,6 +853,13 @@
         }).addTo(this.map));
       });
     },
+    setRests(list) {
+      (this.restMk || []).forEach((m) => m.remove());
+      this.restMk = (list || []).map((x) => L.marker([x.lat, x.lng], {
+        icon: L.divIcon({ html: '<div class="restmk">' + REST_SVG + '</div>', className: 'me-wrap', iconSize: [24, 24], iconAnchor: [12, 12] }),
+        interactive: false, keyboard: false,
+      }).addTo(this.map));
+    },
     setTurnArrow(pts) { this._arrow = pts; this.drawArrow(); },
     drawArrow() {
       (this._arrowObjs || []).forEach((o) => o.remove());
@@ -873,7 +898,7 @@
       this.clearRoute();
       if (this.map) this.map.remove();
       this.map = null; this.marker = null; this.cams = new Map(); this.bumps = new Map(); this.parks = new Map();
-      this.destMk = []; this._arrowObjs = []; this._arrow = null;
+      this.destMk = []; this._arrowObjs = []; this._arrow = null; this.restMk = [];
     },
   };
 
@@ -892,7 +917,7 @@
       mapA.drawRoute(nav.pts, nav.route && nav.route.sections);
       if (nav.onRoute) { nav.drawnAt = 0; drawRemaining(); }
       if (mapA.setDest && nav.dest) mapA.setDest(nav.dest, nav.pts[nav.pts.length - 1]);
-      nav.arrowKey = null;
+      nav.arrowKey = null; restState.key = '';
     }
     camState.markerAt = null;
     if (state.fix) refreshCamMarkers(state.fix);
@@ -1250,13 +1275,85 @@
     $('#bumpLabel').textContent = b.cont ? '연속 과속방지턱' : '과속방지턱';
     $('#bumpDist').textContent = fmtDist(b.d);
   }
+  // ---------- 고속도로 휴게소 (한국도로공사 휴게소 위치정보 202곳, data/rest.json · tools/build_rest.py, 2026-11-14 요청) ----------
+  // 길안내 경로가 고속도로를 지날 때 그 옆 400m 안의 휴게소 중 내 진행 방향 쪽 것만 고른다: 우측 통행이라 경로 오른쪽
+  // (이름에 방향이 없거나 '양방향'이면 양쪽에서 들를 수 있는 휴게소). 다음 휴게소가 30km 안이면 이름·거리와 그다음 휴게소를
+  // 칸에 보여 주고, 지도에는 앞 20km 안의 휴게소를 작은 표지로
+  const rest = { loaded: false, items: [] };
+  const REST_NEAR = 400, REST_SHOW = 30000, REST_MAP = 20000;
+  async function loadRest() {
+    try {
+      const r = await fetch('data/rest.json?v=' + APP_VERSION);
+      if (!r.ok) return;
+      setRestData(await r.json());
+    } catch (e) { /* 데이터가 없어도 나머지는 그대로 */ }
+  }
+  function setRestData(j) {
+    rest.items = ((j && j.items) || []).map((x) => ({ lat: x[0], lng: x[1], name: x[2], dir: x[3] || '', route: x[4] || '' }));
+    rest.loaded = true;
+    nav.routeRest = null;
+  }
+  function ensureRouteRest() {
+    if (!rest.loaded || !nav.pts || nav.pts.length < 2) return [];
+    if (nav.routeRest && nav.routeRestFor === nav.route) return nav.routeRest;
+    const pts = nav.pts, cum = nav.cum;
+    let s0 = 90, w0 = 180, n0 = -90, e0 = -180;
+    for (const q of pts) { if (q.lat < s0) s0 = q.lat; if (q.lat > n0) n0 = q.lat; if (q.lng < w0) w0 = q.lng; if (q.lng > e0) e0 = q.lng; }
+    const pad = 0.006, out = [];
+    for (const r of rest.items) {
+      if (r.lat < s0 - pad || r.lat > n0 + pad || r.lng < w0 - pad || r.lng > e0 + pad) continue;
+      let best = null;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const pr = projectSeg(r, pts[i], pts[i + 1]);
+        if (!best || pr.dist < best.dist) best = { dist: pr.dist, i, t: pr.t };
+      }
+      if (!best || best.dist > REST_NEAR) continue;
+      const both = !r.dir || /양방향/.test(r.dir);
+      if (!both && sideOfSeg(r, pts[best.i], pts[best.i + 1], best.dist) < 0) continue; // 경로 왼쪽 = 반대 방향 휴게소
+      const at = cum[best.i] + best.t * (cum[best.i + 1] - cum[best.i]);
+      if (!(onHighwayAt(at) || /고속도로|고속국도/.test(routeRoadAt(best.i)))) continue; // 옆 일반도로를 지날 때는 아님
+      out.push({ name: r.name, dir: r.dir, at, lat: r.lat, lng: r.lng });
+    }
+    out.sort((x, y) => x.at - y.at);
+    // 같은 자리에 두 이름으로 올라 있는 곳(예: '기흥복합휴게소'와 '기흥휴게소(부산)')은 하나로: 방향이 적힌 쪽을 남긴다
+    const merged = [];
+    for (const r of out) {
+      const prev = merged[merged.length - 1];
+      const real = (x) => !!x.dir && x.dir !== '한쪽'; // '한쪽'은 이름에 방향이 없어 짝으로 미루어 본 것
+      if (prev && r.at - prev.at < 600) { if (!real(prev) && real(r)) merged[merged.length - 1] = r; continue; }
+      merged.push(r);
+    }
+    nav.routeRest = merged; nav.routeRestFor = nav.route;
+    return merged;
+  }
+  const restState = { key: '' };
+  function renderRest() {
+    const el = $('#restCard');
+    const list = nav.active && prefs.rest ? ensureRouteRest() : [];
+    const ahead = list.filter((r) => r.at > nav.along + 30);
+    const next = ahead[0];
+    const show = !!next && next.at - nav.along <= REST_SHOW;
+    el.hidden = !show;
+    if (show) {
+      $('#restName').textContent = next.name;
+      $('#restDist').textContent = fmtDist(next.at - nav.along);
+      const n2 = ahead[1];
+      $('#restNext').textContent = n2 && n2.at - nav.along <= 100000 ? '다음 ' + n2.name.replace(/휴게소$/, '') + ' ' + fmtDist(n2.at - nav.along) : '';
+    }
+    if (mapA && mapA.setRests) {
+      const marks = ahead.filter((r) => r.at - nav.along <= REST_MAP);
+      const key = marks.map((r) => r.name + r.at).join('|');
+      if (key !== restState.key) { restState.key = key; mapA.setRests(marks); }
+    }
+  }
   // ---------- 주정차 단속 카메라 (단속구분 4, data/parking.json · tools/build_parking.py, 2026-11-14 요청) ----------
-  // 도심에는 아주 많아서 지나갈 때는 알리지 않는다. 천천히(시속 25km 아래) 갈 때 80m 안에 있으면 '주정차 단속' 칸을 띄운다:
-  // 차를 세우려는 곳이 단속 구역인지 알 수 있게. 소리는 내지 않는다. 시속 35km 를 넘거나 120m 넘게 멀어지면 내린다.
-  // 지도에는 시속 40km 아래일 때만 300m 안의 것을 작은 주정차 금지 표지로
+  // 도심에는 아주 많아서 지나갈 때는 알리지 않고, 내 진행 방향 앞쪽에 있는 것만 본다 (2026-11-14 두 번째 요청).
+  //   앞쪽: 길안내 중 경로 위면 경로에서 20m 안이고 경로상 앞, 아니면 진행 방향 ±35° 안이고 옆으로 15m 안.
+  //   천천히(시속 30km 아래) 갈 때 앞 100m 안이면 '주정차 단속' 칸을 띄운다 (차를 세우려는 곳이 단속 구역인지). 소리 없음.
+  //   10m 넘게 지나치거나 시속 40km 를 넘으면 내린다. 지도에는 시속 45km 아래일 때 앞 300m 안의 것만 작은 주정차 금지 표지로
   const parking = { loaded: false, n: 0, lat: null, lng: null, grid: new Map(), date: '' };
-  const parkState = { near: null, markerAt: null, markerKey: '' };
-  const PARK_SHOW = 80, PARK_KEEP = 120, PARK_SLOW = 25, PARK_FAST = 35, PARK_MAP_KMH = 40;
+  const parkState = { near: null, markerAt: null, markerKey: '', h: null };
+  const PARK_SHOW = 100, PARK_KEEP = 120, PARK_SLOW = 30, PARK_FAST = 40, PARK_MAP_KMH = 45, PARK_MAP_AHEAD = 300;
   async function loadParking() {
     try {
       const r = await fetch('data/parking.json?v=' + APP_VERSION);
@@ -1291,19 +1388,54 @@
     }
     return out;
   }
+  // 경로 위 위치(경로 거리)와 경로까지 거리: 지금 구간 근처 앞쪽만 본다
+  function routeOffset(p, ahead) {
+    if (!nav.pts || nav.pts.length < 2) return null;
+    const pts = nav.pts, cum = nav.cum, to = nav.along + ahead;
+    let best = null;
+    for (let i = Math.max(0, nav.seg - 2); i < pts.length - 1 && cum[i] <= to; i++) {
+      const pr = projectSeg(p, pts[i], pts[i + 1]);
+      if (!best || pr.dist < best.dist) best = { dist: pr.dist, at: cum[i] + pr.t * (cum[i + 1] - cum[i]) };
+    }
+    return best;
+  }
+  // 내 앞쪽에 있는 주정차 카메라: [{ k, d(앞으로 남은 거리, m) }]
+  function parkAhead(f, list, maxAhead, maxSide) {
+    const out = [], h = state.heading !== null ? state.heading : parkState.h;
+    const onRoute = !!(nav.active && nav.pts && nav.onRoute);
+    for (const x of list) {
+      const p = { lat: parking.lat[x.k], lng: parking.lng[x.k] };
+      let along;
+      if (onRoute) {
+        const r = routeOffset(p, maxAhead + 20);
+        if (!r || r.dist > 20) continue;
+        along = r.at - nav.along;
+      } else {
+        if (h === null) continue;
+        const diff = angleDiff(bearing(f, p), h);
+        if (x.d > 12 && diff > 35) continue; // 아주 가까운 것은 옆에 있어도 방향 오차가 커서 거리로만 본다
+        if (x.d * Math.sin(toRad(Math.min(diff, 90))) > maxSide) continue;
+        along = x.d * Math.cos(toRad(diff));
+      }
+      if (along < -10 || along > maxAhead) continue;
+      out.push({ k: x.k, d: Math.max(0, along) });
+    }
+    return out.sort((x, y) => x.d - y.d);
+  }
   function evalParking(f) {
-    let near = null, list = [];
+    let near = null, markers = [];
+    if (state.heading !== null && state.speedKmh >= 5) parkState.h = state.heading; // 멈춰 있을 때는 마지막 방향
     if (parking.loaded && prefs.parking) {
-      list = parkingNear(f.lat, f.lng, 300);
-      const nearest = list.reduce((m, x) => (!m || x.d < m.d ? x : m), null);
+      const list = parkingNear(f.lat, f.lng, PARK_MAP_AHEAD + 20);
+      const ahead = parkAhead(f, list, PARK_MAP_AHEAD, 30);
       const showing = !!parkState.near;
-      if (nearest && ((state.speedKmh < PARK_SLOW && nearest.d <= PARK_SHOW) ||
-                      (showing && state.speedKmh <= PARK_FAST && nearest.d <= PARK_KEEP))) near = nearest;
+      const first = parkAhead(f, list, PARK_KEEP, 15)[0];
+      if (first && ((state.speedKmh < PARK_SLOW && first.d <= PARK_SHOW) || (showing && state.speedKmh <= PARK_FAST))) near = first;
+      if (state.speedKmh < PARK_MAP_KMH) markers = ahead.slice(0, 40);
     }
     parkState.near = near;
     renderPark();
     if (mapA && mapA.setParks) {
-      const markers = state.speedKmh < PARK_MAP_KMH ? list.sort((x, y) => x.d - y.d).slice(0, 40) : [];
       const key = markers.map((x) => x.k).join(',');
       const moved = !parkState.markerAt || haversine(parkState.markerAt, f) > 30;
       if (key !== parkState.markerKey && (moved || !markers.length)) {
@@ -2721,6 +2853,9 @@
     if (mapA && mapA.setDest) mapA.setDest(null);
     if (mapA && mapA.setTurnArrow) mapA.setTurnArrow(null);
     nav.arrowKey = null;
+    nav.routeRest = null; restState.key = '';
+    $('#restCard').hidden = true;
+    if (mapA && mapA.setRests) mapA.setRests([]);
     $('#routeCard').hidden = true;
     $('#map').classList.remove('navigating');
     camState.target = null;
@@ -3311,7 +3446,7 @@
     if (!app.classList.contains('tesla')) { app.classList.remove('trip-covered'); return; }
     const dr = $('#camDrawer'), tops = [$('.trip'), $('.heading')].filter(Boolean).map((e) => e.getBoundingClientRect().top).filter((v) => v > 0);
     // 서랍 밑에 붙는 다음 단속·과속방지턱·주의 표지 칸도 본다 (2026-11-14: 하이패스 차로 줄로 서랍이 길어지자 '100 14km'가 나침반에 겹침)
-    const lows = [dr.classList.contains('open') ? dr : null, $('#camNext'), $('#bumpCard'), $('#signCard'), $('#parkCard')]
+    const lows = [dr.classList.contains('open') ? dr : null, $('#camNext'), $('#bumpCard'), $('#signCard'), $('#parkCard'), $('#restCard')]
       .filter((e) => e && !e.hidden && e.offsetParent !== null).map((e) => e.getBoundingClientRect().bottom);
     const covered = tops.length > 0 && lows.length > 0 && Math.max(...lows) > Math.min(...tops) - 6;
     app.classList.toggle('trip-covered', covered);
@@ -3327,6 +3462,7 @@
     $('#navDestVia').textContent = nav.via && nav.via[0] ? '경유 ' + nav.via[0].name : '';
     const g = nav.next;
     renderTurnArrow();
+    renderRest();
     $('#turnIcon').innerHTML = ico(g ? turnKind(g) : 'goal');
     $('#turnDist').textContent = fmtDist(nav.dg != null ? nav.dg : nav.total);
     if (g && g.t === 121) {
@@ -4394,6 +4530,7 @@
     $('#optSigCams').checked = prefs.signalCams;
     $('#optBumps').checked = prefs.bumps;
     $('#optParking').checked = prefs.parking;
+    $('#optRest').checked = prefs.rest;
     $('#optSigns').checked = prefs.signs;
     $('#optTunnels').checked = prefs.tunnels;
     $('#optJunction').checked = prefs.junction;
@@ -4483,6 +4620,11 @@
   $('#optTunnels').onchange = (e) => {
     prefs.tunnels = e.target.checked; store.set('tunnels', prefs.tunnels ? null : '0');
     if (nav.active) renderNav();
+  };
+  $('#optRest').onchange = (e) => {
+    prefs.rest = e.target.checked; store.set('rest', prefs.rest ? null : '0');
+    restState.key = '';
+    renderRest();
   };
   $('#optParking').onchange = (e) => {
     prefs.parking = e.target.checked; store.set('parking', prefs.parking ? null : '0');
@@ -4584,6 +4726,7 @@
   loadCameras();
   loadBumps();
   loadParking();
+  loadRest();
   loadSigns();
   loadHipass();
   loadTunnels();
@@ -4611,7 +4754,7 @@
       planRoute, doSearch, setFollowing, canvasPoint, gesture, glView, glOn, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
       sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
-      saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassNums, hipassLayout, laneNums, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, parking, parkState, setParkingData, loadParking, evalParking, placeBase, findParking, renderTurnArrow,
+      saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassNums, hipassLayout, laneNums, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, parking, parkState, setParkingData, loadParking, evalParking, rest, setRestData, loadRest, ensureRouteRest, renderRest, placeBase, findParking, renderTurnArrow,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
