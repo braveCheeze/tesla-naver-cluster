@@ -29,6 +29,8 @@
     traffic: store.get('traffic') !== '0',
     weather: store.get('weather') !== '0',
     headingUp: store.get('hup') !== '0',
+    // 멈추면 북쪽 위로: 진행 방향 위 화면은 지도 그림째 돌려서 가게 글자도 눕는다. 3초 넘게 서 있으면 북쪽 위로 돌려 글자를 바로 세운다
+    stopNorth: store.get('stopNorth') !== '0',
     tilt: store.get('tilt') !== '0',
     routeOpt: store.get('routeOpt') || 'traoptimal', // 기본은 '추천'(네이버 실시간 최적)
     // 테슬라 모드: 속도는 차 화면에 이미 나오므로 왼쪽 계기판을 없애고 지도를 넓게, 시계·날씨 등은 지도 위 글자로.
@@ -38,7 +40,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-27'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-28'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -573,7 +575,18 @@
   const view = { drive: false, key: '', rot: 0, w: 0, h: 0, cs: 0, cx: 0, cy: 0, tilt: 0 };
 
   function wantDrive() {
-    return !!(state.following && prefs.headingUp && state.heading !== null && !nav.preview);
+    return !!(state.following && prefs.headingUp && state.heading !== null && !nav.preview && !state.stopNorth);
+  }
+  // 멈춤 판단: 시속 3km 아래로 3초 넘게 있으면 북쪽 위로, 다시 시속 8km 를 넘으면 진행 방향 위로 (서고 가는 사이 흔들리지 않게 차이를 둔다)
+  function checkStopNorth(now) {
+    let want = state.stopNorth;
+    if (!prefs.stopNorth || !prefs.headingUp) want = false;
+    else if (state.speedKmh >= 8) { state.stillAt = 0; want = false; }
+    else if (state.speedKmh < 3) {
+      if (!state.stillAt) state.stillAt = now;
+      if (now - state.stillAt >= 3000) want = true;
+    }
+    if (want !== state.stopNorth) { state.stopNorth = want; layoutView(); }
   }
   function measureView() {
     const host = $('#map');
@@ -2085,6 +2098,7 @@
     if (h !== null && state.speedKmh >= 3) state.heading = h; // 정지 중 GPS 방향은 믿지 않음
     state.fix = f;
     updateCurvature();
+    checkStopNorth(f.t);
     if (!prev) applyNight(); // 첫 위치를 알게 되면 그 곳의 해 지는 시각으로 다시 본다
 
     const acc = Math.round(f.acc || 0);
@@ -2229,6 +2243,8 @@
     upd.lastTick = now.getTime();
     // 자동 야간: 1분마다 해의 높이를 다시 본다
     if (!upd.nightAt || now - upd.nightAt > 60000) { upd.nightAt = now.getTime(); applyNight(); }
+    // 서 있을 때는 GPS 가 드문드문 와도 북쪽 위 전환이 늦지 않게 시계로도 본다
+    if (state.fix && !state.demoTimer) checkStopNorth(state.fix.t + (Date.now() - lastFixWall));
     $('#clock').textContent = hhmm(now);
     $('#dateText').textContent = (now.getMonth() + 1) + '월 ' + now.getDate() + '일 (' + '일월화수목금토'[now.getDay()] + ')';
     mapWatchdog();
@@ -2639,6 +2655,7 @@
     $('#optTraffic').checked = prefs.traffic;
     $('#optWeather').checked = prefs.weather;
     $('#optHup').checked = prefs.headingUp;
+    $('#optStopNorth').checked = prefs.stopNorth;
     $('#optTesla').checked = prefs.tesla;
     $('#optNight').value = nightMode();
     $('#optTilt').checked = prefs.tilt;
@@ -2739,6 +2756,10 @@
     prefs.headingUp = e.target.checked; store.set('hup', prefs.headingUp ? null : '0');
     renderHupBtn();
     layoutView();
+  };
+  $('#optStopNorth').onchange = (e) => {
+    prefs.stopNorth = e.target.checked; store.set('stopNorth', prefs.stopNorth ? null : '0');
+    if (state.fix) checkStopNorth(state.fix.t);
   };
   $('#optTilt').onchange = (e) => { prefs.tilt = e.target.checked; store.set('tilt', prefs.tilt ? null : '0'); layoutView(); };
   $('#optRoute').onchange = (e) => { prefs.routeOpt = e.target.value; store.set('routeOpt', prefs.routeOpt); };

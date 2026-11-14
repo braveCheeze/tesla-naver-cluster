@@ -981,6 +981,41 @@
   }
   const C_A = () => CAM_ISO_A;
 
+  // S32: 멈추면 북쪽 위로 — 진행 방향 위(동쪽 80°)로 달리다 3초 넘게 서면 북쪽 위 평면 지도(가게 글자 똑바로),
+  //      다시 시속 8km 를 넘으면 진행 방향 위로. 설정을 끄면 서 있어도 진행 방향 위 그대로
+  async function s32() {
+    const t = T(), opt = document.getElementById('optStopNorth'), prevOpt = t.prefs.stopNorth, prevHup = t.prefs.headingUp;
+    const set = (on) => { opt.checked = on; opt.dispatchEvent(new Event('change')); };
+    const r = {};
+    try {
+      t.prefs.headingUp = true;
+      set(true);
+      t.setFollowing(true);
+      const o = TRIP_ORIGIN;
+      for (let s = 0; s <= 200; s += 15) feed(dest(o, 80, s), 15, 80);
+      r.driving = t.view.drive;
+      const here = dest(o, 80, 200);
+      feed(here, 0, 80); r.after1s = t.view.drive;
+      feed(here, 0, 80); feed(here, 0, 80); feed(here, 0, 80);
+      r.after4s = t.view.drive;
+      feed(here, 1, 80, { dt: 1000 });   // 시속 3.6km: 아직 정지로 본다
+      r.creep = t.view.drive;
+      for (let s = 15; s <= 60; s += 15) feed(dest(here, 80, s), 15, 80);
+      r.movingAgain = t.view.drive;
+      // 설정 끔
+      set(false);
+      const h2 = dest(here, 80, 60);
+      for (let k = 0; k < 5; k++) feed(h2, 0, 80);
+      r.offStopped = t.view.drive;
+    } finally {
+      set(prevOpt);
+      t.prefs.headingUp = prevHup;
+    }
+    const ok = r.driving === true && r.after1s === true && r.after4s === false && r.creep === false && r.movingAgain === true && r.offStopped === true;
+    return { pass: ok, detail: 'drive view while driving ' + r.driving + ', stopped 1 s ' + r.after1s + ', stopped 4 s ' + r.after4s + ' (north up), creeping ' + r.creep +
+      ', moving again ' + r.movingAgain + ', setting off & stopped ' + r.offStopped };
+  }
+
   // S30: 주행 기록 — 제한 50 카메라(CAM_ISO_B)를 70 km/h 로 지나 2km 달리고 8분 서 있으면
   //      주행 하나가 저장되고(거리·최고 속도), 과속 1건(70/50)이 기록 화면에 뜬다
   async function s30() {
@@ -1548,6 +1583,7 @@
     { id: 'S29', name: 'S29 favourites: 집 · 회사 · ★', fn: s29 },
     { id: 'S30', name: 'S30 trip log with speeding events', fn: s30 },
     { id: 'S31', name: 'S31 weather icons', fn: s31 },
+    { id: 'S32', name: 'S32 stopped → north up (labels upright)', fn: s32 },
   ];
 
   // ---------------------------------------------------------------- runner
