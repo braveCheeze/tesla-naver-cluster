@@ -26,6 +26,7 @@
     beep: store.get('beep') !== '0',
     cams: store.get('cams') !== '0',
     signalCams: store.get('sigcam') === '1', // 신호 전용 카메라 알림 (기본 끔)
+    bumps: store.get('bumps') !== '0',       // 과속방지턱 알림 (기본 켬)
     traffic: store.get('traffic') !== '0',
     weather: store.get('weather') !== '0',
     headingUp: store.get('hup') !== '0',
@@ -40,7 +41,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-49'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-50'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -335,6 +336,15 @@
     el.textContent = c[2];
     return el;
   }
+  // 과속방지턱 주의 표지: 빨간 테두리 흰 삼각형 안에 검은 둔덕
+  const SIGN_BUMP = '<svg viewBox="0 0 100 88" aria-hidden="true"><path d="M50 7 L94 82 L6 82 Z" fill="#fff" stroke="#e53935" stroke-width="10" stroke-linejoin="round"/>' +
+    '<path d="M25 69 H75" stroke="#111" stroke-width="6" stroke-linecap="round"/><path d="M33 69 Q50 42 67 69 Z" fill="#111"/></svg>';
+  function bumpEl() {
+    const el = document.createElement('div');
+    el.className = 'bumpmk';
+    el.innerHTML = SIGN_BUMP;
+    return el;
+  }
   // 보호구역 주의 표지 (빨간 테두리 노란 삼각형 + 그림): 어린이보호는 어른과 아이가 손잡고 걷는 모습, 노인보호는 지팡이 짚은 노인
   const SIGN_TRI = '<path d="M50 5 L95 83 L5 83 Z" fill="#e53935" stroke="#e53935" stroke-width="8" stroke-linejoin="round"/>' +
     '<path d="M50 20 L83 77 L17 77 Z" fill="#ffd200" stroke="#ffd200" stroke-width="4" stroke-linejoin="round"/>';
@@ -450,9 +460,24 @@
         }));
       });
     },
+    // 과속방지턱: 작은 빨간 테두리 삼각 표지 (카메라처럼 지도를 돌려도 똑바로 선다)
+    setBumps(list) {
+      const N = naver.maps;
+      if (!this.bumps) this.bumps = new Map();
+      const keep = new Set(list.map((x) => x.k));
+      this.bumps.forEach((m, k) => { if (!keep.has(k)) { m.setMap(null); this.bumps.delete(k); } });
+      list.forEach((x) => {
+        if (this.bumps.has(x.k)) return;
+        this.bumps.set(x.k, new N.Marker({
+          position: new N.LatLng(x.lat, x.lng), map: this.map, clickable: false, zIndex: 90,
+          icon: { content: bumpEl(), anchor: new N.Point(11, 10) },
+        }));
+      });
+    },
     destroy() {
       if (this.cams) this.cams.forEach((m) => m.setMap(null));
-      this.cams = new Map();
+      if (this.bumps) this.bumps.forEach((m) => m.setMap(null));
+      this.cams = new Map(); this.bumps = new Map();
       this.clearRoute();
       if (this.map) this.map.destroy();
       this.map = null; this.marker = null;
@@ -543,10 +568,22 @@
         }).addTo(this.map));
       });
     },
+    setBumps(list) {
+      if (!this.bumps) this.bumps = new Map();
+      const keep = new Set(list.map((x) => x.k));
+      this.bumps.forEach((m, k) => { if (!keep.has(k)) { m.remove(); this.bumps.delete(k); } });
+      list.forEach((x) => {
+        if (this.bumps.has(x.k)) return;
+        this.bumps.set(x.k, L.marker([x.lat, x.lng], {
+          icon: L.divIcon({ html: bumpEl(), className: 'me-wrap', iconSize: [22, 20], iconAnchor: [11, 10] }),
+          interactive: false, keyboard: false,
+        }).addTo(this.map));
+      });
+    },
     destroy() {
       this.clearRoute();
       if (this.map) this.map.remove();
-      this.map = null; this.marker = null; this.cams = new Map();
+      this.map = null; this.marker = null; this.cams = new Map(); this.bumps = new Map();
     },
   };
 
@@ -763,6 +800,106 @@
   // ---------- 단속 카메라 ----------
   const cams = { rows: null, grid: null, date: '', loaded: false };
   const CELL = 0.01;
+  // ---------- 과속방지턱 (전국 과속방지턱 표준데이터, data/bumps.json) ----------
+  // 길안내 중이면 경로 10m 안의 방지턱을, 아니면 진행 방향 바로 앞(120m, 좌우 8m)의 방지턱을 200m 앞부터 알린다.
+  // 지도에는 길안내 중 앞쪽 1.5km 안, 아니면 앞쪽 300m 안의 방지턱을 작은 삼각 표지로
+  const bumps = { loaded: false, n: 0, lat: null, lng: null, flag: null, grid: new Map(), date: '' };
+  const bumpState = { next: null, markerAt: null, markerKey: '' };
+  const BUMP_ALERT = 200, BUMP_ROUTE_M = 10;
+  async function loadBumps() {
+    try {
+      const r = await fetch('data/bumps.json?v=' + APP_VERSION);
+      if (!r.ok) return;
+      const j = await r.json(), n = j.count, sc = j.scale || 1e5, d = j.d;
+      const lat = new Float64Array(n), lng = new Float64Array(n), flag = new Uint8Array(n);
+      let a = 0, b = 0;
+      for (let k = 0; k < n; k++) {
+        a += d[3 * k]; b += d[3 * k + 1];
+        lat[k] = a / sc; lng[k] = b / sc; flag[k] = d[3 * k + 2];
+        const key = Math.floor(lat[k] * 100) + ':' + Math.floor(lng[k] * 100);
+        let cell = bumps.grid.get(key);
+        if (!cell) bumps.grid.set(key, cell = []);
+        cell.push(k);
+      }
+      Object.assign(bumps, { n, lat, lng, flag, date: j.date || '', loaded: true });
+    } catch (e) { /* 방지턱 데이터가 없어도 나머지는 그대로 */ }
+  }
+  function bumpsNear(la, ln, r) {
+    const out = [], cy = Math.floor(la * 100), cx = Math.floor(ln * 100);
+    const sy = Math.ceil(r / 1100), sx = Math.ceil(r / 880);
+    for (let y = cy - sy; y <= cy + sy; y++) for (let x = cx - sx; x <= cx + sx; x++) {
+      const cell = bumps.grid.get(y + ':' + x);
+      if (!cell) continue;
+      for (const k of cell) {
+        const d = haversine({ lat: la, lng: ln }, { lat: bumps.lat[k], lng: bumps.lng[k] });
+        if (d <= r) out.push({ k, d });
+      }
+    }
+    return out;
+  }
+  // 길안내 경로 위 방지턱 (경로 거리순). 카메라처럼 앞쪽 4km 까지만 찾아 두고 달리면서 늘린다
+  function ensureRouteBumps() {
+    if (!bumps.loaded || !nav.pts || nav.pts.length < 2) return false;
+    if (!nav.routeBumps) { nav.routeBumps = []; nav.bumpSeen = new Set(); nav.bumpUpto = 0; }
+    const pts = nav.pts, want = nav.along + 4000;
+    let i = nav.bumpUpto, added = false;
+    for (; i < pts.length - 1 && nav.cum[i] < want; i++) {
+      const a = pts[i], b = pts[i + 1], half = (nav.cum[i + 1] - nav.cum[i]) / 2;
+      for (const it of bumpsNear((a.lat + b.lat) / 2, (a.lng + b.lng) / 2, half + 15)) {
+        if (nav.bumpSeen.has(it.k)) continue;
+        const pr = projectSeg({ lat: bumps.lat[it.k], lng: bumps.lng[it.k] }, a, b);
+        if (pr.dist > BUMP_ROUTE_M) continue;
+        nav.bumpSeen.add(it.k);
+        nav.routeBumps.push({ k: it.k, at: nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]) });
+        added = true;
+      }
+    }
+    nav.bumpUpto = i;
+    if (added) nav.routeBumps.sort((x, y) => x.at - y.at);
+    return true;
+  }
+  function evalBumps(f) {
+    let next = null, markers = [];
+    if (bumps.loaded && prefs.bumps) {
+      if (nav.active && nav.pts && ensureRouteBumps()) {
+        const ahead = nav.routeBumps.filter((b) => b.at > nav.along - 8 && b.at < nav.along + 1500);
+        const first = ahead[0];
+        if (first && first.at - nav.along <= BUMP_ALERT) {
+          // 첫 방지턱부터 100m 안에 더 있으면 연속
+          const series = ahead.filter((b) => b.at - first.at <= 100).length;
+          next = { k: first.k, d: Math.max(0, first.at - nav.along), cont: series > 1 || bumps.flag[first.k] === 1 };
+        }
+        markers = ahead;
+      } else if (state.heading !== null && state.speedKmh >= 8) {
+        for (const it of bumpsNear(f.lat, f.lng, 300)) {
+          const p = { lat: bumps.lat[it.k], lng: bumps.lng[it.k] };
+          const diff = angleDiff(bearing(f, p), state.heading);
+          if (it.d < 6 || diff > 20 || it.d * Math.sin(toRad(diff)) > 8) continue;
+          markers.push(it);
+          if (it.d <= 120 && (!next || it.d < next.d)) next = { k: it.k, d: it.d, cont: bumps.flag[it.k] === 1 };
+        }
+      }
+    }
+    bumpState.next = next;
+    renderBump();
+    // 지도 표시는 50m 움직일 때마다 (또는 목록이 바뀔 때) 다시 고른다
+    if (mapA && mapA.setBumps) {
+      const key = markers.map((x) => x.k).join(',');
+      const moved = !bumpState.markerAt || haversine(bumpState.markerAt, f) > 50;
+      if (key !== bumpState.markerKey && (moved || !markers.length)) {
+        bumpState.markerAt = { lat: f.lat, lng: f.lng };
+        bumpState.markerKey = key;
+        mapA.setBumps(markers.slice(0, 60).map((x) => ({ k: x.k, lat: bumps.lat[x.k], lng: bumps.lng[x.k] })));
+      }
+    }
+  }
+  function renderBump() {
+    const el = $('#bumpCard'), b = bumpState.next;
+    el.hidden = !b;
+    if (!b) return;
+    $('#bumpLabel').textContent = b.cont ? '연속 과속방지턱' : '과속방지턱';
+    $('#bumpDist').textContent = fmtDist(b.d);
+  }
   async function loadCameras() {
     try {
       // 버전을 붙여 새 버전과 함께 바뀐 카메라 데이터를 바로 받는다 (브라우저 10분 캐시 우회)
@@ -1593,6 +1730,7 @@
     nav.onRoute = false; nav.onCount = 0;
     nav.setAt = state.fix ? state.fix.t : Date.now(); nav.drawnSeg = 0; nav.drawnAlong = 0; nav.drawnAt = 0;
     nav.routeCams = null; nav.routeCamList = []; camState.markerAt = null; // 경로 위 카메라·지도 표시를 새 경로로
+    nav.routeBumps = null; bumpState.markerKey = '';
     nav.lastTraffic = state.fix ? state.fix.t : Date.now();
     if (!keepAlerts) { nav.said = {}; nav.gap = 10000; }
     nav.remain = nav.total; nav.next = null; nav.dg = null;
@@ -2280,6 +2418,7 @@
     tripTick(f);         // 주행 기록 (과속 기록은 바로 아래 카메라 판단에서 붙는다)
     evalCameras(f);
     refreshCamMarkers(f);
+    evalBumps(f);
     autoZoom(f);
     updateRoad(f);
     updateWeather(f);
@@ -2904,6 +3043,7 @@
     $('#optBeep').checked = prefs.beep;
     $('#optCams').checked = prefs.cams;
     $('#optSigCams').checked = prefs.signalCams;
+    $('#optBumps').checked = prefs.bumps;
     $('#optTraffic').checked = prefs.traffic;
     $('#optWeather').checked = prefs.weather;
     $('#optHup').checked = prefs.headingUp;
@@ -2986,6 +3126,11 @@
     prefs.tesla = e.target.checked; store.set('tesla', prefs.tesla ? '1' : '0');
     applyTesla();
   };
+  $('#optBumps').onchange = (e) => {
+    prefs.bumps = e.target.checked; store.set('bumps', prefs.bumps ? null : '0');
+    bumpState.markerKey = '';
+    if (state.fix) evalBumps(state.fix);
+  };
   $('#optSigCams').onchange = (e) => {
     prefs.signalCams = e.target.checked; store.set('sigcam', prefs.signalCams ? '1' : null);
     camState.markerAt = null;
@@ -3059,6 +3204,7 @@
   setInterval(tickClock, 1000);
   bootMap();
   loadCameras();
+  loadBumps();
   startGps();
   if (store.get('diag') === '1' || params.has('diag')) setDiag(true);
   if (params.has('demo')) startDemo();
@@ -3082,7 +3228,7 @@
       state, camState, nav, cams, prefs, onFix, setRoute, startNav, endNav, startDemo, stopDemo, renderNav,
       planRoute, doSearch, setFollowing, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
-      sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn,
+      sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
     };

@@ -1028,6 +1028,17 @@
   .nd-via:empty { display: none; }
   #app.tesla .nd-name { color: var(--nv-fg); }
   #app.tesla .nd-via { color: var(--nv-sub); }
+  /* ================= 과속방지턱 (2026-11-14 요청) =================
+     경고 묶음 안(단속 경고 밑)에 작은 표지 + 거리, 지도에는 경로 위 방지턱을 작은 삼각 표지로 (지도를 돌려도 똑바로) */
+  .bumpcard { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 700; }
+  .bump-sign { flex: none; width: 34px; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .35)); }
+  .bump-sign svg { width: 34px; height: auto; display: block; }
+  .bumpcard b { font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  #app.tesla .bumpcard { color: var(--ov-fg); }
+  .bumpmk { width: 22px; height: 20px; pointer-events: none; }
+  .bumpmk svg { width: 22px; height: 20px; display: block; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .45)); }
+  #map.drive .bumpmk { transform: rotate(var(--crot)); transition: transform .9s linear; }
+  #map.snap .bumpmk { transition: none !important; }
 </style>
 </head>
 <body>
@@ -1071,6 +1082,8 @@
     <div id="mySpeed" class="myspeed" hidden><b id="mySpeedVal">0</b><i>km/h</i><em id="mySpeedLim"></em></div>
     <!-- 테슬라 모드: 보호구역 단속이면 과속 정보 밑에 작은 주의 표지 (단속이 우선) -->
     <div id="zoneBadge" class="zonebadge" hidden><span id="zbSign" class="zb-sign"></span><b id="zbLabel">어린이 조심</b></div>
+    <!-- 과속방지턱: 200m 앞부터 작은 표지 + 거리 (길안내 중이면 경로 위, 아니면 바로 앞) -->
+    <div id="bumpCard" class="bumpcard" hidden><span class="bump-sign"><svg viewBox="0 0 100 88" aria-hidden="true"><path d="M50 7 L94 82 L6 82 Z" fill="#fff" stroke="#e53935" stroke-width="10" stroke-linejoin="round"/><path d="M25 69 H75" stroke="#111" stroke-width="6" stroke-linecap="round"/><path d="M33 69 Q50 42 67 69 Z" fill="#111"/></svg></span><span id="bumpLabel" class="bump-label">과속방지턱</span><b id="bumpDist">0m</b></div>
     <div id="secCard" class="seccard" hidden>
       <div class="sec-top">구간단속 · 제한 <b id="secLimit">100</b> km/h</div>
       <div class="sec-avg"><span id="secAvg">-</span><small> km/h 평균</small></div>
@@ -1207,6 +1220,7 @@
     <label class="check"><input type="checkbox" id="optBeep"> 경고음</label>
     <label class="check"><input type="checkbox" id="optCams"> 단속 카메라 경고</label>
     <label class="check"><input type="checkbox" id="optSigCams"> 제한속도 없는 신호 전용 카메라도 알림</label>
+    <label class="check"><input type="checkbox" id="optBumps"> 과속방지턱 알림 (전국 과속방지턱 표준데이터)</label>
     <label class="check"><input type="checkbox" id="optTraffic"> 실시간 교통 (도로를 막힘 정도로 색칠)</label>
     <label class="check"><input type="checkbox" id="optWeather"> 날씨 표시 (위치는 약 10km 단위로만 보냄)</label>
     <p class="hint">단속 카메라 <b id="camCount">-</b>대 · 기준일 <b id="camDate">-</b> (경찰청 공공데이터)</p>
@@ -1257,6 +1271,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-49"></script>
+<script src="app.js?v=2026.11.14-50"></script>
 </body>
 </html>

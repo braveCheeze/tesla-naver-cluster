@@ -1662,6 +1662,54 @@
     return { pass: bad.length === 0 && Object.keys(r).length === 4, detail: Object.keys(r).map((k) => k + (r[k] ? '✓' : '✗')).join(', ') };
   }
 
+  // S41: 과속방지턱 (전국 과속방지턱 표준데이터, data/bumps.json). 실제 가평읍 골목 경로(test/fixtures/route-gapyeong-town.json:
+  //      광장로·중앙로·가평제방길 2.5km, 경로 10m 안 방지턱 7곳)로
+  //      (a) 길안내 중: 경로 위 방지턱을 200m 앞부터 '과속방지턱 120m'처럼 알리고 지도에 작은 삼각 표지
+  //      (b) 길안내 없이 같은 길: 바로 앞 방지턱을 알린다  (c) 설정을 끄면 안 알린다
+  async function s41() {
+    const t = T();
+    await waitFor(() => t.bumps.loaded, 8000, 50);
+    if (!t.bumps.loaded) return { status: 'SKIP', detail: 'bumps.json not loaded' };
+    const fx = await (await realFetch(harnessDir + 'fixtures/route-gapyeong-town.json', { cache: 'no-store' })).json();
+    const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const total = cum[cum.length - 1];
+    const R = { route: fx, P, cum, total, dest: { name: '가평읍', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    const drive = async (withNav) => {
+      softReset();
+      if (withNav) await planAndStart(R); else feed(P[0], 0, null);
+      const seen = new Set();
+      let maxShownD = 0, markers = 0, label = '';
+      for (let s = 0; s <= total - 20; s += 8) {
+        const a = pointAt(R, s);
+        feed(a.p, 30 / 3.6, a.h);
+        const b = t.bumpState.next;
+        if (b && !document.getElementById('bumpCard').hidden) {
+          seen.add(b.k);
+          maxShownD = Math.max(maxShownD, b.d);
+          label = label || text('#bumpLabel') + ' ' + text('#bumpDist');
+        }
+        const m = t.getMap();
+        if (m && m.bumps) markers = Math.max(markers, m.bumps.size);
+      }
+      if (withNav) t.endNav();
+      return { alerted: seen.size, maxShownD: Math.round(maxShownD), markers, label };
+    };
+    const nav = await drive(true), free = await drive(false);
+    const prev = t.prefs.bumps;
+    t.prefs.bumps = false;
+    const off = await drive(true);
+    t.prefs.bumps = prev;
+    softReset();
+    const mapOk = !t.getMap() || nav.markers >= 1;
+    const ok = nav.alerted >= 5 && nav.maxShownD <= 200 && mapOk && /과속방지턱 \d+m/.test(nav.label) && free.alerted >= 3 && off.alerted === 0;
+    return {
+      pass: ok,
+      detail: 'with nav: ' + JSON.stringify(nav) + ' | no nav: ' + JSON.stringify(free) + ' | setting off: ' + JSON.stringify(off) + (ok ? '✓' : '✗'),
+    };
+  }
+
   // S25: 하이패스 — 경로 안내에 톨게이트(type 121)가 있으면 2km 앞부터 카드(이름·거리·통행료·하이패스 차로 이용)와 음성
   async function s25() {
     const t = T();
@@ -2001,6 +2049,7 @@
     { id: 'S38', name: 'S38 wide roads: cameras 20–40 m off the route line (same section name / current road name)', fn: s38 },
     { id: 'S39', name: 'S39 bottom location bar → 경로 비교 · 재추천 · 경유지', fn: s39 },
     { id: 'S40', name: 'S40 new version while driving: tray button, resume the same guidance after updating', fn: s40 },
+    { id: 'S41', name: 'S41 speed bumps (national data): route bumps 200 m ahead + map signs, also without nav', fn: s41 },
   ];
 
   // ---------------------------------------------------------------- runner
