@@ -51,7 +51,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-108'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-109'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -3248,6 +3248,12 @@
     over_s: 's', under_s: 's', rest: 'kr', ferry: 's',
   };
   Object.keys(ICON_FALLBACK).forEach((k) => { if (!TURN_ICONS[k]) TURN_ICONS[k] = TURN_ICONS[ICON_FALLBACK[k]] || TURN_ICONS.s; });
+  const PLAIN_ROAD = {
+    outr: 'kr', outl: 'kl', inr: 'kl', inl: 'kr', outs: 's', ins: 's',
+    over_l: 'kl', over_r: 'kr', over_s: 's', under_l: 'kl', under_r: 'kr', under_s: 's',
+    side_l: 'kl', side_r: 'kr', oside_l: 'kl', oside_r: 'kr',
+  };
+  Object.keys(PLAIN_ROAD).forEach((k) => { TURN_ICONS[k] = TURN_ICONS[PLAIN_ROAD[k]]; });
   // 같은 아이콘을 두 곳에 넣어도 그라데이션 id 가 겹치지 않게 넣을 때마다 번호를 붙인다
   let icoN = 0;
   // 고른 AI 그림이 있으면 <img>, 없으면 null
@@ -3435,20 +3441,25 @@
   // 차로 수는 모르므로 그리지 않는다. 길안내 패널 밑 서랍 맨 위에, 안내 지점 800m 앞부터
   const JUNC_FORK = new Set([4, 5, 41, 42, 54]);                                  // 갈림길: 두 갈래
   const JUNC_RAMP = new Set([57, 58, 59, 60, 66, 67, 68, 69, 76, 77, 79, 80]);   // 진입·진출로: 본선 옆으로 빠짐
-  const JUNC_LEFT = new Set([4, 41, 57, 58, 59, 60, 76, 79]);
+  const JUNC_LEFT = new Set([4, 41, 57, 58, 59, 60, 76, 79, 62, 63, 64, 65]);
+  const JUNC_ENTRY = new Set([57, 59, 66, 68, 76, 77]);               // 진입로: 본선으로 합류 (2026-11-15: 진출 그림이 나오던 것)
+  // 고가·지하차도·옆길 (2026-11-15 '안내 표기가 어려우면 밑에처럼 이미지로')
+  const JUNC_ROAD = { 55: 'over', 62: 'over', 71: 'over', 56: 'under', 64: 'under', 73: 'under', 63: 'oside', 72: 'oside', 65: 'side', 74: 'side' };
   const JUNC_SHOW = 800;
   const juncState = { g: null, key: '' };
   function juncInfo(g) {
-    if (!g || (!JUNC_FORK.has(g.t) && !JUNC_RAMP.has(g.t))) return null;
+    if (!g || (!JUNC_FORK.has(g.t) && !JUNC_RAMP.has(g.t) && !JUNC_ROAD[g.t])) return null;
     const s = String(g.s || '');
     let left = JUNC_LEFT.has(g.t);
     if (g.t === 54) { if (/왼쪽/.test(s)) left = true; else if (/오른쪽/.test(s)) left = false; else return null; }
     const m = s.match(/^(.*?)에서\s/);
     const q = s.match(/'([^']+)'/);
-    const names = q ? q[1].split(',').map((x) => x.trim()).filter(Boolean) : [];
+    // 괄호 부분은 뺀다: '올림픽대로(강일IC)' → '올림픽대로' (2026-11-15: 6자로 자르다 '올림픽대로(' 처럼 괄호만 남았다)
+    const names = q ? q[1].split(',').map((x) => (x.replace(/\s*\([^)]*\)?/g, '').trim() || x.trim())).filter(Boolean) : [];
     const short = names.filter((x) => x.length <= 5);   // '수도권제1순환선'·'중부고속도로' 같은 긴 이름보다 '판교'·'호법'
     const label = (short.length ? short : names.map((x) => x.slice(0, 6))).slice(0, 2).join(' · ');
-    return { kind: JUNC_RAMP.has(g.t) ? 'ramp' : 'fork', left, place: m ? m[1] : '', label,
+    const kind = JUNC_ROAD[g.t] || (JUNC_ENTRY.has(g.t) ? 'entry' : JUNC_RAMP.has(g.t) ? 'ramp' : 'fork');
+    return { kind, left, place: m ? m[1] : '', label,
       hwy: /고속|분기점|IC\b|JC\b|IC에서|JC에서/i.test(s) || (g.t >= 57 && g.t <= 69) };
   }
   // 앞을 내려다본 원근 그림 (2026-11-14 다시 그림: 다른 내비의 분기점 확대 그림처럼 하늘·지평선·멀어질수록 좁아지는 도로).
@@ -3541,7 +3552,8 @@
   function renderJunction() {
     const el = $('#juncCard');
     const g = nav.active && prefs.junction ? nav.next : null;
-    const j = g && nav.dg != null && nav.dg <= JUNC_SHOW ? juncInfo(g) : null;
+    let j = g && nav.dg != null && nav.dg <= JUNC_SHOW ? juncInfo(g) : null;
+    if (j && JUNC_ROAD[g.t] && !(ICON_PICKS['junc_' + j.kind + '_day'] && ICON_PICKS['junc_' + j.kind + '_night'])) j = null;
     juncState.g = j ? g : null;
     if (!j) {
       // 서랍에 분기점 그림만 있으면 접히는 동안은 그대로 두었다가 숨긴다
@@ -3557,7 +3569,7 @@
       // AI 분기점 장면(낮·밤, 오른쪽 그림. 왼쪽은 CSS 로 좌우 뒤집기)을 골라 두었으면 그것을, 아니면 그려 넣은 원근 그림 (2026-11-15 요청)
       const jd = ICON_PICKS['junc_' + j.kind + '_day'], jn = ICON_PICKS['junc_' + j.kind + '_night'];
       const jimg = (f, c) => '<img class="jv-img ' + c + ' jc-' + j.kind + '" src="' + APP_BASE + 'img/ai/' + f + '?v=' + APP_VERSION + '" alt="" draggable="false">';
-      $('#juncSvg').innerHTML = jd && jn ? jimg(jd, 'jv-day') + jimg(jn, 'jv-night') : juncSvg(j);
+      $('#juncSvg').innerHTML = jd && jn ? jimg(jd, 'jv-day') + jimg(jn, 'jv-night') : juncSvg(j.kind === 'entry' ? Object.assign({}, j, { kind: 'ramp' }) : j);
       $('#juncLabel').textContent = j.label || (j.left ? '왼쪽' : '오른쪽');
       $('#juncPlace').textContent = j.place;
       el.classList.toggle('left', j.left);
@@ -3858,6 +3870,14 @@
     const remain = nav.remain != null ? nav.remain : nav.total;
     const remMs = nav.route.duration * (remain / Math.max(1, nav.total));
     renderTunnel();
+    // 가까운 것이 위로: 터널(진입·출구까지)이 그다음 칸(지금 안내 지점 + 그 뒤 거리)보다 가까우면 터널 줄을 그다음 칸 위로
+    {
+      const tr = $('#tunnelRow'), ta = !tr.hidden ? tunnelAhead() : null;
+      const chipAt = g2 && nav.dg != null ? nav.dg + Math.max(0, nav.cum[Math.min(g2.i, nav.cum.length - 1)] - nav.cum[Math.min(g.i, nav.cum.length - 1)]) : Infinity;
+      const up = !!(ta && !nn.hidden && ta.d < chipAt);
+      if (up && tr.nextElementSibling !== nn) nn.parentNode.insertBefore(tr, nn);
+      else if (!up && nn.nextElementSibling && nn.nextElementSibling !== tr && tr.nextElementSibling === nn) nn.parentNode.insertBefore(tr, nn.nextElementSibling);
+    }
     $('#navRemain').textContent = fmtDist(remain);
     $('#navTime').textContent = fmtMin(remMs);
     $('#navEta').textContent = '도착 ' + hhmm(new Date(Date.now() + remMs));
@@ -3968,7 +3988,7 @@
       road.fails = 0;
       road.name = j.road || '';
       road.area = j.area || '';
-      $('#roadName').innerHTML = esc(j.road || '') + (j.area ? '<small>' + esc(j.area) + '</small>' : '');
+      renderRoadPill(j.road || '', j.area || '');
     } catch (e) {
       road.fails++;
     } finally {
@@ -3977,6 +3997,19 @@
   }
 
   // ---------- 위치 처리 ----------
+  // 아래 가운데 지금 위치 띠 (2026-11-15 요청: 글자를 크게 안 보여 줘도 됨, 잘리면 '…' 대신 천천히 밀어서 보여 주기)
+  function renderRoadPill(name, area) {
+    const el = $('#roadName');
+    if (!name && !area) { el.innerHTML = ''; return; }
+    el.innerHTML = '<span class="rn-clip"><span class="rn-in">' + esc(name) + (area ? '<small>' + esc(area) + '</small>' : '') + '</span></span>';
+    const clip = el.firstChild, inner = clip.firstChild;
+    const over = inner.offsetWidth - clip.clientWidth;
+    el.classList.toggle('slide', over > 4);
+    if (over > 4) {
+      inner.style.setProperty('--rn-shift', -over + 'px');
+      inner.style.animationDuration = Math.round(7 + over / 25) + 's';   // 넘친 만큼 느긋하게 (한 번에 25px/초 정도)
+    }
+  }
   function setGps(kind, text) {
     $('#gpsDot').className = 'dot ' + (kind || '');
     $('#gpsText').textContent = text;

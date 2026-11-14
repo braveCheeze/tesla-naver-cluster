@@ -50,6 +50,11 @@ def fit_square(rgba, size=192, inner=176):
 def main():
     os.makedirs(OUT, exist_ok=True)
     items = []
+    # 이미 만든 그림(원본보다 새 webp)은 다시 만들지 않는다 (후보가 수백 장이라 매번 전부 만들면 5분 넘게 걸렸다)
+    try:
+        old = {x['file']: x for x in json.load(open(os.path.join(OUT, 'manifest.json'), encoding='utf-8'))['items']}
+    except (OSError, ValueError, KeyError):
+        old = {}
     for fn in sorted(os.listdir(AI)):
         m = NAME.match(fn)
         if not m:
@@ -60,6 +65,9 @@ def main():
         path = os.path.join(OUT, out)
         kind = 'car' if slot.startswith(('car_', 'cute_')) else 'scene' if slot.startswith('junc_') else 'sign' if slot.startswith('sign_') else 'icon'
         pink = 0
+        if out in old and os.path.exists(path) and os.path.getmtime(path) >= os.path.getmtime(src):
+            items.append(old[out])
+            continue
         if kind == 'scene':
             im = Image.open(src).convert('RGB')
             im.thumbnail((960, 400), Image.LANCZOS)   # 분기점 장면(8:3)은 서랍 320px 를 DPR 2 로

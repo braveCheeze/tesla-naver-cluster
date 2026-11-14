@@ -2013,7 +2013,7 @@
       P, cum, total, dest: { name: '분기 테스트', addr: '', lat: P[30].lat, lng: P[30].lng },
     };
     const snap = () => { const el = document.getElementById('juncCard');
-      return { shown: visible('#juncCard'), kind: (el.querySelector('#juncSvg .jc-ramp') ? 'ramp' : 'fork'), left: el.classList.contains('left'),
+      return { shown: visible('#juncCard'), kind: (el.querySelector('#juncSvg .jc-entry') ? 'entry' : el.querySelector('#juncSvg .jc-ramp') ? 'ramp' : 'fork'), left: el.classList.contains('left'),
         hwy: el.classList.contains('hwy'), label: text('#juncLabel'), place: text('#juncPlace'), dist: document.getElementById('juncDist') ? text('#juncDist') : '',
         inDrawer: !!el.closest('#camDrawer .cd-in'), open: document.getElementById('camDrawer').classList.contains('open') }; };
     const go = (s) => { const a = pointAt(R, s); feed(a.p, 20, a.h); t.renderNav(); };
@@ -2035,7 +2035,7 @@
       set(prev);
       softReset();
     }
-    const ok = !r.far.shown && r.ramp.shown && r.ramp.kind === 'ramp' && !r.ramp.left && r.ramp.hwy && r.ramp.label === '서울 · 대전' &&
+    const ok = !r.far.shown && r.ramp.shown && r.ramp.kind === 'entry' /* v109: 하남IC '고속도로 진입'은 합류(entry) 그림 */ && !r.ramp.left && r.ramp.hwy && r.ramp.label === '서울 · 대전' &&
       r.ramp.place === '하남IC' && r.ramp.dist === '' && r.ramp.inDrawer && r.ramp.open &&
       r.fork.shown && r.fork.kind === 'fork' && r.fork.left && r.fork.label === '대전 · 호법' && r.fork.place === '하남분기점' && !r.after.shown;
     return { pass: ok, detail: JSON.stringify(r) + (ok ? '✓' : '✗') };
@@ -2268,7 +2268,7 @@
     softReset();
     await planAndStart(R);
     const a = pointAt(R, 30); feed(a.p, 15, a.h); t.renderNav();
-    const drawn = { main: !!document.querySelector('#turnIcon svg.keep.kl'), next: !!document.querySelector('#nextIcon svg.ramp.out, #nextIcon img[src*="img/ai/outr__"]') };   // v105: AI 그림을 고르면 <img>
+    const drawn = { main: !!document.querySelector('#turnIcon svg.keep.kl'), next: !!document.querySelector('#nextIcon svg.ramp.out, #nextIcon img[src*="img/ai/outr__"], #nextIcon svg.keep.kr') };   // v109: 나가기는 기본 화살표(오른쪽 길로)
     t.endNav(); softReset();
     const bad = Object.keys(map).filter((x) => !map[x]);
     const ok = !bad.length && drawn.main && drawn.next;

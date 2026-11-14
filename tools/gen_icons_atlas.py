@@ -417,6 +417,66 @@ GREEN_ROAD = {
 GREEN_KIND = {'outr': 'ramp', 'inr': 'ramp', 'outs': 'ramp', 'ins': 'ramp', 'over_s': 'over', 'over_r': 'over', 'under_s': 'under',
               'under_r': 'under', 'side_r': 'side', 'oside_r': 'side', 'rb_l': 'rb', 'rb_s': 'rb', 'rb_r': 'rb', 'rb_u': 'rb'}
 GREEN = {k: (('ref/base2_%s.png' % k,), GREEN_EDIT, GREEN_ROAD[v]) for k, v in GREEN_KIND.items()}   # --icons green
+# 2026-11-15 사용자: 분기점 그림 '너무 좋은데, 파란 길 경계선이 심해서 은은하게 파란 빛 새어 나오는 느낌으로', 진입로인데 진출 그림이 나옴,
+# '안내 표기가 어려우면 밑에처럼 이미지로'(고가·지하차도·옆길도 그림으로). 새 장면은 처음부터 경계를 은은하게
+JV_SOFT = (' Keep every white lane marking and dashed lane line exactly as normal. The blue route highlight glows softly: a gentle '
+           'translucent blue light spills a little beyond its edges onto the neighboring dark asphalt, filling the dark strip '
+           'between the blue lane and the white lane line beside it and the triangular area where the lanes split, fading '
+           'smoothly, so there is no harsh dark gap next to the blue lane.')
+_JV2 = {
+    'entry': 'A straight multi-lane highway runs ahead to the horizon; from the lower right an on-ramp comes in and merges smoothly '
+             'into the rightmost lane. The on-ramp and the lane it merges into are the route: highlighted in vivid blue (#2F7DFF) '
+             'with one large clean white arrow curving from the on-ramp up into the highway lane. The other lanes are plain asphalt.',
+    'over': 'The road ahead splits: the right lanes rise onto an elevated overpass (a flyover bridge with concrete side barriers and '
+            'slim pillars, clearly higher than the ground) that climbs ahead over a crossing road, while the left lanes stay at '
+            'ground level beside it. The lanes climbing onto the overpass are the route: highlighted in vivid blue (#2F7DFF) with one '
+            'large clean white arrow going up onto the bridge.',
+    'under': 'The road ahead splits: the right lanes dip down between concrete retaining walls into an underpass, a dark tunnel '
+             'opening under a crossing road, while the left lanes stay at ground level beside it. The lanes going down into the '
+             'underpass are the route: highlighted in vivid blue (#2F7DFF) with one large clean white arrow going down into the opening.',
+    'side': 'The middle lanes ahead dip down between concrete retaining walls into an underpass (a dark tunnel opening under a crossing '
+            'road); on the right a side road stays at street level beside it and continues ahead. The street-level side road on the '
+            'right is the route: highlighted in vivid blue (#2F7DFF) with one large clean white arrow on it; the underpass lanes are plain.',
+    'oside': 'The middle lanes ahead rise onto an elevated overpass (a flyover bridge with concrete barriers and slim pillars); on the '
+             'right a side road stays at ground level beside the overpass and continues ahead. The ground-level side road on the right '
+             'is the route: highlighted in vivid blue (#2F7DFF) with one large clean white arrow on it; the overpass lanes are plain.',
+}
+for _k, _t in _JV2.items():
+    JOBS['junc_%s_day' % _k] = ((), JV, _t + JV_DAY + JV_SOFT + JV_END)
+    JOBS['junc_%s_night' % _k] = ((), JV, _t + JV_NIGHT + JV_SOFT + JV_END)
+    PANO |= {'junc_%s_day' % _k, 'junc_%s_night' % _k}
+JV2 = ['junc_%s_%s' % (k, t) for k in _JV2 for t in ('day', 'night')]
+# 마음에 든 장면 4장은 그대로 두고 파란 길 가장자리만 은은하게 (편집)
+SOFT_EDIT = ('Edit this navigation junction illustration. Keep everything exactly the same: composition, roads, every white lane '
+             'marking and dashed lane line, sky, colors, the blue route and the white arrow. Only fill the dark asphalt right next '
+             'to the blue route (the dark strip between the blue lane and the white lane line beside it, and the triangular area '
+             'where the lanes split) with a soft translucent blue glow that fades gently, like blue light spilling over from the '
+             'route. The white lines stay clearly visible on top of the glow. No text.')
+SOFT = {k: (('ref/base3_%s.png' % k,), SOFT_EDIT, '') for k in ('junc_fork_day', 'junc_fork_night', 'junc_ramp_day', 'junc_ramp_night')}
+# 회전교차로: 거리감 ('이미지에 거리감이 좀 부족') — 고른 그림을 뒤에서 내려다본 3D 원근으로
+RB_DEPTH = ('Edit this navigation icon. Keep the same roundabout, the same green grass island, the same bold green route arrow and its '
+            'exit direction, and the solid magenta background. Change only the view to a 3D perspective like a car navigation 3D map: '
+            'the camera is behind and above, looking forward and down at about 50 degrees, so the near (bottom) part of the roundabout '
+            'and roads is larger and the far (top) part recedes and gets smaller, with a clear sense of distance. Keep the whole '
+            'roundabout and the arrow inside the square, centered. Soft shading, crisp clean vector style, no text.')
+RBDEPTH = {k: (('ref/base3_%s.png' % k,), RB_DEPTH, '') for k in ('rb_l', 'rb_s', 'rb_r', 'rb_u')}
+# 2026-11-15 사용자: 원래 ramp_day 그림에 동그라미 '이런 식으로 깔끔한 걸 원해', 다른 그림엔 화살표 꼬리를 맨 아래까지 그어 보임
+CLEAN_EDIT = ('Edit this navigation junction illustration. Keep the composition, roads, sky, colors, every white lane marking and the '
+              'blue route exactly. Make two changes only: (1) extend the white route arrow so its tail starts at the very bottom edge '
+              'of the image and it runs as one continuous bold stroke up along the blue lane to the same arrowhead, like a long road '
+              'arrow; (2) make the blue lane fill cleanly right up to the white lane line beside it, with no dark gap and no glow, a '
+              'clean flat look. No text.')
+CLEAN = {k: (('ref/base3_%s.png' % k,), CLEAN_EDIT, '') for k in ('junc_fork_day', 'junc_fork_night', 'junc_ramp_night')}
+JV_LONG = (' The route arrow is ONE big bold white arrow painted flat on the blue lane like a road marking: its tail starts low '
+           'in the image close to the viewer, it sweeps smoothly along the blue lane following its curve without any gap, and '
+           'ends in a large clear arrowhead pointing where the route goes. Highly readable at a glance. Show the road details '
+           'fully: all lanes, lane markings, edge lines, barriers and the ramp or bridge structure.')
+_JV3 = dict(_JV2, fork=JV_FORK, ramp=JV_RAMP)
+JUNC3 = {}
+for _k, _t in _JV3.items():
+    JUNC3['junc_%s_day' % _k] = ((), JV, _t + JV_DAY + JV_SOFT + JV_LONG + JV_END)
+    JUNC3['junc_%s_night' % _k] = ((), JV, _t + JV_NIGHT + JV_SOFT + JV_LONG + JV_END)
+    PANO |= {'junc_%s_day' % _k, 'junc_%s_night' % _k}
 WIDE = {'junc_fork_r', 'junc_exit_r'}
 
 
@@ -469,7 +529,12 @@ MODELS = {
 MODELS['flare26b'], MODELS['sunburst26b'] = MODELS['flare26'], MODELS['sunburst26']        # 3판(굵은 화살표)
 MODELS['flare26g'], MODELS['sunburst26g'] = MODELS['flare26e'], MODELS['sunburst26e']      # 회전교차로 잔디
 MODELS['flare26v'], MODELS['sunburst26v'] = MODELS['flare26e'], MODELS['sunburst26e']      # 초록 길·입체감 (2026-11-15)
-T2I_MODELS = {'flare26', 'sunburst26', 'ideo', 'flare26b', 'sunburst26b'}
+MODELS['flare26s'], MODELS['sunburst26s'] = MODELS['flare26e'], MODELS['sunburst26e']      # 분기점 그림 파란 빛 은은하게
+MODELS['flare26d'], MODELS['sunburst26d'] = MODELS['flare26e'], MODELS['sunburst26e']      # 회전교차로 거리감
+MODELS['flare26j'], MODELS['sunburst26j'] = MODELS['flare26'], MODELS['sunburst26']        # 분기점 그림: 길게 이어진 화살표
+MODELS['flare26x'], MODELS['sunburst26x'] = MODELS['flare26e'], MODELS['sunburst26e']      # 분기점 그림: 깔끔하게·긴 화살표
+MODELS['flare26t'], MODELS['sunburst26t'] = MODELS['flare26e'], MODELS['sunburst26e']      # 분기점 그림: 흰 점선 그대로, 옆 틈만 은은하게
+T2I_MODELS = {'flare26', 'sunburst26', 'ideo', 'flare26b', 'sunburst26b', 'flare26j', 'sunburst26j'}
 
 
 def http(method, url, key, body=None, timeout=60):
@@ -571,6 +636,14 @@ def main():
         JOBS.update(GRASS)   # 회전교차로 4칸을 '잔디' 편집으로
     if 'green' in a.icons.split(','):
         JOBS.update(GREEN)   # 고른 그림을 초록 길·입체감으로 고치기
+    if 'soft' in a.icons.split(','):
+        JOBS.update(SOFT)    # 분기점 그림 파란 빛 은은하게
+    if 'rbdepth' in a.icons.split(','):
+        JOBS.update(RBDEPTH)   # 회전교차로 거리감
+    if 'clean' in a.icons.split(','):
+        JOBS.update(CLEAN)   # 분기점 그림: 깔끔하게, 화살표 꼬리를 맨 아래까지
+    if 'junc3' in a.icons.split(','):
+        JOBS.update(JUNC3)   # 분기점 그림 14장: 길게 이어진 화살표·은은한 파란 빛
     models = [m for m in (a.models or 'flare,sunburst,flare26,sunburst26').split(',') if m in MODELS]
     # 묶음 이름: cars = 모든 차 아이콘(car_*·cute_*), guide = 차가 아닌 안내 아이콘·분기점 그림 전부
     is_car = lambda k: k.startswith(('car_', 'cute_'))
@@ -578,7 +651,7 @@ def main():
     groups = {'cars': [k for k in JOBS if is_car(k)], 'signs': [k for k in JOBS if is_sign(k)],
               'guide': [k for k in JOBS if not is_car(k) and not is_sign(k)],
               'roads': ROADS, 'rb': RBS, 'redo': ROADS + RBS,
-              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s'], 'fix3': ['outs', 'ins', 'over_r', 'under_s', 'under_r', 'side_r', 'oside_r'], 'grass': RBS, 'junc': sorted(PANO), 'green': list(GREEN_KIND)}
+              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s'], 'fix3': ['outs', 'ins', 'over_r', 'under_s', 'under_r', 'side_r', 'oside_r'], 'grass': RBS, 'junc': sorted(PANO), 'green': list(GREEN_KIND), 'junc2': JV2, 'soft': list(SOFT), 'rbdepth': list(RBDEPTH), 'junc3': list(JUNC3), 'clean': list(CLEAN)}
     want = []
     for i in a.icons.split(','):
         want += groups.get(i, [i])
