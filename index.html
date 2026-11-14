@@ -1039,6 +1039,11 @@
   .bumpmk svg { width: 22px; height: 20px; display: block; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .45)); }
   #map.drive .bumpmk { transform: rotate(var(--crot)); transition: transform .9s linear; }
   #map.snap .bumpmk { transition: none !important; }
+  /* ================= 그다음 안내 칸 (2026-11-14 요청: '우회전하고 도착' 처럼) =================
+     이번 회전을 하고 나서 무엇이 얼마 뒤에 오는지 늘 보여 준다. 그다음이 목적지면 빨간 핀 + '도착 18m' */
+  .nextturn { font-size: 16px; padding: 5px 14px; gap: 8px; }
+  .nextturn.goal .nexticon, .nextturn.goal .nexticon svg { width: 22px; height: 22px; }
+  .nextturn.goal #nextDist { font-weight: 800; }
 </style>
 </head>
 <body>
@@ -1271,6 +1276,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-50"></script>
+<script src="app.js?v=2026.11.14-51"></script>
 </body>
 </html>

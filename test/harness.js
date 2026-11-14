@@ -1710,6 +1710,28 @@
     };
   }
 
+  // S42: 그다음 안내 칸 (2026-11-14 요청: 휴대폰 내비처럼 '우회전하고 18m 뒤 도착'). 이번 안내를 하고 나서 무엇이 얼마 뒤에 오는지
+  //      늘 보여 준다(거리는 이번 안내 지점 → 그다음 안내 지점). 그다음이 목적지면 빨간 핀 + '도착 480m', 마지막 안내면 숨김
+  async function s42() {
+    const t = T(), R = buildNavRoute();
+    softReset();
+    await planAndStart(R);
+    const snap = () => { const nn = document.getElementById('nextTurn');
+      return { shown: !nn.hidden && nn.getClientRects().length > 0, goal: nn.classList.contains('goal'), text: text('#nextDist'), pin: !!nn.querySelector('svg.pin') }; };
+    const go = (s) => { const a = pointAt(R, s); feed(a.p, 10, a.h); t.renderNav(); };
+    go(15);
+    const atStart = snap();                 // 이번: 직진(240m) → 그다음: 우회전, 직진 지점에서 360m 뒤
+    for (let s = 30; s <= 300; s += 15) go(s);
+    const beforeTurn = snap();              // 이번: 우회전 → 그다음: 목적지, 우회전 지점에서 480m 뒤
+    for (let s = 315; s <= 640; s += 15) go(s);
+    const afterTurn = snap();               // 이번: 목적지 → 그다음 없음
+    t.endNav();
+    softReset();
+    const ok = atStart.shown && !atStart.goal && atStart.text === '360m' &&
+      beforeTurn.shown && beforeTurn.goal && beforeTurn.pin && beforeTurn.text === '도착 480m' && !afterTurn.shown;
+    return { pass: ok, detail: 'start ' + JSON.stringify(atStart) + ' | before the right turn ' + JSON.stringify(beforeTurn) + ' | after ' + JSON.stringify(afterTurn) + (ok ? '✓' : '✗') };
+  }
+
   // S25: 하이패스 — 경로 안내에 톨게이트(type 121)가 있으면 2km 앞부터 카드(이름·거리·통행료·하이패스 차로 이용)와 음성
   async function s25() {
     const t = T();
@@ -2050,6 +2072,7 @@
     { id: 'S39', name: 'S39 bottom location bar → 경로 비교 · 재추천 · 경유지', fn: s39 },
     { id: 'S40', name: 'S40 new version while driving: tray button, resume the same guidance after updating', fn: s40 },
     { id: 'S41', name: 'S41 speed bumps (national data): route bumps 200 m ahead + map signs, also without nav', fn: s41 },
+    { id: 'S42', name: "S42 next-step chip: what comes after this turn ('도착 480m' with a pin)", fn: s42 },
   ];
 
   // ---------------------------------------------------------------- runner
