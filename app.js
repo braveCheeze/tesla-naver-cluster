@@ -48,7 +48,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-86'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-87'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   // 브라우저에 저장된 예전 index.html 이 새 app.js 를 불러온 경우(화면 요소가 맞지 않아 버튼 연결에서 멈춘다):
@@ -1213,6 +1213,20 @@
     return out;
   }
   // 길안내 경로 위 방지턱 (경로 거리순). 카메라처럼 앞쪽 4km 까지만 찾아 두고 달리면서 늘린다
+  // 경로 위 s(m) 지점의 좌표, 그 지점 앞뒤 30m 사이 진행 방향이 몇 도 꺾이는지
+  function routePointAt(s) {
+    const P = nav.pts, C = nav.cum;
+    let lo = 0, hi = C.length - 1;
+    s = Math.max(0, Math.min(s, C[hi]));
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (C[m] <= s) lo = m; else hi = m; }
+    const L = C[hi] - C[lo], k = L > 0 ? (s - C[lo]) / L : 0;
+    return { lat: P[lo].lat + (P[hi].lat - P[lo].lat) * k, lng: P[lo].lng + (P[hi].lng - P[lo].lng) * k };
+  }
+  function routeTurnAt(s) {
+    const a = routePointAt(s - 30), b = routePointAt(s), c = routePointAt(s + 30);
+    if (haversine(a, b) < 5 || haversine(b, c) < 5) return 0;   // 경로 처음·끝
+    return angleDiff(bearing(a, b), bearing(b, c));
+  }
   function ensureRouteBumps() {
     if (!bumps.loaded || !nav.pts || nav.pts.length < 2) return false;
     if (!nav.routeBumps) { nav.routeBumps = []; nav.bumpSeen = new Set(); nav.bumpUpto = 0; }
@@ -1224,8 +1238,12 @@
         if (nav.bumpSeen.has(it.k)) continue;
         const pr = projectSeg({ lat: bumps.lat[it.k], lng: bumps.lng[it.k] }, a, b);
         if (pr.dist > BUMP_ROUTE_M) continue;
+        const at = nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]);
+        // 경로가 꺾이는 곳(앞뒤 30m 사이 진행 방향이 30° 넘게 바뀜)에서 5m 넘게 떨어진 방지턱은 갈라지는 옆 골목 것으로 본다
+        // (2026-11-14 실제 하남 덕풍동 경로: 모퉁이에서 8.8m 떨어진 옆 골목 방지턱이 '과속방지턱 170m'로 떴다. 곧은 길에서는 10m 까지 그대로)
+        if (pr.dist > 5 && routeTurnAt(at) > 30) continue;
         nav.bumpSeen.add(it.k);
-        nav.routeBumps.push({ k: it.k, at: nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]) });
+        nav.routeBumps.push({ k: it.k, at });
         added = true;
       }
     }
@@ -3294,23 +3312,41 @@
   }
   const hipassNums = (g) => hipassLayout(g).nums;
   // 하이패스 칸 아래 차로 줄 (2026-11-14 요청: 'hi-pass [2] 번 차로' 대신 톨게이트 차로를 1번부터 칸으로 늘어놓고 하이패스 차로만 파랗게).
-  // 미운영 차로가 3개 넘게 이어지면 '⋯' 하나로 줄여 큰 영업소(최대 25차로)도 한 줄에 들어가게
-  function laneStripHtml(code) {
-    const items = [];
-    for (let k = 0; k < code.length;) {
-      if (LANE_KIND[code[k]] === 'off') {
-        let e = k;
-        while (e < code.length && LANE_KIND[code[e]] === 'off') e++;
-        if (e - k >= 3) { items.push('<i class="ln-gap">⋯</i>'); k = e; continue; }
-      }
-      items.push('<b class="ln ' + (LANE_KIND[code[k]] || 'off') + '">' + (k + 1) + '</b>');
-      k++;
+  // 미운영 차로가 3개 넘게 이어지면 '⋯' 하나로. 그래도 max 칸보다 많으면 칸을 줄이지 않고 회색 칸 무리를 끝 2칸만 남기고 '⋯'로
+  // (2026-11-14 요청: 동서울 25차로가 '2122232425'처럼 좁아지기보다 마지막 2~3개만). 파란 칸은 모두 남긴다
+  function laneStripHtml(code, max) {
+    const L = [...String(code || '')].map((c, k) => ({ no: k + 1, kind: LANE_KIND[c] || 'off', keep: true }));
+    for (let k = 0; k < L.length;) {
+      if (L[k].kind !== 'off') { k++; continue; }
+      let e = k;
+      while (e < L.length && L[e].kind === 'off') e++;
+      if (e - k >= 3) for (let j = k; j < e; j++) L[j].keep = false;
+      k = e;
     }
-    return { html: items.join(''), count: items.length };
+    const count = () => { let n = 0, gap = false; for (const x of L) { if (x.keep) { n++; gap = false; } else if (!gap) { n++; gap = true; } } return n; };
+    for (let guard = 0; guard < 40 && max && count() > max; guard++) {
+      let best = null;   // 가장 긴 회색(파랑 아닌) 칸 무리, 3칸 이상만
+      for (let k = 0; k < L.length;) {
+        if (!L[k].keep || L[k].kind === 'hp') { k++; continue; }
+        let e = k;
+        while (e < L.length && L[e].keep && L[e].kind !== 'hp') e++;
+        if (e - k > 2 && (!best || e - k > best[1] - best[0])) best = [k, e];
+        k = e;
+      }
+      if (!best) break;
+      L[best[0]].keep = false;   // 무리의 앞쪽부터 접어 끝 2칸이 남게
+    }
+    const out = [];
+    let gap = false;
+    for (const x of L) {
+      if (x.keep) { out.push('<b class="ln ' + x.kind + '">' + x.no + '</b>'); gap = false; } else if (!gap) { out.push('<i class="ln-gap">⋯</i>'); gap = true; }
+    }
+    return { html: out.join(''), count: out.length };
   }
   function renderTollLanes(g) {
     const el = $('#tollLanes');
-    const key = g.i + ':' + g.s + ':' + hipass.date + ':' + Math.round(nav.total || 0) + ':' + (nav.pts && nav.pts.length ? nav.pts[0].lat + ',' + nav.pts[0].lng : '');
+    const beside = g === nav.next;   // 톨게이트가 다음 안내면 차로 줄이 배지 옆 한 줄 (좁다)
+    const key = g.i + ':' + g.s + ':' + hipass.date + ':' + Math.round(nav.total || 0) + ':' + (nav.pts && nav.pts.length ? nav.pts[0].lat + ',' + nav.pts[0].lng : '') + ':' + beside;
     if (tollState.numsKey !== key) {
       tollState.numsKey = key;
       const lay = hipassLayout(g);
@@ -3318,7 +3354,7 @@
       el.dataset.hp = lay.nums.join(',');
       el.dataset.n = lay.code ? String(lay.code.length) : '0';
       if (lay.code) {
-        const st = laneStripHtml(lay.code);
+        const st = laneStripHtml(lay.code, beside ? 7 : 10);
         el.innerHTML = st.html;
         tollState.items = st.count;
         el.classList.remove('compact');
@@ -3330,10 +3366,8 @@
         el.setAttribute('aria-label', '하이패스 ' + lay.nums.join(', ') + '번 차로');
       }
     }
-    // 칸이 좁으면(배지 옆 한 줄이면 8칸부터, 따로 한 줄이면 12칸부터) 회색 칸 번호는 숨기고 파란 칸 번호만 (2026-11-14 실제 앱: 동서울 '2122232425' 붙어 보임)
-    const n = tollState.items || 0, beside = g === nav.next;
-    el.classList.toggle('tight', n > (beside ? 7 : 11));
-    el.classList.toggle('dense', n > (beside ? 9 : 14));
+    // 접어도 칸이 너무 많을 때만(파란 칸이 많은 큰 영업소) 글자를 조금 작게
+    el.classList.toggle('dense', (tollState.items || 0) > (beside ? 7 : 10));
     const show = tollState.nums.length > 0;
     el.hidden = !show;
     $('#tollCard').classList.toggle('has-lanes', show);
@@ -4754,7 +4788,7 @@
       planRoute, doSearch, setFollowing, canvasPoint, gesture, glView, glOn, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
       sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
-      saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassNums, hipassLayout, laneNums, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, parking, parkState, setParkingData, loadParking, evalParking, rest, setRestData, loadRest, ensureRouteRest, renderRest, placeBase, findParking, renderTurnArrow,
+      saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassNums, hipassLayout, laneNums, laneStripHtml, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, parking, parkState, setParkingData, loadParking, evalParking, rest, setRestData, loadRest, ensureRouteRest, renderRest, placeBase, findParking, renderTurnArrow,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },

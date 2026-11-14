@@ -1720,12 +1720,30 @@
     t.prefs.bumps = false;
     const off = await drive(true);
     t.prefs.bumps = prev;
+    // (d) 경로가 꺾이는 모퉁이 옆 골목 방지턱은 안 잡는다 (2026-11-14 실제 하남 덕풍동 경로: 모퉁이에서 8.8m 떨어진 옆 골목 방지턱이
+    //     '과속방지턱 170m'로 떴다). 시험 경로(북쪽 600m → 동쪽)의 모퉁이 너머 북쪽 8m 방지턱은 빼고, 곧은 길 옆 8m 방지턱은 그대로 잡는다
+    const keep = { n: t.bumps.n, lat: t.bumps.lat, lng: t.bumps.lng, flag: t.bumps.flag, grid: t.bumps.grid };
+    let corner = null;
+    try {
+      const RB = buildNavRoute(), nb = (m) => dest(NAV_ORIGIN, 0, m);
+      const bp = [dest(nb(600), 0, 8), dest(nb(300), 90, 8)];
+      const grid = new Map();
+      bp.forEach((p, k) => { const key = Math.floor(p.lat * 100) + ':' + Math.floor(p.lng * 100); if (!grid.has(key)) grid.set(key, []); grid.get(key).push(k); });
+      Object.assign(t.bumps, { n: 2, lat: Float64Array.from(bp.map((p) => p.lat)), lng: Float64Array.from(bp.map((p) => p.lng)), flag: new Uint8Array(2), grid });
+      softReset();
+      await planAndStart(RB);
+      feed(pointAt(RB, 20).p, 10, 0);
+      corner = (t.nav.routeBumps || []).map((x) => x.k + '@' + Math.round(x.at)).join(',');
+      t.endNav();
+    } finally {
+      Object.assign(t.bumps, keep);
+    }
     softReset();
     const mapOk = !t.getMap() || nav.markers >= 1;
-    const ok = nav.alerted >= 5 && nav.maxShownD <= 200 && mapOk && /과속방지턱 \d+m/.test(nav.label) && free.alerted >= 3 && off.alerted === 0;
+    const ok = nav.alerted >= 5 && nav.maxShownD <= 200 && mapOk && /과속방지턱 \d+m/.test(nav.label) && free.alerted >= 3 && off.alerted === 0 && corner === '1@300';
     return {
       pass: ok,
-      detail: 'with nav: ' + JSON.stringify(nav) + ' | no nav: ' + JSON.stringify(free) + ' | setting off: ' + JSON.stringify(off) + (ok ? '✓' : '✗'),
+      detail: 'with nav: ' + JSON.stringify(nav) + ' | no nav: ' + JSON.stringify(free) + ' | setting off: ' + JSON.stringify(off) + ' | corner side-street bump: ' + corner + (ok ? '✓' : '✗'),
     };
   }
 
@@ -2141,6 +2159,11 @@
       시험지방: { t: 1, u: 'HTH', d: 'HHT' },
     } };
     const real = { loaded: t.hipass.loaded, count: Object.keys(t.hipass.o).length, 하남: t.hipass.o['하남'], 군자입구: t.laneNums((t.hipass.o['군자'] || {}).i) };
+    // 칸이 많으면 회색 칸 무리를 끝 2칸만 남기고 접는다 (2026-11-14 요청). [n] = 파란 칸
+    const strip = (code, max) => t.laneStripHtml(code, max).html.replace(/<b class="ln (\w+)">(\d+)<\/b>/g, (m0, k, n) => (k === 'hp' ? '[' + n + ']' : n) + ' ')
+      .replace(/<i class="ln-gap">⋯<\/i>/g, '… ').trim();
+    const ds = (t.hipass.o['동서울'] || {}).i;
+    real.동서울옆 = strip(ds, 7); real.동서울줄 = strip(ds, 10);
     const r = {};
     try {
       set(true);
@@ -2193,7 +2216,8 @@
       r.unknown.card && r.unknown.lanes === '' &&
       r.toSeoul.lanes === '2/3' && r.fromSeoul.lanes === '1/3' && r.sideways.card && r.sideways.lanes === '' && r.ruleOff.lanes === '1/0' &&
       r.realHanam.card && r.realHanam.lanes === '2/5' && r.realHanam.boxes === 5 && r.realHanam.blue === 1 &&
-      real.loaded && real.count > 400 && real.하남 && real.하남.u === 'bHPTb' && real.하남.d === 'HPTb' && real.하남.s === 1 && real.군자입구.join(',') === '1,2,3';
+      real.loaded && real.count > 400 && real.하남 && real.하남.u === 'bHPTb' && real.하남.d === 'HPTb' && real.하남.s === 1 && real.군자입구.join(',') === '1,2,3' &&
+      real.동서울옆 === '[1] [2] [3] [4] … 24 25' && real.동서울줄 === '[1] [2] [3] [4] … 21 22 23 24 25';
     return { pass: ok, detail: JSON.stringify(r) + ' | real: ' + JSON.stringify(real) + (ok ? '✓' : '✗') };
   }
 
