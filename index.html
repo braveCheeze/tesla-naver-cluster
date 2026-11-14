@@ -1291,9 +1291,10 @@
   /* ---------- 사용자가 그린 길안내 아이콘 (icons.js, 2026-11-14) ----------
      화살표는 한 색(currentColor)이라 패널 초록을 따른다. 도로·톨게이트·핀은 그림 색 그대로 */
   .turnicon svg.ti, .nexticon svg.ti { stroke: none; color: #fff; }
-  #app.tesla .turnicon svg.ti, #app.tesla .nexticon svg.ti { color: var(--nv-green); }
+  #app.tesla .turnicon svg.ti, #app.tesla .nexticon svg.ti { color: var(--nv-green); stroke: none; }
   /* 밤(어두운 패널): 어두운 도로를 조금 밝게 */
   body:has(#app.tesla):has(#map.night) svg.ti .rd { fill: #5b6676; }
+  body:has(#app.tesla):has(#map.night) svg.ti .rd-s { stroke: #5b6676; }
 
   /* ---------- 벡터(GL) 지도 (2026-11-14) ----------
      캔버스는 돌리지 않고 화면 아래로 길게(가운데 = 차 위치, 화면 70% 높이) 두고, 지도 자체를 돌리고 기울인다.
@@ -1560,7 +1561,7 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.14-84"></script>
-<script src="app.js?v=2026.11.14-84"></script>
+<script src="icons.js?v=2026.11.14-85"></script>
+<script src="app.js?v=2026.11.14-85"></script>
 </body>
 </html>

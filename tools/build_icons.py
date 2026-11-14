@@ -359,6 +359,44 @@ def build_pin(key, alpha, fg):
         key, CLASSES[key], gid, gy0, gy1, hexc(c_top), hexc(c_bot), gid, sil, txt)
 
 
+def ramp_svg(key):
+    """나가기(OUT)·들어가기(IN) 아이콘을 사용자 그림과 같은 모양새(어두운 도로·흰 가장자리·점선 차선·흰 화살표·방패)로
+    다시 그린다 (2026-11-14 요청: 딴 그림은 합류 지점이 맨 아래에 있고 직진 부분이 길어 '직진'으로 오해할 수 있다
+    → 도로를 두툼하게, 합류·진출 지점을 가운데에, 직진은 짧게, 화살촉은 크게).
+    오른쪽 기준으로 그리고 왼쪽은 도로만 좌우로 뒤집는다 (방패 글자는 뒤집지 않는다)"""
+    out = key.startswith('out')
+    left = key.endswith('l')
+    dark, white, blue, red = '#313b42', '#f5f7f8', '#0d52a2', '#e42121'
+    if out:
+        # 본선(왼쪽 세로)에서 오른쪽 차로가 갈라져 오른쪽 위로 빠져나간다
+        ramp = 'M21 35 C31 27.5 37 19 40 -1'
+        arrow = 'M18.6 46 L18.6 37.5 C18.6 33.5 21.5 31 25.6 28.4 C31 24.6 35 18.6 36.6 13.4'
+        head = 'M38.9 4.6 L43.5 14.6 L30.2 10.6 Z'
+        sh_y, sh_txt = 32.5, 'OUT'
+    else:
+        # 오른쪽 아래에서 올라온 연결로가 본선 오른쪽 차로로 합류한 뒤 위로
+        ramp = 'M41 49 C41 37 31 31 21 24'
+        arrow = 'M40.2 46.5 C40.2 37.5 31.5 31.5 22.4 25.6 C19.7 23.8 18.6 21.6 18.6 18.6 L18.6 13.2'
+        head = 'M18.6 3.2 L26.6 13.6 L10.6 13.6 Z'
+        sh_y, sh_txt = 2.0, 'IN'
+    road = ('<rect class="rd-edge" x="3.4" y="-1" width="21.2" height="50" fill="%s" stroke="none"/>' % white +
+            '<path d="%s" fill="none" stroke="%s" stroke-width="13.6"/>' % (ramp, white) +
+            '<rect class="rd" x="4.8" y="-1" width="18.4" height="50" fill="%s" stroke="none"/>' % dark +
+            '<path class="rd-s" d="%s" fill="none" stroke="%s" stroke-width="10.8"/>' % (ramp, dark) +
+            '<path d="M14 -1 V49" fill="none" stroke="%s" stroke-width="1.4" stroke-dasharray="4 3.6" opacity=".9"/>' % white +
+            '<path d="%s" fill="none" stroke="%s" stroke-width="4.8" stroke-linecap="round" stroke-linejoin="round"/>' % (arrow, white) +
+            '<path d="%s" fill="%s" stroke="%s" stroke-width="1" stroke-linejoin="round"/>' % (head, white, white))
+    flip = ' transform="matrix(-1 0 0 1 48 0)"' if left else ''
+    sx = 2.0 if left else 30.0   # 방패는 비어 있는 쪽 위(IN)·아래(OUT) 모서리에
+    shield = ('<g class="shield" transform="translate(%.1f %.1f)">' % (sx, sh_y) +
+              '<path d="M0 0.6h16v7.4c0 4.1-3.6 6.7-8 8.4-4.4-1.7-8-4.3-8-8.4z" fill="%s" stroke="#ffffff" stroke-width="1.3"/>' % blue +
+              '<path d="M0.65 1.25h14.7v3.4H0.65z" fill="%s" stroke="none"/>' % red +
+              '<text x="8" y="11.9" text-anchor="middle" font-size="%s" font-weight="800" fill="#ffffff" stroke="none" font-family="Pretendard, sans-serif">%s</text>' % (
+                  '6.6' if out else '7.6', sh_txt) +
+              '</g>')
+    return '<svg viewBox="0 0 48 48" class="ti ti-%s %s"><g stroke-linecap="butt"%s>%s</g>%s</svg>' % (key, CLASSES[key], flip, road, shield)
+
+
 def main():
     loaded = {k: load(os.path.join(SRC, f)) for k, (f, kind) in ICONS.items()}
     # 화살표는 모두 같은 틀(크기 비율)로: 굵기가 아이콘마다 달라지지 않게 전체를 덮는 정사각형 하나를 쓴다
@@ -374,6 +412,8 @@ def main():
             out[k] = build_arrow(k, alpha, afrm)
         elif kind == 'pin':
             out[k] = build_pin(k, alpha, fg)
+        elif kind == 'ramp':
+            out[k] = ramp_svg(k)   # 딴 그림 대신 같은 모양새로 다시 그린 것 (합류·진출이 잘 보이게)
         else:
             out[k] = build_layers(k, kind, alpha, fg)
         print('%-5s %6d bytes' % (k, len(out[k])))
