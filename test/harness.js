@@ -1272,10 +1272,14 @@
         roadBottomCenter: Math.abs((road.left + road.right) / 2 - (app.left + app.right) / 2) < 30 && road.bottom > app.bottom - 40,
         gpsBottomRight: gps.right > app.right - 40 && gps.bottom > app.bottom - 60,
         compassBottomLeft: head.left < app.left + 40 && head.bottom > app.bottom - 140, // 나침반은 맨 아래 주행 기록 바로 위
-        tripAtBottom: document.querySelector('.trip').getBoundingClientRect().bottom > app.bottom - 30 && head.bottom <= document.querySelector('.trip').getBoundingClientRect().top + 6,
-        stripRight: strip.left > app.right - 70 && bar.width <= 8,
-        // 오른쪽 가장자리에서 띄우기: 시계·경로 막대가 오른쪽 끝에 붙지 않는다
-        rightGap: app.right - clock.right >= 24 && app.right - strip.right >= 20,
+        // 주행 기록은 맨 아래지만 화면 테두리에서 띄워서(아래 24px 이상, 왼쪽 20px 이상), 나침반은 그 위
+        tripAtBottom: (() => { const tr = document.querySelector('.trip').getBoundingClientRect();
+          return tr.bottom <= app.bottom - 24 && tr.bottom > app.bottom - 60 && tr.left >= app.left + 20 && head.bottom <= tr.top + 6; })(),
+        stripRight: strip.left > app.right - 80 && bar.width <= 8,
+        // 경로 막대는 세로 가운데
+        stripMiddle: Math.abs((strip.top + strip.bottom) / 2 - (app.top + app.bottom) / 2) < 12,
+        // 오른쪽·위 테두리에서 띄우기: 시계·경로 막대가 테두리에 붙지 않는다
+        rightGap: app.right - clock.right >= 30 && clock.top - app.top >= 16 && app.right - strip.right >= 30,
         alertsUnderNav: alerts.top >= np.bottom && alerts.top - np.bottom < 30 && alerts.left < app.left + 40,
         buttons70: btn.width >= 36 && btn.width <= 42,
         // 야간·전체화면·설정 버튼은 길안내 패널 바로 오른쪽, 패널 위쪽 높이에
