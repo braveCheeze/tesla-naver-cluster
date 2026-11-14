@@ -1200,21 +1200,28 @@
   #app.tesla .cd-in .toll-fare { color: var(--nv-sub); opacity: 1; }
   #app.tesla .cd-in .toll-dist { color: var(--nv-fg); }
   #app.tesla .cd-in .toll-hint { font-size: 13px; margin-top: 2px; }
-  /* 하이패스 차로 번호 (2026-11-14 요청): 파란 칸에 번호, 떨어진 번호 사이는 '–'. 다른 내비의 'hi-pass 1 2 – 5' 처럼 */
-  .toll-lanes { flex: none; margin-left: auto; display: flex; align-items: center; gap: 4px; }
-  .toll-lanes b {
-    min-width: 26px; height: 30px; padding: 0 6px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center;
-    background: #1565c0; color: #fff; font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; text-shadow: none;
+  /* 하이패스 차로 줄 (2026-11-14 요청): 카드 아래 줄에 톨게이트 차로를 1번부터 칸으로 늘어놓고 하이패스 차로만 파랗게,
+     유인·정산기·화물차 차로는 회색, 미운영 차로는 흐리게(3개 넘게 이어지면 '⋯'). '700m'·'번 차로' 글자는 뺀다 */
+  .tollcard.has-lanes { flex-wrap: wrap; row-gap: 8px; }
+  .toll-lanes { order: 10; flex: 1 0 100%; display: flex; align-items: center; gap: 3px; min-width: 0; }
+  .toll-lanes .ln {
+    flex: 1 1 0; min-width: 0; max-width: 34px; height: 28px; border-radius: 5px; display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; text-shadow: none; overflow: hidden;
+    background: rgba(128, 138, 158, .24); color: #8a94a6;
   }
-  .toll-lanes i { font-style: normal; font-weight: 800; color: #8a94a6; padding: 0 1px; }
-  /* 차로 번호가 있으면 'hi-pass [1][2] – [5] 번 차로'. 안내 문구·통행료는 빼고, 톨게이트가 패널의 다음 안내면 이름 줄도 뺀다
-     (이름·통행료·거리는 패널에 크게 나온다) */
+  .toll-lanes .ln.hp { background: #1565c0; color: #fff; }
+  .toll-lanes .ln.off { background: transparent; box-shadow: inset 0 0 0 1px rgba(128, 138, 158, .35); opacity: .6; }
+  .toll-lanes .ln-gap { flex: none; font-style: normal; font-weight: 800; color: #8a94a6; padding: 0 1px; }
+  .toll-lanes.dense .ln { font-size: 11px; height: 24px; letter-spacing: -.04em; }
+  /* 방향을 몰라 줄을 못 그릴 때(양쪽 다 하이패스인 번호만): 예전처럼 이름 옆에 파란 번호 칸만 */
+  .toll-lanes.compact { order: 0; flex: none; margin-left: auto; gap: 4px; }
+  .toll-lanes.compact .ln { flex: none; min-width: 26px; max-width: none; height: 30px; padding: 0 6px; font-size: 17px; }
   .tollcard.has-lanes .toll-hint, .tollcard.has-lanes .toll-fare { display: none; }
+  /* 톨게이트가 패널의 다음 안내면 이름 줄도 빼고(패널에 크게 나옴) 차로 줄을 배지 옆 한 줄에 */
   .tollcard.is-next .toll-name { display: none; }
   .tollcard.is-next.has-lanes .toll-info { display: none; }
-  .tollcard.is-next.has-lanes .toll-lanes { margin-left: 4px; }
-  .tl-unit { margin-left: 4px; font-size: 14px; font-weight: 700; opacity: .8; white-space: nowrap; }
-  #app.tesla .cd-in .tl-unit { color: var(--nv-sub); opacity: 1; }
+  .tollcard.is-next.has-lanes { flex-wrap: nowrap; }
+  .tollcard.is-next.has-lanes .toll-lanes { order: 0; flex: 1 1 auto; margin-left: 2px; }
   /* ================= 2026-11-14 요청 세 가지 =================
      ① 날씨: '비 93%' 파란 글자 대신 흰 글자 + 우산 표지 + 숫자 */
   .wxumb { width: 1.05em; height: 1.05em; vertical-align: -0.15em; margin-right: 2px; }
@@ -1516,6 +1523,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-76"></script>
+<script src="app.js?v=2026.11.14-78"></script>
 </body>
 </html>

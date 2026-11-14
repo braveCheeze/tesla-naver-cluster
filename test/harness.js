@@ -2099,10 +2099,10 @@
   }
 
   // S53: 하이패스 차로 번호 (2026-11-14 요청: 같은 거리는 빼고 '몇 번으로 가야 하이패스'). 한국도로공사 '영업소별 하이패스차로 운영현황'
-  //      (data/hipass.json)으로: (a) 하남IC 고속도로 진입 뒤의 폐쇄식 톨게이트 → 입구 차로 '1 2 – 5'. 톨게이트가 패널의 다음 안내면
-  //      하이패스 칸의 거리는 숨기고, 다른 안내가 먼저면 보인다  (b) 자료에 없는 영업소면 번호 없이 그대로
+  //      (data/hipass.json)으로: (a) 하남IC 고속도로 진입 뒤의 폐쇄식 톨게이트 → 입구 차로 줄 5칸 중 1·2·5번이 파랑. 톨게이트가 패널의 다음 안내나
+  //      그다음 칸에 나오면 하이패스 칸의 거리는 숨기고, 그보다 멀면 보인다  (b) 자료에 없는 영업소면 번호 없이 그대로
   //      (c) 개방식(상행·하행) 수도권 영업소: 서울 쪽으로 가면 상행 차로, 반대면 하행 차로  (d) 방향을 모르면 양쪽 다 하이패스인 차로만
-  //      (e) 실제 자료: 하남 상행 2번·하행 1번, 군자 입구 1~3번  (f) 실제 팔당→하남IC 경로의 하남톨게이트 → '2번 차로'
+  //      (e) 실제 자료: 하남 상행 2번·하행 1번, 군자 입구 1~3번  (f) 실제 팔당→하남IC 경로의 하남톨게이트 → 5칸 중 2번만 파랑
   async function s53() {
     const t = T(), box = TESLA_ONLY, prev = t.prefs.tesla;
     const set = (on) => { box.checked = on; box.dispatchEvent(new Event('change')); };
@@ -2121,33 +2121,40 @@
         P, cum, total, dest: { name: '하이패스 테스트', addr: '', lat: P[40].lat, lng: P[40].lng },
       };
     };
+    const straight = { i: 15, t: 1, s: '직진' };
     const enter = { i: 20, t: 66, s: "하남IC에서 '서울, 대전' 방면으로 오른쪽 고속도로 진입" };
     const end = { i: 40, t: 88, s: '목적지' };
     const toll = (name) => ({ i: 25, t: 121, s: name + '톨게이트 (통행료 800원)' });
-    const snap = () => ({ card: visible('#tollCard'), lanes: visible('#tollLanes') ? text('#tollLanes') : '', dist: visible('#tollDist') ? text('#tollDist') : '' });
+    // lanes: '하이패스 번호/그린 차로 수' (차로 줄이면 전체 차로 수, 방향을 몰라 번호만이면 0)
+    const laneInfo = () => { const e = document.getElementById('tollLanes'); return e.dataset.hp + '/' + e.dataset.n; };
+    const snap = () => ({ card: visible('#tollCard'), lanes: visible('#tollLanes') ? laneInfo() : '', dist: visible('#tollDist') ? text('#tollDist') : '',
+      boxes: document.querySelectorAll('#tollLanes .ln').length, blue: document.querySelectorAll('#tollLanes .ln.hp').length });
     const drive = async (R, upto) => {
       await planAndStart(R);
       for (let s = 25; s <= upto; s += 25) { const a = pointAt(R, s); feed(a.p, 25, brg(R.P[0], R.P[40])); t.renderNav(); }
       await new Promise((res) => setTimeout(res, 30)); t.renderNav();
       return snap();
     };
-    const data = { v: 1, date: '2026-06-30', o: {
-      시험폐쇄: { i: [1, 2, 5], x: [4] },
-      시험개방: { t: 1, s: 1, u: [2], d: [1] },
-      시험지방: { t: 1, u: [1, 3], d: [1, 2] },
+    const data = { v: 2, date: '2026-06-30', o: {
+      시험폐쇄: { i: 'HHTxH', x: 'TTPH' },
+      시험개방: { t: 1, s: 1, u: 'xHT', d: 'HTT' },
+      시험지방: { t: 1, u: 'HTH', d: 'HHT' },
     } };
-    const real = { loaded: t.hipass.loaded, count: Object.keys(t.hipass.o).length, 하남: t.hipass.o['하남'], 군자: t.hipass.o['군자'] };
+    const real = { loaded: t.hipass.loaded, count: Object.keys(t.hipass.o).length, 하남: t.hipass.o['하남'], 군자입구: t.laneNums((t.hipass.o['군자'] || {}).i) };
     const r = {};
     try {
       set(true);
       t.setHipassData(data);
       // 서울은 시험 출발점(강원 동쪽)에서 서남서(약 250°) 쪽
       softReset();
-      const north = mkRoute(0, [enter, toll('시험폐쇄'), end]);
+      const north = mkRoute(0, [straight, enter, toll('시험폐쇄'), end]);
       await planAndStart(north);
-      for (let s = 25; s <= 1700; s += 25) { const a = pointAt(north, s); feed(a.p, 25, 0); t.renderNav(); }
+      for (let s = 25; s <= 700; s += 25) { const a = pointAt(north, s); feed(a.p, 25, 0); t.renderNav(); }
       await new Promise((res) => setTimeout(res, 30)); t.renderNav();
-      r.beforeEntry = snap();                       // 다음 안내는 하남IC 진입, 톨게이트는 그 뒤 (1.2km) → 거리 보임
+      r.far = snap();                               // 톨게이트가 패널에 아직 없음 (다음 직진, 그다음 진입) → 거리 보임
+      for (let s = 725; s <= 1700; s += 25) { const a = pointAt(north, s); feed(a.p, 25, 0); t.renderNav(); }
+      await new Promise((res) => setTimeout(res, 30)); t.renderNav();
+      r.beforeEntry = snap();                       // 다음 안내는 하남IC 진입, 톨게이트는 그다음 칸 ('TG 500m') → 거리 숨김
       for (let s = 1725; s <= 2200; s += 25) { const a = pointAt(north, s); feed(a.p, 25, 0); t.renderNav(); }
       r.tollNext = snap();                          // 다음 안내가 톨게이트 → 거리 숨김
       t.endNav(); softReset();
@@ -2180,11 +2187,13 @@
       set(prev);
       softReset();
     }
-    const ok = r.beforeEntry.card && r.beforeEntry.lanes === '12–5번 차로' && /km|m$/.test(r.beforeEntry.dist) &&
-      r.tollNext.card && r.tollNext.lanes === '12–5번 차로' && r.tollNext.dist === '' &&
+    const ok = r.far.card && /km|m$/.test(r.far.dist) && r.far.lanes === '1,2,5/5' && r.far.boxes === 5 && r.far.blue === 3 &&
+      r.beforeEntry.card && r.beforeEntry.lanes === '1,2,5/5' && r.beforeEntry.dist === '' &&
+      r.tollNext.card && r.tollNext.lanes === '1,2,5/5' && r.tollNext.dist === '' &&
       r.unknown.card && r.unknown.lanes === '' &&
-      r.toSeoul.lanes === '2번 차로' && r.fromSeoul.lanes === '1번 차로' && r.sideways.card && r.sideways.lanes === '' && r.ruleOff.lanes === '1번 차로' && r.realHanam.card && r.realHanam.lanes === '2번 차로' &&
-      real.loaded && real.count > 400 && JSON.stringify(real.하남) === JSON.stringify({ u: [2], t: 1, s: 1, d: [1] }) && JSON.stringify(real.군자 && real.군자.i) === '[1,2,3]';
+      r.toSeoul.lanes === '2/3' && r.fromSeoul.lanes === '1/3' && r.sideways.card && r.sideways.lanes === '' && r.ruleOff.lanes === '1/0' &&
+      r.realHanam.card && r.realHanam.lanes === '2/5' && r.realHanam.boxes === 5 && r.realHanam.blue === 1 &&
+      real.loaded && real.count > 400 && real.하남 && real.하남.u === 'bHPTb' && real.하남.d === 'HPTb' && real.하남.s === 1 && real.군자입구.join(',') === '1,2,3';
     return { pass: ok, detail: JSON.stringify(r) + ' | real: ' + JSON.stringify(real) + (ok ? '✓' : '✗') };
   }
 
@@ -2671,7 +2680,7 @@
     { id: 'S50', name: 'S50 traffic colors in five steps (green, yellow, orange, red, dark red) from section speed', fn: s50 },
     { id: 'S51', name: "S51 section cameras found from '구간 시점/종점' place text", fn: s51 },
     { id: 'S52', name: 'S52 on the expressway (entry→exit guides) street cameras below stay quiet even without a section name', fn: s52 },
-    { id: 'S53', name: 'S53 hi-pass lane numbers (1 2 – 5) from data/hipass.json: entry/exit, 상행/하행 toward Seoul, common lanes when unsure', fn: s53 },
+    { id: 'S53', name: 'S53 hi-pass lane strip from data/hipass.json (all lanes, hi-pass blue): entry/exit, 상행/하행 toward Seoul, common lanes when unsure', fn: s53 },
     { id: 'S54', name: 'S54 keep-left/right arrows for 왼쪽/오른쪽 방향·도로 주행, OUT/IN for highway exit/entry', fn: s54 },
     { id: 'S55', name: "S55 road caution signs (slippery, rockfall…): 300 m ahead on our side of the route, '주의' just after, setting off", fn: s55 },
     { id: 'S56', name: "S56 dragging the heading-up map keeps the direction, shows '내 위치로', returns after 5 s; pinch/wheel zoom keeps following", fn: s56 },
