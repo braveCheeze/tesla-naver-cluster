@@ -61,14 +61,14 @@ def main(out):
             batch += get(key, page, se)[1]
             time.sleep(0.2)
         for it in batch:
-            k = (it.get('instt_code'), it.get('sflblSn'), it.get('latitude'), it.get('longitude'), it.get('asortSn'), it.get('sflblDc'))
+            k = (it.get('insttCode') or it.get('instt_code'), it.get('sflblSn'), it.get('latitude'), it.get('longitude'), it.get('asortSn'), it.get('sflblDc'))
             if k in seen:
                 continue
             seen.add(k)
             allitems.append(it)
     with open(out, 'w', encoding='utf-8') as f:
         json.dump({'source': API, 'fetched': time.strftime('%Y-%m-%d'), 'items': allitems}, f, ensure_ascii=False)
-    orgs = sorted({str(it.get('institutionNm') or it.get('instt_code') or '') for it in allitems})
+    orgs = sorted({str(it.get('insttNm') or it.get('institutionNm') or '') for it in allitems})
     print('saved', len(allitems), 'items from', len(orgs), 'organizations ->', out)
 
 
