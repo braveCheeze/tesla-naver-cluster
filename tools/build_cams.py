@@ -19,11 +19,16 @@ rear : 후면 단속 카메라면 1 (지나간 뒤 차 뒤를 찍는다). 원본
 import csv
 import io
 import json
+import re
 import sys
 from collections import Counter
 
 src, out = sys.argv[1], sys.argv[2]
 rows = list(csv.reader(io.StringIO(open(src, 'rb').read().decode('cp949'))))[1:]
+
+
+# 설치장소의 방향 표시: '(A→B)', 'A->B', 'A⇒B', 'A▶B'
+PLACE_ARROW = re.compile(r'→|->|⇒|▶|=>')
 
 
 def norm(code):
@@ -125,6 +130,13 @@ for r in rows:
         ri = -1
     rtype = RTYPE.get(r[3].strip(), 6)
     direction = {'1': 1, '2': 2, '3': 3}.get(norm(r[6]), 0)
+    # 과속 전용 카메라는 설치장소에 '(A→B)'처럼 방향이 적혀 있으면, 방향 코드가 '양방향(3)'이어도 한 방향만 찍는다.
+    # (2026-11-14 주행: 양서면 북한강로 '골용진 입구(용늪삼거리→양평수난구조대)' J2675 는 코드가 양방향이라
+    #  반대편(남행)에서도 떴다. 실제로는 북행 전용이고 남행 경로에서 왼쪽 9m.) 한 방향(1)으로 두면 앱이 좌우로 가른다.
+    #  교차로 신호·과속(3)은 화살표가 있어도 실제로 여러 방향을 찍는 경우가 많아 그대로 둔다
+    if kind == 1 and not sec and direction == 3 and PLACE_ARROW.search(r[11]):
+        direction = 1
+        skipped['(info) speed-only one-way from place arrow'] += 1
     key = (round(lat, 5), round(lng, 5), limit, kind, sec)
     if key in seen:
         prev = seen[key]

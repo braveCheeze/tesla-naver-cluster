@@ -1732,6 +1732,37 @@
     return { pass: ok, detail: 'start ' + JSON.stringify(atStart) + ' | before the right turn ' + JSON.stringify(beforeTurn) + ' | after ' + JSON.stringify(afterTurn) + (ok ? '✓' : '✗') };
   }
 
+  // S43: 반대편 과속 카메라 (2026-11-14 주행 제보: 양서면 북한강로 '골용진 입구(용늪삼거리→양평수난구조대)' J2675, 제한 60).
+  //      원본 방향 코드는 '양방향'인데 설치장소에 방향(→)이 적힌 과속 전용 카메라라 한 방향으로 본다.
+  //      실제 경로(test/fixtures/route-yangseo-bukhangang-s|n.json)로: 남행(두물머리 쪽, 카메라가 왼쪽 9m)에서는 안 뜨고, 북행에서는 뜬다
+  async function s43() {
+    const t = T(), CAM = { lat: 37.5585, lng: 127.32654 };
+    const run = async (file, withNav) => {
+      const fx = await (await realFetch(harnessDir + 'fixtures/' + file, { cache: 'no-store' })).json();
+      const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0];
+      for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+      const total = cum[cum.length - 1];
+      const R = { route: fx, P, cum, total, dest: { name: '북한강로', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+      softReset();
+      if (withNav) await planAndStart(R); else feed(P[0], 0, null);
+      let hit = false;
+      for (let s = 0; s <= total - 30; s += 12) {
+        const a = pointAt(R, s);
+        feed(a.p, 55 / 3.6, a.h);
+        const tg = t.camState.target;
+        if (tg && sameCam(tg.c, CAM)) hit = true;
+      }
+      if (withNav) t.endNav();
+      return hit;
+    };
+    const southNav = await run('route-yangseo-bukhangang-s.json', true), southFree = await run('route-yangseo-bukhangang-s.json', false);
+    const northNav = await run('route-yangseo-bukhangang-n.json', true);
+    softReset();
+    const ok = !southNav && !southFree && northNav;
+    return { pass: ok, detail: 'southbound (opposite) nav ' + (southNav ? 'ALERTED✗' : 'quiet✓') + ', no nav ' + (southFree ? 'ALERTED✗' : 'quiet✓') + ' | northbound nav ' + (northNav ? 'alerted✓' : 'MISSED✗') };
+  }
+
   // S25: 하이패스 — 경로 안내에 톨게이트(type 121)가 있으면 2km 앞부터 카드(이름·거리·통행료·하이패스 차로 이용)와 음성
   async function s25() {
     const t = T();
@@ -2073,6 +2104,7 @@
     { id: 'S40', name: 'S40 new version while driving: tray button, resume the same guidance after updating', fn: s40 },
     { id: 'S41', name: 'S41 speed bumps (national data): route bumps 200 m ahead + map signs, also without nav', fn: s41 },
     { id: 'S42', name: "S42 next-step chip: what comes after this turn ('도착 480m' with a pin)", fn: s42 },
+    { id: 'S43', name: 'S43 one-way speed camera marked both ways in the data (양서면 북한강로): quiet on the opposite side', fn: s43 },
   ];
 
   // ---------------------------------------------------------------- runner
