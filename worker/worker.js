@@ -24,6 +24,8 @@ const routeHits = new Map();
 // 하이패스 차로 목록 (전국 영업소, 실시간). 5분 동안 메모리에 두고 다시 받는다
 const hipassCache = { list: null, at: 0 };
 const HIPASS_API = 'https://data.ex.co.kr/openapi/trafficOprgPrcd/tolofHipasCrgwOpclPrssList';
+// data.ex.co.kr 는 User-Agent 가 없거나 curl 이면 '400 Request Blocked' 로 막는다 (2026-11-14 확인). Worker fetch 는 기본 UA 가 없으므로 넣는다
+const HIPASS_HEADERS = { 'User-Agent': 'Mozilla/5.0 (compatible; tesla-nav/1.0; +https://bravecheeze.github.io/tesla-naver-cluster/)', 'Accept': 'application/json' };
 
 function json(body, status, cors, cacheSeconds) {
   const headers = { 'Content-Type': 'application/json; charset=utf-8', ...cors };
@@ -104,7 +106,7 @@ export default {
         if (!name || name.length > 20) return json({ error: 'bad name' }, 400, cors);
         const now = Date.now();
         if (!hipassCache.list || now - hipassCache.at > 5 * 60000) {
-          const r = await upstream(HIPASS_API + '?key=' + encodeURIComponent(env.EX_KEY) + '&type=json', {});
+          const r = await upstream(HIPASS_API + '?key=' + encodeURIComponent(env.EX_KEY) + '&type=json', HIPASS_HEADERS);
           const rows = r.data && (r.data.lcsTrafficLists || r.data.list);
           if (!r.ok || !Array.isArray(rows)) {
             if (!hipassCache.list) return json({ error: 'upstream', status: r.status, code: r.data && r.data.code, message: r.data && r.data.message }, 502, cors);
