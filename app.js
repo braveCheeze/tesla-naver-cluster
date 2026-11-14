@@ -51,7 +51,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-97'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-98'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   // 브라우저에 저장된 예전 index.html 이 새 app.js 를 불러온 경우(화면 요소가 맞지 않아 버튼 연결에서 멈춘다):
@@ -1993,7 +1993,8 @@
     el.hidden = !a;
     if (!a) return;
     const ic = $('#tunnelIcon');
-    if (!ic.firstChild) ic.innerHTML = TUNNEL_ICON;
+    // AI 로 그린 터널 아이콘(icons.js 의 tunnel)이 있으면 그것, 없으면 앱에 그려 둔 아치
+    if (!ic.firstChild) ic.innerHTML = window.TNC_ICONS && window.TNC_ICONS.tunnel ? ico('tunnel') : TUNNEL_ICON;
     el.classList.toggle('inside', a.inside);
     const name = a.t.name || '터널';
     $('#tunnelDist').textContent = fmtDist(a.d);
@@ -3391,8 +3392,10 @@
   // 톨게이트 안내 문구: '남춘천톨게이트 (통행료 3,900원)' → 이름 · 통행료 · 하이패스 안내
   // (하이패스 차로가 몇 번째인지는 길찾기 데이터에 없어 '하이패스 차로 이용'까지만 알린다)
   function tollParts(g) {
-    const m = String(g.s || '').match(/^(.*?)\s*\((.*)\)\s*$/);
-    return { name: (m ? m[1] : g.s) || '톨게이트', fare: m ? m[2] : '' };
+    // 요금은 맨 끝 괄호: '남산1호터널톨게이트(도심) (통행료 0원)' → 이름 '남산1호터널톨게이트(도심)', 요금 '통행료 0원'
+    // (첫 괄호에서 자르면 요금 칸에 '도심) (통행료 0원'이 나왔다, 2026-11-14 남산1호터널 확인)
+    const m = String(g.s || '').match(/^(.*)\((\s*[^()]*)\)\s*$/);
+    return { name: (m ? m[1].trim() : g.s) || '톨게이트', fare: m ? m[2].trim() : '' };
   }
   function announceTurn(g, dg) {
     const said = nav.said[g.i] || (nav.said[g.i] = {});
@@ -5110,7 +5113,7 @@
       planRoute, doSearch, setFollowing, canvasPoint, gesture, glView, glOn, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
       sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
-      saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassNums, hipassLayout, laneNums, laneStripHtml, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, arrowSpan, routeStyle: ROUTE_STYLE, trafficPal, roundRoute, setCarIcon, carIcons: CAR_ICONS, parking, parkState, setParkingData, loadParking, evalParking, rest, setRestData, loadRest, ensureRouteRest, renderRest, placeBase, findParking, renderTurnArrow,
+      saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassNums, hipassLayout, laneNums, laneStripHtml, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, tollParts, arrowSpan, routeStyle: ROUTE_STYLE, trafficPal, roundRoute, setCarIcon, carIcons: CAR_ICONS, parking, parkState, setParkingData, loadParking, evalParking, rest, setRestData, loadRest, ensureRouteRest, renderRest, placeBase, findParking, renderTurnArrow,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },

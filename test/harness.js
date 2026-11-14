@@ -2740,6 +2740,7 @@
     { id: 'S62', name: 'S62 Naver guide codes → icons: roundabout exits, overpass/underpass/side road not as turns, hi-pass/one-toll gates, rest area, entry/exit ahead', fn: s62 },
     { id: 'S63', name: 'S63 car icon choice (cute car, AI photo Model Y grey/red/white, drawn Model Y, arrows): marker swaps, keeps the heading, saved', fn: s63 },
     { id: 'S64', name: 'S64 no-parking cameras while navigating: nothing on the way, only within 700 m of the destination (ahead + around the destination)', fn: s64 },
+    { id: 'S66', name: 'S66 toll gate name/fare split at the last parenthesis (남산1호터널톨게이트(도심) (통행료 0원))', fn: s66 },
     { id: 'S65', name: 'S65 auto zoom: 17 while driving even before a turn; the close-up 18 only within 300 m of the destination', fn: s65 },
     { id: 'S58', name: "S58 no-parking cameras: '주정차 단속' only ahead in my direction, when slow (no sound); not behind or on a side street; setting off", fn: s58 },
     { id: 'S57', name: 'S57 fast reroute: wrong-way turn caught in 2 fixes, start asked ahead of the car, a new route that starts behind the car is retried at once (only once)', fn: s57 },
@@ -2931,6 +2932,14 @@
     return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + r[k]).join(', ') };
   }
 
+  // S66: 톨게이트 이름·요금은 맨 끝 괄호에서 나눈다 (2026-11-14 남산1호터널톨게이트(도심) (통행료 0원))
+  async function s66() {
+    const t = T(), f = (x) => { const p = t.tollParts({ s: x }); return p.name + '|' + p.fare; };
+    const r = { namsan: f('남산1호터널톨게이트(도심) (통행료 0원)'), seoul: f('서울톨게이트 (통행료 1,800원)'), plain: f('판교톨게이트') };
+    const ok = r.namsan === '남산1호터널톨게이트(도심)|통행료 0원' && r.seoul === '서울톨게이트|통행료 1,800원' && r.plain === '판교톨게이트|';
+    return { pass: ok, detail: Object.keys(r).map((k) => k + '=' + r[k]).join(', ') };
+  }
+
   // S65: 자동 배율 — 가는 중에는 회전 앞이라도 17, 건물이 보일 만큼(18)은 목적지 300m 안에서만 (2026-11-14 요청)
   async function s65() {
     const t = T(), R = buildNavRoute(), r = {}, m = t.getMap(), orig = m.setZoom;
@@ -3049,10 +3058,11 @@
       r.span = Math.round(span.after || -1);
       r.endFromTurn = end ? Math.round(hav(end, dest(R.P[5], 90, span.after))) : -1;
       // 멀리 보면(배율 14 아래) 화살표를 그리지 않고, 다시 가까이 보면 다시 그린다 (v92 피드백: 축소하면 지도에 비해 너무 큼)
-      const z0 = m.map.getZoom();
-      m.map.setZoom(13, false); m.drawArrow();
+      // 애니메이션 없이 배율 바꾸기 (네이버: setZoom(z, false), Leaflet 대체 지도: { animate: false })
+      const z0 = m.map.getZoom(), setZ = (z) => m.map.setZoom(z, m.map._leaflet_id != null ? { animate: false } : false);
+      setZ(13); m.drawArrow();
       r.zoomOutHidden = !(m._arrowObjs || []).length;
-      m.map.setZoom(z0, false); m.drawArrow();
+      setZ(z0); m.drawArrow();
       r.zoomBack = (m._arrowObjs || []).length;
       a = pointAt(R, R.cum[5] + 40); feed(a.p, 15, a.h); t.renderNav();
       r.after = (m._arrowObjs || []).length;                    // 그다음은 목적지: 화살표 없음
