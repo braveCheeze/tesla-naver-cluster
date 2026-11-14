@@ -2268,7 +2268,7 @@
     softReset();
     await planAndStart(R);
     const a = pointAt(R, 30); feed(a.p, 15, a.h); t.renderNav();
-    const drawn = { main: !!document.querySelector('#turnIcon svg.keep.kl'), next: !!document.querySelector('#nextIcon svg.ramp.out') };
+    const drawn = { main: !!document.querySelector('#turnIcon svg.keep.kl'), next: !!document.querySelector('#nextIcon svg.ramp.out, #nextIcon img[src*="img/ai/outr__"]') };   // v105: AI 그림을 고르면 <img>
     t.endNav(); softReset();
     const bad = Object.keys(map).filter((x) => !map[x]);
     const ok = !bad.length && drawn.main && drawn.next;
@@ -3177,8 +3177,9 @@
     const txt = { r3: k(0, '회전교차로에서 3시 방향') === 'rb_r', l9: k(0, '로터리에서 9시 방향') === 'rb_l', u6: k(0, '회전교차로에서 6시 방향') === 'rb_u' };
     // 모든 종류에 그림이 있다 (없으면 가까운 그림으로)
     const kinds = [...new Set(Object.values(want))];
-    const noIcon = kinds.filter((x) => !/<svg/.test(t.ico(x) || ''));
-    const rbIcons = ['rb_l', 'rb_s', 'rb_r', 'rb_u'].every((x) => new RegExp('ti-' + x + '\\b').test(t.ico(x)));
+    // v105: 고른 AI 그림(img/ai/<칸>__*.webp)도 그림. 회전교차로는 AI 그림이 없을 때의 앱 그림(icoBase)도 방향별로 있어야 한다
+    const noIcon = kinds.filter((x) => !(/<svg/.test(t.ico(x) || '') || new RegExp('<img[^>]+img/ai/' + x + '__').test(t.ico(x) || '')));
+    const rbIcons = ['rb_l', 'rb_s', 'rb_r', 'rb_u'].every((x) => new RegExp('ti-' + x + '\\b').test(t.icoBase(x)));
     const ok = !bad.length && txt.r3 && txt.l9 && txt.u6 && !noIcon.length && rbIcons;
     return { pass: ok, detail: (bad.length ? 'wrong: ' + bad.join(', ') : Object.keys(want).length + ' codes ✓') +
       ' | text ' + JSON.stringify(txt) + ' | icons ' + (noIcon.length ? 'missing ' + noIcon.join(',') : 'all ✓') + ' | roundabout icons ' + (rbIcons ? '✓' : '✗') };

@@ -1347,6 +1347,8 @@
   .turnicon svg.ti, .nexticon svg.ti { stroke: none; color: #fff; }
   /* 관리 페이지에서 고른 AI 안내 아이콘(그림 파일)도 같은 자리·크기로 */
   .turnicon img.ti, .nexticon img.ti { width: 100%; height: 100%; display: block; object-fit: contain; }
+  /* 밤: AI 도로 그림(어두운 아스팔트)이 어두운 패널에 묻히지 않게 밝게 (앱 SVG 의 밤 도로색 #5b6676 과 비슷하게) */
+  body:has(#app.tesla):has(#map.night) .turnicon img.aiimg, body:has(#app.tesla):has(#map.night) .nexticon img.aiimg { filter: brightness(1.8) saturate(.9); }
   #app.tesla .turnicon svg.ti, #app.tesla .nexticon svg.ti { color: var(--nv-green); stroke: none; }
   /* 밤(어두운 패널): 어두운 도로를 조금 밝게 */
   body:has(#app.tesla):has(#map.night) svg.ti .rd { fill: #5b6676; }
@@ -1637,8 +1639,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.14-104"></script>
-<script src="img/ai/picks.js?v=2026.11.14-104"></script>
-<script src="app.js?v=2026.11.14-104"></script>
+<script src="icons.js?v=2026.11.14-105"></script>
+<script src="img/ai/picks.js?v=2026.11.14-105"></script>
+<script src="app.js?v=2026.11.14-105"></script>
 </body>
 </html>

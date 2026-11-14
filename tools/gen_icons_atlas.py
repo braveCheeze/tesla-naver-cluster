@@ -300,6 +300,31 @@ _RB = {
 for _k, _t in _RB.items():
     JOBS[_k] = ((), T2I_RB, _t)
 ROADS, RBS = list(_ROADS), list(_RB)
+EDIT_KEEP = ('Edit this navigation icon. Keep exactly its drawing style, colors, line weights, flat top-down view, proportions, '
+             'canvas size and the solid magenta background. ')
+RB_EDIT = (EDIT_KEEP + 'Keep the same roundabout: the same ring road, the same four roads and the same green grass island. Remove '
+           'the existing route arrow and remove the white dashed lane lines on the ring (keep the thin white edge lines and '
+           'the dashed center lines on the four roads). Then draw ONE bold solid white route arrow, about 1/10 of the icon '
+           'width, with a large sharp triangular arrowhead, clearly the most visible element of the icon. Right-hand traffic: '
+           'it comes up the right half of the bottom road, enters the ring turning RIGHT, follows the ring counter-clockwise '
+           'around the green island (never crossing it) and leaves on the exit road; the arrowhead sits on the exit road just '
+           'outside the ring. Exit: ')
+for _k, _t in _RB.items():
+    JOBS[_k] = (('ref/base_rb.png',), RB_EDIT, _t)
+# 오른쪽 출구: 2라운드 6장 모두 화살표가 왼쪽·위로 크게 돌아 오른쪽으로 나갔다(시계 방향, 틀림) → 첫 출구·짧은 1/4 바퀴라고 못 박는다
+JOBS['rb_r'] = (('ref/base_rb.png',), EDIT_KEEP + 'Keep the same roundabout: the same ring road, the same four roads and the same '
+                'green grass island. Remove the existing route arrow and the white dashed lane lines on the ring (keep the thin '
+                'white edge lines and the dashed center lines on the four roads). Then draw ONE bold solid white route arrow, about '
+                '1/10 of the icon width, with a large sharp triangular arrowhead. FIRST EXIT, a short quarter turn: the arrow comes '
+                'up the right half of the bottom road, curves to the right through ONLY the lower-right quarter of the ring and '
+                'leaves on the RIGHT road, arrowhead pointing right. It must NOT go around the left side or over the top of the '
+                'ring: the left half and the top of the ring stay plain asphalt with no arrow and no white line. One continuous '
+                'arrow with exactly one arrowhead.', '')
+JOBS['under_s'] = (('ref/base_side_r.png',), EDIT_KEEP,
+                   'Change it to UNDERPASS STRAIGHT AHEAD: remove the side road on the right and its arrow completely. Keep the '
+                   'main three-lane road, now centered horizontally, running straight up from the bottom edge into the same '
+                   'light grey concrete portal with the dark opening at the top, with the same constant width all the way (no '
+                   'perspective). Draw one slim solid white arrow straight up the middle lane into the dark opening. No shield.')
 WIDE = {'junc_fork_r', 'junc_exit_r'}
 
 
@@ -327,6 +352,12 @@ MODELS = {
     's50p': ('bytedance/seedream-v5.0-pro/edit', 0.036,
              lambda p, imgs, wide=False: {'prompt': p, 'images': imgs, 'size': '2048*1152' if wide else '1024*1024',
                                          'output_format': 'png', 'background': 'opaque'}),
+    'flare26e': ('openai/gpt-image-2.6-flare/edit', 0.008,
+                 lambda p, imgs, wide=False: {'prompt': p, 'images': imgs, 'size': 'auto', 'quality': 'medium',
+                                              'background': 'opaque', 'output_format': 'png', 'n': 1}),
+    'sunburst26e': ('openai/gpt-image-2.6-sunburst/edit', 0.008,
+                    lambda p, imgs, wide=False: {'prompt': p, 'images': imgs, 'size': 'auto', 'quality': 'medium',
+                                                 'background': 'opaque', 'output_format': 'png', 'n': 1}),
     # 글로만 그리는 모델 (참고 그림을 보내지 않는다)
     'flare26': ('openai/gpt-image-2.6-flare/text-to-image', 0.007,
                 lambda p, imgs, wide=False: {'prompt': p, 'size': '1536x1024' if wide else '1024x1024', 'quality': 'medium',
@@ -448,7 +479,7 @@ def main():
     groups = {'cars': [k for k in JOBS if is_car(k)], 'signs': [k for k in JOBS if is_sign(k)],
               'guide': [k for k in JOBS if not is_car(k) and not is_sign(k)],
               'roads': ROADS, 'rb': RBS, 'redo': ROADS + RBS,
-              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r']}
+              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s']}
     want = []
     for i in a.icons.split(','):
         want += groups.get(i, [i])
