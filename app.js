@@ -40,7 +40,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-33'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-34'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -803,7 +803,11 @@
   const camState = { target: null, passed: new Map(), saidById: new Map(), section: null, markerAt: null, lastOverBeep: 0 };
   // 카메라를 지나간 뒤 경고를 유지하는 거리 (데이터 좌표와 실제 단속 지점이 15m 안팎 다르다)
   const CAM_HOLD = 30;
-  // 카메라 행: [lat, lng, limit, kind, sec, len, zone, road, rtype]
+  // 후면 단속 카메라는 지나간 차의 뒤를 찍으므로 기둥을 지난 뒤가 단속 지점이다: 더 길게(60m) 경고를 유지한다
+  const REAR_HOLD = 60;
+  const isRear = (c) => c[10] === 1;
+  const camHold = (c) => (isRear(c) ? REAR_HOLD : CAM_HOLD);
+  // 카메라 행: [lat, lng, limit, kind, sec, len, zone, road, rtype, dir(, rear)] — rear 는 직접 확인한 후면 단속만 1
   // kind: 1 과속, 2 신호 전용, 3 과속+신호, 9 구간/기타 · rtype: 1 고속국도, 3 일반국도, 4 지방도, 5 시도, 6 기타
   // 8 이동식: 경찰청 공개 데이터는 고정식만 담고 있어 지금은 없다. 이동식 위치 데이터가 생기면 kind 8 로 넣으면 파란색으로 뜬다
   const KIND_NAME = { 1: '과속 단속', 2: '신호 단속', 3: '신호·과속 단속', 8: '이동식 단속', 9: '단속 구간' };
@@ -815,6 +819,7 @@
     let s = c[4] === 1 ? '구간단속 시작' : c[4] === 2 ? '구간단속 끝' : (KIND_NAME[c[3]] || '단속 카메라');
     if (c[6] === 2) s = '어린이보호구역 ' + (c[3] === 2 ? '단속' : s);
     else if (c[6] === 1) s = '노인보호구역 ' + s;
+    if (isRear(c)) s = s.replace(/ ?단속$/, ' 후면단속');   // 예: '신호·과속 후면단속'
     return s;
   }
   const camRoad = (c) => (cams.roads && c[7] >= 0 ? cams.roads[c[7]] : '') || '';
@@ -969,10 +974,10 @@
         camState.passed.set(tg.i, now);
         if (camState.section && (tg.c[4] === 2 || twins.some((x) => x.c[4] === 2))) endSection();
         else if (tg.c[4] === 1) startSection(tg.c, f);
-        tg.after = true; // 카메라 좌표 오차·후면 단속을 감안해 지나간 뒤 CAM_HOLD m 까지 경고를 유지한다
+        tg.after = true; // 카메라 좌표 오차를 감안해 지나간 뒤 CAM_HOLD m (후면 단속은 REAR_HOLD m) 까지 경고를 유지한다
       }
       if (tg.after) {
-        if (d >= CAM_HOLD) { // 단속 지점을 다 지났다: 경고를 내리고 '띠링' 한 번
+        if (d >= camHold(tg.c)) { // 단속 지점을 다 지났다: 경고를 내리고 '띠링' 한 번
           camState.target = tg = null;
           chime();
           logAlert('beep', '단속 통과 띠링');

@@ -1356,6 +1356,70 @@
     };
   }
 
+  // S36: 후면 단속 — 가평읍 경춘로 포회촌마을입구교차로, 서울 방향(남서행) 제한 70 신호·과속 후면단속 (원본에 없어 직접 추가한 카메라).
+  //      남서행이면 '신호·과속 후면단속'으로 잡히고, 기둥을 지난 뒤에도 60m 까지 경고(과속이면 빨갛게)를 유지했다가 내린다.
+  //      반대 방향(북동행, 실제 경로는 9m 남동쪽)에서는 잡히지 않는다.
+  //      길안내 중에도 실제 네이버 경로(test/fixtures/route-gapyeong-sw|ne.json, 2026-11-14)로: 남서행은 이 카메라를,
+  //      북동행은 원본의 반대 방향 카메라(H7738, 60)만 알린다
+  async function s36() {
+    const t = T(), CAM = { lat: 37.79681, lng: 127.48014 }, FOOT = { lat: 37.796721, lng: 127.480224 };
+    const sw = (() => {
+      softReset();
+      const from = dest(FOOT, 53, 700);
+      const o = { label: null, at: null, past45: null, past45over: null, clearedAt: null };
+      for (let s = 0; s <= 800; s += 5) {
+        const p = dest(from, 233, s), past = s - 700;
+        feed(p, 80 / 3.6, 233);
+        const tg = t.camState.target, mine = !!tg && sameCam(tg.c, CAM);
+        if (mine && o.label === null) { o.label = text('#camType'); o.at = r0(tg.d); o.limit = tg.c[2]; }
+        if (past >= 45 && o.past45 === null) { o.past45 = mine && !!tg.after; o.past45over = hasCls('#camCard', 'over'); }
+        if (o.label !== null && !mine && o.clearedAt === null && past > 0) o.clearedAt = past;
+      }
+      return o;
+    })();
+    const ne = (() => {
+      softReset();
+      const lane = dest(FOOT, 143, 9), from = dest(lane, 233, 600);
+      let hit = false;
+      for (let s = 0; s <= 900; s += 10) {
+        feed(dest(from, 53, s), 80 / 3.6, 53);
+        const tg = t.camState.target;
+        if (tg && sameCam(tg.c, CAM)) hit = true;
+      }
+      return hit;
+    })();
+    const H7738 = { lat: 37.79657, lng: 127.4802 };
+    const navRun = async (file) => {
+      softReset();
+      const fx = await (await realFetch(harnessDir + 'fixtures/' + file, { cache: 'no-store' })).json();
+      const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0];
+      for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+      const total = cum[cum.length - 1];
+      const R = { route: fx, P, cum, total, dest: { name: '경춘로', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+      await planAndStart(R);
+      const o = { rear: false, rearLabel: null, h7738: false };
+      for (let s = 0; s <= total - 50; s += 10) {
+        const a = pointAt(R, s);
+        feed(a.p, 80 / 3.6, a.h);
+        const tg = t.camState.target;
+        if (tg && sameCam(tg.c, CAM)) { o.rear = true; o.rearLabel = text('#camType'); }
+        if (tg && sameCam(tg.c, H7738)) o.h7738 = true;
+      }
+      t.endNav();
+      return o;
+    };
+    const navSw = await navRun('route-gapyeong-sw.json'), navNe = await navRun('route-gapyeong-ne.json');
+    softReset();
+    const okNav = navSw.rear && navSw.rearLabel === '신호·과속 후면단속' && !navSw.h7738 && !navNe.rear && navNe.h7738;
+    const okSw = sw.label === '신호·과속 후면단속' && sw.limit === 70 && sw.past45 === true && sw.past45over === true && sw.clearedAt !== null && sw.clearedAt >= 55 && sw.clearedAt <= 75;
+    return {
+      pass: okSw && !ne && okNav,
+      detail: '서울 방향 80 km/h: ' + JSON.stringify(sw) + (okSw ? '✓' : '✗') + ' | 반대 방향: ' + (ne ? 'ALERTED✗' : 'not alerted✓') +
+        ' | 길안내 남서행 ' + JSON.stringify(navSw) + ', 북동행 ' + JSON.stringify(navNe) + (okNav ? '✓' : '✗'),
+    };
+  }
+
   // S25: 하이패스 — 경로 안내에 톨게이트(type 121)가 있으면 2km 앞부터 카드(이름·거리·통행료·하이패스 차로 이용)와 음성
   async function s25() {
     const t = T();
@@ -1690,6 +1754,7 @@
     { id: 'S33', name: 'S33 parked & untouched → check for new version', fn: s33 },
     { id: 'S34', name: 'S34 Tesla mode: camera → my speed → small zone sign, red when over', fn: s34 },
     { id: 'S35', name: 'S35 Gapyeong 계량교 30 camera (data fix): 신호·과속, alerts when over', fn: s35 },
+    { id: 'S36', name: 'S36 rear-enforcement camera (가평 포회촌, added): held 60 m past the pole, one direction only', fn: s36 },
   ];
 
   // ---------------------------------------------------------------- runner
