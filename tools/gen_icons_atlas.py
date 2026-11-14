@@ -6,8 +6,9 @@
 - 참고 그림: tools/icon-src/ref/ref_<아이콘>.png (지금 앱 아이콘과 같은 구도, 마젠타 배경. tools/ref_ramps.py 로 만듦).
   GitHub Pages 주소로 넘기고, 주소를 못 받으면 base64 로 넘긴다.
 - 결과: tools/icon-src/ai/<아이콘>__<모델>__<번호>.png 와 한눈에 보는 contact.png
-- 비용(2026-11-14 Atlas 가격): GPT Image 2 edit $0.006, Seedream v5.5 edit $0.016, Seedream v5.0 Pro edit $0.036,
-  Nano Banana 2 edit $0.08 (장당). 기본 4아이콘 × 4모델 × 2장 = 32장 ≈ $1.1
+- 비용(2026-11-14 Atlas 가격, 장당): GPT Image 2 developer edit $0.005, GPT Image 1.5 edit $0.005, GPT Image 2 edit $0.006,
+  Seedream v5.5 edit $0.016, Seedream v5.0 Pro edit $0.036, Nano Banana 2 edit $0.08.
+  기본은 싸고 효율 좋은 두 모델(gptdev, gpt15) × 4아이콘 × 2장 = 16장 ≈ $0.08
 - 옵션: --models gpt,s55   --per 1   --icons inr,outr   --dry (요청 없이 계획과 예상 비용만)
 """
 import argparse
@@ -44,6 +45,11 @@ EXTRA = {
 }
 # 모델: (짧은 이름, 모델 ID, 장당 가격, 요청 본문 만들기)
 MODELS = {
+    # 싸고 효율 좋은 것 (기본): GPT Image 2 developer $0.005, GPT Image 1.5 $0.005 (참고 그림을 충실히 따르는 input_fidelity high)
+    'gptdev': ('openai/gpt-image-2-developer/edit', 0.005,
+               lambda p, img: {'prompt': p, 'images': [img], 'size': '1024x1024', 'quality': 'high', 'output_format': 'png'}),
+    'gpt15': ('openai/gpt-image-1.5/edit', 0.005,
+              lambda p, img: {'prompt': p, 'images': [img], 'size': '1024x1024', 'quality': 'high', 'input_fidelity': 'high', 'output_format': 'png'}),
     'gpt': ('openai/gpt-image-2/edit', 0.006,
             lambda p, img: {'prompt': p, 'images': [img], 'size': '1024x1024', 'quality': 'high', 'output_format': 'png'}),
     's55': ('bytedance/seedream-v5.5/edit', 0.016,
@@ -142,7 +148,7 @@ def contact(files):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--models', default='gpt,s55,s50p,nb2')
+    ap.add_argument('--models', default='gptdev,gpt15')   # 다른 모델도 보려면: --models gptdev,gpt15,gpt,s55,s50p,nb2
     ap.add_argument('--icons', default='inr,inl,outr,outl')
     ap.add_argument('--per', type=int, default=2)
     ap.add_argument('--dry', action='store_true')
