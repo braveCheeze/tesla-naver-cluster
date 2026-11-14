@@ -396,12 +396,17 @@
   /* 즐겨찾기: 집·회사 바로가기 + 장소마다 ☆ */
   .quick { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 6px; }
   .sheet-card button.qchip {
-    text-align: left; min-height: 64px; padding: 10px 14px; display: flex; flex-direction: column; justify-content: center; gap: 3px;
+    text-align: left; min-height: 64px; padding: 10px 14px; display: flex; flex-direction: row; align-items: center; gap: 11px;
     background: rgba(3, 199, 90, .12); border-color: rgba(3, 199, 90, .45);
   }
   .sheet-card button.qchip.unset { background: var(--soft); border-color: var(--soft-line); }
+  /* 집·회사 그림: 초록 동그라미 안 한 색 그림 (정하지 않았으면 회색) */
+  .qchip .qic { flex: none; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: rgba(3, 199, 90, .16); color: #03c75a; font-style: normal; }
+  .qchip .qic svg, .qchip .qic img { width: 22px; height: 22px; display: block; object-fit: contain; }
+  .qchip.unset .qic { background: rgba(128, 138, 150, .16); color: #8a94a3; }
+  .qchip .qt { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
   .qchip b { font-size: 17px; font-weight: 800; }
-  .qchip span { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .qchip .qt span { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .rrow { display: flex; gap: 6px; align-items: stretch; }
   .rrow .result { flex: 1; min-width: 0; }
   .sheet-card button.star { flex: none; width: 54px; min-height: 64px; padding: 0; font-size: 24px; color: #8b93a1; }
@@ -1591,8 +1596,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.14-100"></script>
-<script src="img/ai/picks.js?v=2026.11.14-100"></script>
-<script src="app.js?v=2026.11.14-100"></script>
+<script src="icons.js?v=2026.11.14-101"></script>
+<script src="img/ai/picks.js?v=2026.11.14-101"></script>
+<script src="app.js?v=2026.11.14-101"></script>
 </body>
 </html>

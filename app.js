@@ -51,7 +51,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-100'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-101'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -2676,11 +2676,18 @@
     setTimeout(() => $('#q').focus(), 50);
   }
   function closeSearch() { $('#searchSheet').hidden = true; }
+  // 집·회사 그림 (네이버 지도 즐겨찾기처럼 한 색 그림, 창문·문은 뚫어서 바탕이 비친다). 관리 페이지에서 fav_home·fav_work 로 바꿀 수 있다
+  const QUICK_ICON = {
+    home: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2.6 1.9 10.7c-.8.6-.3 1.9.7 1.9H4.6v7.9c0 .8.6 1.4 1.4 1.4h4.1v-5.6c0-.5.4-.9.9-.9h2c.5 0 .9.4.9.9v5.6h4.1c.8 0 1.4-.6 1.4-1.4v-7.9h2c1 0 1.5-1.3.7-1.9z"/></svg>',
+    work: '<svg viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M4 21.4V4.4C4 3.6 4.6 3 5.4 3h9.2c.8 0 1.4.6 1.4 1.4V9h2.6c.8 0 1.4.6 1.4 1.4v11zM7 6v2.2h2.2V6zm4 0v2.2h2.2V6zM7 10v2.2h2.2V10zm4 0v2.2h2.2V10zM7 14v2.2h2.2V14zm4 0v2.2h2.2V14zm6-2v2h1.6v-2zm0 3.6v2h1.6v-2zM9 18.2v3.2h3v-3.2z"/></svg>',
+  };
   // 검색창을 열었을 때: 집·회사 바로가기, 즐겨찾기, 최근 목적지
   function renderStart() {
     const f = favs();
+    // 2026-11-14 요청: 집·회사 버튼 앞에 그림(집 / 회사 건물), 아직 안 정했을 때의 안내 글('검색 결과의 ☆ 로 지정')은 뺀다
     const chip = (key, label, it) => '<button class="qchip' + (it ? '' : ' unset') + '" data-q="' + key + '">' +
-      '<b>' + label + '</b><span>' + esc(it ? it.name : '검색 결과의 ☆ 로 지정') + '</span></button>';
+      '<i class="qic" aria-hidden="true">' + (pickImg('fav_' + key) || QUICK_ICON[key]) + '</i><span class="qt"><b>' + label + '</b>' +
+      (it ? '<span>' + esc(it.name) + '</span>' : '') + '</span></button>';
     const head = '<div class="quick">' + chip('home', '집', f.home) + chip('work', '회사', f.work) + '</div>';
     const rec = recents().filter((r) => !f.list.some((x) => samePlace(x, r)));
     renderSections([{ title: '즐겨찾기', items: f.list }, { title: '최근 목적지', items: rec }],

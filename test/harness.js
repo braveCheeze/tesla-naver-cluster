@@ -1187,6 +1187,9 @@
     try {
       t.openSearch();
       r.unsetChips = document.querySelectorAll('#results .qchip.unset').length;
+      // 집·회사 버튼: 그림이 붙고(집·회사 건물), '검색 결과의 ☆ 로 지정' 안내 글은 없다 (2026-11-14)
+      r.chipIcons = document.querySelectorAll('#results .qchip .qic svg, #results .qchip .qic img').length;
+      r.noHint = !/☆ 로 지정/.test(document.getElementById('results').textContent);
       document.getElementById('q').value = '테스트';
       await t.doSearch(false);
       const stars = document.querySelectorAll('#results .star');
@@ -1220,7 +1223,7 @@
       t.endNav();
       document.getElementById('searchSheet').hidden = true;
     }
-    const ok = r.unsetChips >= 0 && r.stars === 2 && r.home === '테스트집' && r.favList.includes('테스트단골카페') &&
+    const ok = r.unsetChips >= 0 && r.chipIcons === 2 && r.noHint && r.stars === 2 && r.home === '테스트집' && r.favList.includes('테스트단골카페') &&
       /테스트집/.test(r.homeChip) && r.favShown && r.routedHome;
     return { pass: ok, detail: JSON.stringify(r) };
   }
@@ -2568,7 +2571,9 @@
     r.newer = await t.checkForUpdate('test', { dry: true, latest: bump(t.version) });
     r.same = await t.checkForUpdate('test', { dry: true, latest: t.version });
     r.older = await t.checkForUpdate('test', { dry: true, latest: older });
-    r.numeric = await t.checkForUpdate('test', { dry: true, latest: t.version.replace(/-(\d+)$/, '-100') }); // -100 > -16 (글자 순서 아님)
+    // 숫자로 비교 (글자 순서 아님): 지금이 두 자리면 -100 > -16. 세 자리 이상(v100~)이면 위 'older'(99 < 100)가 같은 함정을 본다
+    const nv = +(t.version.match(/-(\d+)$/) || [0, 0])[1];
+    r.numeric = await t.checkForUpdate('test', { dry: true, latest: t.version.replace(/-(\d+)$/, '-' + (nv < 100 ? 100 : nv * 10)) });
     t.state.speedKmh = 40;
     r.moving = await t.checkForUpdate('test', { dry: true, latest: bump(t.version) });
     t.state.speedKmh = 0;
