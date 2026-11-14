@@ -46,7 +46,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-75'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-76'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   // 브라우저에 저장된 예전 index.html 이 새 app.js 를 불러온 경우(화면 요소가 맞지 않아 버튼 연결에서 멈춘다):
@@ -2773,16 +2773,17 @@
     }
     return before ? '출구' : after ? '입구' : '';
   }
-  // 개방식 영업소(상행·하행)에서 우리 방향: 수도권 방사형 노선(s:1)이면 서울 쪽으로 가면 상행. 애매하면 ''
+  // 개방식 영업소(상행·하행)에서 우리 방향: 수도권 방사형 노선(s:1)이면 서울 쪽으로 가면 상행. 애매하면 ''.
+  // 톨게이트 앞뒤 400m 로 진행 방향을 잰다 (진입로 굽이에 흔들리지 않게). 실제 경로: 하남IC→중부 상행 6°, 하남IC 출구(하행) 140°, 판교IC→경부 상행 20°
   function tollDir(g, o) {
     if (!o.s || !nav.pts) return '';
     const last = nav.pts.length - 1, i = Math.min(g.i, last), s0 = nav.cum[i];
     let a = i, b = i;
-    while (a > 0 && s0 - nav.cum[a] < 150) a--;
-    while (b < last && nav.cum[b] - s0 < 150) b++;
+    while (a > 0 && s0 - nav.cum[a] < 400) a--;
+    while (b < last && nav.cum[b] - s0 < 400) b++;
     if (a === b) return '';
     const diff = angleDiff(bearing(nav.pts[a], nav.pts[b]), bearing(nav.pts[i], SEOUL));
-    return diff <= 35 ? 'u' : diff >= 145 ? 'd' : '';
+    return diff <= 50 ? 'u' : diff >= 130 ? 'd' : '';
   }
   // 승용차 하이패스 차로 번호. 방향을 모르면 양쪽 다 하이패스인 차로만 (틀린 번호를 보여 주지 않게)
   function hipassNums(g) {

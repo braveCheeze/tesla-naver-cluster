@@ -2102,7 +2102,7 @@
   //      (data/hipass.json)으로: (a) 하남IC 고속도로 진입 뒤의 폐쇄식 톨게이트 → 입구 차로 '1 2 – 5'. 톨게이트가 패널의 다음 안내면
   //      하이패스 칸의 거리는 숨기고, 다른 안내가 먼저면 보인다  (b) 자료에 없는 영업소면 번호 없이 그대로
   //      (c) 개방식(상행·하행) 수도권 영업소: 서울 쪽으로 가면 상행 차로, 반대면 하행 차로  (d) 방향을 모르면 양쪽 다 하이패스인 차로만
-  //      (e) 실제 자료: 하남 상행 2번·하행 1번, 군자 입구 1~3번
+  //      (e) 실제 자료: 하남 상행 2번·하행 1번, 군자 입구 1~3번  (f) 실제 팔당→하남IC 경로의 하남톨게이트 → '2번 차로'
   async function s53() {
     const t = T(), box = TESLA_ONLY, prev = t.prefs.tesla;
     const set = (on) => { box.checked = on; box.dispatchEvent(new Event('change')); };
@@ -2161,6 +2161,19 @@
       t.endNav(); softReset();
       r.ruleOff = await drive(mkRoute(250, [toll('시험지방'), end]), 2200);            // 방향 규칙 없는 곳 → 양쪽 공통 1번만
       t.endNav();
+      // (f) 실제 경로·실제 자료 (2026-11-14 실제 앱 흉내 주행에서 번호가 안 나왔던 곳): 팔당→하남IC→중부고속도로(서울 쪽) 하남톨게이트 = 상행 2번
+      t.setHipassData(null); await t.loadHipass();
+      softReset();
+      const fx = await (await realFetch(harnessDir + 'fixtures/route-paldang-hanamic-s.json', { cache: 'no-store' })).json();
+      const FP = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const fc = [0];
+      for (let k = 1; k < FP.length; k++) fc.push(fc[k - 1] + hav(FP[k - 1], FP[k]));
+      const RR = { route: fx, P: FP, cum: fc, total: fc[fc.length - 1], dest: { name: '성남시청', addr: '', lat: FP[FP.length - 1].lat, lng: FP[FP.length - 1].lng } };
+      await planAndStart(RR);
+      for (let m = 25; m <= fc[110] - 900; m += 25) { const a = pointAt(RR, m); feed(a.p, 25, a.h); t.renderNav(); }
+      await new Promise((res) => setTimeout(res, 30)); t.renderNav();
+      r.realHanam = snap();
+      t.endNav();
     } finally {
       t.setHipassData(null);
       await t.loadHipass();
@@ -2170,7 +2183,7 @@
     const ok = r.beforeEntry.card && r.beforeEntry.lanes === '12–5번 차로' && /km|m$/.test(r.beforeEntry.dist) &&
       r.tollNext.card && r.tollNext.lanes === '12–5번 차로' && r.tollNext.dist === '' &&
       r.unknown.card && r.unknown.lanes === '' &&
-      r.toSeoul.lanes === '2번 차로' && r.fromSeoul.lanes === '1번 차로' && r.sideways.card && r.sideways.lanes === '' && r.ruleOff.lanes === '1번 차로' &&
+      r.toSeoul.lanes === '2번 차로' && r.fromSeoul.lanes === '1번 차로' && r.sideways.card && r.sideways.lanes === '' && r.ruleOff.lanes === '1번 차로' && r.realHanam.card && r.realHanam.lanes === '2번 차로' &&
       real.loaded && real.count > 400 && JSON.stringify(real.하남) === JSON.stringify({ u: [2], t: 1, s: 1, d: [1] }) && JSON.stringify(real.군자 && real.군자.i) === '[1,2,3]';
     return { pass: ok, detail: JSON.stringify(r) + ' | real: ' + JSON.stringify(real) + (ok ? '✓' : '✗') };
   }
