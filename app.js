@@ -42,7 +42,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-59'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-60'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -1040,7 +1040,10 @@
         if (!a) { a = []; g.set(k, a); }
         a.push(i);
       });
-      cams.rows = j.rows; cams.grid = g; cams.date = j.date; cams.roads = j.roads || []; cams.loaded = true;
+      // 한 방향 카메라의 설치장소 방향 'A→B' (arrows = [행, A 번호, B 번호, ...], 지명은 arrowNames)
+      const ar = new Map(), an = j.arrowNames || [], al = j.arrows || [];
+      for (let k = 0; k + 2 < al.length; k += 3) if (j.rows[al[k]]) ar.set(j.rows[al[k]], [an[al[k + 1]], an[al[k + 2]]]);
+      cams.rows = j.rows; cams.grid = g; cams.date = j.date; cams.roads = j.roads || []; cams.arrows = ar; cams.loaded = true;
     } catch (e) {
       toast('단속 카메라 데이터를 불러오지 못했습니다.', 'bad', 5000);
     }
@@ -1178,6 +1181,36 @@
   // 올림픽로 36m·한밭대로 34m·경부고속도로 35m 등). 그래서 내 도로라고 확인되면 40m 까지 인정한다:
   //   경로 구간 이름이 카메라 도로명과 같거나, 구간 이름을 모를 때는 근처(800m 안) 경로 바로 위(20m 안)에 같은 도로의 카메라가 있을 때
   const ROUTE_CAM_NEAR = 20, ROUTE_CAM_FAR = 40;
+  // 설치장소에 'A→B'가 적힌 한 방향 카메라: 길안내 경로의 앞뒤 안내 문구로 방향을 가른다 (-1 반대 방향, 1 내 방향, 0 모름).
+  // 좌표가 도로 한가운데라 좌우로 못 가르는 경우가 있다 (2026-11-14 하남 창우로 J2735 '(하남ic->팔당대교)' 60:
+  // 팔당대교IC → 하남IC 로 가는데 떴다. 지나온 안내에 '팔당대교', 갈 안내에 '하남IC' → 반대 방향).
+  // 안내 문구 'X에서 'Y, Z' 방면으로 …'의 X(그 안내 지점)는 지나온 안내면 뒤쪽, 갈 안내면 앞쪽이고, 'Y, Z'(방면)는 늘 앞쪽(가는 곳)이다
+  // (2026-11-14 전국 점검: 전주→군산 새만금북로 '전주→군산' 카메라가 지나온 안내의 ''군산' 방면' 때문에 빠졌었다).
+  // 뒤쪽에 B(카메라 방향의 끝)가 있거나 앞쪽에 A(시작)가 있으면 반대 방향. 앞뒤에 다 있으면 모름(그대로 알림)
+  const ARROW_SPAN = 8000;
+  function guideParts(g) {
+    const t = String(g.s || '').replace(/\s+/g, '').toLowerCase();
+    const q = t.match(/'[^']*'/g) || [];
+    const m = t.match(/^(.*?)에서/);
+    return { loc: m ? m[1] : (q.length ? '' : t), dirs: q.join('|') };
+  }
+  function arrowSays(c, at) {
+    const ar = cams.arrows && cams.arrows.get(c);
+    if (!ar || !nav.guides || !nav.guides.length) return 0;
+    const last = nav.cum.length - 1;
+    let behind = '', ahead = '';
+    for (const g of nav.guides) {
+      const s = nav.cum[Math.min(g.i, last)];
+      if (s < at - ARROW_SPAN || s > at + ARROW_SPAN) continue;
+      const gp = guideParts(g);
+      if (s < at - 30) behind += '|' + gp.loc; else if (s > at + 30) ahead += '|' + gp.loc;
+      ahead += '|' + gp.dirs;
+    }
+    const [a, b] = ar, has = (t, k) => t.indexOf(k) >= 0;
+    const opp = (has(behind, b) && !has(ahead, b)) || (has(ahead, a) && !has(behind, a));
+    const same = (has(behind, a) && !has(ahead, a)) || (has(ahead, b) && !has(behind, b));
+    return opp && !same ? -1 : same && !opp ? 1 : 0;
+  }
   function camAtSeg(c, i) {
     const p = { lat: c[0], lng: c[1] }, a = nav.pts[i], b = nav.pts[i + 1];
     const pr = projectSeg(p, a, b);
@@ -1191,7 +1224,9 @@
     if (/고속도로|고속국도/.test(rn) && c[8] !== 1 && c[2] <= 70) return null;
     const ok = pr.dist < ROUTE_CAM_NEAR || (specificRoad(rn) ? sameRoad(rn, cn) : specificRoad(cn) && sameRoadCamOnRoute(c, i));
     if (!ok) return null;
-    return nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]);
+    const at = nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]);
+    if (oneDir(c) && arrowSays(c, at) < 0) return null;   // 설치장소 방향이 내 길과 반대
+    return at;
   }
   // 경로 구간 이름을 모르는 곳: 카메라 c 근처(800m 안)에 같은 도로 이름의 다른 카메라가 경로 바로 위(20m 안)에 있으면
   // 경로가 그 도로를 지나는 것으로 본다 (선분 i 앞뒤 80개 안에서)
@@ -1216,6 +1251,7 @@
       if (pr.dist >= ROUTE_CAM_FAR) continue;
       if (nav.cum[j] + pr.t * (nav.cum[j + 1] - nav.cum[j]) < nav.along - 5) continue;
       if (oneDir(c) && pr.dist > OPP_SIDE && sideOfSeg(p, pts[j], pts[j + 1], pr.dist) < 0) return false;
+      if (oneDir(c) && arrowSays(c, nav.cum[j] + pr.t * (nav.cum[j + 1] - nav.cum[j])) < 0) return false;
       return true;
     }
     return false;
@@ -3440,7 +3476,7 @@
       state, camState, nav, cams, prefs, onFix, setRoute, startNav, endNav, startDemo, stopDemo, renderNav,
       planRoute, doSearch, setFollowing, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
-      sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps,
+      sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
       tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },

@@ -1897,6 +1897,39 @@
     return { pass: ok, detail: 'northwest (toward 팔당대교IC) ' + JSON.stringify(west) + ' | southeast (opposite) ' + (east ? 'ALERTED✗' : 'quiet✓') + (ok ? '✓' : '✗') };
   }
 
+  // S47: 설치장소 방향 'A→B'로 한 방향 카메라 가르기 (2026-11-14 주행 제보: 팔당대교IC → 하남IC 로 가는데
+  //      창우로 J2735 '창우지하차도 지나 250m(하남ic->팔당대교)' 60 이 떴다. 좌표가 경로선 위(0.7m)라 좌우로 못 가름).
+  //      실제 경로로: 남행(route-paldang-hanamic-s: 지나온 안내 '팔당대교IC…', 갈 안내 '하남IC…')에서는 J2735 안 뜨고
+  //      같은 길의 J0452 '(팔당대교→하남IC)' 50(사진의 과속단속장비)은 뜬다. 북행(route-hanam-paldang-n)에서는 J2735 가 뜬다
+  async function s47() {
+    const t = T(), J2735 = { lat: 37.5407, lng: 127.23101 }, J0452 = { lat: 37.53469, lng: 127.22648 };
+    const run = async (file, upto) => {
+      const fx = await (await realFetch(harnessDir + 'fixtures/' + file, { cache: 'no-store' })).json();
+      const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0];
+      for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+      const total = Math.min(cum[cum.length - 1], upto || 1e9);
+      const R = { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '하남', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+      softReset();
+      await planAndStart(R);
+      const hit = { J2735: false, J0452: false };
+      for (let s = 0; s <= total - 30; s += 12) {
+        const a = pointAt(R, s);
+        feed(a.p, 50 / 3.6, a.h);
+        const tg = t.camState.target;
+        if (tg && sameCam(tg.c, J2735)) hit.J2735 = true;
+        if (tg && sameCam(tg.c, J0452)) hit.J0452 = true;
+      }
+      t.endNav();
+      return hit;
+    };
+    const south = await run('route-paldang-hanamic-s.json', 5000), north = await run('route-hanam-paldang-n.json');
+    softReset();
+    const ok = !south.J2735 && south.J0452 && north.J2735;
+    return { pass: ok, detail: '팔당대교IC→하남IC: J2735(하남ic->팔당대교) ' + (south.J2735 ? 'ALERTED✗' : 'quiet✓') + ', J0452(팔당대교→하남IC) ' + (south.J0452 ? 'alerted✓' : 'MISSED✗') +
+      ' | 하남→팔당대교: J2735 ' + (north.J2735 ? 'alerted✓' : 'MISSED✗') };
+  }
+
   // S25: 하이패스 — 경로 안내에 톨게이트(type 121)가 있으면 2km 앞부터 카드(이름·거리·통행료·하이패스 차로 이용)와 음성
   async function s25() {
     const t = T();
@@ -2242,6 +2275,7 @@
     { id: 'S44', name: 'S44 tunnel row: entry distance + length, then distance to the exit (OSM tunnels)', fn: s44 },
     { id: 'S45', name: 'S45 hi-pass card sits in the camera drawer under the nav panel (Tesla mode) + toll gate icon', fn: s45 },
     { id: 'S46', name: 'S46 box-type speed camera added by hand (팔당 다산로): shown as 박스형 one way only', fn: s46 },
+    { id: 'S47', name: "S47 one-way camera direction from its 'A→B' place text vs the route's guide text (하남 창우로)", fn: s47 },
   ];
 
   // ---------------------------------------------------------------- runner

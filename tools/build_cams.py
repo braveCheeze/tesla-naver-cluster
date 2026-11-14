@@ -29,6 +29,20 @@ rows = list(csv.reader(io.StringIO(open(src, 'rb').read().decode('cp949'))))[1:]
 
 # 설치장소의 방향 표시: '(A→B)', 'A->B', 'A⇒B', 'A▶B'
 PLACE_ARROW = re.compile(r'→|->|⇒|▶|=>')
+ARROW_PAREN = re.compile(r'\(([^()]*?(?:→|->|⇒|▶|=>)[^()]*)\)')
+ARROW_SPLIT = re.compile(r'\s*(?:→|->|⇒|▶|=>)\s*')
+
+
+def arrow_ends(place):
+    """설치장소 '창우지하차도 지나 250m 지점(하남ic->팔당대교)' -> ('하남ic', '팔당대교').
+    앱이 길안내 경로의 앞뒤 안내 문구('팔당대교IC에서 …', '하남IC에서 …')와 맞춰 한 방향 카메라의 방향을 가른다.
+    공백을 빼고 소문자로, 끝의 '방면·방향·쪽'은 뗀다. 두 글자 미만이면 버린다"""
+    m = ARROW_PAREN.findall(place)
+    parts = ARROW_SPLIT.split(m[-1] if m else place)
+    if len(parts) != 2:
+        return None
+    ends = [re.sub(r'(방면|방향|쪽)$', '', re.sub(r'\s+', '', x).lower()) for x in parts]
+    return tuple(ends) if all(len(e) >= 2 for e in ends) else None
 
 
 def norm(code):
@@ -64,6 +78,7 @@ ADDS = [
 roads, road_idx = [], {}
 seen = {}
 data = []
+arrow_of = {}   # id(row) -> (A, B): 설치장소에 적힌 방향 'A→B'
 skipped = Counter()
 dates = Counter()
 for r in rows:
@@ -152,6 +167,9 @@ for r in rows:
     flags = (1 if fix and fix.get('rear') else 0) | (2 if fix and fix.get('box') else 0)
     if flags:
         row.append(flags)
+    ends = arrow_ends(r[11]) if PLACE_ARROW.search(r[11]) else None
+    if ends:
+        arrow_of[id(row)] = ends
     seen[key] = row
     data.append(row)
     dates[r[20]] += 1
@@ -233,10 +251,24 @@ for row in both:
     row[9] = 3
 print('signal+speed cameras with no opposite-direction partner -> both directions:', len(both))
 latest = max(d for d in dates if d)
+# 한 방향(1·2) 카메라 중 설치장소에 'A→B'가 적힌 것: [행 번호, A, B]. 좌표가 도로 한가운데라 좌우로 못 가르는 경우
+# (2026-11-14 하남 창우로 J2735 '(하남ic->팔당대교)' 60 이 팔당대교→하남IC 로 갈 때 떴다) 앱이 안내 문구로 가른다
+# 같은 지명이 많아서 지명 표(arrowNames)의 번호로 적는다: arrows = [행 번호, A 번호, B 번호, ...] 를 한 줄로 이어 붙임
+arrow_names, arrow_ni, arrows = [], {}, []
+def name_no(x):
+    if x not in arrow_ni:
+        arrow_ni[x] = len(arrow_names)
+        arrow_names.append(x)
+    return arrow_ni[x]
+for i, row in enumerate(data):
+    if id(row) in arrow_of and row[9] in (1, 2):
+        a_, b_ = arrow_of[id(row)]
+        arrows += [i, name_no(a_), name_no(b_)]
+print('one-way cameras with A-B place text:', len(arrows) // 3, 'names', len(arrow_names))
 with open(out, 'w', encoding='utf-8') as f:
     json.dump({'v': 2, 'date': latest, 'count': len(data),
                'fields': ['lat', 'lng', 'limit', 'kind', 'sec', 'len', 'zone', 'road', 'rtype', 'dir', 'flags'],
-               'roads': roads, 'rows': data}, f, ensure_ascii=False, separators=(',', ':'))
+               'roads': roads, 'rows': data, 'arrowNames': arrow_names, 'arrows': arrows}, f, ensure_ascii=False, separators=(',', ':'))
 
 print('kept', len(data), 'roads', len(roads), 'skipped', dict(skipped))
 print('kinds', Counter(d[3] for d in data))
