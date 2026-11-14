@@ -2684,6 +2684,8 @@
     { id: 'S54', name: 'S54 keep-left/right arrows for 왼쪽/오른쪽 방향·도로 주행, OUT/IN for highway exit/entry', fn: s54 },
     { id: 'S55', name: "S55 road caution signs (slippery, rockfall…): 300 m ahead on our side of the route, '주의' just after, setting off", fn: s55 },
     { id: 'S56', name: "S56 dragging the heading-up map keeps the direction, shows '내 위치로', returns after 5 s; pinch/wheel zoom keeps following", fn: s56 },
+    { id: 'S59', name: "S59 destination → its parking entrance ('…주차장입구' from place search), '정문으로' switches back; no entrance = unchanged", fn: s59 },
+    { id: 'S60', name: 'S60 white turn arrow on the map at the next turn (400 m before), destination pin + dots from the route end', fn: s60 },
     { id: 'S58', name: "S58 no-parking cameras: '주정차 단속' only when slow and near (no sound), map signs at low speed, setting off", fn: s58 },
     { id: 'S57', name: 'S57 fast reroute: wrong-way turn caught in 2 fixes, start asked ahead of the car, a new route that starts behind the car is retried at once (only once)', fn: s57 },
   ];
@@ -2861,6 +2863,77 @@
       try { const j = await (await realFetch(new URL('../data/parking.json', location.href).href)).json(); t.setParkingData(j); } catch (e) { /* 다음 실행 때 다시 */ }
     }
     const ok = r.fastQuiet && r.slowShown && /^(5\d|6\d)m$/.test(r.dist) && r.markers === 1 && r.keep30 && r.gone40 && r.markersFast === 0 && r.offHidden;
+    return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + r[k]).join(', ') };
+  }
+
+  // S59: 목적지 주차장 입구 (2026-11-14 요청: 사람이 들어가는 정문이 아니라 차가 들어가는 주차장 입구로)
+  async function s59() {
+    const t = T(), R = buildNavRoute(), r = {}, D = R.dest;
+    const ent = dest(D, 270, 120), exitP = dest(D, 270, 60), other = dest(D, 180, 80), far = dest(D, 0, 900);
+    const pt = (q) => q.lng.toFixed(6) + ',' + q.lat.toFixed(6);
+    stub.canned['/search'] = (q) => (/주차장입구/.test(q.query || '') ? { items: [
+      { name: '테스트아파트주차장출구', category: '도로시설>방면정보', addr: '', lat: exitP.lat, lng: exitP.lng },
+      { name: '다른단지주차장입구', category: '도로시설>방면정보', addr: '', lat: other.lat, lng: other.lng },
+      { name: '테스트아파트서문주차장입구', category: '도로시설>방면정보', addr: '', lat: ent.lat, lng: ent.lng },
+      { name: '테스트아파트동문주차장입구', category: '도로시설>방면정보', addr: '', lat: far.lat, lng: far.lng },
+    ] } : { items: [] });
+    stub.canned['/route'] = R.route;
+    feed(R.P[0], 0, null);
+    try {
+      const c0 = stub.calls.length;
+      await withTimeout(t.pickDest({ name: '테스트아파트101동입구', addr: '', lat: D.lat, lng: D.lng, category: '' }), 5000, 'pickDest');
+      await waitFor(() => stub.count('/route', c0) >= 1 && !t.nav.busy, 3000);
+      const q1 = stub.since(c0, '/route')[0];
+      r.base = t.placeBase('테스트아파트101동입구');
+      r.query = (stub.since(c0, '/search')[0] || { query: {} }).query.query;
+      r.goalEntrance = !!q1 && q1.query.goal === pt(ent);
+      r.card = visible('#rcPark') && /서문주차장입구/.test(text('#rcParkName'));
+      r.btn = text('#rcParkBtn');
+      const c1 = stub.calls.length;
+      document.getElementById('rcParkBtn').click();
+      await waitFor(() => stub.count('/route', c1) >= 1 && !t.nav.busy, 3000);
+      const q2 = stub.since(c1, '/route')[0];
+      r.goalMain = !!q2 && q2.query.goal === pt(D);
+      r.btn2 = text('#rcParkBtn');
+      // 주차장 입구가 없는 가게: 그대로
+      stub.canned['/search'] = { items: [] };
+      const c2 = stub.calls.length;
+      await withTimeout(t.pickDest({ name: '테스트카페', addr: '', lat: D.lat, lng: D.lng, category: '카페' }), 5000, 'pickDest');
+      await waitFor(() => stub.count('/route', c2) >= 1 && !t.nav.busy, 3000);
+      const q3 = stub.since(c2, '/route')[0];
+      r.noPark = !!q3 && q3.query.goal === pt(D) && !visible('#rcPark');
+    } finally {
+      t.endNav(); softReset();
+    }
+    const ok = r.base === '테스트아파트' && r.query === '테스트아파트 주차장입구' && r.goalEntrance && r.card && r.btn === '정문으로' &&
+      r.goalMain && r.btn2 === '주차장 입구로' && r.noPark;
+    return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + r[k]).join(', ') };
+  }
+
+  // S60: 지도 위 회전 화살표 + 목적지 핀·점선 (2026-11-14 요청: 휴대폰 내비처럼)
+  async function s60() {
+    const t = T(), R = buildNavRoute(), r = {};
+    const bld = dest(R.P[9], 0, 40);   // 경로 끝에서 40m 떨어진 건물
+    R.dest = Object.assign({}, R.dest, { lat: bld.lat, lng: bld.lng });
+    try {
+      await planAndStart(R);
+      const m = t.getMap();
+      r.pin = !!document.querySelector('.destpin');
+      r.dots = document.querySelectorAll('.destdot').length;
+      let a = pointAt(R, 100); feed(a.p, 15, a.h); t.renderNav();
+      r.farNone = !(m._arrowObjs || []).length;                 // 다음 안내가 직진이거나 400m 밖
+      a = pointAt(R, 300); feed(a.p, 15, a.h); t.renderNav();   // 우회전 300m 앞
+      r.near = (m._arrowObjs || []).length;                     // 테두리 몸통·화살촉 + 흰 몸통·화살촉
+      const end = m._arrow && m._arrow[m._arrow.length - 1];
+      r.endFromTurn = end ? Math.round(hav(end, dest(R.P[5], 90, 30))) : -1;   // 회전 지점 30m 뒤까지
+      a = pointAt(R, R.cum[5] + 40); feed(a.p, 15, a.h); t.renderNav();
+      r.after = (m._arrowObjs || []).length;                    // 그다음은 목적지: 화살표 없음
+      t.endNav();
+      r.cleared = !(m.destMk || []).length && !(m._arrowObjs || []).length && !document.querySelector('.destpin');
+    } finally {
+      softReset();
+    }
+    const ok = r.pin && r.dots >= 3 && r.farNone && r.near === 4 && r.endFromTurn >= 0 && r.endFromTurn <= 3 && r.after === 0 && r.cleared;
     return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + r[k]).join(', ') };
   }
 

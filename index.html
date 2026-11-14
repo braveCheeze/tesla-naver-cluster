@@ -1039,6 +1039,21 @@
   .signcard .bump-sign { width: 38px; }
   .parkcard .bump-sign, .parkcard .bump-sign svg { width: 30px; }
   .parkmk { width: 18px; height: 18px; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .35)); }
+  /* 목적지 핀·점선 (2026-11-14): 경로 끝(주차장 입구 등)에서 실제 목적지까지 회색 점 */
+  .destpin { width: 34px; height: 34px; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .35)); }
+  .destpin svg { width: 34px; height: 34px; display: block; }
+  .destdot { width: 8px; height: 8px; border-radius: 50%; background: #8a94a3; border: 1.5px solid #fff; box-sizing: border-box; }
+  /* 그림(래스터) 지도의 주행 화면은 캔버스째 돌리므로 핀은 똑바로 세운다 */
+  #map.drive:not(.gl) .uprt { transform: rotate(var(--crot)); transform-origin: 50% 100%; transition: transform .9s linear; }
+  /* 경로 카드: 주차장 입구 줄 */
+  .rc-park { display: flex; align-items: center; gap: 8px; margin: 8px 0 2px; font-size: 14px; font-weight: 700; }
+  .rc-park[hidden] { display: none; }
+  .rc-park .rc-p { flex: none; width: 22px; height: 22px; border-radius: 5px; background: #2f6fe4; color: #fff; font-weight: 900; font-size: 14px;
+    display: inline-flex; align-items: center; justify-content: center; }
+  .rc-park #rcParkName { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rc-park button { flex: none; padding: 5px 10px; border-radius: 8px; font-size: 13px; font-weight: 800; }
+  /* 경로 카드가 떠 있으면 아래 위치 띠는 숨긴다 (반투명 카드 밑으로 글자가 비쳐 '안내 시작' 위에 겹쳐 보였다) */
+  #app:has(#routeCard:not([hidden])) #roadName { opacity: 0; pointer-events: none; }
   .parkmk svg { width: 18px; height: 18px; display: block; }
   .signcard .bump-sign svg { width: 38px; }
   .bumpmk { width: 22px; height: 20px; pointer-events: none; }
@@ -1415,6 +1430,8 @@
       <div id="rcTitle" class="rc-title"></div>
       <div id="rcAlts" class="alts"></div>
       <div id="rcMeta" class="rc-meta"></div>
+      <!-- 주차장 입구로 안내할 때: 입구 이름 + '정문으로'(원래 목적지 자리로 다시 찾기) -->
+      <div id="rcPark" class="rc-park" hidden><span class="rc-p">P</span><span id="rcParkName"></span><button id="rcParkBtn">정문으로</button></div>
       <div class="row">
         <button id="rcStart" class="primary">안내 시작</button>
         <button id="rcCancel">취소</button>
@@ -1543,7 +1560,7 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.14-82"></script>
-<script src="app.js?v=2026.11.14-83"></script>
+<script src="icons.js?v=2026.11.14-84"></script>
+<script src="app.js?v=2026.11.14-84"></script>
 </body>
 </html>

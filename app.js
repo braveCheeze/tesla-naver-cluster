@@ -47,7 +47,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-83'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-84'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   // 브라우저에 저장된 예전 index.html 이 새 app.js 를 불러온 경우(화면 요소가 맞지 않아 버튼 연결에서 멈춘다):
@@ -378,6 +378,50 @@
   // 과속방지턱 주의 표지: 빨간 테두리 흰 삼각형 안에 검은 둔덕
   const SIGN_BUMP = '<svg viewBox="0 0 100 88" aria-hidden="true"><path d="M50 7 L94 82 L6 82 Z" fill="#fff" stroke="#e53935" stroke-width="10" stroke-linejoin="round"/>' +
     '<path d="M25 69 H75" stroke="#111" stroke-width="6" stroke-linecap="round"/><path d="M33 69 Q50 42 67 69 Z" fill="#111"/></svg>';
+  // ---------- 지도 위 회전 화살표·목적지 핀 (2026-11-14 요청: 휴대폰 내비처럼) ----------
+  // 다음 회전 지점의 경로를 따라 흰 화살표(어두운 테두리). 화살촉은 화면에서 같은 크기로 보이게 지금 배율로 계산한다
+  function arrowGeom(pts, zoom) {
+    const E = pts[pts.length - 1], kx = Math.cos(toRad(E.lat)) * 111320, ky = 110540;
+    const loc = (q) => ({ x: (q.lng - E.lng) * kx, y: (q.lat - E.lat) * ky });
+    const back = (m) => ({ lat: E.lat + m.y / ky, lng: E.lng + m.x / kx });
+    // 끝 방향: 끝에서 6m 넘게 떨어진 앞 점으로
+    let j = pts.length - 2;
+    while (j > 0 && haversine(pts[j], E) < 6) j--;
+    const A = loc(pts[j]);
+    const n0 = Math.hypot(A.x, A.y) || 1, d = { x: -A.x / n0, y: -A.y / n0 }, nn = { x: -d.y, y: d.x };
+    const mpp = 156543.03392 * Math.cos(toRad(E.lat)) / Math.pow(2, zoom || 17);
+    const px = (v) => v * mpp;
+    const at = (o, along, side) => ({ x: o.x + d.x * along + nn.x * side, y: o.y + d.y * along + nn.y * side });
+    const T = at({ x: 0, y: 0 }, px(8), 0);
+    const Bo = at(T, -px(24), 0), Ti = at(T, -px(4), 0), Bi = at(Ti, -px(16), 0);
+    const tri = (tip, base, w) => [tip, at(base, 0, w), at(base, 0, -w)].map(back);
+    // 몸통은 안쪽 화살촉 밑동 조금 안까지만
+    const cut = px(9);
+    const shaft = pts.slice(0, -1).filter((q) => haversine(q, E) > cut);
+    shaft.push(back(at({ x: 0, y: 0 }, -cut, 0)));
+    return { shaft, headOut: tri(T, Bo, px(16)), headIn: tri(Ti, Bi, px(10.5)) };
+  }
+  // 목적지 핀 (사용자가 그린 '도착' 핀이 있으면 그것)
+  function destPinEl() {
+    const el = document.createElement('div');
+    el.className = 'destpin uprt';
+    el.innerHTML = (window.TNC_ICONS && window.TNC_ICONS.goal) ? ico('goal') : PIN_ICON;
+    return el;
+  }
+  // 경로 끝(차가 서는 곳)과 실제 목적지 사이 점선 점들 (12m 넘게 떨어졌을 때)
+  function destDots(end, d) {
+    if (!end || !d) return [];
+    const dist = haversine(end, d);
+    if (dist < 12) return [];
+    const n = Math.min(12, Math.max(1, Math.floor(dist / 8)));
+    const out = [];
+    for (let i = 1; i <= n; i++) {
+      const t = i / (n + 1);
+      out.push({ lat: end.lat + (d.lat - end.lat) * t, lng: end.lng + (d.lng - end.lng) * t });
+    }
+    return out;
+  }
+  function dotEl() { const el = document.createElement('div'); el.className = 'destdot'; return el; }
   // 주정차 금지 표지: 파란 원 + 빨간 테두리 + 빨간 X
   const PARK_SVG = '<svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="42" fill="#1d4fb8" stroke="#e53935" stroke-width="12"/>' +
     '<path d="M24 24 L76 76 M76 24 L24 76" stroke="#e53935" stroke-width="10" stroke-linecap="round"/></svg>';
@@ -438,6 +482,8 @@
         icon: { content: meEl, anchor: new N.Point(28, 28) },
       });
       N.Event.addListener(this.map, 'dragstart', onUserPan);
+      // 배율이 바뀌면 회전 화살표의 화살촉 크기를 다시 맞춘다
+      N.Event.addListener(this.map, 'zoom_changed', () => { clearTimeout(this._arrowT); this._arrowT = setTimeout(() => this.drawArrow(), 120); });
       this.setTraffic(prefs.traffic);
       if (this.gl) { this.initDark(this.map); this.watchGl(el, this.map); }
     },
@@ -635,6 +681,29 @@
         }));
       });
     },
+    setTurnArrow(pts) { this._arrow = pts; this.drawArrow(); },
+    drawArrow() {
+      (this._arrowObjs || []).forEach((o) => o.setMap(null));
+      this._arrowObjs = [];
+      const pts = this._arrow;
+      if (!pts || pts.length < 2 || !this.map) return;
+      const N = naver.maps, g = arrowGeom(pts, this.map.getZoom()), P = (q) => new N.LatLng(q.lat, q.lng);
+      const line = (w, c, z) => new N.Polyline({ map: this.map, path: g.shaft.map(P), strokeColor: c, strokeWeight: w, strokeOpacity: 1,
+        strokeLineCap: 'round', strokeLineJoin: 'round', zIndex: z, clickable: false });
+      const head = (tri, c, z) => new N.Polygon({ map: this.map, paths: [tri.map(P)], fillColor: c, fillOpacity: 1, strokeColor: c, strokeOpacity: 1,
+        strokeWeight: 1, zIndex: z, clickable: false });
+      this._arrowObjs.push(line(15, '#1b1f25', 70), head(g.headOut, '#1b1f25', 70), line(9, '#ffffff', 71), head(g.headIn, '#ffffff', 71));
+    },
+    setDest(d, end) {
+      const N = naver.maps;
+      (this.destMk || []).forEach((m) => m.setMap(null));
+      this.destMk = [];
+      if (!d || !this.map) return;
+      destDots(end, d).forEach((q) => this.destMk.push(new N.Marker({ position: new N.LatLng(q.lat, q.lng), map: this.map, clickable: false, zIndex: 94,
+        icon: { content: dotEl(), anchor: new N.Point(4, 4) } })));
+      this.destMk.push(new N.Marker({ position: new N.LatLng(d.lat, d.lng), map: this.map, clickable: false, zIndex: 95,
+        icon: { content: destPinEl(), anchor: new N.Point(17, 33) } }));
+    },
     // 주정차 단속 카메라: 작은 주정차 금지 표지
     setParks(list) {
       const N = naver.maps;
@@ -654,6 +723,8 @@
       if (this.bumps) this.bumps.forEach((m) => m.setMap(null));
       if (this.parks) this.parks.forEach((m) => m.setMap(null));
       this.parks = new Map();
+      (this.destMk || []).forEach((m) => m.setMap(null)); this.destMk = [];
+      (this._arrowObjs || []).forEach((o) => o.setMap(null)); this._arrowObjs = []; this._arrow = null;
       this.cams = new Map(); this.bumps = new Map();
       this.clearRoute();
       if (this.map) this.map.destroy();
@@ -679,6 +750,7 @@
       }).addTo(this.map);
       this.marker = null;
       this.map.on('dragstart', onUserPan);
+      this.map.on('zoomend', () => this.drawArrow());
     },
     setMe(lat, lng) {
       if (this.marker) { this.marker.setLatLng([lat, lng]); return; }
@@ -763,6 +835,28 @@
         }).addTo(this.map));
       });
     },
+    setTurnArrow(pts) { this._arrow = pts; this.drawArrow(); },
+    drawArrow() {
+      (this._arrowObjs || []).forEach((o) => o.remove());
+      this._arrowObjs = [];
+      const pts = this._arrow;
+      if (!pts || pts.length < 2 || !this.map) return;
+      const g = arrowGeom(pts, this.map.getZoom()), P = (q) => [q.lat, q.lng];
+      const line = (w, c) => L.polyline(g.shaft.map(P), { color: c, weight: w, opacity: 1, lineCap: 'round', lineJoin: 'round', interactive: false }).addTo(this.map);
+      const head = (tri, c) => L.polygon(tri.map(P), { color: c, weight: 1, fillColor: c, fillOpacity: 1, interactive: false }).addTo(this.map);
+      this._arrowObjs.push(line(15, '#1b1f25'), head(g.headOut, '#1b1f25'), line(9, '#ffffff'), head(g.headIn, '#ffffff'));
+    },
+    setDest(d, end) {
+      (this.destMk || []).forEach((m) => m.remove());
+      this.destMk = [];
+      if (!d || !this.map) return;
+      destDots(end, d).forEach((q) => this.destMk.push(L.marker([q.lat, q.lng], {
+        icon: L.divIcon({ html: '<div class="destdot"></div>', className: 'me-wrap', iconSize: [8, 8], iconAnchor: [4, 4] }), interactive: false, keyboard: false,
+      }).addTo(this.map)));
+      this.destMk.push(L.marker([d.lat, d.lng], {
+        icon: L.divIcon({ html: destPinEl().outerHTML, className: 'me-wrap', iconSize: [34, 34], iconAnchor: [17, 33] }), interactive: false, keyboard: false, zIndexOffset: 900,
+      }).addTo(this.map));
+    },
     setParks(list) {
       if (!this.parks) this.parks = new Map();
       const keep = new Set(list.map((x) => x.k));
@@ -779,6 +873,7 @@
       this.clearRoute();
       if (this.map) this.map.remove();
       this.map = null; this.marker = null; this.cams = new Map(); this.bumps = new Map(); this.parks = new Map();
+      this.destMk = []; this._arrowObjs = []; this._arrow = null;
     },
   };
 
@@ -796,6 +891,8 @@
     if (nav.pts) {
       mapA.drawRoute(nav.pts, nav.route && nav.route.sections);
       if (nav.onRoute) { nav.drawnAt = 0; drawRemaining(); }
+      if (mapA.setDest && nav.dest) mapA.setDest(nav.dest, nav.pts[nav.pts.length - 1]);
+      nav.arrowKey = null;
     }
     camState.markerAt = null;
     if (state.fix) refreshCamMarkers(state.fix);
@@ -2292,7 +2389,38 @@
     }
     qTimer = setTimeout(() => doSearch(true), 450);
   }
-  function pickDest(it) {
+  // ---------- 목적지 주차장 입구 (2026-11-14 요청: 사람이 들어가는 정문이 아니라 차가 들어가는 주차장 입구로) ----------
+  // 네이버 장소 검색에는 아파트·백화점 같은 곳의 '…주차장입구'가 '도로시설>방면정보'로 따로 올라 있다
+  // (예: '잠실엘스아파트서문방면주차장입구', '기흥역롯데캐슬레이시티주차장입구'). 목적지 이름에서 '101동입구'·'정문' 같은 꼬리를 떼고
+  // '<이름> 주차장입구'로 찾아, 이름이 맞고 600m 안에 있는 입구 중 목적지에 가장 가까운 곳으로 경로를 잡는다.
+  // 목적지 이름·핀은 그대로 두고, 경로 카드에서 '정문으로'를 누르면 원래 자리로 다시 찾는다
+  function placeBase(name) {
+    let s = String(name || '').trim();
+    for (let k = 0; k < 3; k++) {
+      s = s.replace(/\s*(정문|후문|주출입구|출입구|입구|앞)$/, '').replace(/\s*([0-9]+|[A-Za-z])동$/, '').replace(/\s*[0-9]+단지$/, '').trim();
+    }
+    return s;
+  }
+  const squash = (x) => String(x || '').replace(/\s+/g, '');
+  async function findParking(dest) {
+    if (!dest || !dest.name || /주차/.test(dest.name + ' ' + (dest.category || ''))) return null;
+    const base = placeBase(dest.name), b = squash(base);
+    if (b.length < 3) return null;
+    let res;
+    try { res = await api('/search', { query: base + ' 주차장입구' }, null, 2500); } catch (e) { return null; }
+    const cands = ((res && res.items) || []).filter((it) => {
+      const n = squash(it.name);
+      if (!/주차.*입구/.test(n) || /출구/.test(n) || !isFinite(it.lat) || !isFinite(it.lng)) return false;
+      if (!(n.includes(b) || (b.length >= 5 && n.includes(b.slice(0, b.length - 2))))) return false;
+      return haversine(dest, it) <= 600;
+    }).map((it) => ({ name: it.name, lat: it.lat, lng: it.lng, d: Math.round(haversine(dest, it)) }));
+    cands.sort((x, y) => x.d - y.d);
+    return cands[0] || null;
+  }
+  // 경로의 도착점: 주차장 입구를 찾았으면 그곳 (정문으로 바꾸면 원래 자리)
+  const goalOf = (d) => (d.park && !d.parkOff ? d.park : d);
+  let pickSeq = 0;
+  async function pickDest(it) {
     closeSearch();
     // 길안내 중 경유지 고르기: 목적지는 그대로, 고른 곳을 거쳐 가는 경로로 바로 다시 찾는다
     if (searchFor === 'via' && nav.active && nav.dest) {
@@ -2304,7 +2432,12 @@
     }
     addRecent(it);
     nav.via = []; // 새 목적지는 경유지 없이
-    planRoute(it, false);
+    const seq = ++pickSeq, dest = { name: it.name, addr: it.addr || '', lat: it.lat, lng: it.lng, category: it.category || '' };
+    toast('경로를 찾는 중…', '', 3000);
+    const park = await findParking(dest);
+    if (seq !== pickSeq) return; // 그사이 다른 목적지를 골랐다
+    if (park) dest.park = park;
+    planRoute(dest, false);
   }
 
   async function planRoute(dest, reroute) {
@@ -2321,7 +2454,7 @@
       const startOf = () => { const s0 = ahead ? rerouteStart() : state.fix; return s0.lng.toFixed(6) + ',' + s0.lat.toFixed(6); };
       const q = {
         start: startOf(),
-        goal: dest.lng.toFixed(6) + ',' + dest.lat.toFixed(6),
+        goal: goalOf(dest).lng.toFixed(6) + ',' + goalOf(dest).lat.toFixed(6),
       };
       // reroute: false 새 목적지(추천 경로 여럿) · 'traffic' 교통 갱신 · 'compare' 길안내 중 경로 비교(추천 경로 여럿, 안내는 계속)
       //          · 'manual' 재추천 버튼 · 'via' 경유지 추가/빼기 · 그 밖 경로 이탈 재탐색
@@ -2436,6 +2569,9 @@
     nav.remain = nav.total; nav.next = null; nav.dg = null;
     nav.guides = (r.guide || []).filter((g) => g.i < nav.pts.length).sort((a, b) => a.i - b.i);
     if (mapA) mapA.drawRoute(nav.pts, r.sections);
+    if (mapA && mapA.setDest) mapA.setDest(dest, nav.pts[nav.pts.length - 1]);
+    nav.arrowKey = null;
+    if (mapA && mapA.setTurnArrow) mapA.setTurnArrow(null);
     if (!keepAlerts) camState.target = null; // 재탐색 때는 진행 중인 카메라 안내를 유지
   }
 
@@ -2522,6 +2658,13 @@
     $('#rcMeta').textContent = cmp
       ? '고르면 바로 그 경로로 안내합니다 · 다른 경로는 지도에 회색으로'
       : hhmm(new Date(Date.now() + r.duration)) + ' 도착 예정' + (alts.length > 1 ? ' · 다른 경로는 지도에 회색으로 표시' : '');
+    // 주차장 입구로 안내하는 중이면 그 이름과 '정문으로' 버튼 (비교 중에는 숨김)
+    const pk = !cmp && nav.dest && nav.dest.park;
+    $('#rcPark').hidden = !pk;
+    if (pk) {
+      $('#rcParkName').textContent = nav.dest.parkOff ? '정문(목적지)으로 안내' : '주차장 입구로 안내 · ' + nav.dest.park.name;
+      $('#rcParkBtn').textContent = nav.dest.parkOff ? '주차장 입구로' : '정문으로';
+    }
     $('#rcStart').textContent = cmp ? '이 경로로 안내' : '안내 시작';
     $('#rcCancel').textContent = cmp ? '원래 경로로' : '취소';
     $('#routeCard').hidden = false;
@@ -2575,6 +2718,9 @@
     nav.routeCams = null; nav.routeCamList = []; camState.markerAt = null; camState.peekAt = 0;
     nav.alts = null; nav.altIdx = 0; nav.via = []; nav.comparing = false; nav.compareBase = null;
     if (mapA) { mapA.clearRoute(); if (mapA.drawAlts) mapA.drawAlts([]); }
+    if (mapA && mapA.setDest) mapA.setDest(null);
+    if (mapA && mapA.setTurnArrow) mapA.setTurnArrow(null);
+    nav.arrowKey = null;
     $('#routeCard').hidden = true;
     $('#map').classList.remove('navigating');
     camState.target = null;
@@ -2663,6 +2809,24 @@
     return svg.replace(/(id="|url\(#)(tg-[\w-]+)/g, '$1$2-' + n);
   }
   const pinIco = (via) => (window.TNC_ICONS && window.TNC_ICONS[via ? 'via' : 'goal'] ? ico(via ? 'via' : 'goal') : PIN_ICON);
+
+  // 다음 회전 지점 화살표: 회전·비켜 가기·나가기/들어가기·유턴·회전교차로이고 400m 안이면 그 지점 45m 앞부터 30m 뒤까지
+  const ARROW_KINDS = new Set(['l', 'r', 'u', 'sl', 'sr', 'kl', 'kr', 'outl', 'outr', 'inl', 'inr', 'rb']);
+  function renderTurnArrow() {
+    if (!mapA || !mapA.setTurnArrow) return;
+    const g = nav.active ? nav.next : null;
+    const want = !!(g && nav.dg != null && nav.dg <= 400 && ARROW_KINDS.has(turnKind(g)));
+    const key = want ? g.i + ':' + g.t : '';
+    if (key === nav.arrowKey) return;
+    nav.arrowKey = key;
+    if (!want) { mapA.setTurnArrow(null); return; }
+    const c = nav.cum[Math.min(g.i, nav.cum.length - 1)], pts = [];
+    for (let at = Math.max(0, c - 45); at <= Math.min(nav.total, c + 30) + 0.01; at += 2.5) {
+      const q = routePointAt(at);
+      if (q) pts.push(q);
+    }
+    mapA.setTurnArrow(pts.length >= 2 ? pts : null);
+  }
 
   // 남은 경로만 다시 그린다: 지금 위치(경로 위로 붙인 점)부터 목적지까지, 교통 색 구간도 번호를 맞춰 옮긴다
   function drawRemaining() {
@@ -3162,6 +3326,7 @@
     $('#navDestName').textContent = nav.dest ? nav.dest.name : '';
     $('#navDestVia').textContent = nav.via && nav.via[0] ? '경유 ' + nav.via[0].name : '';
     const g = nav.next;
+    renderTurnArrow();
     $('#turnIcon').innerHTML = ico(g ? turnKind(g) : 'goal');
     $('#turnDist').textContent = fmtDist(nav.dg != null ? nav.dg : nav.total);
     if (g && g.t === 121) {
@@ -3648,7 +3813,7 @@
     try {
       if (nav.active && nav.dest) {
         const d = nav.dest;
-        sessionStorage.setItem('tnc.resume', JSON.stringify({ dest: { name: d.name, addr: d.addr || '', lat: d.lat, lng: d.lng },
+        sessionStorage.setItem('tnc.resume', JSON.stringify({ dest: { name: d.name, addr: d.addr || '', lat: d.lat, lng: d.lng, park: d.park || null, parkOff: !!d.parkOff },
           via: nav.via || [], option: nav.option || null, t: Date.now() }));
       }
       sessionStorage.setItem('tnc.updTried', v);
@@ -4120,6 +4285,12 @@
   $('#q').addEventListener('input', onQueryInput);
   $('#rcStart').onclick = () => (nav.comparing ? endCompare(true) : startNav());
   $('#rcCancel').onclick = () => (nav.comparing ? endCompare(false) : endNav());
+  // 경로 카드: 주차장 입구 ↔ 정문(원래 목적지 자리) 바꿔서 다시 찾기
+  $('#rcParkBtn').onclick = () => {
+    if (!nav.dest || !nav.dest.park || nav.busy) return;
+    nav.dest.parkOff = !nav.dest.parkOff;
+    planRoute(nav.dest, false);
+  };
   // 하단 위치 띠를 누르면 버튼이 올라온다
   $('#roadName').addEventListener('click', toggleTray);
   $('#ntCompare').onclick = () => { closeTray(); if (nav.active && nav.dest) planRoute(nav.dest, 'compare'); };
@@ -4440,7 +4611,7 @@
       planRoute, doSearch, setFollowing, canvasPoint, gesture, glView, glOn, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
       sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
-      saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassNums, hipassLayout, laneNums, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, parking, parkState, setParkingData, loadParking, evalParking,
+      saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassNums, hipassLayout, laneNums, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, parking, parkState, setParkingData, loadParking, evalParking, placeBase, findParking, renderTurnArrow,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
