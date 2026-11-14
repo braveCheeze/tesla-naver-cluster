@@ -40,7 +40,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-29'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-30'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -2198,7 +2198,21 @@
   // GitHub Pages 는 페이지를 10분 동안 브라우저에 저장해 두므로, 그냥 링크로 들어오면 예전 화면이 뜰 수 있다.
   // 페이지를 열 때(그리고 차가 잠들었다 깨어났을 때) version.json 을 캐시 없이 받아 보고,
   // 지금보다 새 버전이면 한 번만 새로고침한다. 운전에 방해되지 않게 길안내 중·주행 중·데모 중에는 절대 하지 않는다.
-  const upd = { checking: false, hiddenAt: 0, lastTick: 0 };
+  const upd = { checking: false, hiddenAt: 0, lastTick: 0, touchAt: 0, movedAt: Date.now(), idleAt: 0 };
+  document.addEventListener('pointerdown', () => { upd.touchAt = Date.now(); }, { passive: true, capture: true });
+  // 주차 중 켜 둔 화면도 새 버전으로: 2분 넘게 서 있고, 2분 넘게 아무것도 안 만졌고, 길안내·검색·설정·경로 고르기가
+  // 열려 있지 않으면 10분마다 새 버전을 확인한다. 돌려주는 값은 이유 (테스트용)
+  function idleUpdate(now, dry) {
+    if (state.speedKmh >= 3) { upd.movedAt = now; return 'moving'; }
+    if (now - upd.movedAt < 120000) return 'just-stopped';
+    if (now - upd.touchAt < 120000) return 'touched';
+    if (nav.active || nav.preview || nav.busy) return 'nav';
+    if (['#sheet', '#searchSheet', '#tripSheet', '#routeCard'].some((s) => { const e = $(s); return e && !e.hidden; })) return 'screen-open';
+    if (now - upd.idleAt < 10 * 60000) return 'waiting';
+    upd.idleAt = now;
+    if (!dry) checkForUpdate('idle');
+    return 'check';
+  }
   const verNum = (v) => String(v || '').split(/[^0-9]+/).filter(Boolean).map(Number);
   function verNewer(a, b) { // a 가 b 보다 새 버전인지 ('2026.11.13-15' > '2026.11.13-9')
     const x = verNum(a), y = verNum(b);
@@ -2252,6 +2266,7 @@
     if (!upd.nightAt || now - upd.nightAt > 60000) { upd.nightAt = now.getTime(); applyNight(); }
     // 서 있을 때는 GPS 가 드문드문 와도 북쪽 위 전환이 늦지 않게 시계로도 본다
     if (state.fix && !state.demoTimer) checkStopNorth(state.fix.t + (Date.now() - lastFixWall));
+    if (!state.demoTimer && !testPage) idleUpdate(Date.now());
     $('#clock').textContent = hhmm(now);
     $('#dateText').textContent = (now.getMonth() + 1) + '월 ' + now.getDate() + '일 (' + '일월화수목금토'[now.getDay()] + ')';
     mapWatchdog();
@@ -2829,7 +2844,7 @@
       state, camState, nav, cams, prefs, onFix, setRoute, startNav, endNav, startDemo, stopDemo, renderNav,
       planRoute, doSearch, setFollowing, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
-      sunElevation, isNightAt, setNightMode, openSearch, favs, setFav,
+      sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
     };

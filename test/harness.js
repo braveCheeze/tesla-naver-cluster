@@ -981,6 +981,33 @@
   }
   const C_A = () => CAM_ISO_A;
 
+  // S33: 주차 중 자동 새 버전 — 2분 넘게 서 있고 2분 넘게 안 만졌고 길안내·검색·설정 화면이 없을 때만 확인, 10분에 한 번
+  async function s33() {
+    const t = T(), u = t.upd, saved = { movedAt: u.movedAt, touchAt: u.touchAt, idleAt: u.idleAt };
+    const r = {};
+    try {
+      const T0 = 10 * 3600e3;
+      u.idleAt = 0; u.touchAt = 0;
+      t.state.speedKmh = 40; r.moving = t.idleUpdate(T0, true);
+      t.state.speedKmh = 0; r.justStopped = t.idleUpdate(T0 + 60000, true);
+      u.touchAt = T0 + 100000; r.touched = t.idleUpdate(T0 + 130000, true);
+      u.touchAt = 0;
+      document.getElementById('searchSheet').hidden = false; r.screen = t.idleUpdate(T0 + 130000, true);
+      document.getElementById('searchSheet').hidden = true;
+      t.nav.preview = true; r.nav = t.idleUpdate(T0 + 130000, true); t.nav.preview = false;
+      r.check = t.idleUpdate(T0 + 130000, true);
+      r.again = t.idleUpdate(T0 + 190000, true);
+      r.later = t.idleUpdate(T0 + 130000 + 10 * 60000 + 1, true);
+    } finally {
+      Object.assign(u, saved);
+      document.getElementById('searchSheet').hidden = true;
+      t.nav.preview = false;
+    }
+    const want = { moving: 'moving', justStopped: 'just-stopped', touched: 'touched', screen: 'screen-open', nav: 'nav', check: 'check', again: 'waiting', later: 'check' };
+    const bad = Object.keys(want).filter((k) => r[k] !== want[k]);
+    return { pass: bad.length === 0, detail: Object.keys(want).map((k) => k + '=' + r[k] + (r[k] === want[k] ? '' : '✗')).join(', ') };
+  }
+
   // S32: 멈추면 북쪽 위로 — 진행 방향 위(동쪽 80°)로 달리다 3초 넘게 서면 북쪽 위 평면 지도(가게 글자 똑바로),
   //      다시 시속 8km 를 넘으면 진행 방향 위로. 설정을 끄면 서 있어도 진행 방향 위 그대로
   async function s32() {
@@ -1584,6 +1611,7 @@
     { id: 'S30', name: 'S30 trip log with speeding events', fn: s30 },
     { id: 'S31', name: 'S31 weather icons', fn: s31 },
     { id: 'S32', name: 'S32 stopped → north up (labels upright)', fn: s32 },
+    { id: 'S33', name: 'S33 parked & untouched → check for new version', fn: s33 },
   ];
 
   // ---------------------------------------------------------------- runner
