@@ -51,7 +51,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-103'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-104'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -4183,8 +4183,10 @@
     if (!('geolocation' in navigator)) { setGps('bad', '위치 미지원 브라우저'); return; }
     setGps('warn', 'GPS 신호 찾는 중');
     let lastGoodFix = 0, tsReported = false;
-    navigator.geolocation.watchPosition((p) => {
+    if (gpsWatch != null) navigator.geolocation.clearWatch(gpsWatch);
+    gpsWatch = navigator.geolocation.watchPosition((p) => {
       diagRaw(p);
+      gpsNotice(false);
       if (state.demoTimer) return;
       const now = Date.now(), acc = p.coords.accuracy;
       // 테슬라 브라우저는 위치 시각(timestamp) 단위가 달라 주행 시간·재탐색 간격 계산이 틀어졌다.
@@ -4203,14 +4205,39 @@
     }, (err) => {
       if (state.demoTimer) return;
       if (err.code === 1) {
-        report('warn', { msg: 'gps permission denied' });
+        if (!gpsDeniedReported) { gpsDeniedReported = true; report('warn', { msg: 'gps permission denied' }); }
         setGps('bad', '위치 권한 꺼짐');
-        toast('위치 권한을 허용해야 속도와 현재 위치가 표시됩니다.', 'bad', 0);
+        gpsNotice(true);
       } else {
         setGps('warn', err.code === 3 ? 'GPS 신호 약함' : 'GPS 오류');
       }
     }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
   }
+  // 위치 권한이 꺼져 있을 때: 아래 작은 알림(예전 토스트) 대신 지도 가운데에 분명한 안내 카드
+  // (2026-11-14 요청 '요거 알림은 띄우는 게 좋지 않을까'). 무엇이 안 되는지·켜는 순서·다시 시도.
+  // '다시 시도'를 눌렀는데 여전히 꺼져 있으면 한 줄 더 알려 준다. '나중에'로 닫아도 오른쪽 아래 'GPS 위치 권한 꺼짐'을 누르면 다시 연다.
+  // 브라우저 설정에서 허용으로 바뀌면(permissions change) 저절로 닫고 위치를 다시 받는다. 데모 중에는 띄우지 않는다
+  let gpsWatch = null, gpsDeniedReported = false, gpsRetried = false, gpsDenied = false;
+  function gpsNotice(show) {
+    const el = $('#gpsNotice');
+    if (!el) return;
+    gpsDenied = !!show;
+    $('.gps').classList.toggle('tap', gpsDenied);   // 꺼져 있는 동안만 오른쪽 아래 GPS 글자를 눌러 안내를 다시 연다
+    if (show && state.demoTimer) return;
+    if (show) el.classList.toggle('again', gpsRetried);
+    el.hidden = !show;
+    if (!show) gpsRetried = false;
+  }
+  $('#gpsRetry').addEventListener('click', () => { gpsRetried = true; $('#gpsNotice').hidden = true; startGps(); });
+  $('#gpsLater').addEventListener('click', () => { gpsRetried = false; $('#gpsNotice').hidden = true; });
+  $('.gps').addEventListener('click', () => { if (gpsDenied && !state.demoTimer) { gpsRetried = false; gpsNotice(true); } });
+  try {
+    if (navigator.permissions && navigator.permissions.query) {
+      navigator.permissions.query({ name: 'geolocation' }).then((st) => {
+        st.onchange = () => { if (st.state === 'granted' && gpsDenied) { gpsNotice(false); startGps(); } };
+      }).catch(() => {});
+    }
+  } catch (e) { /* 권한 조회가 없는 브라우저 */ }
 
   // ---------- 화면 갱신 ----------
   function render() {
@@ -4659,6 +4686,7 @@
   let demoSaved = null, demoGen = 0;
   async function startDemo() {
     stopDemo(true);
+    $('#gpsNotice').hidden = true;   // 위치 권한이 꺼져 있어도 데모는 볼 수 있게
     const gen = ++demoGen;
     if (nav.preview) { startNav(); nav.byDemo = true; } // 데모가 시작한 안내는 데모가 끝나면 함께 끝낸다
     const onRoute = !!(nav.active && nav.pts);
