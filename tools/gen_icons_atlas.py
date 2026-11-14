@@ -16,6 +16,7 @@
   테슬라 앱 차 사진을 tools\icon-src
 ef
 ef_car_app.png 로 저장해 두면 그 느낌을 따라 그린다 (저장소에는 안 올라감)
+- 애매한 칸만 다시(회전교차로·오른쪽 들어가기·직진 나가기/들어가기·지하차도 직진·옆길): --icons fix --per 3  (60장 약 $0.42, 끝나면 img/ai 까지 자동)
 - 2026-11-14 다시 그리기(나가기/들어가기·고가·지하차도·옆길 16가지 + 회전교차로 4가지, 디자이너 느낌): --icons redo --per 2
   그림 없이 글로만 그린다(GPT Image 2.6 Flare·Sunburst $0.007, Ideogram v4 $0.025): 120장 약 $1.56
   도로만: --icons roads   회전교차로만: --icons rb   구도 밑그림 다시 그리기: py -I tools\ref_roads.py
@@ -264,16 +265,19 @@ _ROADS = {
               'single-lane ramp branches off to the right and climbs onto a bridge that passes over a horizontal road in the upper '
               'right (white bridge parapets with flared ends, soft shadow below). The arrow follows the ramp over the bridge, '
               'arrowhead pointing up. No shield.',
-    'under_s': 'UNDERPASS STRAIGHT AHEAD: a vertical road goes straight into an underpass opening at the top of the icon (front '
-               'view of a concrete portal: light grey rounded frame around a dark opening). The arrow goes straight up into the '
-               'opening. No shield.',
+    'under_s': 'UNDERPASS STRAIGHT AHEAD, seen flat from directly above: a three-lane road of constant width runs straight up '
+               'from the bottom edge and ends near the top in an underpass opening, drawn as a small light grey rounded concrete '
+               'portal with a dark opening exactly as wide as the road (like a tunnel-mouth symbol at the end of the road). The '
+               'arrow runs straight up the middle lane into the opening. No shield.',
     'under_r': 'UNDERPASS to the RIGHT: a vertical three-lane road continues straight up; in the vertical middle of the icon a '
                'single-lane road branches off to the right and goes up into an underpass opening (light grey rounded concrete '
                'portal with a dark opening) in the upper right. The arrow follows it into the opening. No shield.',
-    'side_r': 'SIDE ROAD beside an UNDERPASS, keep RIGHT: the middle road goes straight up into an underpass opening (light grey '
-              'rounded concrete portal with a dark opening) at the top; in the vertical middle of the icon a single-lane side road '
-              'branches off to the right and stays at street level beside the portal, continuing straight up. The arrow takes the '
-              'right side road and avoids the underpass. No shield.',
+    'side_r': 'SIDE ROAD beside an UNDERPASS, keep RIGHT, seen flat from directly above: a three-lane road of constant width '
+              'comes up from the bottom edge and continues straight up into an underpass opening near the top (a small light grey '
+              'rounded concrete portal with a dark opening as wide as the road). In the vertical middle of the icon a one-lane '
+              'side road of constant width branches off to the RIGHT and runs straight up to the top edge beside the portal, at '
+              'street level. The arrow starts in the right lane at the bottom, moves onto the side road and runs up it, '
+              'arrowhead near the top; it never goes into the opening. No shield.',
     'oside_r': 'SIDE ROAD beside an OVERPASS, keep RIGHT: the middle road climbs onto a bridge (white bridge parapets with flared '
                'ends, soft shadow below) that passes over a horizontal road near the top; in the vertical middle of the icon a '
                'single-lane side road branches off to the right and stays at street level beside it, crossing the horizontal road. '
@@ -432,18 +436,19 @@ def contact(files):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--models', default='')   # 비우면: 참고 그림이 있는 칸은 flare,sunburst / 글로만 쓰는 칸은 flare26,sunburst26,ideo   # 다른 모델도: flare,sunburst,gptdev,gpt15,gpt,s55,s50p,nb2
+    ap.add_argument('--models', default='')   # 비우면: 참고 그림이 있는 칸은 flare,sunburst / 글로만 쓰는 칸은 flare26,sunburst26   # 다른 모델도: flare,sunburst,gptdev,gpt15,gpt,s55,s50p,nb2
     ap.add_argument('--icons', default=','.join(JOBS))
     ap.add_argument('--per', type=int, default=1)
     ap.add_argument('--dry', action='store_true')
     a = ap.parse_args()
-    models = [m for m in (a.models or 'flare,sunburst,flare26,sunburst26,ideo').split(',') if m in MODELS]
+    models = [m for m in (a.models or 'flare,sunburst,flare26,sunburst26').split(',') if m in MODELS]
     # 묶음 이름: cars = 모든 차 아이콘(car_*·cute_*), guide = 차가 아닌 안내 아이콘·분기점 그림 전부
     is_car = lambda k: k.startswith(('car_', 'cute_'))
     is_sign = lambda k: k.startswith('sign_')
     groups = {'cars': [k for k in JOBS if is_car(k)], 'signs': [k for k in JOBS if is_sign(k)],
               'guide': [k for k in JOBS if not is_car(k) and not is_sign(k)],
-              'roads': ROADS, 'rb': RBS, 'redo': ROADS + RBS}
+              'roads': ROADS, 'rb': RBS, 'redo': ROADS + RBS,
+              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r']}
     want = []
     for i in a.icons.split(','):
         want += groups.get(i, [i])
@@ -500,6 +505,12 @@ def main():
             print('  ✗ %-5s %-5s #%d: %s' % (i, m, n, e))
     sheet = contact(files) if files else None
     print('\n완료: %d/%d장%s' % (len(files), len(jobs), ('  · 한눈에 보기: ' + os.path.relpath(sheet, ROOT)) if sheet else ''))
+    if files:
+        # 명령 하나로 끝나게: 분홍 바탕을 빼 앱·관리 페이지용 img/ai/*.webp 와 manifest.json 까지 만든다
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import build_ai_icons
+        build_ai_icons.main()
+        print('\n다 됐어요. Claude 에게 "다 했어" 라고 알려 주세요.')
 
 
 if __name__ == '__main__':
