@@ -1086,10 +1086,11 @@
   #app.tesla .cd-in .cam-hint, #app.tesla .cd-in .seccard.over .sec-remain { color: var(--nv-red); }
   #app.tesla .cd-in .cam-bar { background: var(--nv-line); }
   #app.tesla .cd-in .camcard.mobile .cam-type { color: #2f7dff; }
-  /* 그다음 칸: '↑ 직진 2.4km' + 그다음 회전 아이콘을 작게 (목적지는 표시하지 않음) */
-  .nextafter { width: 18px; height: 18px; margin-left: 2px; opacity: .75; }
-  .nextafter svg { width: 18px; height: 18px; }
-  .nextafter:empty { display: none; }
+  /* 그다음 칸 (2026-11-14 요청): 네이버 지도처럼 그다음 회전 아이콘 + 거리만 '↰ 1.2km'. 아이콘은 위 회전 안내와 같은 초록 */
+  .nextturn:not(.goal):not(.via) .nexticon, .nextturn:not(.goal):not(.via) .nexticon svg { width: 26px; height: 26px; }
+  .nextturn:not(.goal):not(.via) .nexticon svg { stroke-width: 4.4; }
+  #app.tesla .nextturn:not(.goal):not(.via) .nexticon svg { stroke: var(--nv-green); }
+  .nextturn:not(.goal):not(.via) #nextDist { font-size: 19px; font-weight: 800; }
   /* ================= 그다음 칸 구분감 (2026-11-14) =================
      위 회전 안내·아래 회색 요약 줄('910m 2분 도착 13:56')과 헷갈리지 않게: 그다음 칸은 흰(유리) 바탕에 위아래 얇은 줄,
      목적지면 연한 빨강 바탕 + 빨간 핀 + 빨간 '도착' 꼬리표, 경유지면 주황 */
@@ -1206,7 +1207,7 @@
           <div id="turnText" class="turntext"></div>
         </div>
       </div>
-      <div id="nextTurn" class="nextturn" hidden aria-label="회전 후 직진 거리"><span id="nextIcon" class="nexticon"></span><span id="nextDist"></span><span id="nextAfter" class="nexticon nextafter"></span></div>
+      <div id="nextTurn" class="nextturn" hidden aria-label="그다음 안내"><span id="nextIcon" class="nexticon"></span><span id="nextDist"></span></div>
       <div class="navmeta">
         <b id="navRemain">-</b><span id="navTime">-</span><span id="navEta">-</span>
         <button id="navEnd">안내 종료</button>
@@ -1338,6 +1339,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-55"></script>
+<script src="app.js?v=2026.11.14-56"></script>
 </body>
 </html>
