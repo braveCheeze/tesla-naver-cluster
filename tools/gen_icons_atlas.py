@@ -105,7 +105,9 @@ T2I_ROAD = ('Professional flat vector icon for the turn-by-turn panel of a premi
             'white dashed lane lines; exactly ONE slim solid white route arrow (about 1/16 of the icon width) with a clean, sharp '
             'triangular arrowhead. A three-lane road is about 1/4 of the icon width, a one-lane ramp about 1/7. Roads keep a '
             'constant width and split or merge with smooth, natural tapers like real highway ramps. The drawing fills about 85% '
-            'of the canvas, centered. No perspective, no 3D, no shadows unless described, no gradients, no texture, no outline '
+            'of the canvas, centered. Strictly top-down flat map view: every road keeps exactly the same width from one end to the '
+            'other, nothing narrows toward the top, no vanishing point, no sense of height. No perspective, no 3D, no shadows '
+            'unless described, no gradients, no texture, no outline '
             'around the whole icon, no text except the letters described.' + BG + ' Layout: ')
 T2I_RB = ('Professional flat vector roundabout turn icon for the turn-by-turn panel of a premium car navigation app, designed '
           'by a senior icon designer, in the same visual system as a top-down road-map icon set. Top-down view of a '
@@ -245,12 +247,16 @@ _ROADS = {
            'side of the highway in the vertical middle of the icon. The arrow STARTS ON THE ON-RAMP at the lower right (not on '
            'the highway), follows the ramp diagonally up-left, merges into the highway and then turns straight up, arrowhead '
            'pointing up near the top. No arrow on the highway below the merge.' + OUT_SH % ('IN', 'top-right'),
-    'outs': 'Highway EXIT STRAIGHT AHEAD: a three-lane highway comes up from the bottom; in the vertical middle of the icon the '
-            'highway itself curves away to the left edge while a single-lane exit road continues straight up. The arrow goes '
-            'straight up the exit road.' + OUT_SH % ('OUT', 'top-right'),
-    'ins': 'Highway ENTRANCE STRAIGHT AHEAD: a single-lane road goes straight up from the bottom; in the vertical middle of the icon '
-           'a three-lane highway coming in from the left edge merges with it and continues straight up. The arrow goes straight '
-           'up.' + OUT_SH % ('IN', 'top-right'),
+    'outs': 'Highway EXIT STRAIGHT AHEAD, seen flat from directly above: a three-lane highway comes up from the bottom edge; in '
+            'the vertical middle of the icon the highway itself bends away to the LEFT and leaves through the left edge (still '
+            'three lanes wide), while a one-lane exit road, about as wide as one highway lane, continues perfectly straight up '
+            'to the top edge with the same width all the way. A small triangular gore area separates the exit road from the '
+            'bending highway. The arrow runs straight up the exit road, arrowhead near the top.' + OUT_SH % ('OUT', 'top-right'),
+    'ins': 'Highway ENTRANCE STRAIGHT AHEAD, seen flat from directly above: a one-lane road, about as wide as one highway lane, '
+           'comes straight up from the bottom edge; in the vertical middle of the icon a three-lane highway enters from the LEFT '
+           'edge, bends upward and runs alongside it, and together they continue straight up to the top edge as one wide road '
+           'of constant width (four lanes). The arrow starts on the one-lane road at the bottom and runs straight up, arrowhead '
+           'near the top.' + OUT_SH % ('IN', 'top-right'),
     'over_s': 'OVERPASS STRAIGHT AHEAD: a vertical road crosses OVER a horizontal road on a bridge in the middle of the icon. Make '
               'the bridge obvious: short white bridge parapets with flared ends on both sides of the vertical road where it '
               'passes over, and a soft shadow on the road below. The arrow goes straight up over the bridge. No shield.',
