@@ -832,6 +832,107 @@
   .nt-ver { position: absolute; right: 2px; top: -26px; font-size: 12px; font-weight: 700; color: #e6e9ee; white-space: nowrap; background: rgba(11, 13, 16, .72); padding: 3px 9px; border-radius: 9px; }
   .nt-ver:empty { display: none; }
   .navtray svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* ================= 네이버 지도 느낌 (2026-11-14 요청) =================
+     위치는 그대로, 색과 표면만: 흰 바탕 #fff · 글자 #333 · 보조 글자 회색 · 강조 초록 #03c75a, 테두리 없이 옅은 그림자.
+     밤(어두운 지도)에는 네이버 지도 야간처럼 어두운 패널로. 테슬라 모드의 지도 위 패널·버튼·카드와 검색·설정 창에 적용 */
+  body:has(#app.tesla) {
+    --nv-bg: #ffffff; --nv-fg: #333333; --nv-fg2: #555b63; --nv-sub: #8b9097; --nv-soft: #f3f4f6; --nv-line: #e7e9ec;
+    --nv-green: #03c75a; --nv-green-ink: #00a64a; --nv-red: #e5484d;
+    --nv-shadow: 0 2px 10px rgba(0, 0, 0, .14); --nv-shadow-lg: 0 6px 22px rgba(0, 0, 0, .16);
+  }
+  body:has(#app.tesla):has(#map.night) {
+    --nv-bg: #25282d; --nv-fg: #f1f3f5; --nv-fg2: #c9ced5; --nv-sub: #9aa1aa; --nv-soft: #2f3338; --nv-line: #3a3e44;
+    --nv-green-ink: #3ddc84; --nv-shadow: 0 2px 12px rgba(0, 0, 0, .45); --nv-shadow-lg: 0 6px 22px rgba(0, 0, 0, .5);
+  }
+  /* 길안내 패널: 흰 카드. 위는 초록 화살표·거리·안내, 아래 회색 줄에 남은 거리·시간·도착. 안내 종료는 테두리 없는 글자 버튼 */
+  #app.tesla .navpanel {
+    background: var(--nv-bg); color: var(--nv-fg); border: 0; box-shadow: var(--nv-shadow-lg);
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+  #app.tesla .turn { background: var(--nv-bg); }
+  #app.tesla .turnicon svg { stroke: var(--nv-green); }
+  #app.tesla .turndist { color: var(--nv-fg); text-shadow: none; }
+  #app.tesla .turntext { color: var(--nv-fg2); }
+  #app.tesla .nextturn { background: var(--nv-soft); border-top: 1px solid var(--nv-line); color: var(--nv-fg); }
+  #app.tesla .nextturn small { color: var(--nv-sub); }
+  #app.tesla .nexticon svg { stroke: var(--nv-fg); }
+  #app.tesla .navmeta { background: var(--nv-soft); border-top: 1px solid var(--nv-line); color: var(--nv-fg); }
+  #app.tesla .navmeta span { color: var(--nv-sub); }
+  #app.tesla .navmeta button {
+    background: none; border: 0; box-shadow: none; color: var(--nv-red); font-size: 14px; font-weight: 800;
+    min-height: 32px; padding: 0 8px;
+  }
+  /* 지도 버튼·검색 버튼: 흰 바탕 진회색 아이콘 */
+  #app.tesla .btn, #app.tesla .searchbtn {
+    background: var(--nv-bg); color: var(--nv-fg); border: 0; box-shadow: var(--nv-shadow);
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+  #app.tesla #hupBtn.on { color: var(--nv-green-ink); }
+  #app.tesla #locate.alert { background: var(--nv-green); color: #fff; }
+  #app.tesla .badge { background: var(--nv-bg); color: var(--nv-sub); box-shadow: var(--nv-shadow); }
+  /* 하단 위치 띠와 올라오는 버튼 */
+  #app.tesla .road { background: var(--nv-bg); color: var(--nv-fg); box-shadow: var(--nv-shadow-lg); }
+  #app.tesla .road small, #app.tesla .road:empty::before { color: var(--nv-sub); }
+  #app.tesla .road::after { border-color: var(--nv-sub); }
+  #app.tesla .navtray button {
+    background: var(--nv-bg); color: var(--nv-fg); border: 0; box-shadow: var(--nv-shadow-lg);
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+  #app.tesla .navtray svg { color: var(--nv-green-ink); }
+  #app.tesla .navtray button.on { color: var(--nv-green-ink); box-shadow: inset 0 0 0 2px var(--nv-green), var(--nv-shadow-lg); }
+  #app.tesla .navtray button.upd { background: var(--nv-green); color: #fff; }
+  #app.tesla .navtray button.upd svg { color: #fff; }
+  #app.tesla .nt-ver { background: var(--nv-bg); color: var(--nv-sub); box-shadow: var(--nv-shadow); }
+  /* 내 속도 띠: 평소 흰 띠, 제한을 넘으면 빨간 띠 (그대로) */
+  #app.tesla .myspeed:not([hidden]) { background: var(--nv-bg); color: var(--nv-fg); box-shadow: var(--nv-shadow-lg); }
+  #app.tesla .myspeed em { color: var(--nv-fg2); }
+  #app.tesla .myspeed.over:not([hidden]) { background: #e53935; color: #fff; box-shadow: 0 6px 18px rgba(229, 57, 53, .4); }
+  /* 오른쪽 경로 막대의 남은 거리 표 · 업데이트 버튼 · 알림 */
+  #app.tesla .rs-top { background: var(--nv-bg); color: var(--nv-fg); box-shadow: var(--nv-shadow); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  #app.tesla .rs-top span { color: var(--nv-sub); }
+  #app.tesla .updbtn { background: var(--nv-green); }
+  #app.tesla .toast {
+    background: rgba(40, 42, 46, .94); color: #fff; border: 0; box-shadow: var(--nv-shadow-lg);
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+  #app.tesla .toast.bad { color: #ffc2c4; }
+  /* 경로 카드 (추천 경로 고르기·경로 비교) */
+  #app.tesla .routecard {
+    background: var(--nv-bg); color: var(--nv-fg); border: 0; box-shadow: var(--nv-shadow-lg);
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+  #app.tesla .routecard button { background: var(--nv-soft); color: var(--nv-fg); border: 0; box-shadow: none; }
+  #app.tesla .routecard button.alt.on { background: rgba(3, 199, 90, .1); box-shadow: inset 0 0 0 2px var(--nv-green); }
+  #app.tesla .alt-label, #app.tesla .alt-sub, #app.tesla .rc-meta { color: var(--nv-sub); }
+  #app.tesla .alt.on .alt-label { color: var(--nv-green-ink); }
+  #app.tesla .routecard button.primary { background: var(--nv-green); color: #fff; }
+  /* 검색·설정·주행 기록 창 */
+  body:has(#app.tesla) .sheet { background: rgba(0, 0, 0, .35); }
+  body:has(#app.tesla) .sheet-card {
+    background: var(--nv-bg); color: var(--nv-fg); border: 0; box-shadow: 0 16px 48px rgba(0, 0, 0, .28);
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+    --text: var(--nv-fg); --muted: var(--nv-sub); --soft: var(--nv-soft); --soft-line: var(--nv-line); --line: var(--nv-line); --card: var(--nv-soft);
+  }
+  body:has(#app.tesla) .sheet-card input:not([type=checkbox]), body:has(#app.tesla) .sheet-card select {
+    background: var(--nv-soft); color: var(--nv-fg); border: 1px solid var(--nv-line);
+  }
+  body:has(#app.tesla) .sheet-card button { background: var(--nv-soft); color: var(--nv-fg); border: 0; }
+  body:has(#app.tesla) .sheet-card button.primary { background: var(--nv-green); color: #fff; }
+  body:has(#app.tesla) .sheet-card button.result:active { background: var(--nv-line); }
+  body:has(#app.tesla) .sheet-card button.qchip { background: rgba(3, 199, 90, .1); box-shadow: inset 0 0 0 1px rgba(3, 199, 90, .45); }
+  body:has(#app.tesla) .sheet-card button.qchip.unset { background: var(--nv-soft); box-shadow: none; }
+  body:has(#app.tesla) .sheet-card button.star { background: var(--nv-soft); color: #b0b5bc; }
+  body:has(#app.tesla) .sheet-card button.star.on { color: #f5b800; }
+  body:has(#app.tesla) .sheet-card button.trip-head { background: none; }
+  body:has(#app.tesla) .sheet-card button.tev { background: rgba(229, 72, 77, .07); }
+  body:has(#app.tesla) .tripc { background: var(--nv-soft); border: 0; }
+  body:has(#app.tesla) .tripc.live { box-shadow: inset 0 0 0 1px rgba(3, 199, 90, .5); }
+  body:has(#app.tesla) .ovb { background: rgba(229, 72, 77, .12); color: #d93a3f; }
+  body:has(#app.tesla) .okb { background: rgba(3, 199, 90, .12); color: var(--nv-green-ink); }
+  body:has(#app.tesla) .tev-m b { color: var(--nv-red); }
+  body:has(#app.tesla) .ftag { color: #fff; }
+  body:has(#app.tesla) hr { border-top-color: var(--nv-line); }
 </style>
 </head>
 <body>
@@ -1055,6 +1156,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-42"></script>
+<script src="app.js?v=2026.11.14-43"></script>
 </body>
 </html>
