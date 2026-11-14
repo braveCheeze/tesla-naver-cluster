@@ -51,7 +51,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-98'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-99'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   // 브라우저에 저장된 예전 index.html 이 새 app.js 를 불러온 경우(화면 요소가 맞지 않아 버튼 연결에서 멈춘다):
@@ -3568,7 +3568,8 @@
       if (r.ok) setHipassData(await r.json());
     } catch (e) { /* 차로 자료가 없으면 번호 없이 */ }
   }
-  const hipassKey = (s) => String(s || '').replace(/\s+/g, '').replace(/\(개방식\)$/, '').replace(/(톨게이트|영업소|요금소|TG)$/i, '');
+  // 톨게이트 이름 → 영업소 이름: 공백, 끝의 괄호('하남톨게이트(서울방향)'·'(개방식)', v98 부터 tollParts 가 이름에 괄호를 남긴다), '톨게이트' 등을 뗀다
+  const hipassKey = (s) => String(s || '').replace(/\s+/g, '').replace(/(\([^()]*\))+$/, '').replace(/(톨게이트|영업소|요금소|TG)$/i, '');
   // 폐쇄식 영업소: 고속도로에 들어가는 톨게이트(앞 4km 안에 고속도로 진입 안내)면 입구 차로, 나오는 곳(앞 3km 안에 출구 안내)이면 출구 차로
   function tollSide(g) {
     const last = nav.cum.length - 1, sg = nav.cum[Math.min(g.i, last)];
@@ -5113,7 +5114,7 @@
       planRoute, doSearch, setFollowing, canvasPoint, gesture, glView, glOn, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
       sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
-      saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassNums, hipassLayout, laneNums, laneStripHtml, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, tollParts, arrowSpan, routeStyle: ROUTE_STYLE, trafficPal, roundRoute, setCarIcon, carIcons: CAR_ICONS, parking, parkState, setParkingData, loadParking, evalParking, rest, setRestData, loadRest, ensureRouteRest, renderRest, placeBase, findParking, renderTurnArrow,
+      saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassKey, hipassNums, hipassLayout, laneNums, laneStripHtml, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, tollParts, arrowSpan, routeStyle: ROUTE_STYLE, trafficPal, roundRoute, setCarIcon, carIcons: CAR_ICONS, parking, parkState, setParkingData, loadParking, evalParking, rest, setRestData, loadRest, ensureRouteRest, renderRest, placeBase, findParking, renderTurnArrow,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },

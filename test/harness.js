@@ -2187,6 +2187,8 @@
       .replace(/<i class="ln-gap">⋯<\/i>/g, '… ').trim();
     const ds = (t.hipass.o['동서울'] || {}).i;
     real.동서울옆 = strip(ds, 7); real.동서울줄 = strip(ds, 10);
+    // v98 부터 톨게이트 이름에 괄호가 남는다 ('남산1호터널톨게이트(도심)'). 영업소 이름 찾기는 끝 괄호를 떼고 본다
+    real.keys = ['하남톨게이트', '하남 톨게이트(서울방향)', '시흥TG(개방식)', '남산1호터널톨게이트(도심)'].map(t.hipassKey).join(',');
     const r = {};
     try {
       set(true);
@@ -2240,7 +2242,8 @@
       r.toSeoul.lanes === '2/3' && r.fromSeoul.lanes === '1/3' && r.sideways.card && r.sideways.lanes === '' && r.ruleOff.lanes === '1/0' &&
       r.realHanam.card && r.realHanam.lanes === '2/5' && r.realHanam.boxes === 5 && r.realHanam.blue === 1 &&
       real.loaded && real.count > 400 && real.하남 && real.하남.u === 'bHPTb' && real.하남.d === 'HPTb' && real.하남.s === 1 && real.군자입구.join(',') === '1,2,3' &&
-      real.동서울옆 === '[1] [2] [3] [4] … 24 25' && real.동서울줄 === '[1] [2] [3] [4] … 21 22 23 24 25';
+      real.동서울옆 === '[1] [2] [3] [4] … 24 25' && real.동서울줄 === '[1] [2] [3] [4] … 21 22 23 24 25' &&
+      real.keys === '하남,하남,시흥,남산1호터널';
     return { pass: ok, detail: JSON.stringify(r) + ' | real: ' + JSON.stringify(real) + (ok ? '✓' : '✗') };
   }
 
