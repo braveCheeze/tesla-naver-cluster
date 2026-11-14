@@ -51,7 +51,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-109'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-110'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -790,6 +790,8 @@
     },
     getCenter() { const c = this.map.getCenter(); return { lat: c.lat(), lng: c.lng() }; },
     coordAt(px, py) {
+      const mb = this.gl && this.map._mapbox;
+      if (mb && mb.unproject) { const ll = mb.unproject([px, py]); return { lat: ll.lat, lng: ll.lng }; }
       const N = naver.maps, proj = this.map.getProjection(), sz = this.map.getSize();
       const o = proj.fromCoordToOffset(this.map.getCenter());
       const c = proj.fromOffsetToCoord(new N.Point(o.x + px - sz.width / 2, o.y + py - sz.height / 2));
@@ -1166,6 +1168,10 @@
     const host = $('#map'), canvas = host.querySelector('.mapcanvas');
     if (force || !view.w) measureView();
     const w = view.w, h = view.h, drive = wantDrive(), gl = glOn();
+    // 길안내 중 주행 화면: 왼쪽에 안내 패널·서랍이 있어 차를 가운데보다 오른쪽(화면 폭 63%)에 둔다.
+    // 가운데면 패널 끝에서 60px 남짓이라 좌회전·유턴 길이 패널 밑으로 사라졌다 (v110 디자인 검토 P1)
+    const cx = drive && nav.active && $('#app').classList.contains('tesla') && w > 600 ? Math.round(w * 0.63) : w / 2;
+    const dx = Math.abs(cx - w / 2);
     let cs = 0, cy = h / 2, tilt = 0;
     if (drive && gl) {
       // GL: 캔버스는 돌리지 않고 아래로 길게(가운데 = 화면 70% 높이, 차 위치) 두고 지도 자체를 돌리고 기울인다
@@ -1183,9 +1189,9 @@
           xC = (w / 2) * (VIEW_PERSP + yC * Math.sin(t)) / VIEW_PERSP;
         } else tilt = 0; // 화면이 너무 길면 기울이지 않는다
       }
-      cs = 2 * Math.ceil(Math.hypot(Math.max(xC, w / 2), Math.max(yC, h - cy)) + VIEW_MARGIN);
+      cs = 2 * Math.ceil(Math.hypot(Math.max(xC, w / 2) + dx, Math.max(yC, h - cy)) + VIEW_MARGIN);
     }
-    const key = (drive ? [w, h, cs, cy, tilt].join() : w + 'x' + h) + (gl ? ':gl' : '');
+    const key = (drive ? [w, h, cs, cx, cy, tilt].join() : w + 'x' + h) + (gl ? ':gl' : '');
     const wasDrive = view.drive;
     if (!force && drive === wasDrive && key === view.key) {
       if (drive) setViewRot();
@@ -1194,14 +1200,15 @@
     // 주행 화면 안에서 크기만 바뀌면 애니메이션 없이 (들어올 때는 돌아가며 기울어지게 둔다)
     const snap = drive && wasDrive;
     if (snap) host.classList.add('snap');
-    Object.assign(view, { drive, key, cs, cx: w / 2, cy, tilt });
+    Object.assign(view, { drive, key, cs, cx, cy, tilt });
     if (drive && gl) {
       host.style.setProperty('--gh', 2 * cy + 'px');
+      host.style.setProperty('--gw', Math.round(2 * Math.max(cx, w - cx)) + 'px');   // 캔버스 가운데 = 차 (cx)
       if (!wasDrive) view.rot = turn(-state.heading);
       setViewRot();
     } else if (drive) {
       const s = host.style;
-      s.setProperty('--cl', Math.round(w / 2 - cs / 2) + 'px');
+      s.setProperty('--cl', Math.round(cx - cs / 2) + 'px');
       s.setProperty('--ct', Math.round(cy - cs / 2) + 'px');
       s.setProperty('--cs', cs + 'px');
       s.setProperty('--tilt', tilt + 'deg');
@@ -1218,7 +1225,7 @@
       // 지도 라이브러리가 캔버스에 직접 넣은 크기는 지우고 CSS 크기를 따르게 한다
       const clear = () => { if (canvas) { canvas.style.width = ''; canvas.style.height = ''; } };
       clear();
-      try { mapA.resize(drive ? (gl ? w : cs) : w, drive ? (gl ? 2 * cy : cs) : h); } catch (e) { /* 다음 배치 때 다시 */ }
+      try { mapA.resize(drive ? (gl ? Math.round(2 * Math.max(cx, w - cx)) : cs) : w, drive ? (gl ? 2 * cy : cs) : h); } catch (e) { /* 다음 배치 때 다시 */ }
       clear();
       if (state.fix && !state.peek && (drive || wasDrive || state.following)) { // 앞길을 보는 중이면 보던 자리 그대로
         const p = mePos();
@@ -1994,7 +2001,7 @@
     el.classList.toggle('inside', a.inside);
     const name = a.t.name || '터널';
     $('#tunnelDist').textContent = fmtDist(a.d);
-    $('#tunnelText').textContent = a.inside ? name + ' 출구까지' : name + ' 진입 · 길이 ' + fmtDist(a.t.len);
+    $('#tunnelText').textContent = a.inside ? name + ' 출구까지' : name + ' 입구까지' + (a.t.len >= 1000 ? ' · 길이 ' + fmtDist(a.t.len) : '');
     $('#tunnelBar').style.width = a.inside ? Math.round(Math.max(0, Math.min(1, a.p)) * 100) + '%' : '0';
   }
   async function loadCameras() {
@@ -2790,7 +2797,7 @@
     if (!items.length) {
       const err = geo.status === 'rejected' ? geo.reason : (poi.status === 'rejected' ? poi.reason : null);
       renderResults([], '', err
-        ? '검색 서버 오류: ' + err.message
+        ? '검색 서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.'
         : (hint || '결과가 없습니다. 다른 이름이나 정확한 주소로 검색해 보세요.'));
       return;
     }
@@ -2853,7 +2860,8 @@
     }
     addRecent(it);
     nav.via = []; // 새 목적지는 경유지 없이
-    const seq = ++pickSeq, dest = { name: it.name, addr: it.addr || '', lat: it.lat, lng: it.lng, category: it.category || '' };
+    const shortAddr = (x) => String(x || '').replace(/^(\S+(?:특별시|광역시|특별자치시|특별자치도|도)\s+)?(\S+(?:시|군)\s+)?(\S+구\s+)?/, '') || x;
+    const seq = ++pickSeq, dest = { name: it.category ? it.name : shortAddr(it.name), addr: it.addr || it.name || '', lat: it.lat, lng: it.lng, category: it.category || '' };
     toast('경로를 찾는 중…', '', 3000);
     const park = await findParking(dest);
     if (seq !== pickSeq) return; // 그사이 다른 목적지를 골랐다
@@ -2964,7 +2972,8 @@
         return;
       }
       if (slow) { toast('통신이 느려 경로를 찾지 못했어요. 다시 시도해 주세요.', 'bad', 6000); return; }
-      toast('경로를 찾지 못했습니다: ' + (d.message || (d.detail && d.detail.error && d.detail.error.message) || e.message), 'bad', 9000);
+      const why = String(d.message || (d.detail && d.detail.error && d.detail.error.message) || '');
+      toast(/[가-힣]/.test(why) ? '경로를 찾지 못했어요: ' + why : '경로 서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.', 'bad', 9000);
     } finally {
       if (gen === nav.gen) nav.busy = false;
     }
@@ -3249,7 +3258,7 @@
   };
   Object.keys(ICON_FALLBACK).forEach((k) => { if (!TURN_ICONS[k]) TURN_ICONS[k] = TURN_ICONS[ICON_FALLBACK[k]] || TURN_ICONS.s; });
   const PLAIN_ROAD = {
-    outr: 'kr', outl: 'kl', inr: 'kl', inl: 'kr', outs: 's', ins: 's',
+    outr: 'kr', outl: 'kl', inr: 'kr', inl: 'kl', outs: 's', ins: 's',   // v110: inr/inl 이 거꾸로였다(디자인 검토 P0)
     over_l: 'kl', over_r: 'kr', over_s: 's', under_l: 'kl', under_r: 'kr', under_s: 's',
     side_l: 'kl', side_r: 'kr', oside_l: 'kl', oside_r: 'kr',
   };
@@ -3262,7 +3271,7 @@
     return f ? '<img class="' + (cls || '') + ' aiimg" src="' + APP_BASE + 'img/ai/' + f + '?v=' + APP_VERSION + '" alt="" draggable="false">' : null;
   }
   function ico(k) {
-    return pickImg(k, 'ti') || icoBase(k);
+    return pickImg(PLAIN_ROAD[k] || k, 'ti') || icoBase(k);
   }
   function icoBase(k) {
     const svg = TURN_ICONS[k] || TURN_ICONS.s;
@@ -3409,17 +3418,43 @@
 
   // 톨게이트 안내 문구: '남춘천톨게이트 (통행료 3,900원)' → 이름 · 통행료 · 하이패스 안내
   // (하이패스 차로가 몇 번째인지는 길찾기 데이터에 없어 '하이패스 차로 이용'까지만 알린다)
+  // 방면 이름: 쉼표로 나누고 괄호를 빼고, 5자 이하 이름부터 2곳까지. 긴 이름은 자르지 않고 줄임말로 (문구 검토 2026-11-15)
+  const ROAD_ABBR = [[/^수도권제1순환(고속도로|선)$/, '수도권1순환'], [/^서울외곽순환(고속도로|선)$/, '외곽순환'], [/고속도로$/, '고속']];
+  function dirNames(list) {
+    const n = String(list || '').replace(/\s*\([^)]*\)/g, '').split(',').map((x) => x.replace(/\s*\([^)]*$/, '').trim()).filter(Boolean);
+    const short = n.filter((x) => x.length <= 5);
+    return (short.length ? short : n.map((x) => ROAD_ABBR.reduce((s, [re, to]) => s.replace(re, to), x))).slice(0, 2);
+  }
+  // 패널 안내 문장: '복정교차로에서 '남한산성, 송파·복정·위례, 잠실역' 방면으로 오른쪽 도시고속도로 출구'
+  //   → '복정교차로에서 오른쪽 출구 · 남한산성, 잠실역 방면' (잘려도 동작이 남게). 음성은 원문 그대로
+  function guideText(s) {
+    const m = String(s || '').match(/^(?:(.+?)에서\s+)?(?:'([^']+)'\s*방면으로\s+)?(.+)$/);
+    if (!m) return s;
+    let place = m[1] || '', act = m[3];
+    act = act.replace(/(왼쪽|오른쪽)\s+(?:도시)?고속도로\s+(출구|진입)$/, '$1 $2')
+      .replace(/(왼쪽|오른쪽)\s+도로\s+주행$/, '$1 방향')
+      .replace(/^지하차도\s+(왼쪽|오른쪽)\s+옆길$/, '$1 옆길');
+    const k = place.match(/(지하차도|고가차도|터널)$/);
+    const r = k && act.match(new RegExp('^(?:(왼쪽|오른쪽)\\s+)?' + k[1] + '\\s+진입$'));
+    if (r) { act = (r[1] ? r[1] + ' ' : '') + place + ' 진입'; place = ''; }
+    const d = dirNames(m[2]);
+    return (place ? place + '에서 ' : '') + act + (d.length ? ' · ' + d.join(', ') + ' 방면' : '');
+  }
+  // 통행료 글: '통행료 800원' → '800원', 0원은 '무료'
+  const fareText = (f) => { const x = String(f || '').replace(/^통행료\s*/, ''); return /^0\s*원$/.test(x) ? '무료' : x; };
   function tollParts(g) {
     // 요금은 맨 끝 괄호: '남산1호터널톨게이트(도심) (통행료 0원)' → 이름 '남산1호터널톨게이트(도심)', 요금 '통행료 0원'
     // (첫 괄호에서 자르면 요금 칸에 '도심) (통행료 0원'이 나왔다, 2026-11-14 남산1호터널 확인)
     const m = String(g.s || '').match(/^(.*)\((\s*[^()]*)\)\s*$/);
-    return { name: (m ? m[1].trim() : g.s) || '톨게이트', fare: m ? m[2].trim() : '' };
+    // 이름 끝의 '(도심)' 같은 괄호는 화면·음성에서 뺀다 (v110 문구 검토). 하이패스 영업소 찾기(hipassKey)도 괄호를 떼고 찾는다
+    const name = ((m ? m[1].trim() : g.s) || '').replace(/\s*\([^()]*\)\s*$/, '').trim();
+    return { name: name || '톨게이트', fare: m ? m[2].trim() : '' };
   }
   function announceTurn(g, dg) {
     const said = nav.said[g.i] || (nav.said[g.i] = {});
     const fast = state.speedKmh > 60;
     const toll = g.t === 121;
-    const text = toll ? (() => { const p = tollParts(g); return p.name + (p.fare ? ', ' + p.fare : '') + '. 하이패스 차로를 이용하세요'; })() : g.s;
+    const text = toll ? (() => { const p = tollParts(g), f = fareText(p.fare); return p.name + (f ? ', ' + (f === '무료' ? '통행료 무료' : '통행료 ' + f) : '') + '. 하이패스 차로를 이용하세요'; })() : g.s;
     if (toll && dg <= 2050 && dg > 1500 && !said.k2) {
       said.k2 = true;
       say('2킬로미터 앞, ' + text, 1);
@@ -3444,7 +3479,7 @@
   const JUNC_LEFT = new Set([4, 41, 57, 58, 59, 60, 76, 79, 62, 63, 64, 65]);
   const JUNC_ENTRY = new Set([57, 59, 66, 68, 76, 77]);               // 진입로: 본선으로 합류 (2026-11-15: 진출 그림이 나오던 것)
   // 고가·지하차도·옆길 (2026-11-15 '안내 표기가 어려우면 밑에처럼 이미지로')
-  const JUNC_ROAD = { 55: 'over', 62: 'over', 71: 'over', 56: 'under', 64: 'under', 73: 'under', 63: 'oside', 72: 'oside', 65: 'side', 74: 'side' };
+  const JUNC_ROAD = { 62: 'over', 71: 'over', 64: 'under', 73: 'under', 63: 'oside', 72: 'oside', 65: 'side', 74: 'side' };   // v110: 55·56(직진)은 빼다
   const JUNC_SHOW = 800;
   const juncState = { g: null, key: '' };
   function juncInfo(g) {
@@ -3454,13 +3489,11 @@
     if (g.t === 54) { if (/왼쪽/.test(s)) left = true; else if (/오른쪽/.test(s)) left = false; else return null; }
     const m = s.match(/^(.*?)에서\s/);
     const q = s.match(/'([^']+)'/);
-    // 괄호 부분은 뺀다: '올림픽대로(강일IC)' → '올림픽대로' (2026-11-15: 6자로 자르다 '올림픽대로(' 처럼 괄호만 남았다)
-    const names = q ? q[1].split(',').map((x) => (x.replace(/\s*\([^)]*\)?/g, '').trim() || x.trim())).filter(Boolean) : [];
-    const short = names.filter((x) => x.length <= 5);   // '수도권제1순환선'·'중부고속도로' 같은 긴 이름보다 '판교'·'호법'
-    const label = (short.length ? short : names.map((x) => x.slice(0, 6))).slice(0, 2).join(' · ');
-    const kind = JUNC_ROAD[g.t] || (JUNC_ENTRY.has(g.t) ? 'entry' : JUNC_RAMP.has(g.t) ? 'ramp' : 'fork');
+    const label = dirNames(q ? q[1] : '').join(' · ');   // 패널 문장과 같은 규칙 (dirNames)
+    // 진입(57·59·66·68·76·77)도 '그쪽으로 비켜 나가는' 진출 그림: 안내 지점에서는 연결로로 갈라져 들어가므로 (v110, 합류 그림은 뺌)
+    const kind = JUNC_ROAD[g.t] || (JUNC_RAMP.has(g.t) ? 'ramp' : 'fork');
     return { kind, left, place: m ? m[1] : '', label,
-      hwy: /고속|분기점|IC\b|JC\b|IC에서|JC에서/i.test(s) || (g.t >= 57 && g.t <= 69) };
+      hwy: /고속|분기점|IC\b|JC\b|IC에서|JC에서/i.test(s) || (g.t >= 57 && g.t <= 69 && !JUNC_ROAD[g.t]) };
   }
   // 앞을 내려다본 원근 그림 (2026-11-14 다시 그림: 다른 내비의 분기점 확대 그림처럼 하늘·지평선·멀어질수록 좁아지는 도로).
   // 땅 위 좌표(X 오른쪽 m, Z 앞쪽 m)로 길을 정하고 화면으로 투영한다. 왼쪽으로 갈 때는 X 만 뒤집는다(글자는 CSS 로 반대쪽에)
@@ -3570,7 +3603,7 @@
       const jd = ICON_PICKS['junc_' + j.kind + '_day'], jn = ICON_PICKS['junc_' + j.kind + '_night'];
       const jimg = (f, c) => '<img class="jv-img ' + c + ' jc-' + j.kind + '" src="' + APP_BASE + 'img/ai/' + f + '?v=' + APP_VERSION + '" alt="" draggable="false">';
       $('#juncSvg').innerHTML = jd && jn ? jimg(jd, 'jv-day') + jimg(jn, 'jv-night') : juncSvg(j.kind === 'entry' ? Object.assign({}, j, { kind: 'ramp' }) : j);
-      $('#juncLabel').textContent = j.label || (j.left ? '왼쪽' : '오른쪽');
+      $('#juncLabel').textContent = j.label;   // 방면이 없으면 비운다(빈 칸은 CSS 로 숨김). '오른쪽'을 지어 넣지 않는다
       $('#juncPlace').textContent = j.place;
       el.classList.toggle('left', j.left);
       el.classList.toggle('hwy', j.hwy);
@@ -3669,11 +3702,11 @@
         if (!L[k].keep || L[k].kind === 'hp') { k++; continue; }
         let e = k;
         while (e < L.length && L[e].keep && L[e].kind !== 'hp') e++;
-        if (e - k > 2 && (!best || e - k > best[1] - best[0])) best = [k, e];
+        if (e - k > 3 && (!best || e - k > best[1] - best[0])) best = [k, e];
         k = e;
       }
       if (!best) break;
-      L[best[0]].keep = false;   // 무리의 앞쪽부터 접어 끝 2칸이 남게
+      for (let j = best[0]; j < best[1] - 2; j++) L[j].keep = false;   // 무리를 '⋯ + 끝 2칸'으로 (v110: 실제로 칸 수가 줄게)
     }
     const out = [];
     let gap = false;
@@ -3743,7 +3776,7 @@
     // 패널에 이름·통행료가 이미 크게 나오면 여기서는 이름 줄도 빼고 차로 번호를 넓게
     el.classList.toggle('is-next', g === nav.next);
     renderTollLanes(g);
-    $('#tollFare').textContent = p.fare.replace(/^통행료\s*/, ''); // '800원'만 (한 줄 카드라 짧게). 하이패스 안내 문구는 둘째 줄에 고정
+    $('#tollFare').textContent = fareText(p.fare); // '800원'만 (한 줄 카드라 짧게). 하이패스 안내 문구는 둘째 줄에 고정
     syncDrawer();
   }
   // 테슬라 모드에서 단속 경고 묶음을 길안내 패널(없으면 검색 버튼) 바로 밑에 붙이고,
@@ -3840,10 +3873,10 @@
     $('#turnDist').textContent = fmtDist(nav.dg != null ? nav.dg : nav.total);
     if (g && g.t === 121) {
       // 톨게이트: 다른 내비처럼 통행료를 굵게 앞에 ('800원 하남톨게이트'), 아이콘은 TG 표지 (2026-11-14 요청)
-      const p = tollParts(g), fee = p.fare.replace(/^통행료\s*/, '');
+      const p = tollParts(g), fee = fareText(p.fare);
       $('#turnText').innerHTML = (fee ? '<b class="tt-fare">' + esc(fee) + '</b>' : '') + esc(p.name);
     } else {
-      $('#turnText').textContent = g ? g.s : nav.dest.name;
+      $('#turnText').textContent = g ? guideText(g.s) : nav.dest.name;
     }
     // 그다음 칸: 이번 회전을 하고 나서 무엇이 얼마 뒤에 오는지 (거리는 이번 안내 지점 → 그다음 안내 지점).
     //   그다음이 회전이면 네이버 지도처럼 그 회전 아이콘 + 거리만 '↰ 1.2km' (2026-11-14: '직진 … 좌회전'처럼 풀어 쓰지 않음)
@@ -4000,6 +4033,9 @@
   // 아래 가운데 지금 위치 띠 (2026-11-15 요청: 글자를 크게 안 보여 줘도 됨, 잘리면 '…' 대신 천천히 밀어서 보여 주기)
   function renderRoadPill(name, area) {
     const el = $('#roadName');
+    const key = name + '|' + area;
+    if (el.dataset.k === key) return;
+    el.dataset.k = key;
     if (!name && !area) { el.innerHTML = ''; return; }
     el.innerHTML = '<span class="rn-clip"><span class="rn-in">' + esc(name) + (area ? '<small>' + esc(area) + '</small>' : '') + '</span></span>';
     const clip = el.firstChild, inner = clip.firstChild;
@@ -4829,7 +4865,7 @@
     if (nav.byDemo) endNav();
     render(); renderCam();
     $('#app').classList.remove('demo');
-    setGps('warn', 'GPS 신호 찾는 중');
+    if (gpsDenied) { setGps('bad', '위치 권한 꺼짐'); gpsNotice(true); } else setGps('warn', 'GPS 신호 찾는 중');
     if (!silent) toast('데모를 멈췄습니다.', '', 2500);
   }
 
@@ -5020,15 +5056,16 @@
     // 길안내 중 경로 밖에 놓으면 그 길을 따라 달리고, 앱이 경로 이탈로 재탐색한다
     let ghost = null;
     const onCar = (e) => { const r = meEl.getBoundingClientRect(); return r.width && Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)) < 36; };
-    $('#map').addEventListener('pointerdown', (e) => {
+    window.addEventListener('pointerdown', (e) => {
       if (!sim.on || e.button !== 0 || !onCar(e)) return;
-      e.stopPropagation(); e.preventDefault();
+      e.stopImmediatePropagation(); e.preventDefault();
       sim.dragging = true;
       ghost = document.createElement('div'); ghost.className = 'simghost';
       ghost.style.left = e.clientX + 'px'; ghost.style.top = e.clientY + 'px';
       document.body.appendChild(ghost);
     }, true);
-    $('#map').addEventListener('mousedown', (e) => { if (sim.dragging) { e.stopPropagation(); e.preventDefault(); } }, true);
+    window.addEventListener('mousedown', (e) => { if (sim.dragging) { e.stopImmediatePropagation(); e.preventDefault(); } }, true);
+    window.addEventListener('pointermove', (e) => { if (sim.dragging) e.stopImmediatePropagation(); }, true);
     window.addEventListener('pointermove', (e) => { if (ghost) { ghost.style.left = e.clientX + 'px'; ghost.style.top = e.clientY + 'px'; } });
     window.addEventListener('pointerup', (e) => {
       if (!sim.dragging) return;
@@ -5426,7 +5463,7 @@
       sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
       saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassKey, hipassNums, hipassLayout, laneNums, laneStripHtml, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, icoBase, pickImg, iconPicks: ICON_PICKS, tollParts, arrowSpan, routeStyle: ROUTE_STYLE, trafficPal, roundRoute, setCarIcon, carIcons: CAR_ICONS, parking, parkState, setParkingData, loadParking, evalParking, rest, setRestData, loadRest, ensureRouteRest, renderRest, placeBase, findParking, renderTurnArrow,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
     };
   }

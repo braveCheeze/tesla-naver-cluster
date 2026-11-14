@@ -580,8 +580,9 @@
     }
     const g1 = R.cum[2], g2 = R.cum[5];
     const beforeOk = log.filter((e) => e.s <= g1 - 10).every((e) => e.txt === '직진');
-    const firstRight = log.find((e) => e.txt === RIGHT_TURN);
-    const rightPhase = log.filter((e) => e.txt === RIGHT_TURN);
+    const shownRight = T().guideText ? T().guideText(RIGHT_TURN) : RIGHT_TURN;   // v110: 패널은 줄인 문장
+    const firstRight = log.find((e) => e.txt === shownRight);
+    const rightPhase = log.filter((e) => e.txt === shownRight);
     let mono = rightPhase.length >= 2 && rightPhase[0].m > rightPhase[rightPhase.length - 1].m;
     for (let i = 1; i < rightPhase.length; i++) if (!(rightPhase[i].m <= rightPhase[i - 1].m)) mono = false;
     const afterCorner = log.filter((e) => e.s >= g2 + 10);
@@ -1163,7 +1164,7 @@
     const me = document.querySelector('#map .me');
     const meF = me ? getComputedStyle(me).filter : 'none';
     const canvasF = getComputedStyle(document.querySelector('#map .mapcanvas')).filter;
-    const filterOk = (!tile || /invert/.test(tileF)) && !/invert/.test(meF) && !/invert/.test(canvasF);
+    const filterOk = (!tile || /invert|nightRoads/.test(tileF)) && !/invert|nightRoads/.test(meF) && !/invert|nightRoads/.test(canvasF);   // v109: 그림 지도 밤 = #nightRoads
     t.setNightMode('auto');
     return {
       pass: sunOk && cycleOk && filterOk,
@@ -1875,7 +1876,7 @@
     }
     const m = (s) => parseInt(s, 10) * (/km/.test(s) ? 1000 : 1);
     const ok = r.found.length === 1 && /^테스트터널:2\d\d-5\d\d$/.test(r.found[0]) &&
-      r.ahead.shown && !r.ahead.inside && r.ahead.icon && /^1[89]0m$/.test(r.ahead.dist) && /^테스트터널 진입 · 길이 (29|30|31)0m$/.test(r.ahead.text) &&
+      r.ahead.shown && !r.ahead.inside && r.ahead.icon && /^1[89]0m$/.test(r.ahead.dist) && /^테스트터널 입구까지$/.test(r.ahead.text) /* v110: 1km 안 되면 길이 없이 */ &&
       r.inside.shown && r.inside.inside && r.inside.text === '테스트터널 출구까지' && m(r.inside.dist) >= 130 && m(r.inside.dist) <= 170 && parseInt(r.inside.bar, 10) >= 40 &&
       r.dr.inside && m(r.inside.dist) - m(r.dr.dist) >= 30 && !r.after.shown && r.offHidden;
     return { pass: ok, detail: JSON.stringify(r) + (ok ? '✓' : '✗') };
@@ -2035,7 +2036,7 @@
       set(prev);
       softReset();
     }
-    const ok = !r.far.shown && r.ramp.shown && r.ramp.kind === 'entry' /* v109: 하남IC '고속도로 진입'은 합류(entry) 그림 */ && !r.ramp.left && r.ramp.hwy && r.ramp.label === '서울 · 대전' &&
+    const ok = !r.far.shown && r.ramp.shown && r.ramp.kind === 'ramp' /* v110: 하남IC '오른쪽 고속도로 진입'은 오른쪽으로 갈라져 들어가는 그림 */ && !r.ramp.left && r.ramp.hwy && r.ramp.label === '서울 · 대전' &&
       r.ramp.place === '하남IC' && r.ramp.dist === '' && r.ramp.inDrawer && r.ramp.open &&
       r.fork.shown && r.fork.kind === 'fork' && r.fork.left && r.fork.label === '대전 · 호법' && r.fork.place === '하남분기점' && !r.after.shown;
     return { pass: ok, detail: JSON.stringify(r) + (ok ? '✓' : '✗') };
@@ -2268,7 +2269,8 @@
     softReset();
     await planAndStart(R);
     const a = pointAt(R, 30); feed(a.p, 15, a.h); t.renderNav();
-    const drawn = { main: !!document.querySelector('#turnIcon svg.keep.kl'), next: !!document.querySelector('#nextIcon svg.ramp.out, #nextIcon img[src*="img/ai/outr__"], #nextIcon svg.keep.kr') };   // v109: 나가기는 기본 화살표(오른쪽 길로)
+    const drawn = { main: !!document.querySelector('#turnIcon svg.keep.kl, #turnIcon img[src*="img/ai/kl__"]'),
+      next: !!document.querySelector('#nextIcon svg.ramp.out, #nextIcon img[src*="img/ai/outr__"], #nextIcon svg.keep.kr, #nextIcon img[src*="img/ai/kr__"]') };   // v110: 굵은 비켜 가기 그림   // v109: 나가기는 기본 화살표(오른쪽 길로)
     t.endNav(); softReset();
     const bad = Object.keys(map).filter((x) => !map[x]);
     const ok = !bad.length && drawn.main && drawn.next;
@@ -2982,7 +2984,7 @@
   async function s66() {
     const t = T(), f = (x) => { const p = t.tollParts({ s: x }); return p.name + '|' + p.fare; };
     const r = { namsan: f('남산1호터널톨게이트(도심) (통행료 0원)'), seoul: f('서울톨게이트 (통행료 1,800원)'), plain: f('판교톨게이트') };
-    const ok = r.namsan === '남산1호터널톨게이트(도심)|통행료 0원' && r.seoul === '서울톨게이트|통행료 1,800원' && r.plain === '판교톨게이트|';
+    const ok = r.namsan === '남산1호터널톨게이트|통행료 0원' /* v110: 끝 괄호 뺌 */ && r.seoul === '서울톨게이트|통행료 1,800원' && r.plain === '판교톨게이트|';
     return { pass: ok, detail: Object.keys(r).map((k) => k + '=' + r[k]).join(', ') };
   }
 
@@ -3178,7 +3180,7 @@
     // 모든 종류에 그림이 있다 (없으면 가까운 그림으로)
     const kinds = [...new Set(Object.values(want))];
     // v105: 고른 AI 그림(img/ai/<칸>__*.webp)도 그림. 회전교차로는 AI 그림이 없을 때의 앱 그림(icoBase)도 방향별로 있어야 한다
-    const noIcon = kinds.filter((x) => !(/<svg/.test(t.ico(x) || '') || new RegExp('<img[^>]+img/ai/' + x + '__').test(t.ico(x) || '')));
+    const noIcon = kinds.filter((x) => !(/<svg/.test(t.ico(x) || '') || /<img[^>]+img\/ai\//.test(t.ico(x) || '')));   // v110: 기본 화살표 칸의 AI 그림(kl/kr)도
     const rbIcons = ['rb_l', 'rb_s', 'rb_r', 'rb_u'].every((x) => new RegExp('ti-' + x + '\\b').test(t.icoBase(x)));
     const ok = !bad.length && txt.r3 && txt.l9 && txt.u6 && !noIcon.length && rbIcons;
     return { pass: ok, detail: (bad.length ? 'wrong: ' + bad.join(', ') : Object.keys(want).length + ' codes ✓') +

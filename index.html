@@ -326,7 +326,7 @@
   .turnicon svg { width: 44px; height: 44px; stroke: #fff; fill: none; stroke-width: 3.6; stroke-linecap: round; stroke-linejoin: round; }
   .turndist { font-size: 28px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.05; text-shadow: 0 1px 2px rgba(0,0,0,.35); }
   .turntext {
-    font-size: 14px; color: #e3fbec; margin-top: 2px; line-height: 1.3;
+    font-size: 14px; color: #e3fbec; margin-top: 2px; line-height: 1.3; word-break: keep-all; overflow-wrap: anywhere;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; /* 긴 안내는 두 줄까지 */
   }
   .nextturn {
@@ -686,7 +686,7 @@
     background: none; border: 0; box-shadow: none; padding: 0; -webkit-backdrop-filter: none; backdrop-filter: none;
   }
   #app.tesla .camcard.over, #app.tesla .camcard.mobile.over { background: none; animation: none; }
-  #app.tesla .camcard.over .cam-dist { color: #ff6b6b; animation: overblink 1s ease-in-out infinite; }
+  #app.tesla .camcard.over .cam-dist { color: #ff6b6b; }   /* v110: 깜박임은 빨간 속도 띠만 (숫자가 45% 로 흐려져 안 읽혔다) */
   @keyframes overblink { 50% { opacity: .45; } }
   #app.tesla .cam-sign, #app.tesla .toll-badge, #app.tesla .mini-sign, #app.tesla .zone-tile { text-shadow: none; }
   #app.tesla .cam-dist { font-size: 30px; }
@@ -993,7 +993,7 @@
      지도 위 글자(시계·날씨·주행 기록·나침반·단속 경고·다음 단속·GPS)는 예전처럼 흰 글자. 진한 그림자가 문제였으므로 옅은 그림자만 */
   #app.tesla {
     --ov-fg: #ffffff; --ov-sub: #eef1f5; --ov-bad: #ff6b6b; --ov-rain: #8fd0ff; --ov-track: rgba(0, 0, 0, .25);
-    --ov-halo: 0 0 1px rgba(0, 0, 0, .95), 0 0 2px rgba(0, 0, 0, .85), 0 1px 4px rgba(0, 0, 0, .45); /* 글자 둘레만 얇게 (예전처럼 넓게 번지지 않게) */
+    --ov-halo: 0 0 1px rgba(0, 0, 0, .95), 0 0 2px rgba(0, 0, 0, .9), 0 0 3px rgba(0, 0, 0, .6), 0 1px 5px rgba(0, 0, 0, .45); /* 글자 둘레만 얇게. v110: 밝은 낮 지도에서 조금 더 진하게 */
   }
   #app.tesla:has(#map.night) {
     --ov-fg: #f4f6f9; --ov-sub: #d3d8df; --ov-bad: #ff6b6b; --ov-rain: #8fd0ff; --ov-track: rgba(255, 255, 255, .16);
@@ -1274,6 +1274,7 @@
   .jc-head b { font-size: 14px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; }
   .jc-head span { font-size: 15px; font-weight: 800; color: #1565c0; }
   .jc-head b:empty { display: none; }
+  .jc-head:has(b:empty), .jc-label:empty { display: none; }
   .junccard.left .jc-head { left: auto; right: 10px; }
   body:has(#app.tesla):has(#map.night) .jc .jc-s1 { stop-color: #08111d; }
   body:has(#app.tesla):has(#map.night) .jc .jc-s2 { stop-color: #1b2738; }
@@ -1307,7 +1308,7 @@
   /* 하이패스 차로 줄 (2026-11-14 요청): 카드 아래 줄에 톨게이트 차로를 1번부터 칸으로 늘어놓고 하이패스 차로만 파랗게,
      유인·정산기·화물차 차로는 회색, 미운영 차로는 흐리게(3개 넘게 이어지면 '⋯'). '700m'·'번 차로' 글자는 뺀다 */
   .tollcard.has-lanes { flex-wrap: wrap; row-gap: 8px; }
-  .toll-lanes { order: 10; flex: 1 0 100%; display: flex; align-items: center; gap: 3px; min-width: 0; }
+  .toll-lanes { order: 10; flex: 1 0 100%; display: flex; align-items: center; gap: 3px; min-width: 0; overflow: hidden; }
   .toll-lanes .ln {
     flex: 1 1 0; min-width: 22px; max-width: 34px; height: 28px; border-radius: 5px; display: flex; align-items: center; justify-content: center;
     font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; text-shadow: none; overflow: hidden;
@@ -1377,6 +1378,9 @@
   .turnicon img.ti, .nexticon img.ti { width: 100%; height: 100%; display: block; object-fit: contain; }
   /* 밤: AI 도로 그림(어두운 아스팔트)이 어두운 패널에 묻히지 않게 밝게 (앱 SVG 의 밤 도로색 #5b6676 과 비슷하게) */
   body:has(#app.tesla):has(#map.night) .turnicon img.aiimg, body:has(#app.tesla):has(#map.night) .nexticon img.aiimg { filter: brightness(1.8) saturate(.9); }
+  /* 초록 화살표뿐인 AI 그림(비켜 가기 kl/kr)은 밝히지 않는다 (밤엔 형광으로 번짐) */
+  body:has(#app.tesla):has(#map.night) .turnicon img.aiimg[src*="/kl__"], body:has(#app.tesla):has(#map.night) .turnicon img.aiimg[src*="/kr__"],
+  body:has(#app.tesla):has(#map.night) .nexticon img.aiimg[src*="/kl__"], body:has(#app.tesla):has(#map.night) .nexticon img.aiimg[src*="/kr__"] { filter: none; }
   #app.tesla .turnicon svg.ti, #app.tesla .nexticon svg.ti { color: var(--nv-green); stroke: none; }
   /* 밤(어두운 패널): 어두운 도로를 조금 밝게 */
   body:has(#app.tesla):has(#map.night) svg.ti .rd { fill: #5b6676; }
@@ -1386,7 +1390,7 @@
      캔버스는 돌리지 않고 화면 아래로 길게(가운데 = 차 위치, 화면 70% 높이) 두고, 지도 자체를 돌리고 기울인다.
      글자·카메라·방지턱 표시는 원래 똑바로라 거꾸로 돌릴 필요가 없다 */
   #map.drive.gl .mapcanvas {
-    inset: auto; left: 0 !important; top: 0 !important; width: 100% !important; height: var(--gh) !important;
+    inset: auto; left: 0 !important; top: 0 !important; width: var(--gw, 100%) !important; height: var(--gh) !important;
     transform: none !important; transition: none !important;
   }
   #map.gl .me-arrow { transition: transform .3s linear; }
@@ -1669,8 +1673,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.14-109"></script>
-<script src="img/ai/picks.js?v=2026.11.14-109"></script>
-<script src="app.js?v=2026.11.14-109"></script>
+<script src="icons.js?v=2026.11.14-110"></script>
+<script src="img/ai/picks.js?v=2026.11.14-110"></script>
+<script src="app.js?v=2026.11.14-110"></script>
 </body>
 </html>

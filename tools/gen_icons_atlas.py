@@ -467,6 +467,14 @@ CLEAN_EDIT = ('Edit this navigation junction illustration. Keep the composition,
               'arrow; (2) make the blue lane fill cleanly right up to the white lane line beside it, with no dark gap and no glow, a '
               'clean flat look. No text.')
 CLEAN = {k: (('ref/base3_%s.png' % k,), CLEAN_EDIT, '') for k in ('junc_fork_day', 'junc_fork_night', 'junc_ramp_night')}
+# 2026-11-15 디자인 검토 3곳 공통: 비켜 가기(kl/kr) 아이콘만 선이 얇다(약 4px, 직진·회전은 약 8px). 고속도로 안내 대부분이 이 아이콘이라
+# 직진 화살표(s.webp)와 같은 굵기의 초록 화살표로 다시. 오른쪽(kr)은 앱에서 좌우로 뒤집어 짝을 맞춘다
+KL_EDIT = ('Redraw image 1, an S-shaped "keep left" navigation arrow, as a bold solid green (#03C75A) arrow with exactly the same '
+           'stroke thickness, rounded tail and big sharp arrowhead as the straight arrow in image 2. Keep image 1 shape and direction: '
+           'the stem rises from the bottom, shifts smoothly about one arrow-width to the LEFT with a gentle S-curve in the middle, then '
+           'continues straight up into the arrowhead. Clean flat vector, centered, filling about 80% of the height. No outline, no '
+           'shadow, no road, no text.' + BG + ' ')
+KLBOLD = {'kl': (('kl.webp', 's.webp'), KL_EDIT, '')}
 JV_LONG = (' The route arrow is ONE big bold white arrow painted flat on the blue lane like a road marking: its tail starts low '
            'in the image close to the viewer, it sweeps smoothly along the blue lane following its curve without any gap, and '
            'ends in a large clear arrowhead pointing where the route goes. Highly readable at a glance. Show the road details '
@@ -532,6 +540,7 @@ MODELS['flare26v'], MODELS['sunburst26v'] = MODELS['flare26e'], MODELS['sunburst
 MODELS['flare26s'], MODELS['sunburst26s'] = MODELS['flare26e'], MODELS['sunburst26e']      # 분기점 그림 파란 빛 은은하게
 MODELS['flare26d'], MODELS['sunburst26d'] = MODELS['flare26e'], MODELS['sunburst26e']      # 회전교차로 거리감
 MODELS['flare26j'], MODELS['sunburst26j'] = MODELS['flare26'], MODELS['sunburst26']        # 분기점 그림: 길게 이어진 화살표
+MODELS['flare26k'], MODELS['sunburst26k'] = MODELS['flare26e'], MODELS['sunburst26e']      # 비켜 가기 굵게
 MODELS['flare26x'], MODELS['sunburst26x'] = MODELS['flare26e'], MODELS['sunburst26e']      # 분기점 그림: 깔끔하게·긴 화살표
 MODELS['flare26t'], MODELS['sunburst26t'] = MODELS['flare26e'], MODELS['sunburst26e']      # 분기점 그림: 흰 점선 그대로, 옆 틈만 은은하게
 T2I_MODELS = {'flare26', 'sunburst26', 'ideo', 'flare26b', 'sunburst26b', 'flare26j', 'sunburst26j'}
@@ -640,6 +649,8 @@ def main():
         JOBS.update(SOFT)    # 분기점 그림 파란 빛 은은하게
     if 'rbdepth' in a.icons.split(','):
         JOBS.update(RBDEPTH)   # 회전교차로 거리감
+    if 'klbold' in a.icons.split(','):
+        JOBS.update(KLBOLD)   # 비켜 가기(왼쪽) 굵게
     if 'clean' in a.icons.split(','):
         JOBS.update(CLEAN)   # 분기점 그림: 깔끔하게, 화살표 꼬리를 맨 아래까지
     if 'junc3' in a.icons.split(','):
@@ -651,7 +662,7 @@ def main():
     groups = {'cars': [k for k in JOBS if is_car(k)], 'signs': [k for k in JOBS if is_sign(k)],
               'guide': [k for k in JOBS if not is_car(k) and not is_sign(k)],
               'roads': ROADS, 'rb': RBS, 'redo': ROADS + RBS,
-              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s'], 'fix3': ['outs', 'ins', 'over_r', 'under_s', 'under_r', 'side_r', 'oside_r'], 'grass': RBS, 'junc': sorted(PANO), 'green': list(GREEN_KIND), 'junc2': JV2, 'soft': list(SOFT), 'rbdepth': list(RBDEPTH), 'junc3': list(JUNC3), 'clean': list(CLEAN)}
+              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s'], 'fix3': ['outs', 'ins', 'over_r', 'under_s', 'under_r', 'side_r', 'oside_r'], 'grass': RBS, 'junc': sorted(PANO), 'green': list(GREEN_KIND), 'junc2': JV2, 'soft': list(SOFT), 'rbdepth': list(RBDEPTH), 'junc3': list(JUNC3), 'clean': list(CLEAN), 'klbold': ['kl']}
     want = []
     for i in a.icons.split(','):
         want += groups.get(i, [i])
