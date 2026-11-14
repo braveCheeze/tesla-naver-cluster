@@ -43,9 +43,23 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-68'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-69'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
+  // 브라우저에 저장된 예전 index.html 이 새 app.js 를 불러온 경우(화면 요소가 맞지 않아 버튼 연결에서 멈춘다):
+  // index.html 이 부른 app.js?v= 와 이 파일의 버전이 다르면 새 버전 주소(?v=)로 한 번 다시 연다.
+  // (2026-11-14 16:37: PC 크롬에 11-13 화면이 남아 있어 'Cannot set properties of null (setting onclick)' 으로 멈췄다)
+  try {
+    const tag = [...document.scripts].find((s) => /app\.js(\?|$)/.test(s.src || ''));
+    const want = tag ? new URL(tag.src, location.href).searchParams.get('v') : null;
+    if (!testPage && want && want !== APP_VERSION && sessionStorage.getItem('tnc.staleHtml') !== APP_VERSION) {
+      sessionStorage.setItem('tnc.staleHtml', APP_VERSION);
+      const q = new URLSearchParams(location.search);
+      q.set('v', APP_VERSION);
+      location.replace(location.pathname + '?' + q.toString() + location.hash);
+      return;
+    }
+  } catch (e) { /* 저장소 막힘 등: 그대로 진행 */ }
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
   function report(type, data) {
     if (testPage || botLike || tele.sent >= 40) return; // 검색엔진 로봇·자동화 접속은 보고하지 않음
@@ -2359,7 +2373,7 @@
       el.classList.toggle('left', j.left);
       el.classList.toggle('hwy', j.hwy);
     }
-    $('#juncDist').textContent = fmtDist(nav.dg);
+    // 남은 거리는 위 길안내 패널에 크게 나오므로 그림에는 지점 이름만 (2026-11-14: 같은 거리를 또 보여 줄 필요 없음)
     el.hidden = false;
     syncDrawer();
   }

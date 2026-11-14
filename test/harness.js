@@ -1284,8 +1284,10 @@
       feed(pointAt(R, 15).p, 15, 0);
       t.renderNav();
       // 길안내 패널은 나타날 때 0.2초 동안 살짝 떠오른다(rise). 화면이 보이는 동안 재면 그 도중이라 위치가 몇 px 다르다.
-      // 끝난 뒤(0.45초) 다시 그리고 잰다
-      await new Promise((res) => setTimeout(res, 450));
+      // 끝난 뒤 다시 그리고 잰다. 오른쪽 경로 막대도 0.5초 동안 오른쪽에서 미끄러져 들어오므로(2026-11-14) 0.7초 기다린다
+      await new Promise((res) => setTimeout(res, 700));
+      // 창이 가려져 있으면 애니메이션이 멈춰 있으므로 진행 중인 것을 바로 끝낸다
+      try { document.getAnimations().forEach((a) => { try { a.finish(); } catch (e) { /* 무한 반복 등 */ } }); } catch (e) { /* 미지원 */ }
       t.renderNav();
       await new Promise((res) => setTimeout(res, 30));
       const app = document.getElementById('app').getBoundingClientRect();
@@ -1962,7 +1964,7 @@
     };
     const snap = () => { const el = document.getElementById('juncCard');
       return { shown: visible('#juncCard'), kind: (el.querySelector('#juncSvg path.jc-edge + path.jc-edge') ? 'ramp' : 'fork'), left: el.classList.contains('left'),
-        hwy: el.classList.contains('hwy'), label: text('#juncLabel'), place: text('#juncPlace'), dist: text('#juncDist'),
+        hwy: el.classList.contains('hwy'), label: text('#juncLabel'), place: text('#juncPlace'), dist: document.getElementById('juncDist') ? text('#juncDist') : '',
         inDrawer: !!el.closest('#camDrawer .cd-in'), open: document.getElementById('camDrawer').classList.contains('open') }; };
     const go = (s) => { const a = pointAt(R, s); feed(a.p, 20, a.h); t.renderNav(); };
     const r = {};
@@ -1984,7 +1986,7 @@
       softReset();
     }
     const ok = !r.far.shown && r.ramp.shown && r.ramp.kind === 'ramp' && !r.ramp.left && r.ramp.hwy && r.ramp.label === '서울 · 대전' &&
-      r.ramp.place === '하남IC' && /^600m$/.test(r.ramp.dist) && r.ramp.inDrawer && r.ramp.open &&
+      r.ramp.place === '하남IC' && r.ramp.dist === '' && r.ramp.inDrawer && r.ramp.open &&
       r.fork.shown && r.fork.kind === 'fork' && r.fork.left && r.fork.label === '대전 · 호법' && r.fork.place === '하남분기점' && !r.after.shown;
     return { pass: ok, detail: JSON.stringify(r) + (ok ? '✓' : '✗') };
   }
