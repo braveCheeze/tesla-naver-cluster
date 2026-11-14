@@ -2080,7 +2080,10 @@
       { i: 6, n: 4, name: '테스트로', speed: 5, cong: 3 },
     ];
     const hw = (cong, speed) => t.trafficColor({ name: '중부고속도로', cong, speed });
-    const hwOk = hw(2, 60) === '#f5a623' && hw(2, 45) === '#ff6a13' && hw(3, 30) === '#e53935' && hw(3, 12) === '#9b111e';
+    // 색은 네이버 GL 지도의 교통 선 색 (낮/밤 팔레트, 2026-11-14): 다섯 단계가 서로 달라야 한다
+    const P = t.trafficPal();
+    const hwOk = hw(2, 60) === P[2] && hw(2, 45) === P.lag && hw(3, 30) === P[3] && hw(3, 12) === P.stop &&
+      new Set([P[1], P[2], P.lag, P[3], P.stop]).size === 5;
     softReset();
     await planAndStart(R);
     feed(pointAt(R, 15).p, 15, 0);
@@ -2088,7 +2091,7 @@
     const m = t.getMap(), got = new Set();
     (m.route || []).forEach((pc) => { if (pc.kind === 'traffic') got.add(String(pc.color).toLowerCase()); });
     t.endNav(); softReset();
-    const want = ['#03c75a', '#f5a623', '#ff6a13', '#e53935', '#9b111e'];
+    const want = [P[1], P[2], P.lag, P[3], P.stop];
     const ok = hwOk && want.every((c) => got.has(c));
     return { pass: ok, detail: 'line colors ' + [...got].join(' ') + ' | highway thresholds ' + (hwOk ? '✓' : '✗') + (ok ? '✓' : '✗') };
   }
@@ -2525,9 +2528,12 @@
     (m.route || []).forEach((pc) => { colors[pc.kind] = colors[pc.kind] || new Set(); colors[pc.kind].add(String(pc.color).toLowerCase()); });
     const has = (k, c) => !!colors[k] && colors[k].has(c);
     const bar = (document.getElementById('rsBar').style.background || '').toLowerCase();
-    const blueBase = has('base', '#2f7dff'), green = has('traffic', '#03c75a'), red = has('traffic', '#e53935');
+    // 색은 네이버 GL 지도의 교통 선 색 (지금 낮/밤 팔레트)
+    const P = t.trafficPal(), rgb = (h) => 'rgb(' + [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).join(', ') + ')';
+    const inBar = (h) => bar.includes(rgb(h)) || bar.includes(h);
+    const blueBase = has('base', '#2f7dff'), green = has('traffic', P[1]), red = has('traffic', P[3]);
     // 막대: 원활(초록)·정체(빨강) 구간이 그려진다. 이 경로는 정보 없는 구간이 없으므로 파랑은 없어도 된다
-    const barOk = /rgb\(3, 199, 90\)|#03c75a/.test(bar) && /rgb\(229, 57, 53\)|#e53935/.test(bar);
+    const barOk = inBar(P[1]) && inBar(P[3]);
     // 정보 없는 경로: 구간 정보를 빼면 막대가 파랑
     t.endNav(); softReset();
     const R2 = buildNavRoute(); R2.route.sections = [];
@@ -2535,7 +2541,7 @@
     feed(pointAt(R2, 15).p, 15, 0);
     t.renderNav();
     const bar2 = (document.getElementById('rsBar').style.background || '').toLowerCase();
-    const blueBar = /rgb\(47, 125, 255\)|#2f7dff/.test(bar2) && !/rgb\(3, 199, 90\)/.test(bar2);
+    const blueBar = /rgb\(47, 125, 255\)|#2f7dff/.test(bar2) && !bar2.includes(rgb(P[1]));
     return {
       pass: blueBase && green && red && barOk && blueBar,
       detail: 'line: base blue ' + (blueBase ? '✓' : '✗') + ', free-flow green ' + (green ? '✓' : '✗') + ', jam red ' + (red ? '✓' : '✗') +
@@ -3034,6 +3040,10 @@
       r.farNone = !(m._arrowObjs || []).length;                 // 다음 안내가 직진이거나 400m 밖
       a = pointAt(R, 300); feed(a.p, 15, a.h); t.renderNav();   // 우회전 300m 앞
       r.near = (m._arrowObjs || []).length;                     // 테두리 몸통·화살촉 + 흰 몸통·화살촉
+      // 모서리 (2026-11-14 요청: 도로처럼): 90° 로 꺾이는 점 R.P[5] 를 경로선·화살표 모두 같은 곡선으로 돌아간다 (꼭짓점에서 약 2.8m 안쪽)
+      const minTo = (L, q) => Math.min(...(L || []).map((x) => hav(x, q)));
+      r.corner = m.disp ? Math.round(minTo(m.disp.pts, R.P[5]) * 10) / 10 : -1;
+      r.arrowCorner = Math.round(minTo(m._arrowShown, R.P[5]) * 10) / 10;
       // 회전 지점 뒤로 배율에 맞춘 길이(가까이 30m, 멀리 볼수록 화면 30px 만큼·최대 100m)까지
       const shown = m._arrowShown || [], end = shown[shown.length - 1], span = m._arrowSpan || {};
       r.span = Math.round(span.after || -1);
@@ -3051,7 +3061,7 @@
     } finally {
       softReset();
     }
-    const ok = r.pin && r.dots >= 3 && /^base\+dots\+glow\+shine/.test(r.kinds) && r.farNone && r.near === 4 && r.span >= 25 && r.span <= 100 && r.endFromTurn >= 0 && r.endFromTurn <= 3 &&
+    const ok = r.pin && r.dots >= 3 && /^base\+dots\+glow\+shine/.test(r.kinds) && r.farNone && r.near === 4 && r.corner >= 2 && r.corner <= 4 && Math.abs(r.arrowCorner - r.corner) < 0.3 && r.span >= 25 && r.span <= 100 && r.endFromTurn >= 0 && r.endFromTurn <= 3 &&
       r.zoomOutHidden && r.zoomBack === 4 && r.after === 0 && r.cleared;
     return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + r[k]).join(', ') };
   }

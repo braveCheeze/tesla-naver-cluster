@@ -9,7 +9,12 @@
   GPT Image 2 developer $0.005, GPT Image 1.5 $0.005, GPT Image 2 $0.006, Seedream 5.5 $0.016, Seedream 5.0 Pro $0.036, Nano Banana 2 $0.08.
   기본: GPT Image 2.5 Flare·Sunburst × 그림 19가지 × 1장 = 38장 ≈ $0.19
 - 내 차 아이콘만:  py -X utf8 tools\gen_icons_atlas.py --icons car_my,car_red,car_white --per 2   (12장 ≈ $0.06)
-  테슬라 앱 차 사진을 tools\icon-srcefef_car_app.png 로 저장해 두면 그 느낌을 따라 그린다 (저장소에는 안 올라감)
+- 차 아이콘 전부(테슬라 7색 + 귀여운 차 4색): --icons cars --per 2
+- 안내 아이콘 전부(나가기/들어가기·급회전·고가/지하차도·회전교차로·유턴·터널·톨게이트·하이패스·분기점·도착/경유 핀·분기점 그림): --icons guide --per 2
+- 둘 다: --icons cars,guide --per 2
+  테슬라 앱 차 사진을 tools\icon-src
+ef
+ef_car_app.png 로 저장해 두면 그 느낌을 따라 그린다 (저장소에는 안 올라감)
 - 옵션: --models flare,sunburst,gpt15   --per 2   --icons over_r,junc_fork_r   --dry (요청 없이 계획과 예상 비용만)
 """
 import argparse
@@ -43,6 +48,11 @@ CARS = ('Top-down view, seen from directly above, of a Tesla Model Y in exactly 
         'thin roof seams, small side mirrors angled back, rounded short nose, wide rear haunches, nose pointing straight up, '
         'perfectly symmetric, centered, filling 85% of the image height. Remove any text, labels, padlock icon and charging cable. '
         'No logos, no ground shadow, no other objects.' + BG + ' ')
+# 귀여운 차 (설정의 '초록 꼬마차' 같은 결): 위에서 본 모델 Y 를 동글동글한 스티커 그림으로
+CUTE = ('Cute chibi cartoon version of a Tesla Model Y seen from directly above, for a navigation map car icon: rounded '
+        'chubby proportions, big friendly headlight eyes on the front, small smile, glossy dark glass roof, soft simple shading, '
+        'clean flat vector sticker style with a thick white outline, nose pointing straight up, symmetric, centered, filling 85% '
+        'of the image height, no text, no logos, no ground shadow.' + BG + ' ')
 # 차 참고 그림: 사용자가 테슬라 앱 화면을 ref/ref_car_app.png 로 저장해 두면 그걸 쓴다 (저장소에는 올리지 않는다: .gitignore)
 CAR_APP = os.path.join(SRC, 'ref', 'ref_car_app.png')
 
@@ -92,6 +102,15 @@ JOBS = {
     'car_my': (car_ref('my'), CARS, 'Paint: dark slate grey metallic with a faint blue tint (Stealth Grey), like the reference.'),
     'car_red': (car_ref('red'), CARS, 'Same car, but paint: deep glossy Ultra Red.'),
     'car_white': (car_ref('white'), CARS, 'Same car, but paint: Pearl White with soft grey shading.'),
+    # 2026-11-14 '아이콘 좀 많이': 테슬라 색 더 + 귀여운 차 여러 색 (설정 → 자동차 아이콘 후보)
+    'car_blue': (car_ref('my'), CARS, 'Same car, but paint: Deep Blue Metallic.'),
+    'car_silver': (car_ref('my'), CARS, 'Same car, but paint: Quicksilver, a bright liquid-metal silver.'),
+    'car_black': (car_ref('my'), CARS, 'Same car, but paint: glossy Solid Black with crisp reflections so the shape still reads.'),
+    'car_cherry': (car_ref('red'), CARS, 'Same car, but paint: Midnight Cherry Red, a deep wine red metallic.'),
+    'cute_green': ('ref/ref_car_my.png', CUTE, 'Body color: fresh green (#03C75A).'),
+    'cute_pink': ('ref/ref_car_my.png', CUTE, 'Body color: soft pink (#FF8FB1).'),
+    'cute_sky': ('ref/ref_car_my.png', CUTE, 'Body color: sky blue (#5AB4FF).'),
+    'cute_yellow': ('ref/ref_car_my.png', CUTE, 'Body color: warm yellow (#FFC83D).'),
     # 분기점 확대 그림 (가로로 넓게, 길안내 패널 밑 서랍에 들어간다: 글자는 넣지 않는다 - 앱이 위에 올린다)
     'junc_fork_r': ('ref/ref_outr.png', 'Navigation junction close-up illustration for a car display, clean flat vector style '
                     'like a premium car navigation, no text, no signs: first-person view of a highway splitting into two '
@@ -103,6 +122,39 @@ JOBS = {
                     'with an exit ramp leaving on the right under a light blue sky, grass shoulders, white lane markings in '
                     'perspective; the exit ramp lane is highlighted blue with a big white arrow curving to the right. '
                     'Wide 3:2 landscape. Do not use magenta.', ''),
+    # 2026-11-14 '안내 아이콘도 여러 개': 왼쪽 짝·회전교차로 직진/유턴·유턴·터널·톨게이트·하이패스·분기점·도착/경유 핀
+    'sharp_l': ('l.webp', ARROW, "A SHARP left turn: the arrow comes up from the bottom and turns back down to the lower left "
+                "(about the 8 o'clock direction), arrowhead pointing down-left."),
+    'over_l': ('ref/ref_outl.png', ROAD, 'Overpass entry: the left lane rises onto an elevated overpass bridge curving up-left, '
+               'while the main road continues straight underneath; the arrow follows the rising overpass ramp. No shield.'),
+    'under_s': ('ref/ref_outr.png', ROAD, 'Underpass straight ahead: the middle lanes go down into an underpass tunnel mouth '
+                '(a dark rectangular opening) straight ahead; the arrow goes straight up into the underpass. No shield.'),
+    'side_l': ('ref/ref_outl.png', ROAD, 'Side road next to an underpass: the middle road goes down into an underpass, and the '
+               'arrow stays on the left-hand surface side road that runs alongside and continues up. No shield.'),
+    'rb_s': ('rb.webp', ARROW, 'Roundabout, go STRAIGHT through: a pale thin ring with four short pale road stubs; one bold white '
+             'arrow enters from the bottom, goes counter-clockwise half way around and exits at the top with a large arrowhead. '
+             'Single color, like Naver Map turn icons.'),
+    'rb_u': ('rb.webp', ARROW, 'Roundabout U-turn: a pale thin ring with four short pale road stubs; one bold white arrow enters '
+             'from the bottom, goes counter-clockwise all the way around and exits back down at the bottom next to where it '
+             'entered, with a large arrowhead pointing down. Single color, like Naver Map turn icons.'),
+    'u': ('u.webp', ARROW, 'U-turn: one bold white arrow goes straight up, makes a tight rounded turn to the left at the top '
+          'and comes back down, arrowhead pointing down. Clean and symmetric, like Naver Map.'),
+    'tunnel': ('s.webp', ARROW, 'Tunnel ahead: a simple white tunnel portal (a rounded arch outline) with a dark opening, and a '
+               'bold white arrow pointing straight up into it.'),
+    'toll': ('toll.webp', ROAD, 'Toll gate: a straight road leading up to a row of toll booths under a flat canopy roof; '
+             'the arrow passes through the middle booth. Keep the style of the reference.'),
+    'hipass': ('toll.webp', ROAD, 'Hi-pass (electronic toll) lane: a straight road leading up to toll booths under a canopy; the '
+               'middle lane is marked blue with a small white car-and-signal symbol and the arrow passes through it.'),
+    'jc_r': ('ref/ref_outr.png', ROAD, 'Highway junction (JC): the highway splits into two equally wide highways, one continuing '
+             'up and one curving to the upper right; the arrow follows the right branch.' + SHIELD + ' with "JC".'),
+    'jc_l': ('ref/ref_outl.png', ROAD, 'Highway junction (JC): the highway splits into two equally wide highways, one continuing '
+             'up and one curving to the upper left; the arrow follows the left branch.' + SHIELD + ' with "JC".'),
+    'goal3d': ('goal.webp', 'Navigation destination pin icon in the style of the reference, but more three-dimensional: '
+               'glossy red map pin with soft highlight and shading, white round center with a small checkered flag, '
+               'a soft oval shadow under the tip. Clean, premium, no text.' + BG + ' ', ''),
+    'via3d': ('via.webp', 'Navigation waypoint pin icon in the style of the reference, but more three-dimensional: glossy '
+              'blue map pin with soft highlight and shading, white round center, a soft oval shadow under the tip. '
+              'Clean, premium, no text.' + BG + ' ', ''),
 }
 WIDE = {'junc_fork_r', 'junc_exit_r'}
 
@@ -232,7 +284,12 @@ def main():
     ap.add_argument('--dry', action='store_true')
     a = ap.parse_args()
     models = [m for m in a.models.split(',') if m in MODELS]
-    icons = [i for i in a.icons.split(',') if i in JOBS]
+    # 묶음 이름: cars = 모든 차 아이콘(car_*·cute_*), guide = 차가 아닌 안내 아이콘·분기점 그림 전부
+    is_car = lambda k: k.startswith(('car_', 'cute_'))
+    want = []
+    for i in a.icons.split(','):
+        want += [k for k in JOBS if is_car(k)] if i == 'cars' else [k for k in JOBS if not is_car(k)] if i == 'guide' else [i]
+    icons = [i for i in dict.fromkeys(want) if i in JOBS]
     jobs = [(i, m, n) for i in icons for m in models for n in range(1, a.per + 1)]
     cost = sum(MODELS[m][1] for _, m, _ in jobs)
     print('만들 그림 %d장, 예상 비용 약 $%.2f  (모델: %s)' % (len(jobs), cost, ', '.join(models)))
