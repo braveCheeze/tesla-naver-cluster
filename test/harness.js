@@ -1330,7 +1330,7 @@
       }
       return o;
     };
-    let fast, slow, none, off;
+    let fast, slow, none, off, nextIcon = false;
     try {
       set(true);
       fast = approach(45);
@@ -1339,6 +1339,16 @@
       feed(dest(C, 180, 6000), 10, 0);
       feed(dest(C, 180, 5990), 10, 0);
       none = shown();
+      // 다음 단속 (경고 거리 밖): 테슬라 모드에서는 '다음 단속' 글자 없이 표지 + 거리
+      softReset();
+      feed(dest(C, 180, 6000), 10, 0);
+      t.camState.target = null;
+      t.camState.peek = { i: -1, c: [C.lat, C.lng, 70, 3, 0, 0, 0, -1, 3, 3], d: 6000 };
+      t.renderCam();
+      const nx = document.getElementById('camNext');
+      nextIcon = !nx.hidden && getComputedStyle(nx.querySelector('.nx-label')).display === 'none' &&
+        nx.querySelector('.mini-sign').textContent === '70' && /\d(\.\d)?k?m$/.test(nx.querySelector('b').textContent) && nx.getAttribute('aria-label').indexOf('다음 단속') === 0;
+      t.camState.peek = null;
       set(false);
       off = approach(45);
     } finally {
@@ -1350,9 +1360,9 @@
     const okSlow = !!slow && slow.shown && !slow.over && slow.val === '25';
     const okOff = !!off && !off.shown && off.bigTile;
     return {
-      pass: okFast && okSlow && !none && okOff,
+      pass: okFast && okSlow && !none && okOff && nextIcon,
       detail: '45 km/h: ' + JSON.stringify(fast) + (okFast ? '✓' : '✗') + ' | 25 km/h: ' + JSON.stringify(slow) + (okSlow ? '✓' : '✗') +
-        ' | no camera: ' + (none ? 'SHOWN✗' : 'hidden✓') + ' | tesla off: ' + (okOff ? 'hidden✓' : 'SHOWN✗'),
+        ' | no camera: ' + (none ? 'SHOWN✗' : 'hidden✓') + ' | tesla off: ' + (okOff ? 'hidden✓' : 'SHOWN✗') + ' | next camera icon only: ' + (nextIcon ? '✓' : '✗'),
     };
   }
 

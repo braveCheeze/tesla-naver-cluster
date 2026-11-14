@@ -40,7 +40,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-40'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-41'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -1142,7 +1142,9 @@
       // 길안내 중이면 경로를 따라간 거리, 아니면 직선 거리
       const d = pk.at != null && nav.active ? Math.max(0, pk.at - nav.along)
         : state.fix ? haversine(state.fix, { lat: pk.c[0], lng: pk.c[1] }) : pk.d;
-      nxEl.innerHTML = '<span class="mini-sign' + (pk.c[3] === 3 ? ' k3' : '') + '">' + pk.c[2] + '</span>다음 단속 <b>' + fmtDist(d) + '</b>';
+      // 테슬라 모드에서는 '다음 단속' 글자 없이 제한속도 표지 + 거리만 (표지만 봐도 안다). 글자는 화면 읽기용으로 남긴다
+      nxEl.innerHTML = '<span class="mini-sign' + (pk.c[3] === 3 ? ' k3' : '') + '">' + pk.c[2] + '</span><span class="nx-label">다음 단속 </span><b>' + fmtDist(d) + '</b>';
+      nxEl.setAttribute('aria-label', '다음 단속 ' + fmtDist(d));
     }
     if (!tg || !prefs.cams) {
       card.hidden = true;
@@ -3073,7 +3075,7 @@
       state, camState, nav, cams, prefs, onFix, setRoute, startNav, endNav, startDemo, stopDemo, renderNav,
       planRoute, doSearch, setFollowing, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
-      sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom,
+      sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
     };

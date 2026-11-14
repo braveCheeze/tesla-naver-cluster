@@ -795,7 +795,10 @@
   #app.tesla .road small { color: #cfd5dd; margin-left: 6px; }
   #app.tesla .road:empty::before { content: '현재 위치'; color: #cfd5dd; }
   /* 다음 단속 거리: 낮 지도에서도 보이게 (흰 글씨였음) */
-  #app.tesla .camnext b { color: var(--ov-fg); font-size: 17px; }
+  #app.tesla .camnext b { color: var(--ov-fg); font-size: 19px; }
+  /* 다음 단속: 글자 없이 제한속도 표지(조금 크게) + 거리 */
+  #app.tesla .camnext .nx-label { display: none; }
+  #app.tesla .camnext .mini-sign { width: 38px; height: 38px; font-size: 15px; }
   /* 오른쪽 끝의 작은 위쪽 꺾쇠: 누르면 올라온다는 표시 */
   #app.tesla .road::after {
     content: ''; position: absolute; right: 14px; top: 50%; width: 7px; height: 7px; margin-top: -2px;
@@ -1041,6 +1044,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-40"></script>
+<script src="app.js?v=2026.11.14-41"></script>
 </body>
 </html>
