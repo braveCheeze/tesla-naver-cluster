@@ -1844,7 +1844,7 @@
     t.setTunnelData(data);
     const row = () => ({ shown: visible('#tunnelRow'), inside: document.getElementById('tunnelRow').classList.contains('inside'),
       dist: text('#tunnelDist'), text: text('#tunnelText'), bar: document.getElementById('tunnelBar').style.width,
-      icon: !!document.querySelector('#tunnelIcon svg.tunnel') });
+      icon: !!document.querySelector('#tunnelIcon svg.tunnel, #tunnelIcon img.aiimg') });   // 앱 그림 또는 고른 AI 그림
     const go = (m, v) => { const a = pointAt(R, m); feed(a.p, v == null ? 15 : v, a.h); t.renderNav(); };
     const r = {};
     try {
@@ -2741,8 +2741,9 @@
     { id: 'S60', name: 'S60 white turn arrow on the map at the next turn (400 m before), destination pin + dots from the route end', fn: s60 },
     { id: 'S61', name: 'S61 highway rest areas on the route: only my side (right) or both-way ones, duplicates merged, next within 30 km + the one after; not on local roads', fn: s61 },
     { id: 'S62', name: 'S62 Naver guide codes → icons: roundabout exits, overpass/underpass/side road not as turns, hi-pass/one-toll gates, rest area, entry/exit ahead', fn: s62 },
-    { id: 'S63', name: 'S63 car icon choice (cute car, AI photo Model Y grey/red/white, drawn Model Y, arrows): marker swaps, keeps the heading, saved', fn: s63 },
+    { id: 'S63', name: 'S63 car icon choice (cute car, AI photo Model Y grey/red/white, arrows; old drawn Model Y ids map to the photo ones): marker swaps, keeps the heading, saved', fn: s63 },
     { id: 'S64', name: 'S64 no-parking cameras while navigating: nothing on the way, only within 700 m of the destination (ahead + around the destination)', fn: s64 },
+    { id: 'S67', name: 'S67 icon picks: repo picks (img/ai/picks.js) used for signs and tunnel, ?catalog gives icon definitions without map/GPS, an ai: car works as my car', fn: s67 },
     { id: 'S66', name: 'S66 toll gate name/fare split at the last parenthesis (남산1호터널톨게이트(도심) (통행료 0원))', fn: s66 },
     { id: 'S65', name: 'S65 auto zoom: 17 while driving even before a turn; the close-up 18 only within 300 m of the destination', fn: s65 },
     { id: 'S58', name: "S58 no-parking cameras: '주정차 단속' only ahead in my direction, when slow (no sound); not behind or on a side street; setting off", fn: s58 },
@@ -2932,6 +2933,43 @@
     }
     const ok = r.fastQuiet && r.slowShown && /^(5\d|6\d)m$/.test(r.dist) && r.markers === 1 && r.keep30 && r.gone40 && r.markersFast === 0 && r.offHidden &&
       r.behindHidden && r.sideHidden && r.sideMarkers === 0;
+    return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + r[k]).join(', ') };
+  }
+
+  // S67: 아이콘 고르기 (2026-11-14 요청: 아이콘 목록을 보고 바꾸고 관리) — 저장소 기본(img/ai/picks.js)이 앱에 쓰이고,
+  //      관리 페이지가 쓰는 ?catalog 는 지도·GPS 없이 아이콘 정의만 내주고, 'ai:' 차 그림도 내 차로 쓸 수 있다
+  async function s67() {
+    const t = T(), r = {}, P = window.TNC_PICKS || {};
+    const loads = (src) => new Promise((res) => { const im = new Image(); im.onload = () => res(im.naturalWidth + 'x' + im.naturalHeight); im.onerror = () => res('err'); im.src = src; });
+    const srcOf = (html) => ((html || '').match(/src="([^"]+)"/) || [])[1];
+    r.repo = Object.keys(P).length;
+    r.signPick = t.iconPicks.sign_animal === P.sign_animal;
+    const sImg = srcOf(t.pickImg('sign_animal')), tImg = srcOf(t.pickImg('tunnel'));
+    r.signImg = sImg ? await loads(sImg) : 'none';
+    r.tunnelImg = tImg ? await loads(tImg) : 'none';
+    r.guideDefault = !t.pickImg('s') && /<svg/.test(t.ico('s'));      // 안내 아이콘은 고른 것이 없으면 앱 그림 그대로
+    // 관리 페이지용 목록 (?catalog): 지도·GPS 를 켜지 않는다
+    const fr = document.createElement('iframe');
+    fr.style.cssText = 'position:fixed;left:-2000px;top:0;width:400px;height:300px';
+    fr.src = new URL('../index.html?catalog', location.href).href;
+    document.body.appendChild(fr);
+    let cat = null;
+    for (let i = 0; i < 80 && !cat; i++) { await sleep(100); try { cat = fr.contentWindow.__tncCatalog; } catch (e) { cat = null; } }
+    r.catalog = cat ? cat.signs.length + ' signs/' + cat.guide.length + ' guide/' + cat.cars.length + ' cars' : 'none';
+    r.noMap = cat ? !fr.contentDocument.querySelector('#map .mapcanvas') : false;
+    fr.remove();
+    // 관리 페이지에서 고른 AI 차 ('ai:<파일>')
+    const prev = localStorage.getItem('tnc.car');
+    try {
+      t.setCarIcon('ai:car_my__flare__1.webp');
+      const im = document.querySelector('.me .me-arrow');
+      r.aiCar = im.tagName === 'IMG' && /img\/ai\/car_my__flare__1\.webp/.test(im.getAttribute('src')) ? await loads(im.src) : 'no';
+      r.aiSaved = localStorage.getItem('tnc.car') === 'ai:car_my__flare__1.webp';
+    } finally {
+      if (prev) t.setCarIcon(prev); else t.setCarIcon('cute');
+    }
+    const ok = r.repo >= 12 && r.signPick && r.signImg === '192x192' && r.tunnelImg === '192x192' && r.guideDefault &&
+      /^11 signs\/\d+ guide\/6 cars$/.test(r.catalog) && r.noMap && r.aiCar === '200x280' && r.aiSaved;
     return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + r[k]).join(', ') };
   }
 
@@ -3147,9 +3185,10 @@
     const arrow = () => document.querySelector('.me .me-arrow');
     try {
       feed(dest(TRIP_ORIGIN, 90, 30), 10, 90);
+      // 예전 값 'my'(SVG 모델 Y, 2026-11-14 정리됨)는 같은 색 실사로
       t.setCarIcon('my');
-      r.swapped = /car-my/.test(arrow().getAttribute('class'));
-      r.saved = localStorage.getItem('tnc.car') === 'my';
+      r.swapped = /car-tesla_grey/.test(arrow().getAttribute('class'));
+      r.saved = localStorage.getItem('tnc.car') === 'tesla_grey';
       feed(dest(TRIP_ORIGIN, 90, 45), 10, 90);
       r.rotated = /rotate\(/.test(arrow().style.transform);
       r.options = t.carIcons.map((c) => c.id).join(',');
@@ -3164,7 +3203,7 @@
     } finally {
       if (prev) t.setCarIcon(prev); else t.setCarIcon('cute');
     }
-    const ok = r.swapped && r.saved && r.rotated && r.back && r.options === 'cute,tesla_grey,tesla_red,tesla_white,my,red,white,arrow,arrow3d' &&
+    const ok = r.swapped && r.saved && r.rotated && r.back && r.options === 'cute,tesla_grey,tesla_red,tesla_white,arrow,arrow3d' &&
       r.aiImg && r.aiLoaded;
     return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + r[k]).join(', ') };
   }
@@ -3190,7 +3229,7 @@
       d.push(a - pa, b - pb, i); pa = a; pb = b;
     });
     const card = () => ({ shown: visible('#signCard'), label: text('#signLabel'), dist: text('#signDist'),
-      icon: !!document.querySelector('#signIcon svg'), type: document.getElementById('signCard').dataset.type || '' });
+      icon: !!document.querySelector('#signIcon svg, #signIcon img.aiimg'), type: document.getElementById('signCard').dataset.type || '' });
     const go = (m, v) => { const a = pointAt(R, m); feed(a.p, v == null ? 15 : v, a.h); };
     const prevPref = t.prefs.signs;
     const r = {};

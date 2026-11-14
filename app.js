@@ -36,7 +36,7 @@
     junction: store.get('junction') !== '0', // 고속도로 진출입·갈림길 그림 (기본 켬)
     traffic: store.get('traffic') !== '0',
     weather: store.get('weather') !== '0',
-    car: store.get('car') || 'cute',             // 내 차 아이콘 (설정에서 고름)
+    car: ({ my: 'tesla_grey', red: 'tesla_red', white: 'tesla_white' })[store.get('car')] || store.get('car') || 'cute',             // 내 차 아이콘 (설정에서 고름)
     headingUp: store.get('hup') !== '0',
     // 멈추면 북쪽 위로: 진행 방향 위 화면은 지도 그림째 돌려서 가게 글자도 눕는다. 3초 넘게 서 있으면 북쪽 위로 돌려 글자를 바로 세운다
     stopNorth: store.get('stopNorth') !== '0',
@@ -51,7 +51,17 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-99'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-100'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
+  // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
+  // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
+  const ICON_PICKS = (() => {
+    let o = {};
+    try { o = JSON.parse(localStorage.getItem('tnc.iconPick') || '{}') || {}; } catch (e) { o = {}; }
+    const out = Object.assign({}, window.TNC_PICKS || {}, o);
+    Object.keys(out).forEach((k) => { if (!out[k] || out[k] === '-') delete out[k]; });
+    return out;
+  })();
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   // 브라우저에 저장된 예전 index.html 이 새 app.js 를 불러온 경우(화면 요소가 맞지 않아 버튼 연결에서 멈춘다):
@@ -433,36 +443,6 @@
   // 내 차 아이콘 (2026-11-14 요청: 네이버 지도처럼 고를 수 있게, 우리 차 모양도). 모두 앞쪽이 위, viewBox 40×56
   // 테슬라 모델 Y 를 위에서 본 모양: 차체 색만 바꾼다. 같은 그림이 지도와 설정 미리보기에 같이 있어도 그라데이션이
   // 서로 엉키지 않게 id 뒤에 붙일 글자(sfx)를 받는다
-  // 2026-11-14: 사용자가 보낸 테슬라 앱 '컨트롤' 화면처럼 — 짙은 차체, 앞유리에서 뒷유리까지 이어지는 큰 통유리 지붕(안에 좌석이
-  // 살짝 비침), 지붕 이음새 두 줄, 뒤로 누운 사이드미러, 둥근 앞코. 밤 지도에서 묻히지 않게 바깥에 옅은 흰 테를 두른다
-  function modelY(id, c, sfx) {
-    const g = 'cy-' + id + sfx, gl = 'cg-' + id + sfx;
-    const body = 'M20 2C24.5 2 28.5 2.6 30 4.6C31 6 31.2 8 31 10.5L30.3 17C30.2 22 30.6 30 31 38C31.2 44 31 48.5 29.8 51.3' +
-      'C28.4 53.4 24.6 54.2 20 54.2C15.4 54.2 11.6 53.4 10.2 51.3C9 48.5 8.8 44 9 38C9.4 30 9.8 22 9.7 17L9 10.5C8.8 8 9 6 10 4.6' +
-      'C11.5 2.6 15.5 2 20 2Z';
-    return '<svg class="me-arrow car-' + id + '" viewBox="0 0 40 56"><defs>' +
-      '<linearGradient id="' + g + '" x1="0" x2="1"><stop offset="0" stop-color="' + c[2] + '"/><stop offset=".12" stop-color="' + c[0] + '"/>' +
-      '<stop offset=".3" stop-color="' + c[1] + '"/><stop offset=".7" stop-color="' + c[1] + '"/><stop offset=".88" stop-color="' + c[0] + '"/>' +
-      '<stop offset="1" stop-color="' + c[2] + '"/></linearGradient>' +
-      '<linearGradient id="' + gl + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2c333d"/><stop offset=".1" stop-color="#121519"/>' +
-      '<stop offset=".6" stop-color="#0c0e11"/><stop offset="1" stop-color="#07080a"/></linearGradient></defs>' +
-      '<path d="M30.1 16.4 32.9 19.3c.4.5.1 1.2-.6 1.1l-2.1-.8zM9.9 16.4 7.1 19.3c-.4.5-.1 1.2.6 1.1l2.1-.8z" fill="' + c[1] + '" stroke="rgba(0,0,0,.45)" stroke-width=".4"/>' +
-      '<path d="' + body + '" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1.4"/>' +
-      '<path d="' + body + '" fill="url(#' + g + ')" stroke="rgba(0,0,0,.45)" stroke-width=".45"/>' +
-      '<ellipse cx="20" cy="6.4" rx="6.4" ry="3.6" fill="#fff" opacity=".07"/>' +
-      '<path d="M15.6 2.4C14 5.5 12.4 9 11.9 13.4M24.4 2.4C26 5.5 27.6 9 28.1 13.4M9.7 30C9.5 38 9.6 45 10.3 50M30.3 30C30.5 38 30.4 45 29.7 50" ' +
-      'fill="none" stroke="' + c[0] + '" stroke-width=".55" opacity=".65"/>' +
-      '<path d="M11.2 5.4C12.5 4.2 14.2 3.5 15.8 3.2M28.8 5.4C27.5 4.2 25.8 3.5 24.2 3.2" fill="none" stroke="#e6f0fa" stroke-width=".7" stroke-linecap="round" opacity=".55"/>' +
-      '<path d="M11.9 14C14.8 12.7 25.2 12.7 28.1 14L28.4 24.6C28.3 32 28 38 27.6 43.2C27.3 47.4 26.7 50.1 25.7 50.7C22.5 51.5 17.5 51.5 14.3 50.7' +
-      'C13.3 50.1 12.7 47.4 12.4 43.2C12 38 11.7 32 11.6 24.6Z" fill="url(#' + gl + ')" stroke="rgba(255,255,255,.12)" stroke-width=".35"/>' +
-      '<g fill="#fff" opacity=".04"><rect x="13.4" y="16.4" width="5.4" height="6.6" rx="1.6"/><rect x="21.2" y="16.4" width="5.4" height="6.6" rx="1.6"/>' +
-      '<rect x="13.2" y="28" width="13.6" height="10.6" rx="2.2"/></g>' +
-      '<rect x="15.2" y="45" width="9.6" height="5" rx="1.8" fill="#000" opacity=".45"/>' +
-      '<path d="M12.4 14.4C15.4 13.3 24.6 13.3 27.6 14.4L27.7 16C24.5 15.2 15.5 15.2 12.3 16Z" fill="#fff" opacity=".1"/>' +
-      '<path d="M11.6 25.1Q20 24.3 28.4 25.1M12.4 43.5Q20 42.9 27.6 43.5" fill="none" stroke="' + c[0] + '" stroke-width=".6" opacity=".6"/>' +
-      '<path d="M10.9 50.4C11.3 51.7 12.1 52.6 13.3 53.1M29.1 50.4C28.7 51.7 27.9 52.6 26.7 53.1" fill="none" stroke="#e0242f" stroke-width=".9" stroke-linecap="round" opacity=".9"/>' +
-      '</svg>';
-  }
   // AI 로 그린 실사 모델 Y (2026-11-14 요청 '테슬라 그 AI 돌려주라': Atlas GPT Image 2.5 Flare, 테슬라 앱 느낌).
   // 분홍 바탕을 빼고 가장자리 색을 되돌린 투명 PNG (tools/build_cars.py → img/car_*.png, 40×56 비율, 앞쪽이 위)
   const carImg = (id) => '<img class="me-arrow car-img car-' + id + '" src="' + APP_BASE + 'img/car_' + id + '.png?v=' + APP_VERSION + '" alt="" draggable="false">';
@@ -482,13 +462,10 @@
       '<circle cx="9.3" cy="16.5" r="1.9" fill="#ff8fa3" opacity=".8"/><circle cx="30.7" cy="16.5" r="1.9" fill="#ff8fa3" opacity=".8"/>' +
       '<path d="M16.8 16.2 Q20 19 23.2 16.2" fill="none" stroke="#0b4a2b" stroke-width="1.7" stroke-linecap="round"/></svg>' },
     // 실사 모델 Y (AI): 사용자 차는 짙은 회색
-    { id: 'tesla_grey', name: '모델 Y 그레이 실사', svg: () => carImg('tesla_grey') },
-    { id: 'tesla_red', name: '모델 Y 레드 실사', svg: () => carImg('tesla_red') },
-    { id: 'tesla_white', name: '모델 Y 화이트 실사', svg: () => carImg('tesla_white') },
-    // 그림(SVG) 모델 Y
-    { id: 'my', name: '모델 Y 그레이', svg: (sfx) => modelY('my', ['#5a6475', '#2c323c', '#14171c'], sfx) },
-    { id: 'red', name: '모델 Y 레드', svg: (sfx) => modelY('red', ['#f2555c', '#c5121f', '#7c0b13'], sfx) },
-    { id: 'white', name: '모델 Y 화이트', svg: (sfx) => modelY('white', ['#ffffff', '#e8ebef', '#b3bac3'], sfx) },
+    // 2026-11-14 '중복 정리, 최신 걸로': 예전에 그린 SVG 모델 Y(my·red·white)는 빼고 AI 실사만 남긴다 (저장된 옛 값은 같은 색 실사로)
+    { id: 'tesla_grey', name: '모델 Y 그레이', svg: () => carImg('tesla_grey') },
+    { id: 'tesla_red', name: '모델 Y 레드', svg: () => carImg('tesla_red') },
+    { id: 'tesla_white', name: '모델 Y 화이트', svg: () => carImg('tesla_white') },
     // 네이버 지도 같은 내비 화살표
     { id: 'arrow', name: '파란 화살표', svg: () => '<svg class="me-arrow car-arrow" viewBox="0 0 40 56">' +
       '<circle cx="20" cy="28" r="15.5" fill="#fff" stroke="#d7dde5" stroke-width="1.2"/>' +
@@ -497,14 +474,18 @@
       '<path d="M20 8 31.5 45 20 37.6z" fill="#3d86ff"/><path d="M20 8 8.5 45 20 37.6z" fill="#1c55cf"/>' +
       '<path d="M20 8v29.6" stroke="#0f3c9c" stroke-width=".6" opacity=".6"/></svg>' },
   ];
-  const carIcon = (id) => CAR_ICONS.find((c) => c.id === id) || CAR_ICONS[0];
+  // 관리 페이지(tools/icons.html)에서 고른 AI 차 그림은 'ai:<img/ai 의 파일>' 로 저장된다
+  const CAR_LEGACY = { my: 'tesla_grey', red: 'tesla_red', white: 'tesla_white' };   // 예전 SVG 모델 Y → 같은 색 실사
+  const carIcon = (id0) => { const id = CAR_LEGACY[id0] || id0; return (/^ai:[\w.-]+\.webp$/.test(id || '') ? {
+    id, name: 'AI 차', svg: () => '<img class="me-arrow car-img car-ai" src="' + APP_BASE + 'img/ai/' + id.slice(3) + '?v=' + APP_VERSION + '" alt="" draggable="false">',
+  } : CAR_ICONS.find((c) => c.id === id) || CAR_ICONS[0]); };
   const meEl = document.createElement('div');
   meEl.className = 'me nohead';
   meEl.innerHTML = '<div class="me-halo"></div><div class="me-dot"></div>' + carIcon(prefs.car).svg('');
   let rotateMe = makeRotator(meEl.querySelector('.me-arrow'));
   // 아이콘을 바꾸면 그림만 갈아 끼우고 지금 방향으로 바로 돌려 둔다
   function setCarIcon(id) {
-    prefs.car = carIcon(id).id;
+    prefs.car = carIcon(id).id;   // ai:… 도 그대로
     store.set('car', prefs.car === 'cute' ? null : prefs.car);
     const old = meEl.querySelector('.me-arrow');
     const tmp = document.createElement('div');
@@ -621,7 +602,7 @@
   function bumpEl() {
     const el = document.createElement('div');
     el.className = 'bumpmk';
-    el.innerHTML = SIGN_BUMP;
+    el.innerHTML = pickImg('sign_bump') || SIGN_BUMP;
     return el;
   }
   // 보호구역 주의 표지 (빨간 테두리 노란 삼각형 + 그림): 어린이보호는 어른과 아이가 손잡고 걷는 모습, 노인보호는 지팡이 짚은 노인
@@ -1868,7 +1849,7 @@
     const t = SIGN_TYPES[s.type];
     if (signState.shownKey !== t.id) {
       signState.shownKey = t.id;
-      $('#signIcon').innerHTML = signSvg(t.g);
+      $('#signIcon').innerHTML = pickImg('sign_' + t.id) || signSvg(t.g);
       $('#signLabel').textContent = t.label;
       el.dataset.type = t.id;
     }
@@ -1994,7 +1975,7 @@
     if (!a) return;
     const ic = $('#tunnelIcon');
     // AI 로 그린 터널 아이콘(icons.js 의 tunnel)이 있으면 그것, 없으면 앱에 그려 둔 아치
-    if (!ic.firstChild) ic.innerHTML = window.TNC_ICONS && window.TNC_ICONS.tunnel ? ico('tunnel') : TUNNEL_ICON;
+    if (!ic.firstChild) ic.innerHTML = pickImg('tunnel') || (window.TNC_ICONS && window.TNC_ICONS.tunnel ? icoBase('tunnel') : TUNNEL_ICON);
     el.classList.toggle('inside', a.inside);
     const name = a.t.name || '터널';
     $('#tunnelDist').textContent = fmtDist(a.d);
@@ -3246,7 +3227,15 @@
   Object.keys(ICON_FALLBACK).forEach((k) => { if (!TURN_ICONS[k]) TURN_ICONS[k] = TURN_ICONS[ICON_FALLBACK[k]] || TURN_ICONS.s; });
   // 같은 아이콘을 두 곳에 넣어도 그라데이션 id 가 겹치지 않게 넣을 때마다 번호를 붙인다
   let icoN = 0;
+  // 고른 AI 그림이 있으면 <img>, 없으면 null
+  function pickImg(slot, cls) {
+    const f = ICON_PICKS[slot];
+    return f ? '<img class="' + (cls || '') + ' aiimg" src="' + APP_BASE + 'img/ai/' + f + '?v=' + APP_VERSION + '" alt="" draggable="false">' : null;
+  }
   function ico(k) {
+    return pickImg(k, 'ti') || icoBase(k);
+  }
+  function icoBase(k) {
     const svg = TURN_ICONS[k] || TURN_ICONS.s;
     if (svg.indexOf('id="') < 0) return svg;
     const n = ++icoN;
@@ -4899,6 +4888,7 @@
     $('#optStopNorth').checked = prefs.stopNorth;
     $('#optStopNorth').disabled = glOn();
     $('#optGl').checked = prefs.gl;
+    $('#iconAdmin').hidden = !params.has('debug');   // 아이콘 관리 페이지(내부)는 ?debug 일 때만
     renderCarIcons();
     $('#optNight').value = nightMode();
     $('#optTilt').checked = prefs.tilt;
@@ -5067,6 +5057,21 @@
   $('#diagToggle').onclick = () => setDiag(!diag.on);
   $('#diagUpload').onclick = uploadDiag;
 
+  // ---------- 아이콘 목록 (관리 페이지 tools/icons.html 이 iframe 으로 ?catalog 를 부를 때: 지도·GPS 는 켜지 않는다) ----------
+  if (params.has('catalog')) {
+    window.__tncCatalog = {
+      version: APP_VERSION,
+      guide: Object.keys(TURN_ICONS).map((k) => ({ k, html: icoBase(k), borrowed: !!ICON_FALLBACK[k] && !(window.TNC_ICONS || {})[k] ? ICON_FALLBACK[k] : '' })),
+      signs: SIGN_TYPES.map((t) => ({ k: 'sign_' + t.id, label: t.label, html: signSvg(t.g) })).concat([{ k: 'sign_bump', label: '과속방지턱', html: SIGN_BUMP }]),
+      tunnel: { k: 'tunnel', label: '터널', html: TUNNEL_ICON },
+      cars: CAR_ICONS.map((c, i) => ({ id: c.id, name: c.name, html: c.svg('-c' + i) })),
+      repoPicks: window.TNC_PICKS || {},
+    };
+    return;
+  }
+  // 고른 방지턱 그림은 방지턱 카드에도
+  { const b = pickImg('sign_bump'); if (b) { const el = document.querySelector('#bumpCard .bump-sign'); if (el) el.innerHTML = b; } }
+
   // ---------- 시작 ----------
   tele.ctx = () => ({
     map: mapA === NaverAdapter ? 'naver' : (mapA ? 'osm' : 'none'),
@@ -5114,7 +5119,7 @@
       planRoute, doSearch, setFollowing, canvasPoint, gesture, glView, glOn, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
       sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
-      saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassKey, hipassNums, hipassLayout, laneNums, laneStripHtml, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, tollParts, arrowSpan, routeStyle: ROUTE_STYLE, trafficPal, roundRoute, setCarIcon, carIcons: CAR_ICONS, parking, parkState, setParkingData, loadParking, evalParking, rest, setRestData, loadRest, ensureRouteRest, renderRest, placeBase, findParking, renderTurnArrow,
+      saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassKey, hipassNums, hipassLayout, laneNums, laneStripHtml, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, icoBase, pickImg, iconPicks: ICON_PICKS, tollParts, arrowSpan, routeStyle: ROUTE_STYLE, trafficPal, roundRoute, setCarIcon, carIcons: CAR_ICONS, parking, parkState, setParkingData, loadParking, evalParking, rest, setRestData, loadRest, ensureRouteRest, renderRest, placeBase, findParking, renderTurnArrow,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },

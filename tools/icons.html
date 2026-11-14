@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>아이콘 관리 (내부)</title>
+<style>
+  :root { --bg: #15181d; --card: #1e2229; --tile: #262b33; --line: #323843; --fg: #eef1f5; --sub: #9aa3af; --accent: #03c75a; --warn: #ff8d00; }
+  body.light { --bg: #eef1f4; --card: #ffffff; --tile: #f3f5f8; --line: #d9dee5; --fg: #1b1f24; --sub: #5d6773; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 Pretendard, system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  header { position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+  header h1 { font-size: 18px; margin: 0 8px 0 0; }
+  header .ver { color: var(--sub); font-size: 12px; }
+  header .sp { flex: 1; }
+  button.b { border: 1px solid var(--line); background: var(--card); color: var(--fg); border-radius: 10px; padding: 7px 12px; font: inherit; font-weight: 700; cursor: pointer; }
+  button.b:hover { border-color: var(--accent); }
+  main { max-width: 1180px; margin: 0 auto; padding: 16px; }
+  .note { color: var(--sub); margin: 0 0 16px; }
+  nav.toc { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+  nav.toc a { color: var(--fg); text-decoration: none; background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; font-weight: 700; font-size: 13px; }
+  section { margin: 0 0 28px; }
+  section h2 { font-size: 16px; margin: 0 0 4px; }
+  section > p { color: var(--sub); margin: 0 0 10px; font-size: 13px; }
+  .row { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; margin-bottom: 8px; display: grid; grid-template-columns: 150px 1fr; gap: 10px; align-items: center; }
+  .row .name b { display: block; font-size: 14px; }
+  .row .name code { color: var(--sub); font-size: 12px; }
+  .row .name .st { display: inline-block; margin-top: 4px; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--tile); color: var(--sub); }
+  .row .name .st.local { background: rgba(3, 199, 90, .16); color: var(--accent); }
+  .tiles { display: flex; flex-wrap: wrap; gap: 8px; }
+  .t { width: 88px; border: 2px solid transparent; border-radius: 12px; background: var(--tile); padding: 6px 4px 4px; text-align: center; cursor: pointer; position: relative; }
+  .t:hover { border-color: var(--line); }
+  .t.on { border-color: var(--accent); background: rgba(3, 199, 90, .12); }
+  .t.ro { cursor: default; opacity: .9; }
+  .t .ic { height: 58px; display: flex; align-items: center; justify-content: center; }
+  .t .ic > * { max-width: 58px; max-height: 58px; width: 58px; height: 58px; object-fit: contain; display: block; }
+  .t.car .ic { height: 72px; }
+  .t.car .ic > * { width: 44px; height: 62px; max-height: 66px; }
+  .t .lb { font-size: 11px; color: var(--sub); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .t.on .lb { color: var(--accent); font-weight: 700; }
+  .t .badge { position: absolute; top: 3px; right: 4px; font-size: 10px; font-weight: 800; color: var(--accent); }
+  .t.pink { outline: 2px dashed var(--warn); cursor: not-allowed; }
+  /* 앱의 안내 아이콘 SVG 는 글자색(currentColor)·선 굵기를 쓰는 것이 있어 앱과 같은 값으로 */
+  .t .ic svg { color: var(--accent); stroke: var(--accent); fill: none; stroke-width: 3.6; stroke-linecap: round; stroke-linejoin: round; }
+  .t .ic svg.ti { stroke: none; }
+  .t .ic svg.tunnel .tn-arch { fill: #6b7280; } .t .ic svg.tunnel .tn-hole { fill: #111827; } .t .ic svg.tunnel .tn-road { fill: #fff; }
+  .t .ic svg[viewBox="0 0 100 88"] { stroke: none; fill: initial; }
+  .t .ic svg.tunnel, .t.car .ic svg { stroke: initial; fill: initial; color: inherit; }
+  .scene { width: 240px; }
+  .scene .ic { height: 150px; } .scene .ic > * { width: 232px; height: 150px; max-width: 232px; max-height: 150px; border-radius: 8px; object-fit: cover; }
+  #out { width: 100%; min-height: 90px; margin-top: 8px; background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 10px; padding: 8px; font: 12px/1.4 ui-monospace, Consolas, monospace; }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #111; color: #fff; padding: 10px 16px; border-radius: 12px; font-weight: 700; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+  @media (max-width: 640px) { .row { grid-template-columns: 1fr; } .t { width: 76px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>아이콘 관리 <span class="ver" id="ver"></span></h1>
+  <span class="sp"></span>
+  <button class="b" id="theme">밝은 바탕으로 보기</button>
+  <button class="b" id="export">선택 내보내기</button>
+  <button class="b" id="reset">이 브라우저 선택 초기화</button>
+</header>
+<main>
+  <p class="note">눌러서 고르면 <b>이 브라우저의 앱</b>(같은 주소)에 바로 적용돼요. 앱 탭은 새로고침하면 바뀌어요.
+    차에도 똑같이 쓰려면 차 브라우저에서 이 페이지를 열어 고르거나, <b>선택 내보내기</b>로 나온 내용을 Claude 에게 주면 모든 기기의 기본으로 올려요.
+    <span id="stat"></span></p>
+  <nav class="toc" id="toc"></nav>
+  <div id="root">불러오는 중…</div>
+  <textarea id="out" hidden readonly></textarea>
+</main>
+<div class="toast" id="toast"></div>
+<iframe id="cat" src="../index.html?catalog" hidden title="앱 아이콘 정의"></iframe>
+<script>
+(() => {
+  'use strict';
+  const $ = (s) => document.querySelector(s);
+  const PICK_KEY = 'tnc.iconPick', CAR_KEY = 'tnc.car';
+  const LABEL = {
+    s: '직진', l: '좌회전', r: '우회전', u: '유턴', sl: '살짝 왼쪽', sr: '살짝 오른쪽', sharp_l: '급좌회전', sharp_r: '급우회전',
+    kl: '왼쪽 길로', kr: '오른쪽 길로', outl: '왼쪽으로 나가기', outr: '오른쪽으로 나가기', outs: '직진으로 나가기',
+    inl: '왼쪽에서 들어가기', inr: '오른쪽에서 들어가기', ins: '직진으로 들어가기',
+    rb: '회전교차로', rb_l: '회전교차로 왼쪽', rb_s: '회전교차로 직진', rb_r: '회전교차로 오른쪽', rb_u: '회전교차로 유턴',
+    over_l: '고가 왼쪽', over_r: '고가 오른쪽', over_s: '고가 직진', under_l: '지하차도 왼쪽', under_r: '지하차도 오른쪽', under_s: '지하차도 직진',
+    side_l: '지하차도 옆길 왼쪽', side_r: '지하차도 옆길 오른쪽', rest: '휴게소', ferry: '여객선', toll: '톨게이트', goal: '도착', via: '경유지',
+    tunnel: '터널', hipass: '하이패스', jc_l: '분기점 왼쪽', jc_r: '분기점 오른쪽', junc_fork_r: '분기점 그림(갈림길)', junc_exit_r: '분기점 그림(출구)',
+  };
+  const SRC = { s: 's.webp', l: 'l.webp', r: 'r.webp', u: 'u.webp', sl: 'sl.png', sr: 'sr.webp', rb: 'rb.webp', kl: 'kl.webp', kr: 'kr.webp',
+    outl: 'outl.webp', outr: 'outr.webp', inl: 'inl.webp', inr: 'inr.webp', toll: 'toll.webp', goal: 'goal.webp', via: 'via.webp' };
+  const MODEL = { flare: 'Flare', sunburst: 'Sunburst', gptdev: 'GPT2 dev', gpt15: 'GPT1.5', gpt: 'GPT2', s55: 'Seedream', s50p: 'Seedream Pro', nb2: 'NanoBanana' };
+  const esc = (x) => String(x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const toast = (m) => { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 1800); };
+  const load = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  const save = (k, v) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { toast('이 브라우저는 저장이 막혀 있어요'); } };
+  let local = {};
+  try { local = JSON.parse(load(PICK_KEY) || '{}') || {}; } catch (e) { local = {}; }
+  let cat = null, man = { items: [] };
+
+  // 칸의 지금 선택: 이 브라우저에서 고른 것 > 저장소 기본 > 앱 그림('-')
+  const repo = () => (cat && cat.repoPicks) || {};
+  const current = (slot) => (slot in local ? local[slot] : (repo()[slot] || '-'));
+  function setPick(slot, file) {
+    if (file === (repo()[slot] || '-')) delete local[slot]; else local[slot] = file;
+    save(PICK_KEY, Object.keys(local).length ? JSON.stringify(local) : null);
+    render();
+    toast((LABEL[slot] || slot) + ': ' + (file === '-' ? '앱 기본 그림' : file.replace(/\.webp$/, '')) + ' · 앱을 새로고침하면 적용');
+  }
+  const cands = (slot) => man.items.filter((x) => x.slot === slot);
+  const img = (f) => '<img src="../img/ai/' + esc(f) + '?v=' + encodeURIComponent(man.date || '') + '" alt="" loading="lazy">';
+  function tile(o) {
+    return '<div class="t' + (o.cls ? ' ' + o.cls : '') + (o.on ? ' on' : '') + '"' + (o.slot ? ' data-slot="' + esc(o.slot) + '" data-file="' + esc(o.file) + '"' : '') +
+      (o.title ? ' title="' + esc(o.title) + '"' : '') + '>' + (o.badge ? '<span class="badge">' + o.badge + '</span>' : '') +
+      '<div class="ic">' + o.html + '</div><div class="lb">' + esc(o.label) + '</div></div>';
+  }
+  function slotRow(slot, label, appHtml, extra) {
+    const cur = current(slot), rp = repo()[slot] || '-';
+    let t = tile({ slot, file: '-', on: cur === '-', html: appHtml || '<span style="color:var(--sub)">없음</span>', label: '앱 그림', badge: rp === '-' ? '기본' : '' });
+    cands(slot).forEach((c) => {
+      t += tile({ slot: c.pink > 30 ? '' : slot, file: c.file, on: cur === c.file, html: img(c.file), cls: c.pink > 30 ? 'pink' : '',
+        label: (MODEL[c.model] || c.model) + ' ' + c.n, badge: rp === c.file ? '기본' : '', title: c.pink > 30 ? '분홍 기가 남아 고를 수 없어요' : c.file });
+    });
+    if (extra) t += extra;
+    const st = slot in local ? '<span class="st local">이 브라우저에서 바꿈</span>' : (rp !== '-' ? '<span class="st">AI 기본</span>' : '');
+    return '<div class="row"><div class="name"><b>' + esc(label) + '</b><code>' + esc(slot) + '</code><br>' + st + '</div><div class="tiles">' + t + '</div></div>';
+  }
+  function carRow() {
+    const cur = load(CAR_KEY) || 'cute';
+    let t = '';
+    cat.cars.forEach((c) => { t += tile({ cls: 'car', slot: '@car', file: c.id, on: cur === c.id, html: c.html, label: c.name }); });
+    man.items.filter((x) => x.kind === 'car').forEach((c) => {
+      const id = 'ai:' + c.file;
+      t += tile({ cls: 'car' + (c.pink > 30 ? ' pink' : ''), slot: c.pink > 30 ? '' : '@car', file: id, on: cur === id, html: img(c.file), label: c.slot.replace(/^car_|^cute_/, '') + ' ' + (MODEL[c.model] || c.model) + ' ' + c.n, title: c.file });
+    });
+    return '<div class="row"><div class="name"><b>내 차 아이콘</b><code>tnc.car</code><br><span class="st">설정의 자동차 아이콘과 같은 값</span></div><div class="tiles">' + t + '</div></div>';
+  }
+  function render() {
+    const sec = [];
+    const signs = cat.signs.map((x) => slotRow(x.k, x.label, x.html)).join('');
+    sec.push(['signs', '주의 표지', '도로 주의 표지 카드(과속방지턱은 지도 표시도)에 쓰는 그림이에요.', signs]);
+    sec.push(['tunnel', '터널', '길안내 패널의 터널 줄 아이콘이에요.', slotRow('tunnel', '터널', cat.tunnel.html)]);
+    const guide = cat.guide.map((g) => {
+      const src = SRC[g.k] ? tile({ cls: 'ro', html: '<img src="icon-src/' + SRC[g.k] + '" alt="">', label: '원본(직접 만든 AI)' }) : '';
+      const lb = (LABEL[g.k] || g.k) + (g.borrowed ? ' · 지금은 ' + (LABEL[g.borrowed] || g.borrowed) + ' 그림을 빌려 씀' : '');
+      return slotRow(g.k, lb, g.html, src);
+    }).join('');
+    sec.push(['guide', '안내 아이콘', '길안내 패널의 다음 회전 아이콘이에요. 앱 그림은 직접 만든 AI 그림을 SVG 로 딴 것이에요.', guide]);
+    sec.push(['car', '내 차', '지도 위 내 차 모양이에요. 고르면 이 브라우저의 설정 → 자동차 아이콘이 바뀌어요.', carRow()]);
+    const known = new Set(cat.guide.map((g) => g.k).concat(cat.signs.map((x) => x.k), ['tunnel']));
+    const rest = [...new Set(man.items.filter((x) => x.kind !== 'car' && !known.has(x.slot)).map((x) => x.slot))];
+    if (rest.length) {
+      const html = rest.map((slot) => {
+        const t = cands(slot).map((c) => tile({ cls: 'ro' + (c.kind === 'scene' ? ' scene' : ''), html: img(c.file), label: (MODEL[c.model] || c.model) + ' ' + c.n, title: c.file })).join('');
+        return '<div class="row"><div class="name"><b>' + esc(LABEL[slot] || slot) + '</b><code>' + esc(slot) + '</code></div><div class="tiles">' + t + '</div></div>';
+      }).join('');
+      sec.push(['etc', '앱에서 아직 안 쓰는 칸', '만들어 둔 후보예요. 앱에 자리가 생기면 여기서 고를 수 있게 옮겨요.', html]);
+    }
+    $('#toc').innerHTML = sec.map((x) => '<a href="#s-' + x[0] + '">' + x[1] + '</a>').join('');
+    $('#root').innerHTML = sec.map((x) => '<section id="s-' + x[0] + '"><h2>' + x[1] + '</h2><p>' + x[2] + '</p>' + x[3] + '</section>').join('');
+    const n = Object.keys(local).length;
+    $('#stat').textContent = 'AI 후보 ' + man.items.length + '개' + (man.date ? ' (' + man.date + ' 기준)' : '') + ' · 이 브라우저에서 바꾼 칸 ' + n + '개';
+  }
+  $('#root').addEventListener('click', (e) => {
+    const t = e.target.closest('.t[data-slot]');
+    if (!t || !t.dataset.slot) return;
+    if (t.dataset.slot === '@car') {
+      const id = t.dataset.file;
+      save(CAR_KEY, id === 'cute' ? null : id);
+      render();
+      toast('내 차: ' + (id.startsWith('ai:') ? id.slice(3).replace(/\.webp$/, '') : id) + ' · 앱을 새로고침하면 적용');
+      return;
+    }
+    setPick(t.dataset.slot, t.dataset.file);
+  });
+  $('#theme').onclick = () => { const l = document.body.classList.toggle('light'); $('#theme').textContent = l ? '어두운 바탕으로 보기' : '밝은 바탕으로 보기'; };
+  $('#reset').onclick = () => { if (!confirm('이 브라우저에서 고른 아이콘을 모두 지우고 기본으로 되돌릴까요? (내 차 아이콘은 그대로)')) return; local = {}; save(PICK_KEY, null); render(); toast('기본으로 되돌렸어요'); };
+  $('#export').onclick = async () => {
+    const out = { picks: Object.assign({}, repo(), local), car: load(CAR_KEY) || 'cute' };
+    Object.keys(out.picks).forEach((k) => { if (out.picks[k] === '-') delete out.picks[k]; });
+    const text = '아이콘 기본값으로 올려 줘: ' + JSON.stringify(out);
+    const ta = $('#out'); ta.hidden = false; ta.value = text; ta.select();
+    try { await navigator.clipboard.writeText(text); toast('복사했어요 · Claude 에게 붙여 넣으면 돼요'); } catch (e) { toast('아래 칸의 글을 복사해 주세요'); }
+  };
+  async function start() {
+    try { man = await (await fetch('../img/ai/manifest.json?t=' + Date.now(), { cache: 'no-store' })).json(); } catch (e) { man = { items: [] }; }
+    const fr = $('#cat');
+    for (let i = 0; i < 200 && !cat; i++) {
+      try { cat = fr.contentWindow && fr.contentWindow.__tncCatalog; } catch (e) { cat = null; }
+      if (!cat) await new Promise((r) => setTimeout(r, 100));
+    }
+    if (!cat) { $('#root').textContent = '앱 아이콘 정의를 못 불러왔어요 (../index.html?catalog). 새로고침해 보세요.'; return; }
+    $('#ver').textContent = '앱 ' + cat.version;
+    render();
+    window.__icons = { cat: () => cat, man: () => man, local: () => local };   // 테스트용
+  }
+  start();
+})();
+</script>
+</body>
+</html>

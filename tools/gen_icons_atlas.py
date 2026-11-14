@@ -323,6 +323,14 @@ def main():
     if a.dry:
         return
     key = os.environ.get('ATLAS_API_KEY') or os.environ.get('ATLASCLOUD_API_KEY')
+    if not key and os.name == 'nt':
+        # setx 로 저장한 키는 이미 열려 있던 창에는 안 보인다: 사용자 환경 변수(레지스트리)에서 직접 읽는다
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, 'Environment') as hk:
+                key = winreg.QueryValueEx(hk, 'ATLAS_API_KEY')[0]
+        except OSError:
+            key = None
     if not key:
         sys.exit('ATLAS_API_KEY 환경 변수가 없습니다. PowerShell: $env:ATLAS_API_KEY = "<키>" 를 먼저 입력하세요.')
     os.makedirs(OUT, exist_ok=True)

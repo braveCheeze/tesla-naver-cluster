@@ -1,0 +1,485 @@
+{
+ "date": "2026-11-14",
+ "items": [
+  {
+   "slot": "car_my",
+   "kind": "car",
+   "file": "car_my__flare__1.webp",
+   "model": "flare",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "car_my",
+   "kind": "car",
+   "file": "car_my__flare__2.webp",
+   "model": "flare",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "car_my",
+   "kind": "car",
+   "file": "car_my__sunburst__1.webp",
+   "model": "sunburst",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "car_my",
+   "kind": "car",
+   "file": "car_my__sunburst__2.webp",
+   "model": "sunburst",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "car_red",
+   "kind": "car",
+   "file": "car_red__flare__1.webp",
+   "model": "flare",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "car_red",
+   "kind": "car",
+   "file": "car_red__flare__2.webp",
+   "model": "flare",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "car_red",
+   "kind": "car",
+   "file": "car_red__sunburst__1.webp",
+   "model": "sunburst",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "car_red",
+   "kind": "car",
+   "file": "car_red__sunburst__2.webp",
+   "model": "sunburst",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "car_white",
+   "kind": "car",
+   "file": "car_white__flare__1.webp",
+   "model": "flare",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "car_white",
+   "kind": "car",
+   "file": "car_white__flare__2.webp",
+   "model": "flare",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "car_white",
+   "kind": "car",
+   "file": "car_white__sunburst__1.webp",
+   "model": "sunburst",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "car_white",
+   "kind": "car",
+   "file": "car_white__sunburst__2.webp",
+   "model": "sunburst",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "sign_animal",
+   "kind": "sign",
+   "file": "sign_animal__flare__1.webp",
+   "model": "flare",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "sign_animal",
+   "kind": "sign",
+   "file": "sign_animal__flare__2.webp",
+   "model": "flare",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "sign_animal",
+   "kind": "sign",
+   "file": "sign_animal__sunburst__1.webp",
+   "model": "sunburst",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "sign_animal",
+   "kind": "sign",
+   "file": "sign_animal__sunburst__2.webp",
+   "model": "sunburst",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "sign_bump",
+   "kind": "sign",
+   "file": "sign_bump__flare__1.webp",
+   "model": "flare",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "sign_bump",
+   "kind": "sign",
+   "file": "sign_bump__flare__2.webp",
+   "model": "flare",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "sign_bump",
+   "kind": "sign",
+   "file": "sign_bump__sunburst__1.webp",
+   "model": "sunburst",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "sign_bump",
+   "kind": "sign",
+   "file": "sign_bump__sunburst__2.webp",
+   "model": "sunburst",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "sign_danger",
+   "kind": "sign",
+   "file": "sign_danger__flare__1.webp",
+   "model": "flare",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "sign_danger",
+   "kind": "sign",
+   "file": "sign_danger__flare__2.webp",
+   "model": "flare",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "sign_danger",
+   "kind": "sign",
+   "file": "sign_danger__sunburst__1.webp",
+   "model": "sunburst",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "sign_danger",
+   "kind": "sign",
+   "file": "sign_danger__sunburst__2.webp",
+   "model": "sunburst",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "sign_down",
+   "kind": "sign",
+   "file": "sign_down__flare__1.webp",
+   "model": "flare",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "sign_down",
+   "kind": "sign",
+   "file": "sign_down__flare__2.webp",
+   "model": "flare",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "sign_down",
+   "kind": "sign",
+   "file": "sign_down__sunburst__1.webp",
+   "model": "sunburst",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "sign_down",
+   "kind": "sign",
+   "file": "sign_down__sunburst__2.webp",
+   "model": "sunburst",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "sign_narrow",
+   "kind": "sign",
+   "file": "sign_narrow__flare__1.webp",
+   "model": "flare",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "sign_narrow",
+   "kind": "sign",
+   "file": "sign_narrow__flare__2.webp",
+   "model": "flare",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "sign_narrow",
+   "kind": "sign",
+   "file": "sign_narrow__sunburst__1.webp",
+   "model": "sunburst",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "sign_narrow",
+   "kind": "sign",
+   "file": "sign_narrow__sunburst__2.webp",
+   "model": "sunburst",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "sign_rail",
+   "kind": "sign",
+   "file": "sign_rail__flare__1.webp",
+   "model": "flare",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "sign_rail",
+   "kind": "sign",
+   "file": "sign_rail__flare__2.webp",
+   "model": "flare",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "sign_rail",
+   "kind": "sign",
+   "file": "sign_rail__sunburst__1.webp",
+   "model": "sunburst",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "sign_rail",
+   "kind": "sign",
+   "file": "sign_rail__sunburst__2.webp",
+   "model": "sunburst",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "sign_rock",
+   "kind": "sign",
+   "file": "sign_rock__flare__1.webp",
+   "model": "flare",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "sign_rock",
+   "kind": "sign",
+   "file": "sign_rock__flare__2.webp",
+   "model": "flare",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "sign_rock",
+   "kind": "sign",
+   "file": "sign_rock__sunburst__1.webp",
+   "model": "sunburst",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "sign_rock",
+   "kind": "sign",
+   "file": "sign_rock__sunburst__2.webp",
+   "model": "sunburst",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "sign_rough",
+   "kind": "sign",
+   "file": "sign_rough__flare__1.webp",
+   "model": "flare",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "sign_rough",
+   "kind": "sign",
+   "file": "sign_rough__flare__2.webp",
+   "model": "flare",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "sign_rough",
+   "kind": "sign",
+   "file": "sign_rough__sunburst__1.webp",
+   "model": "sunburst",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "sign_rough",
+   "kind": "sign",
+   "file": "sign_rough__sunburst__2.webp",
+   "model": "sunburst",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "sign_slip",
+   "kind": "sign",
+   "file": "sign_slip__flare__1.webp",
+   "model": "flare",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "sign_slip",
+   "kind": "sign",
+   "file": "sign_slip__flare__2.webp",
+   "model": "flare",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "sign_slip",
+   "kind": "sign",
+   "file": "sign_slip__sunburst__1.webp",
+   "model": "sunburst",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "sign_slip",
+   "kind": "sign",
+   "file": "sign_slip__sunburst__2.webp",
+   "model": "sunburst",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "sign_up",
+   "kind": "sign",
+   "file": "sign_up__flare__1.webp",
+   "model": "flare",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "sign_up",
+   "kind": "sign",
+   "file": "sign_up__flare__2.webp",
+   "model": "flare",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "sign_up",
+   "kind": "sign",
+   "file": "sign_up__sunburst__1.webp",
+   "model": "sunburst",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "sign_up",
+   "kind": "sign",
+   "file": "sign_up__sunburst__2.webp",
+   "model": "sunburst",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "sign_wind",
+   "kind": "sign",
+   "file": "sign_wind__flare__1.webp",
+   "model": "flare",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "sign_wind",
+   "kind": "sign",
+   "file": "sign_wind__flare__2.webp",
+   "model": "flare",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "sign_wind",
+   "kind": "sign",
+   "file": "sign_wind__sunburst__1.webp",
+   "model": "sunburst",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "sign_wind",
+   "kind": "sign",
+   "file": "sign_wind__sunburst__2.webp",
+   "model": "sunburst",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "tunnel",
+   "kind": "icon",
+   "file": "tunnel__flare__1.webp",
+   "model": "flare",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "tunnel",
+   "kind": "icon",
+   "file": "tunnel__flare__2.webp",
+   "model": "flare",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "tunnel",
+   "kind": "icon",
+   "file": "tunnel__sunburst__1.webp",
+   "model": "sunburst",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "tunnel",
+   "kind": "icon",
+   "file": "tunnel__sunburst__2.webp",
+   "model": "sunburst",
+   "n": 2,
+   "pink": 0
+  }
+ ]
+}

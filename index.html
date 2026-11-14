@@ -1039,7 +1039,7 @@
      경고 묶음 안(단속 경고 밑)에 작은 표지 + 거리, 지도에는 경로 위 방지턱을 작은 삼각 표지로 (지도를 돌려도 똑바로) */
   .bumpcard { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 700; }
   .bump-sign { flex: none; width: 34px; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .35)); }
-  .bump-sign svg { width: 34px; height: auto; display: block; }
+  .bump-sign svg, .bump-sign img { width: 34px; height: auto; display: block; }
   .bumpcard b { font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; }
   #app.tesla .bumpcard { color: var(--ov-fg); }
   .signcard .bump-sign { width: 38px; }
@@ -1055,6 +1055,7 @@
   .parkmk { width: 18px; height: 18px; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .35)); }
   /* 설정: 자동차 아이콘 고르기 (네이버 지도처럼 그림을 눌러 고른다) */
   .opt-sub { margin: 12px 0 6px; font-size: 14px; font-weight: 800; }
+  .opt-link { display: block; margin: 10px 0 4px; font-size: 14px; font-weight: 700; color: #03c75a; text-decoration: none; }
   .caricons { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 8px; }
   body:has(#app.tesla) #carIcons button.ci, #carIcons button.ci { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 4px 8px; border-radius: 12px;
     border: 2px solid transparent; color: inherit; font-size: 12px; font-weight: 700; cursor: pointer; min-height: 0; }
@@ -1076,9 +1077,9 @@
   /* 경로 카드가 떠 있으면 아래 위치 띠는 숨긴다 (반투명 카드 밑으로 글자가 비쳐 '안내 시작' 위에 겹쳐 보였다) */
   #app:has(#routeCard:not([hidden])) #roadName { opacity: 0; pointer-events: none; }
   .parkmk svg { width: 18px; height: 18px; display: block; }
-  .signcard .bump-sign svg { width: 38px; }
+  .signcard .bump-sign svg, .signcard .bump-sign img { width: 38px; }
   .bumpmk { width: 22px; height: 20px; pointer-events: none; }
-  .bumpmk svg { width: 22px; height: 20px; display: block; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .45)); }
+  .bumpmk svg, .bumpmk img { width: 22px; height: 20px; display: block; object-fit: contain; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .45)); }
   #map.drive .bumpmk { transform: rotate(var(--crot)); transition: transform .9s linear; }
   #map.snap .bumpmk { transition: none !important; }
   /* ================= 그다음 안내 칸 (2026-11-14 요청: '우회전하고 도착' 처럼) =================
@@ -1152,7 +1153,7 @@
     position: relative; display: flex; align-items: center; gap: 8px; padding: 5px 14px;
     border-top: 1px solid rgba(255,255,255,.08); font-variant-numeric: tabular-nums;
   }
-  .tunnelrow .tn-icon, .tunnelrow .tn-icon svg { width: 26px; height: 26px; flex: none; display: block; }
+  .tunnelrow .tn-icon, .tunnelrow .tn-icon svg, .tunnelrow .tn-icon img { width: 26px; height: 26px; flex: none; display: block; object-fit: contain; }
   .tunnelrow b { font-size: 19px; font-weight: 800; flex: none; }
   .tunnelrow #tunnelText { min-width: 0; font-size: 14px; font-weight: 600; opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tn-arch { fill: #4b5563; } .tn-hole { fill: #1f2937; } .tn-road { fill: #fff; }
@@ -1312,6 +1313,8 @@
   /* ---------- 사용자가 그린 길안내 아이콘 (icons.js, 2026-11-14) ----------
      화살표는 한 색(currentColor)이라 패널 초록을 따른다. 도로·톨게이트·핀은 그림 색 그대로 */
   .turnicon svg.ti, .nexticon svg.ti { stroke: none; color: #fff; }
+  /* 관리 페이지에서 고른 AI 안내 아이콘(그림 파일)도 같은 자리·크기로 */
+  .turnicon img.ti, .nexticon img.ti { width: 100%; height: 100%; display: block; object-fit: contain; }
   #app.tesla .turnicon svg.ti, #app.tesla .nexticon svg.ti { color: var(--nv-green); stroke: none; }
   /* 밤(어두운 패널): 어두운 도로를 조금 밝게 */
   body:has(#app.tesla):has(#map.night) svg.ti .rd { fill: #5b6676; }
@@ -1549,6 +1552,7 @@
     </select>
     <p class="hint">자동이면 지금 위치의 해 지는 시각에 맞춰 지도를 어둡게 바꿉니다. 지도 위 달·해 버튼으로도 자동 → 항상 어둡게 → 항상 밝게 순서로 바꿀 수 있습니다.</p>
     <label class="check"><input type="checkbox" id="optHup"> 진행 방향이 위로</label>
+    <a id="iconAdmin" class="opt-link" href="tools/icons.html" target="_blank" rel="noopener" hidden>아이콘 관리 (내부) →</a>
     <div class="opt-sub">자동차 아이콘</div>
     <div id="carIcons" class="caricons" role="group" aria-label="자동차 아이콘"></div>
     <label class="check"><input type="checkbox" id="optGl"> 벡터 지도 (지도를 돌려도 글자가 똑바로 · 밤에는 네이버 다크 지도)</label>
@@ -1587,7 +1591,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.14-99"></script>
-<script src="app.js?v=2026.11.14-99"></script>
+<script src="icons.js?v=2026.11.14-100"></script>
+<script src="img/ai/picks.js?v=2026.11.14-100"></script>
+<script src="app.js?v=2026.11.14-100"></script>
 </body>
 </html>
