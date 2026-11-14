@@ -40,7 +40,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-31'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-32'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -1132,7 +1132,16 @@
         $('#ztLabel').textContent = zone === 'kid' ? '어린이보호' : '노인보호';
         $('#ztLimit').textContent = speedCam ? tg.c[2] : '신호';
       }
+      // 테슬라 모드: 과속 정보 밑에 작은 주의 표지 (CSS 가 테슬라 모드에서만 보여 준다)
+      const zb = $('#zoneBadge');
+      zb.hidden = !zone;
+      if (zone && zb.dataset.zone !== zone) {
+        $('#zbSign').innerHTML = zone === 'kid' ? SIGN_KID : SIGN_ELDER;
+        $('#zbLabel').textContent = zone === 'kid' ? '어린이 조심' : '어르신 조심';
+        zb.dataset.zone = zone;
+      }
     }
+    if (card.hidden) $('#zoneBadge').hidden = true;
     renderSection();
     renderCamAvg();
     renderMySpeed();

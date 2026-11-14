@@ -684,9 +684,6 @@
   #app.tesla .camnext { background: none; border: 0; padding: 0; color: #eef1f5; font-size: 15px; font-weight: 700; }
   #app.tesla .toll-sub { color: #f2f6ff; font-weight: 700; }
   #app.tesla .toll-hint { color: #d6e6ff; }
-  #app.tesla .camcard.zonecam { width: 150px; }
-  #app.tesla .zt-dist { font-size: 26px; padding: 7px 6px 6px; }
-  #app.tesla .zt-limit { font-size: 42px; }
 
   /* 경로 막대: 오른쪽 끝에 얇은 띠로 */
   #app.tesla .rstrip { left: auto; right: 6px; top: 104px; bottom: auto; height: min(300px, calc(100% - 180px)); width: 34px; }
@@ -738,8 +735,12 @@
   #app.tesla .clock { font-size: 42px; }
   #app.tesla .date { font-size: 16px; font-weight: 800; }
   #app.tesla .weather { top: 84px; font-size: 15px; font-weight: 700; }
-  #app.tesla .weather b { font-size: 19px; }
+  #app.tesla .weather b { font-size: 19px; color: var(--ov-fg); }
   #app.tesla .rstrip { top: 116px; }
+  /* 오른쪽 가장자리에 너무 붙지 않게: 시계·날씨·경로 막대·GPS·확대 버튼을 안쪽으로 */
+  #app.tesla .timebox, #app.tesla .weather { right: 30px; }
+  #app.tesla .rstrip { right: 24px; }
+  #app.tesla .gps { right: 26px; }
   /* 왼쪽 아래: 나침반·주행 기록 크게 */
   #app.tesla .trip { gap: 4px 22px; }
   #app.tesla .stat .k { font-size: 13px; font-weight: 800; }
@@ -748,13 +749,17 @@
   #app.tesla .heading { bottom: 104px; font-size: 17px; font-weight: 800; }
   #app.tesla .compass { width: 36px; height: 36px; }
   #app.tesla .compass svg { width: 20px; height: 20px; }
-  /* 어린이·노인 보호구역 표지는 조금 작게 */
-  #app.tesla .camcard.zonecam { width: 112px; }
-  #app.tesla .zt-sign svg { max-width: 104px; }
-  #app.tesla .zt-dist { font-size: 20px; padding: 6px 4px 5px; }
-  #app.tesla .zt-label { font-size: 13px; }
-  #app.tesla .zt-limit { font-size: 32px; }
-  #app.tesla .zt-body { padding: 5px 4px 7px; }
+  /* 어린이·노인 보호구역 단속: 단속이 우선. 맨 위는 보통 과속 단속처럼(제한속도·거리·게이지), 그 밑에 내 속도,
+     맨 밑에 작은 주의 표지 아이콘 + '어린이 조심'. 큰 표지 타일은 테슬라 모드에서 쓰지 않는다 */
+  #app.tesla .camcard.zonecam { display: flex; width: auto; }
+  #app.tesla .camcard.zonecam .cam-sign { display: grid; }
+  #app.tesla .camcard.zonecam .cam-info { display: block; }
+  #app.tesla .camcard.zonecam .zone-tile { display: none; }
+  .zonebadge { display: none; }
+  #app.tesla .zonebadge:not([hidden]) { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; }
+  #app.tesla .zb-sign { flex: none; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, .35)); }
+  #app.tesla .zb-sign svg { width: 30px; height: auto; display: block; }
+  #app.tesla .zonebadge b { font-size: 15px; font-weight: 800; }
   /* 내 속도: 단속 경고 바로 밑. 제한을 넘으면 빨간 바탕에 흰 글씨로 눈에 띄게 */
   .myspeed { display: none; }
   #app.tesla .myspeed:not([hidden]) {
@@ -772,7 +777,7 @@
   #app.tesla .btn { width: 40px; height: 40px; border-radius: 11px; }
   #app.tesla .btn svg { width: 20px; height: 20px; }
   #app.tesla .topctrls, #app.tesla .ctrls { gap: 8px; }
-  #app.tesla .ctrls { right: 48px; }
+  #app.tesla .ctrls { right: 66px; }
   #app.tesla .searchbtn { height: 40px; font-size: 15px; padding: 0 14px 0 11px; gap: 7px; border-radius: 12px; }
   #app.tesla .searchbtn svg { width: 18px; height: 18px; }
 </style>
@@ -816,6 +821,8 @@
     </div>
     <!-- 테슬라 모드: 단속 경고가 떠 있으면 내 속도를 함께 (제한을 넘으면 빨갛게) -->
     <div id="mySpeed" class="myspeed" hidden><span>내 속도</span><b id="mySpeedVal">0</b><i>km/h</i><em id="mySpeedLim"></em></div>
+    <!-- 테슬라 모드: 보호구역 단속이면 과속 정보 밑에 작은 주의 표지 (단속이 우선) -->
+    <div id="zoneBadge" class="zonebadge" hidden><span id="zbSign" class="zb-sign"></span><b id="zbLabel">어린이 조심</b></div>
     <div id="secCard" class="seccard" hidden>
       <div class="sec-top">구간단속 · 제한 <b id="secLimit">100</b> km/h</div>
       <div class="sec-avg"><span id="secAvg">-</span><small> km/h 평균</small></div>
@@ -983,6 +990,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-31"></script>
+<script src="app.js?v=2026.11.14-32"></script>
 </body>
 </html>

@@ -1244,7 +1244,7 @@
   }
 
   // S24: 테슬라 모드 배치 — 시계 오른쪽 위, 주소 가운데 아래, GPS 오른쪽 아래, 나침반 왼쪽 아래,
-  //      경로 막대 오른쪽 끝(얇게), 단속 경고는 길안내 패널 바로 밑, 버튼은 70% 크기(40px)
+  //      경로 막대 오른쪽 끝(얇게, 가장자리에서 조금 띄워서), 단속 경고는 길안내 패널 바로 밑, 버튼은 70% 크기(40px)
   async function s24() {
     const t = T(), box = document.getElementById('optTesla'), prev = t.prefs.tesla;
     const set = (on) => { box.checked = on; box.dispatchEvent(new Event('change')); };
@@ -1266,7 +1266,9 @@
         gpsBottomRight: gps.right > app.right - 40 && gps.bottom > app.bottom - 60,
         compassBottomLeft: head.left < app.left + 40 && head.bottom > app.bottom - 140, // 나침반은 맨 아래 주행 기록 바로 위
         tripAtBottom: document.querySelector('.trip').getBoundingClientRect().bottom > app.bottom - 30 && head.bottom <= document.querySelector('.trip').getBoundingClientRect().top + 6,
-        stripRight: strip.left > app.right - 60 && bar.width <= 8,
+        stripRight: strip.left > app.right - 70 && bar.width <= 8,
+        // 오른쪽 가장자리에서 띄우기: 시계·경로 막대가 오른쪽 끝에 붙지 않는다
+        rightGap: app.right - clock.right >= 24 && app.right - strip.right >= 20,
         alertsUnderNav: alerts.top >= np.bottom && alerts.top - np.bottom < 30 && alerts.left < app.left + 40,
         buttons70: btn.width >= 36 && btn.width <= 42,
         // 야간·전체화면·설정 버튼은 길안내 패널 바로 오른쪽, 패널 위쪽 높이에
@@ -1281,7 +1283,8 @@
   }
 
   // S34: 테슬라 모드 — 단속 경고 밑에 '내 속도 / 제한'. 제한을 넘으면 빨갛게, 안 넘으면 평소색, 단속이 없으면 숨김.
-  //      어린이보호 타일은 작게(112px 이하). 테슬라 모드가 꺼져 있으면 안 보인다(왼쪽 속도계가 있으니까)
+  //      보호구역 단속은 단속이 우선: 맨 위 보통 과속 단속(제한 표지·거리) → 내 속도 → 맨 밑 작은 '어린이 조심' 표지.
+  //      큰 보호구역 타일은 안 쓴다. 테슬라 모드가 꺼져 있으면 내 속도는 안 보인다(왼쪽 속도계가 있으니까)
   async function s34() {
     const t = T(), C = CAM_SCHOOL, box = document.getElementById('optTesla'), prev = t.prefs.tesla;
     const set = (on) => { box.checked = on; box.dispatchEvent(new Event('change')); };
@@ -1293,8 +1296,10 @@
         feed(dest(C, 180, 600 - s), kmh / 3.6, 0);
         const tg = t.camState.target;
         if (tg && sameCam(tg.c, C)) {
-          const tile = document.querySelector('#camCard .zone-tile');
-          o = { shown: shown(), over: hasCls('#mySpeed', 'over'), val: text('#mySpeedVal'), lim: text('#mySpeedLim'), tileW: tile ? r0(tile.getBoundingClientRect().width) : null };
+          const box = (sel) => { const e = document.querySelector(sel); return e && e.getClientRects().length ? e.getBoundingClientRect() : null; };
+          const sign = box('#camCard .cam-sign'), my = box('#mySpeed'), zb = box('#zoneBadge'), tile = box('#camCard .zone-tile'), icon = box('#zbSign svg');
+          o = { shown: shown(), over: hasCls('#mySpeed', 'over'), val: text('#mySpeedVal'), lim: text('#mySpeedLim'),
+            order: !!sign && !!my && !!zb && sign.top < my.top && my.bottom <= zb.top + 1, badge: text('#zbLabel'), iconH: icon ? r0(icon.height) : null, bigTile: !!tile };
         }
       }
       return o;
@@ -1314,9 +1319,10 @@
       set(prev);
       softReset();
     }
-    const okFast = !!fast && fast.shown && fast.over && fast.val === '45' && /제한 30/.test(fast.lim) && fast.tileW !== null && fast.tileW <= 112;
+    const okFast = !!fast && fast.shown && fast.over && fast.val === '45' && /제한 30/.test(fast.lim) && fast.order && fast.badge === '어린이 조심' &&
+      fast.iconH !== null && fast.iconH <= 32 && !fast.bigTile;
     const okSlow = !!slow && slow.shown && !slow.over && slow.val === '25';
-    const okOff = !!off && !off.shown;
+    const okOff = !!off && !off.shown && off.bigTile;
     return {
       pass: okFast && okSlow && !none && okOff,
       detail: '45 km/h: ' + JSON.stringify(fast) + (okFast ? '✓' : '✗') + ' | 25 km/h: ' + JSON.stringify(slow) + (okSlow ? '✓' : '✗') +
@@ -1656,7 +1662,7 @@
     { id: 'S31', name: 'S31 weather icons', fn: s31 },
     { id: 'S32', name: 'S32 stopped → north up (labels upright)', fn: s32 },
     { id: 'S33', name: 'S33 parked & untouched → check for new version', fn: s33 },
-    { id: 'S34', name: 'S34 Tesla mode: my speed under the camera alert, red when over', fn: s34 },
+    { id: 'S34', name: 'S34 Tesla mode: camera → my speed → small zone sign, red when over', fn: s34 },
   ];
 
   // ---------------------------------------------------------------- runner
