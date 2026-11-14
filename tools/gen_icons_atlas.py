@@ -16,7 +16,8 @@
   테슬라 앱 차 사진을 tools\icon-src
 ef
 ef_car_app.png 로 저장해 두면 그 느낌을 따라 그린다 (저장소에는 안 올라감)
-- 2026-11-14 다시 그리기(나가기/들어가기·고가·지하차도·옆길 16가지 + 회전교차로 4가지, 디자이너 느낌): --icons redo --per 2  (80장 약 $0.40)
+- 2026-11-14 다시 그리기(나가기/들어가기·고가·지하차도·옆길 16가지 + 회전교차로 4가지, 디자이너 느낌): --icons redo --per 2
+  그림 없이 글로만 그린다(GPT Image 2.6 Flare·Sunburst $0.007, Ideogram v4 $0.025): 120장 약 $1.56
   도로만: --icons roads   회전교차로만: --icons rb   구도 밑그림 다시 그리기: py -I tools\ref_roads.py
 - 옵션: --models flare,sunburst,gpt15   --per 2   --icons over_r,junc_fork_r   --dry (요청 없이 계획과 예상 비용만)
 """
@@ -93,6 +94,27 @@ RB = ('Redraw image 1 as a finished, professional roundabout turn icon, as if ma
       'no text.' + BG + ' ')
 OUT_SH = ' A small interstate-style shield (red top band, blue body, thin white border, white bold letters "%s") in the %s corner.'
 ROAD_STYLE_REF = 'outr.webp'   # 사용자 원본: 그림 느낌
+
+# 2026-11-14 두 번째: 편집(edit) 모델에 밑그림을 넣었더니 밑그림을 조금 다듬은 '거의 그대로'가 나왔다(사용자: '이미지 수정본으로
+# 들어가버려서 원하는 게 안 나온다, 참고 안 하고 만들 수 있나'). → 이 20가지는 그림 없이 글로만(text-to-image) 그린다.
+# 모양새(색·굵기·비율)를 글로 자세히 정해 칸마다 같은 느낌이 나게 하고, 구도는 칸마다 글로 설명한다
+T2I_ROAD = ('Professional flat vector icon for the turn-by-turn panel of a premium car navigation app, designed by a senior icon '
+            'designer (Naver Map / Apple Maps / Tmap quality). Top-down map view of roads. Clean geometric vector shapes, smooth '
+            'bezier curves, perfectly consistent line weights, crisp edges, balanced composition, generous breathing room. '
+            'Visual system: road asphalt dark charcoal #313B42; thin white road edge lines (about 1/45 of the icon width); short '
+            'white dashed lane lines; exactly ONE slim solid white route arrow (about 1/16 of the icon width) with a clean, sharp '
+            'triangular arrowhead. A three-lane road is about 1/4 of the icon width, a one-lane ramp about 1/7. Roads keep a '
+            'constant width and split or merge with smooth, natural tapers like real highway ramps. The drawing fills about 85% '
+            'of the canvas, centered. No perspective, no 3D, no shadows unless described, no gradients, no texture, no outline '
+            'around the whole icon, no text except the letters described.' + BG + ' Layout: ')
+T2I_RB = ('Professional flat vector roundabout turn icon for the turn-by-turn panel of a premium car navigation app, designed by '
+          'a senior icon designer (Naver Map quality). Top-down view. A perfectly round light mint-green ring road (#C9ECD6) '
+          'about half the icon width, four short light mint road stubs (top, bottom, left, right) and a small round island in '
+          'the center; exactly ONE slim solid green arrow (#03C75A) of even width, about 1/14 of the icon width, with a crisp, '
+          'sharp triangular arrowhead, drawn on top of the ring. Right-hand traffic: the arrow comes up the bottom road, joins '
+          'the ring with a smooth curve turning RIGHT, travels counter-clockwise (seen from above) and leaves on the exit road '
+          'with a smooth curve; the arrowhead sits just outside the ring on the exit road and never touches the ring or the '
+          'canvas edge. Flat, no outlines, no shadows, no gradients, no text.' + BG + ' Exit: ')
 # 그림 이름 → (참고 그림: tools/icon-src 기준 경로, 스타일 문장, 내용)
 JOBS = {
     # 고속도로 들어가기·나가기 (지금 앱 그림과 같은 구도: 두툼한 도로, 합류·진출 지점이 가운데)
@@ -251,16 +273,17 @@ for _k in [k for k in _ROADS if k.endswith('_r')]:
 _ROADS['outl'] = _mirror(_ROADS['outr'])     # 방패도 반대쪽 위 모서리로 (top-left ↔ top-right)
 _ROADS['inl'] = _mirror(_ROADS['inr'])
 for _k, _t in _ROADS.items():
-    JOBS[_k] = (('ref/road_%s.png' % _k, ROAD_STYLE_REF), DESIGN, _t)
+    JOBS[_k] = ((), T2I_ROAD, _t)   # 글로만 (밑그림 ref/road_<칸>.png 는 사람이 구도를 보는 용도)
 _RB = {
     'rb_r': 'The arrow enters from the bottom, goes a quarter turn counter-clockwise around the ring and exits to the RIGHT.',
-    'rb_s': 'The arrow enters from the bottom, goes half way around the ring counter-clockwise and exits at the TOP (straight ahead).',
-    'rb_l': 'The arrow enters from the bottom, goes three quarters around the ring counter-clockwise and exits to the LEFT.',
+    'rb_s': 'The arrow enters from the bottom, goes half way around the ring counter-clockwise (along the right side) and exits at the TOP (straight ahead).',
+    'rb_l': 'The arrow enters from the bottom, goes three quarters around the ring counter-clockwise (along the right side, over the top) and exits to the LEFT.',
     'rb_u': 'U-turn: the arrow enters from the bottom slightly right of center, goes all the way around the ring counter-clockwise '
-            'and exits back DOWN at the bottom slightly left of center, arrowhead pointing down; keep the two lines clearly apart.',
+            '(right side, top, left side) and exits back DOWN the bottom road slightly left of center, arrowhead pointing down; '
+            'keep the incoming and outgoing lines clearly apart.',
 }
 for _k, _t in _RB.items():
-    JOBS[_k] = (('ref/road_%s.png' % _k,), RB, _t)
+    JOBS[_k] = ((), T2I_RB, _t)
 ROADS, RBS = list(_ROADS), list(_RB)
 WIDE = {'junc_fork_r', 'junc_exit_r'}
 
@@ -289,10 +312,23 @@ MODELS = {
     's50p': ('bytedance/seedream-v5.0-pro/edit', 0.036,
              lambda p, imgs, wide=False: {'prompt': p, 'images': imgs, 'size': '2048*1152' if wide else '1024*1024',
                                          'output_format': 'png', 'background': 'opaque'}),
+    # 글로만 그리는 모델 (참고 그림을 보내지 않는다)
+    'flare26': ('openai/gpt-image-2.6-flare/text-to-image', 0.007,
+                lambda p, imgs, wide=False: {'prompt': p, 'size': '1536x1024' if wide else '1024x1024', 'quality': 'medium',
+                                             'complexity': 'high', 'background': 'opaque', 'output_format': 'png', 'n': 1}),
+    'sunburst26': ('openai/gpt-image-2.6-sunburst/text-to-image', 0.007,
+                   lambda p, imgs, wide=False: {'prompt': p, 'size': '1536x1024' if wide else '1024x1024', 'quality': 'medium',
+                                                'complexity': 'high', 'background': 'opaque', 'output_format': 'png', 'n': 1}),
+    'ideo': ('ideogram/v4/quality/text-to-image', 0.025,
+             lambda p, imgs, wide=False: {'prompt': p[:2000], 'image_size': 'landscape_4_3' if wide else 'square_hd',
+                                          'output_format': 'png'}),
     'nb2': ('google/nano-banana-2/edit', 0.08,
             lambda p, imgs, wide=False: {'prompt': p, 'images': imgs, 'aspect_ratio': '16:9' if wide else '1:1',
                                         'resolution': '1k', 'output_format': 'png'}),
 }
+
+
+T2I_MODELS = {'flare26', 'sunburst26', 'ideo'}
 
 
 def http(method, url, key, body=None, timeout=60):
@@ -385,12 +421,12 @@ def contact(files):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--models', default='flare,sunburst')   # 다른 모델도: flare,sunburst,gptdev,gpt15,gpt,s55,s50p,nb2
+    ap.add_argument('--models', default='')   # 비우면: 참고 그림이 있는 칸은 flare,sunburst / 글로만 쓰는 칸은 flare26,sunburst26,ideo   # 다른 모델도: flare,sunburst,gptdev,gpt15,gpt,s55,s50p,nb2
     ap.add_argument('--icons', default=','.join(JOBS))
     ap.add_argument('--per', type=int, default=1)
     ap.add_argument('--dry', action='store_true')
     a = ap.parse_args()
-    models = [m for m in a.models.split(',') if m in MODELS]
+    models = [m for m in (a.models or 'flare,sunburst,flare26,sunburst26,ideo').split(',') if m in MODELS]
     # 묶음 이름: cars = 모든 차 아이콘(car_*·cute_*), guide = 차가 아닌 안내 아이콘·분기점 그림 전부
     is_car = lambda k: k.startswith(('car_', 'cute_'))
     is_sign = lambda k: k.startswith('sign_')
@@ -401,9 +437,12 @@ def main():
     for i in a.icons.split(','):
         want += groups.get(i, [i])
     icons = [i for i in dict.fromkeys(want) if i in JOBS]
-    jobs = [(i, m, n) for i in icons for m in models for n in range(1, a.per + 1)]
+    # 글로만 쓰는 칸(참고 그림 없음)은 글로 그리는 모델로만
+    auto = not a.models
+    jobs = [(i, m, n) for i in icons for m in models for n in range(1, a.per + 1)
+            if (m in T2I_MODELS) == (not JOBS[i][0]) or (not auto and (JOBS[i][0] or m in T2I_MODELS))]
     cost = sum(MODELS[m][1] for _, m, _ in jobs)
-    print('만들 그림 %d장, 예상 비용 약 $%.2f  (모델: %s)' % (len(jobs), cost, ', '.join(models)))
+    print('만들 그림 %d장, 예상 비용 약 $%.2f  (모델: %s)' % (len(jobs), cost, ', '.join(m for m in models if any(m == x for _, x, _ in jobs))))
     if a.dry:
         return
     key = os.environ.get('ATLAS_API_KEY') or os.environ.get('ATLASCLOUD_API_KEY')
