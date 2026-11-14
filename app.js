@@ -51,7 +51,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-110'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-111'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -173,7 +173,7 @@
   const fmtDist = (m) => (m >= 995 ? (m / 1000).toFixed(m >= 9950 ? 0 : 1) + 'km' : Math.max(0, Math.round(m / 10) * 10) + 'm');
   const fmtMin = (ms) => {
     const m = Math.max(1, Math.round(ms / 60000));
-    return m >= 60 ? Math.floor(m / 60) + '시간 ' + (m % 60) + '분' : m + '분';
+    return m >= 60 ? Math.floor(m / 60) + '시간' + (m % 60 ? ' ' + (m % 60) + '분' : '') : m + '분';   // '1시간 0분' → '1시간'
   };
   const spokenDist = (m) => (m >= 1000 ? (Math.round(m / 100) / 10) + '킬로미터' : Math.max(10, Math.round(m / 10) * 10) + '미터');
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1604,10 +1604,10 @@
     const show = !!next && next.at - nav.along <= REST_SHOW;
     el.hidden = !show;
     if (show) {
-      $('#restName').textContent = next.name;
+      $('#restName').textContent = next.name.replace(/쉼터휴게소$/, '쉼터');   // '서울하이패스센터쉼터휴게소' → '…쉼터'
       $('#restDist').textContent = fmtDist(next.at - nav.along);
       const n2 = ahead[1];
-      $('#restNext').textContent = n2 && n2.at - nav.along <= 100000 ? '다음 ' + n2.name.replace(/휴게소$/, '') + ' ' + fmtDist(n2.at - nav.along) : '';
+      $('#restNext').textContent = n2 && n2.at - nav.along <= 100000 ? '다음 ' + n2.name.replace(/(쉼터)?휴게소$/, '$1') + ' ' + fmtDist(n2.at - nav.along) : '';
     }
     if (mapA && mapA.setRests) {
       const marks = ahead.filter((r) => r.at - nav.along <= REST_MAP);
@@ -2056,7 +2056,7 @@
   // 카메라 행: [lat, lng, limit, kind, sec, len, zone, road, rtype, dir(, flags)]
   // kind: 1 과속, 2 신호 전용, 3 과속+신호, 9 구간/기타 · rtype: 1 고속국도, 3 일반국도, 4 지방도, 5 시도, 6 기타
   // 8 이동식: 경찰청 공개 데이터는 고정식만 담고 있어 지금은 없다. 이동식 위치 데이터가 생기면 kind 8 로 넣으면 파란색으로 뜬다
-  const KIND_NAME = { 1: '과속 단속', 2: '신호 단속', 3: '신호·과속 단속', 8: '이동식 단속', 9: '단속 구간' };
+  const KIND_NAME = { 1: '과속단속', 2: '신호단속', 3: '신호·과속단속', 8: '이동식단속', 9: '구간단속' };   // v111: '구간단속'처럼 붙여 씀
   // 속도를 재는 카메라인지 (신호 전용은 제외. 단, 어린이보호구역은 안전을 위해 속도 단속으로 본다)
   const isSpeedCam = (c) => c[3] !== 2 || c[6] === 2;
   // 경고할 카메라인지: 신호 전용은 설정에서 켰을 때만
@@ -2066,7 +2066,7 @@
     if (c[6] === 2) s = '어린이보호구역 ' + (c[3] === 2 ? '단속' : s);
     else if (c[6] === 1) s = '노인보호구역 ' + s;
     if (isRear(c)) s = s.replace(/ ?단속$/, ' 후면단속');   // 예: '신호·과속 후면단속'
-    if (isBox(c)) s = '박스형 ' + s;                        // 예: '박스형 과속 단속' (2026-11-14 팔당 제보)
+    if (isBox(c)) s = '박스형 ' + s;                        // 예: '박스형 과속단속' (2026-11-14 팔당 제보)
     return s;
   }
   const camRoad = (c) => (cams.roads && c[7] >= 0 ? cams.roads[c[7]] : '') || '';
@@ -2483,7 +2483,7 @@
       zb.hidden = !zone;
       if (zone && zb.dataset.zone !== zone) {
         $('#zbSign').innerHTML = zone === 'kid' ? SIGN_KID : SIGN_ELDER;
-        $('#zbLabel').textContent = zone === 'kid' ? '어린이 조심' : '어르신 조심';
+        $('#zbLabel').textContent = zone === 'kid' ? '어린이 조심' : '노인 조심';   // 표지·카드의 '노인보호'와 같은 낱말
         zb.dataset.zone = zone;
       }
     }
@@ -2854,7 +2854,7 @@
     if (searchFor === 'via' && nav.active && nav.dest) {
       searchFor = 'dest';
       nav.via = [{ name: it.name, lat: it.lat, lng: it.lng }];
-      toast('경유지 ' + it.name + ' 을(를) 거쳐 가는 경로를 찾는 중…', '', 3000);
+      toast(it.name + ' 경유 경로 찾는 중…', '', 3000);
       planRoute(nav.dest, 'via');
       return;
     }
@@ -3337,7 +3337,7 @@
     // 경유지 근처(150m)를 지나면 목록에서 뺀다 (이후 재탐색이 경유지로 되돌아가지 않게)
     if (nav.via && nav.via.length && haversine(f, nav.via[0]) < 150) {
       const v = nav.via.shift();
-      toast('경유지 ' + v.name + ' 을(를) 지났어요', '', 3000);
+      toast('경유지 ' + v.name + ' 통과', '', 3000);
     }
     const pts = nav.pts;
     let best = { dist: Infinity, seg: nav.seg, t: 0 };
@@ -3870,7 +3870,7 @@
     renderTurnArrow();
     renderRest();
     $('#turnIcon').innerHTML = ico(g ? turnKind(g) : 'goal');
-    $('#turnDist').textContent = fmtDist(nav.dg != null ? nav.dg : nav.total);
+    $('#turnDist').textContent = fmtDist(Math.max(10, nav.dg != null ? nav.dg : nav.total));   // '0m' 대신 최소 10m (음성과 같게)
     if (g && g.t === 121) {
       // 톨게이트: 다른 내비처럼 통행료를 굵게 앞에 ('800원 하남톨게이트'), 아이콘은 TG 표지 (2026-11-14 요청)
       const p = tollParts(g), fee = fareText(p.fare);
@@ -3913,7 +3913,7 @@
     }
     $('#navRemain').textContent = fmtDist(remain);
     $('#navTime').textContent = fmtMin(remMs);
-    $('#navEta').textContent = '도착 ' + hhmm(new Date(Date.now() + remMs));
+    $('#navEta').textContent = hhmm(new Date(Date.now() + remMs)) + ' 도착';   // 오른쪽 막대·경로 카드와 같은 순서
   }
 
   // 주행 중 배율: 17 이 기본, 시속 100km 넘으면 16.
@@ -4642,7 +4642,7 @@
     renderHupBtn();
     setFollowing(true);
     layoutView();
-    toast(on ? '진행 방향이 위로 보이게 바꿨습니다' : '지도를 북쪽 위로 고정했습니다', '', 2000);
+    toast(on ? '진행 방향 위로' : '북쪽 위로', '', 2000);
   }
   $('#hupBtn').onclick = () => setHeadingUp(!prefs.headingUp);
   $('#map').addEventListener('pointerdown', onMapDown, true);
@@ -5445,7 +5445,7 @@
   try {
     if (sessionStorage.getItem('tnc.updTried') === APP_VERSION && sessionStorage.getItem('tnc.updShown') !== APP_VERSION) {
       sessionStorage.setItem('tnc.updShown', APP_VERSION);
-      setTimeout(() => toast('새 버전으로 바뀌었어요 · ' + APP_VERSION.slice(5), '', 4000), 1500);
+      setTimeout(() => toast('새 버전(' + APP_VERSION.split('-').pop() + ')으로 바뀌었어요', '', 4000), 1500);
     }
   } catch (e) { /* 저장소 막힘 */ }
   $('#ntVer').textContent = '버전 ' + APP_VERSION.slice(5);

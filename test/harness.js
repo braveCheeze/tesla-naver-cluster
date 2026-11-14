@@ -861,7 +861,7 @@
       t.prefs.signalCams = prev;
       softReset();
     }
-    const okLimit = !!withLimit && withLimit.sign === '50' && withLimit.type === '신호·과속 단속' && withLimit.sig;
+    const okLimit = !!withLimit && withLimit.sign === '50' && withLimit.type === '신호·과속단속' && withLimit.sig;
     return {
       pass: okLimit && !off && !!on && on.sign === '신호' && on.signal,
       detail: 'signal camera with limit 50 (default): ' + (withLimit ? JSON.stringify(withLimit) : 'NO ALERT') + (okLimit ? '✓' : '✗') +
@@ -1420,7 +1420,7 @@
     };
     const south = run(A, 180), north = run(B, 0);
     softReset();
-    const ok = (o) => !!o && o.kind === 3 && o.limit === 30 && o.label === '신호·과속 단속' && o.sig && o.over;
+    const ok = (o) => !!o && o.kind === 3 && o.limit === 30 && o.label === '신호·과속단속' && o.sig && o.over;
     return {
       pass: ok(south) && ok(north),
       detail: '계량교 남행(H4877): ' + JSON.stringify(south) + (ok(south) ? '✓' : '✗') + ' | 승안삼거리 북행(H4878): ' + JSON.stringify(north) + (ok(north) ? '✓' : '✗'),
@@ -1955,7 +1955,7 @@
     };
     const west = await run('route-paldang-west.json'), east = await run('route-paldang-east.json');
     softReset();
-    const ok = !!west && west.label === '박스형 과속 단속' && west.box && !east;
+    const ok = !!west && west.label === '박스형 과속단속' && west.box && !east;
     return { pass: ok, detail: 'northwest (toward 팔당대교IC) ' + JSON.stringify(west) + ' | southeast (opposite) ' + (east ? 'ALERTED✗' : 'quiet✓') + (ok ? '✓' : '✗') };
   }
 

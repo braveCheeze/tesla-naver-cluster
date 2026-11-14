@@ -708,8 +708,8 @@
   /* 경로 막대: 오른쪽 끝에 얇은 띠로 */
   #app.tesla .rstrip { left: auto; right: 6px; top: 104px; bottom: auto; height: min(300px, calc(100% - 180px)); width: 34px; }
   #app.tesla .rs-top { min-width: 0; padding: 3px 5px; margin-bottom: 6px; border-radius: 8px; }
-  #app.tesla .rs-top b { font-size: 11px; }
-  #app.tesla .rs-top span { font-size: 9px; }
+  #app.tesla .rs-top b { font-size: 12px; }
+  #app.tesla .rs-top span { font-size: 10.5px; }   /* v111: 9px 은 운전 중 안 읽혔다 */
   /* 2026-11-14 요청: 막대를 조금 더 두껍게 (6 → 10px) */
   #app.tesla .rs-track { width: 22px; }
   #app.tesla .rs-track::before { width: 3px; margin-left: -1.5px; }
@@ -1021,7 +1021,7 @@
   /* ================= 아주 살짝 유리 느낌 (2026-11-14 요청: 안내 패널·모달에 약한 블러 + 리퀴드 글래스) =================
      흰 바탕을 조금 비치게(78%) 하고 뒤를 흐리게, 위쪽에 얇은 빛 한 줄과 아주 옅은 윤광. 밤에는 어두운 유리 */
   body:has(#app.tesla) {
-    --nv-glass: rgba(255, 255, 255, .78);
+    --nv-glass: rgba(255, 255, 255, .88);   /* v111: .78 은 낮 지도의 주황·초록이 비쳐 글자가 흐렸다 (디자인 검토) */
     --nv-glass-hi: rgba(255, 255, 255, .95);
     --nv-glass-edge: rgba(255, 255, 255, .55);
     --nv-sheen: linear-gradient(180deg, rgba(255, 255, 255, .5), rgba(255, 255, 255, 0) 55%);
@@ -1380,7 +1380,8 @@
   body:has(#app.tesla):has(#map.night) .turnicon img.aiimg, body:has(#app.tesla):has(#map.night) .nexticon img.aiimg { filter: brightness(1.8) saturate(.9); }
   /* 초록 화살표뿐인 AI 그림(비켜 가기 kl/kr)은 밝히지 않는다 (밤엔 형광으로 번짐) */
   body:has(#app.tesla):has(#map.night) .turnicon img.aiimg[src*="/kl__"], body:has(#app.tesla):has(#map.night) .turnicon img.aiimg[src*="/kr__"],
-  body:has(#app.tesla):has(#map.night) .nexticon img.aiimg[src*="/kl__"], body:has(#app.tesla):has(#map.night) .nexticon img.aiimg[src*="/kr__"] { filter: none; }
+  body:has(#app.tesla):has(#map.night) .nexticon img.aiimg[src*="/kl__"], body:has(#app.tesla):has(#map.night) .nexticon img.aiimg[src*="/kr__"],
+  body:has(#app.tesla):has(#map.night) .turnicon img.aiimg[src*="/sharp_"], body:has(#app.tesla):has(#map.night) .nexticon img.aiimg[src*="/sharp_"] { filter: none; }
   #app.tesla .turnicon svg.ti, #app.tesla .nexticon svg.ti { color: var(--nv-green); stroke: none; }
   /* 밤(어두운 패널): 어두운 도로를 조금 밝게 */
   body:has(#app.tesla):has(#map.night) svg.ti .rd { fill: #5b6676; }
@@ -1473,7 +1474,7 @@
     </div>
     <div id="weather" class="weather" hidden></div>
     <div class="trip">
-      <div class="stat"><div class="k">주행 거리</div><div class="v"><span id="tripKm">0.0</span><small> km</small></div></div>
+      <div class="stat"><div class="k">주행 거리</div><div class="v"><span id="tripKm">0.0</span><small>km</small></div></div>
       <div class="stat"><div class="k">주행 시간</div><div class="v" id="tripTime">0:00</div></div>
       <div class="stat"><div class="k">평균 속도</div><div class="v"><span id="tripAvg">0</span><small> km/h</small></div></div>
       <div class="stat"><div class="k">최고 속도</div><div class="v"><span id="tripMax">0</span><small> km/h</small></div></div>
@@ -1555,9 +1556,9 @@
         <div><b id="gpsNoticeTitle">위치 권한이 꺼져 있어요</b><p>속도, 내 위치, 길안내를 쓰려면 위치를 허용해 주세요.</p></div>
       </div>
       <ol>
-        <li>주소창 왼쪽의 <b>자물쇠</b>(사이트 정보)를 누릅니다</li>
-        <li><b>위치</b>를 <b>허용</b>으로 바꿉니다</li>
-        <li>아래 <b>다시 시도</b>를 누릅니다</li>
+        <li>주소창 왼쪽 아이콘(<b>자물쇠</b>, 사이트 정보)을 누르세요</li>
+        <li><b>위치</b>를 <b>허용</b>으로 바꾸세요</li>
+        <li>아래 <b>다시 시도</b>를 누르세요</li>
       </ol>
       <p class="gn-again">아직 허용되지 않았어요. 위 순서대로 바꾼 뒤 다시 눌러 주세요.</p>
       <div class="gn-btns"><button id="gpsLater" type="button">나중에</button><button id="gpsRetry" type="button" class="gn-go">다시 시도</button></div>
@@ -1673,8 +1674,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.14-110"></script>
-<script src="img/ai/picks.js?v=2026.11.14-110"></script>
-<script src="app.js?v=2026.11.14-110"></script>
+<script src="icons.js?v=2026.11.14-111"></script>
+<script src="img/ai/picks.js?v=2026.11.14-111"></script>
+<script src="app.js?v=2026.11.14-111"></script>
 </body>
 </html>

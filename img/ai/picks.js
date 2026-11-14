@@ -21,6 +21,8 @@ window.TNC_PICKS = {
   "rb_r": "rb_r__sunburst26d__2.webp",
   "rb_s": "rb_s__sunburst26d__2.webp",
   "rb_u": "rb_u__sunburst26d__2.webp",
+  "sharp_l": "sharp_l__bold__1.webp",
+  "sharp_r": "sharp_r__bold__1.webp",
   "sign_animal": "sign_animal__sunburst__2.webp",
   "sign_bump": "sign_bump__flare__1.webp",
   "sign_danger": "sign_danger__flare__1.webp",
