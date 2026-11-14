@@ -43,7 +43,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-62'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-63'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -156,12 +156,24 @@
   // 바탕(교통 정보가 없는 길 = 대개 차가 거의 없는 한산한 길)은 파랑, 원활 초록, 서행 주황, 정체 빨강
   const ROUTE_BASE = '#2f7dff', ROUTE_EDGE = '#0d2547';
   const TRAFFIC_COLOR = { 1: '#03c75a', 2: '#f5a623', 3: '#e53935' }; // 1 원활, 2 서행, 3 정체 (0 은 정보 없음 = 바탕색)
+  // 2026-11-14 요청(네이버·다른 내비처럼 빨강을 여러 단계로): 네이버 길찾기 구간의 혼잡도에 그 구간 평균 속도를 더해 다섯 단계로.
+  // 네이버 혼잡도 기준(고속도로 서행 40~70·혼잡 40 미만, 일반 도로 서행 15~30·혼잡 15 미만)의 느린 쪽 절반을 한 단계 더 짙게:
+  //   원활 초록 / 서행 노랑 / 지체(서행 중 느린 쪽) 주황 / 정체 빨강 / 심한 정체(거의 멈춤) 검붉은색
+  const TRAFFIC_LAG = '#ff6a13', TRAFFIC_STOP = '#9b111e';
+  function trafficColor(s) {
+    if (!s) return null;
+    const hw = /고속도로|고속화|도시고속|자동차전용/.test(s.name || '');
+    const v = Number.isFinite(s.speed) && s.speed > 0 ? s.speed : null;
+    if (s.cong === 2) return v !== null && v < (hw ? 55 : 22) ? TRAFFIC_LAG : TRAFFIC_COLOR[2];
+    if (s.cong === 3) return v !== null && v < (hw ? 20 : 8) ? TRAFFIC_STOP : TRAFFIC_COLOR[3];
+    return TRAFFIC_COLOR[s.cong] || null;
+  }
   function trafficRuns(sections, len) {
     const runs = [];
     (sections || []).filter((s) => s && Number.isFinite(s.i) && Number.isFinite(s.n))
       .sort((x, y) => x.i - y.i)
       .forEach((s) => {
-        const color = TRAFFIC_COLOR[s.cong];
+        const color = trafficColor(s);
         const a = Math.max(0, Math.floor(s.i));
         const b = Math.min(len - 1, a + Math.max(1, Math.floor(s.n) - 1));
         if (!color || b <= a) return;
@@ -2353,7 +2365,6 @@
   // 지도 왼쪽 세로 막대: 맨 아래 출발, 맨 위 도착으로 고정. 내 차 점이 올라가고, 지나온 만큼 막대가 줄어든다.
   // 색은 지도 경로선과 같다: 교통 정보 없음 파랑, 원활 초록, 서행 주황, 정체 빨강.
   // 재탐색해도 출발점은 그대로 (전체 = 지금까지 달린 거리 + 남은 거리).
-  const CONG_COLOR = TRAFFIC_COLOR;
   function renderStrip() {
     const el = $('#routeStrip');
     if (!nav.active || !nav.pts || !nav.route) { el.hidden = true; return; }
@@ -2371,7 +2382,7 @@
     const last = nav.cum.length - 1;
     const runs = [];
     (nav.route.sections || []).forEach((s) => {
-      const color = CONG_COLOR[s.cong];
+      const color = trafficColor(s);
       if (!color || !Number.isFinite(s.i) || !Number.isFinite(s.n)) return;
       const lo = Math.max(nav.cum[Math.min(s.i, last)], along);
       const hi = Math.min(nav.cum[Math.min(s.i + Math.max(1, s.n) - 1, last)], total);
@@ -2700,9 +2711,31 @@
       finishTrip();
     }
   }
+  // 화면의 주행 거리·주행 시간·평균·최고 속도: 새 버전으로 바뀌어도 이어서 센다 (2026-11-14 요청: 업데이트하면 0 이 됐다).
+  // 몇 초마다 저장해 두고, 새 버전으로 옮겨 온 것이면(하루 안) 그대로, 그냥 새로고침이면 30분 안일 때만 되살린다
+  const TRIPNOW_KEY = 'tripNow';
+  let tripNowAt = 0;
+  function saveTripNow(force) {
+    if (state.demoTimer) return; // 데모 주행 중에는 실제 기록이 따로 보관돼 있다
+    const now = Date.now();
+    if (!force && now - tripNowAt < 5000) return;
+    tripNowAt = now;
+    store.set(TRIPNOW_KEY, JSON.stringify({ trip: state.trip, driveMs: state.driveMs, maxKmh: state.maxKmh || 0, odo: state.odo, at: now }));
+  }
+  function restoreTripNow() {
+    let s = null, viaUpdate = false;
+    try { s = JSON.parse(store.get(TRIPNOW_KEY) || 'null'); } catch (e) { s = null; }
+    try { viaUpdate = sessionStorage.getItem('tnc.updTried') === APP_VERSION; } catch (e) { /* 저장소 막힘 */ }
+    if (!s || !(s.at > 0)) return false;
+    const age = Date.now() - s.at;
+    if (age < 0 || age > (viaUpdate ? 24 * 3600000 : 30 * 60000)) return false;
+    state.trip = +s.trip || 0; state.driveMs = +s.driveMs || 0; state.maxKmh = +s.maxKmh || 0; state.odo = +s.odo || 0;
+    return true;
+  }
+  if (!testPage) restoreTripNow();   // resumeTrip 이 누적 거리(odo)를 기준으로 이어 쓰므로 그보다 먼저
   resumeTrip();
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveCurTrip(); });
-  window.addEventListener('pagehide', saveCurTrip);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { saveCurTrip(); saveTripNow(true); } });
+  window.addEventListener('pagehide', () => { saveCurTrip(); saveTripNow(true); });
 
   let lastFixWall = 0;
   function onFix(f) {
@@ -2744,6 +2777,7 @@
     navUpdate(f);        // 경로 위 위치를 먼저 계산해야 내 차를 도로에 붙일 수 있다
     motionFix(f, !prev); // 지도·내 차는 매 프레임 부드럽게 따라간다
     tripTick(f);         // 주행 기록 (과속 기록은 바로 아래 카메라 판단에서 붙는다)
+    saveTripNow();       // 화면의 주행 거리·시간·최고 속도 (새 버전으로 바뀌어도 이어서)
     evalCameras(f);
     refreshCamMarkers(f);
     evalBumps(f);
@@ -2880,6 +2914,7 @@
       sessionStorage.setItem('tnc.updTried', v);
     } catch (e) { /* 저장소 막힘 */ }
     report('info', { msg: 'manual update', from: APP_VERSION, to: v, nav: !!nav.active });
+    saveTripNow(true); saveCurTrip();
     location.replace(updateUrl(v));
   }
   // 새 버전으로 바뀐 직후: 남겨 둔 목적지가 있으면(15분 안) 첫 위치를 받는 대로 경로 카드 없이 이어서 안내
@@ -2928,6 +2963,7 @@
       if (o.dry) return 'reload';
       try { sessionStorage.setItem('tnc.updTried', String(v)); } catch (e) { /* 저장소 막힘 */ }
       report('info', { msg: 'auto update', from: APP_VERSION, to: String(v), why });
+      saveTripNow(true); saveCurTrip();
       // 주소에 ?v=새 버전 을 붙여 이동한다. 그냥 새로고침하면 브라우저·CDN 에 저장된 예전 index.html(최대 10분)이
       // 다시 뜰 수 있다(2026-11-14 차에서 새로고침했는데 예전 버전). 주소가 바뀌면 저장된 것을 쓰지 않는다
       location.replace(updateUrl(v));
@@ -3514,6 +3550,7 @@
   };
   $('#resetTrip').onclick = () => {
     state.trip = 0; state.driveMs = 0; state.maxKmh = 0; render();
+    saveTripNow(true);
     sheet.hidden = true;
     toast('주행 기록을 초기화했습니다.', '', 2500);
   };
@@ -3568,7 +3605,7 @@
       planRoute, doSearch, setFollowing, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
       sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
-      tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, renderJunction,
+      saveTripNow, restoreTripNow, trafficColor, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, renderJunction,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
     };

@@ -97,6 +97,15 @@ for r in rows:
     code = r[12].strip()
     parts = {norm(c) for c in code.replace(' ', '').split('+')}
     sec = {'1': 1, '2': 2}.get(norm(r[14]), 0)
+    # 구간단속인데 '단속구간위치구분'이 비어 있고 설치장소에만 '구간 시점/종점'이 적힌 카메라 (2026-11-14 점검: 29대.
+    # 예: 영덕 동해대로 '구간 시점(영해휴게소 방면)', 울산 아산로 '아산로구간단속종점1', 세종로 '대곡삼거리 후방 구간단속 시점')
+    if not sec and '구간' in r[11] and not ('4' in {norm(c) for c in r[12].replace(' ', '').split('+')} and not r[13].strip('0 ')):
+        if '시점' in r[11]:
+            sec = 1
+            skipped['(info) section start from place text'] += 1
+        elif '종점' in r[11]:
+            sec = 2
+            skipped['(info) section end from place text'] += 1
     if parts & {'3', '4'} and not parts & {'1', '2'} and not sec:
         skipped['parking/other'] += 1
         continue

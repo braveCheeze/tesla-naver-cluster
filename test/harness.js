@@ -1982,6 +1982,71 @@
     return { pass: ok, detail: JSON.stringify(r) + (ok ? '✓' : '✗') };
   }
 
+  // S49: 업데이트해도 주행 거리·시간·최고 속도가 이어진다 (2026-11-14 요청). 저장 → 0 으로 → 되살리기.
+  //      새 버전으로 옮겨 온 것(tnc.updTried == 지금 버전)이면 2시간 전 기록도 되살리고, 그냥 새로고침이면 30분 넘은 것은 버린다
+  async function s49() {
+    const t = T(), st = t.state, keep = { trip: st.trip, driveMs: st.driveMs, maxKmh: st.maxKmh, odo: st.odo };
+    let prevTried = null;
+    try { prevTried = sessionStorage.getItem('tnc.updTried'); } catch (e) { /* */ }
+    const zero = () => { st.trip = 0; st.driveMs = 0; st.maxKmh = 0; };
+    const r = {};
+    try {
+      Object.assign(st, { trip: 12345, driveMs: 1800000, maxKmh: 97 });
+      t.saveTripNow(true);
+      zero(); sessionStorage.removeItem('tnc.updTried');
+      r.fresh = t.restoreTripNow() && st.trip === 12345 && st.driveMs === 1800000 && st.maxKmh === 97;
+      // 2시간 전 저장
+      const raw = JSON.parse(localStorage.getItem(Object.keys(localStorage).find((k) => /tripNow$/.test(k))));
+      raw.at = Date.now() - 2 * 3600000;
+      localStorage.setItem(Object.keys(localStorage).find((k) => /tripNow$/.test(k)), JSON.stringify(raw));
+      zero();
+      r.oldReloadIgnored = !t.restoreTripNow() && st.trip === 0;
+      sessionStorage.setItem('tnc.updTried', t.version);
+      r.oldUpdateKept = t.restoreTripNow() && st.trip === 12345;
+    } finally {
+      Object.assign(st, keep);
+      t.saveTripNow(true);
+      try { if (prevTried === null) sessionStorage.removeItem('tnc.updTried'); else sessionStorage.setItem('tnc.updTried', prevTried); } catch (e) { /* */ }
+    }
+    const ok = r.fresh && r.oldReloadIgnored && r.oldUpdateKept;
+    return { pass: ok, detail: JSON.stringify(r) + (ok ? '✓' : '✗') };
+  }
+
+  // S50: 교통 색 다섯 단계 (2026-11-14 요청: 빨강을 여러 단계로). 구간 혼잡도 + 평균 속도로
+  //      원활 초록 / 서행 노랑 / 지체 주황 / 정체 빨강 / 심한 정체 검붉은색. 지도 경로선 조각에 다섯 색이 다 그려진다
+  async function s50() {
+    const t = T(), R = buildNavRoute();
+    R.route.sections = [
+      { i: 0, n: 3, name: '테스트로', speed: 45, cong: 1 },
+      { i: 2, n: 2, name: '테스트로', speed: 25, cong: 2 },
+      { i: 3, n: 2, name: '테스트로', speed: 18, cong: 2 },
+      { i: 4, n: 3, name: '테스트로', speed: 12, cong: 3 },
+      { i: 6, n: 4, name: '테스트로', speed: 5, cong: 3 },
+    ];
+    const hw = (cong, speed) => t.trafficColor({ name: '중부고속도로', cong, speed });
+    const hwOk = hw(2, 60) === '#f5a623' && hw(2, 45) === '#ff6a13' && hw(3, 30) === '#e53935' && hw(3, 12) === '#9b111e';
+    softReset();
+    await planAndStart(R);
+    feed(pointAt(R, 15).p, 15, 0);
+    t.renderNav();
+    const m = t.getMap(), got = new Set();
+    (m.route || []).forEach((pc) => { if (pc.kind === 'traffic') got.add(String(pc.color).toLowerCase()); });
+    t.endNav(); softReset();
+    const want = ['#03c75a', '#f5a623', '#ff6a13', '#e53935', '#9b111e'];
+    const ok = hwOk && want.every((c) => got.has(c));
+    return { pass: ok, detail: 'line colors ' + [...got].join(' ') + ' | highway thresholds ' + (hwOk ? '✓' : '✗') + (ok ? '✓' : '✗') };
+  }
+
+  // S51: 설치장소에 '구간 시점/종점'만 적히고 구간 구분이 빈 카메라도 구간단속으로 (2026-11-14 점검: 울산 아산로 등 29대)
+  async function s51() {
+    const t = T();
+    await waitFor(() => t.cams.loaded, 8000, 50);
+    const find = (lat, lng) => t.cams.rows.find((c) => Math.abs(c[0] - lat) < 2e-4 && Math.abs(c[1] - lng) < 2e-4 && c[4]);
+    const start = find(35.54796, 129.3602), end = find(35.52517, 129.39049), sj = find(36.72913, 127.16565);
+    const ok = !!start && start[4] === 1 && start[3] === 9 && !!end && end[4] === 2 && !!sj && sj[4] === 1;
+    return { pass: ok, detail: '아산로 시점 ' + JSON.stringify(start) + ' 종점 ' + JSON.stringify(end) + ' | 세종로 시점 ' + JSON.stringify(sj) + (ok ? '✓' : '✗') };
+  }
+
   // S25: 하이패스 — 경로 안내에 톨게이트(type 121)가 있으면 2km 앞부터 카드(이름·거리·통행료·하이패스 차로 이용)와 음성
   async function s25() {
     const t = T();
@@ -2329,6 +2394,9 @@
     { id: 'S46', name: 'S46 box-type speed camera added by hand (팔당 다산로): shown as 박스형 one way only', fn: s46 },
     { id: 'S47', name: "S47 one-way camera direction from its 'A→B' place text vs the route's guide text (하남 창우로)", fn: s47 },
     { id: 'S48', name: 'S48 junction picture: highway ramp / fork drawn from the guide type, in the drawer 800m ahead', fn: s48 },
+    { id: 'S49', name: 'S49 trip distance/time/max speed survive an update reload', fn: s49 },
+    { id: 'S50', name: 'S50 traffic colors in five steps (green, yellow, orange, red, dark red) from section speed', fn: s50 },
+    { id: 'S51', name: "S51 section cameras found from '구간 시점/종점' place text", fn: s51 },
   ];
 
   // ---------------------------------------------------------------- runner
