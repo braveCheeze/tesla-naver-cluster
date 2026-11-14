@@ -186,6 +186,34 @@ for row in data:
     merged.append(row)
 print('merged near-identical cameras:', dropped)
 data = merged
+
+# 교차로 신호·과속 카메라는 원본에 한 방향(상행/하행)만 올라 있어도 실제로는 반대 방향도 찍는 경우가 많다.
+# 2026-11-14 가평→청평 주행: 포회촌·수리재마을입구·청평검문소·소돌마을 교차로가 원본엔 '서울→춘천'만 있는데
+# 서울 방향에도 카메라가 있었다(다른 내비에는 다 뜸). 앱은 한 방향 카메라가 왼쪽(반대 차로)에 있으면 빼므로 하나도 안 떴다.
+# 그래서 같은 도로 150m 안에 반대 방향 카메라가 따로 등록돼 있지 않으면 양방향(3)으로 본다.
+# 과속 전용(1)은 구간 중간에 한쪽만 보는 경우가 많아 그대로 둔다. 직접 추가한 카메라(ADDS)도 그대로.
+PAIR_R = 150
+added = {(a['lat'], a['lng']) for a in ADDS}
+pcells = {}
+for row in data:
+    pcells.setdefault((int(math.floor(row[0] / 0.002)), int(math.floor(row[1] / 0.002))), []).append(row)
+def has_opposite(row):
+    cy, cx = int(math.floor(row[0] / 0.002)), int(math.floor(row[1] / 0.002))
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            for o in pcells.get((cy + dy, cx + dx), ()):
+                if o is row or o[3] == 9 or dist_m(o, row) > PAIR_R:
+                    continue
+                if not (o[7] == row[7] or o[7] < 0 or row[7] < 0):
+                    continue
+                if o[9] == 3 or (o[9] and o[9] != row[9]):
+                    return True
+    return False
+both = [row for row in data if row[3] == 3 and row[9] in (1, 2) and not row[4]
+        and (row[0], row[1]) not in added and not has_opposite(row)]
+for row in both:
+    row[9] = 3
+print('signal+speed cameras with no opposite-direction partner -> both directions:', len(both))
 latest = max(d for d in dates if d)
 with open(out, 'w', encoding='utf-8') as f:
     json.dump({'v': 2, 'date': latest, 'count': len(data),

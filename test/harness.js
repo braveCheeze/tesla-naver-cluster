@@ -1431,34 +1431,42 @@
     };
   }
 
-  // S37: 청평 경춘로 (2026-11-14 주행 제보 "청평 쪽은 다 안 잡힌다") — 원본에 '신호'로만 올라 있던 교차로 카메라들이
-  //      신호·과속으로 잡히는지, 실제 네이버 경로(test/fixtures/route-cheongpyeong-sw.json: 가평 포회촌 → 청평 → 대성리)로 길안내하며 확인.
-  //      초옥동마을입구교차로(가평→서울, 60)·원대성리 삼거리앞(청평터미널→대성리역, 70)은 꼭 잡혀야 한다
+  // S37: 가평 → 청평 → 신청평대교 실제 경로 (2026-11-14 주행 제보 "가는 길 단속 10개 중 2개만 떴다").
+  //      test/fixtures/route-gapyeong-cheongpyeong.json: 가평읍 가화로(계량교 북쪽) → 경춘로 → 팔각정삼거리 좌회전 → 북한강로.
+  //      원본 '신호'인 교차로 카메라가 신호·과속으로, 반대 방향 등록이 없는 교차로 카메라(수리재·청평검문소·소돌마을)는
+  //      양방향으로 잡혀야 한다. 반대 방향 전용(진동마을 과속, 포회촌·벚꽃길의 서울→춘천 쪽)은 잡히면 안 된다
   async function s37() {
     const t = T();
-    const fx = await (await realFetch(harnessDir + 'fixtures/route-cheongpyeong-sw.json', { cache: 'no-store' })).json();
+    const fx = await (await realFetch(harnessDir + 'fixtures/route-gapyeong-cheongpyeong.json', { cache: 'no-store' })).json();
     const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
     const cum = [0];
     for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
     const total = cum[cum.length - 1];
-    const R = { route: fx, P, cum, total, dest: { name: '대성리', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    const R = { route: fx, P, cum, total, dest: { name: '북한강로', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
     softReset();
     await planAndStart(R);
     const seen = new Map();
     for (let s = 0; s <= total - 30; s += 15) {
       const a = pointAt(R, s);
-      feed(a.p, 75 / 3.6, a.h);
+      feed(a.p, 60 / 3.6, a.h);
       const tg = t.camState.target;
       if (tg) { const k = tg.c[0] + ',' + tg.c[1]; if (!seen.has(k)) seen.set(k, { limit: tg.c[2], type: text('#camType') }); }
     }
     t.endNav();
     softReset();
-    const must = { '초옥동마을입구교차로': '37.77894,127.46407', '원대성리 삼거리앞': '37.69729,127.38401' };
-    const missing = Object.keys(must).filter((k) => !seen.has(must[k]));
+    const must = {
+      '승안삼거리': ['37.84072,127.50646'], '계량교': ['37.83903,127.5067'], '가평초교(어린이)': ['37.8298,127.51091', '37.82939,127.51094'],
+      '포회촌(후면)': ['37.79681,127.48014'], '초옥동': ['37.77894,127.46407'], '수리재': ['37.76907,127.4477'],
+      '청평검문소': ['37.74711,127.42867'], '청평중학교': ['37.74205,127.42369'], '소돌마을': ['37.72456,127.40855'],
+    };
+    const mustNot = { '진동마을(서울→춘천 과속)': '37.81049,127.49785', '포회촌(서울→춘천)': '37.79657,127.4802', '벚꽃길(서울→춘천)': '37.7791,127.46435' };
+    const missing = Object.keys(must).filter((k) => !must[k].some((x) => seen.has(x)));
+    const wrong = Object.keys(mustNot).filter((k) => seen.has(mustNot[k]));
     const list = [...seen.entries()].map(([k, v]) => k + ' ' + v.limit + ' ' + v.type);
     return {
-      pass: missing.length === 0 && seen.size >= 5,
-      detail: seen.size + ' cameras alerted along 17 km: ' + list.join(' | ') + (missing.length ? ' — MISSING ' + missing.join(', ') : ''),
+      pass: missing.length === 0 && wrong.length === 0,
+      detail: seen.size + ' cameras alerted along ' + r0(total / 1000) + ' km: ' + list.join(' | ') +
+        (missing.length ? ' — MISSING ' + missing.join(', ') : '') + (wrong.length ? ' — WRONG (opposite) ' + wrong.join(', ') : ''),
     };
   }
 
@@ -1797,7 +1805,7 @@
     { id: 'S34', name: 'S34 Tesla mode: camera → my speed → small zone sign, red when over', fn: s34 },
     { id: 'S35', name: 'S35 Gapyeong 계량교 30 camera (data fix): 신호·과속, alerts when over', fn: s35 },
     { id: 'S36', name: 'S36 rear-enforcement camera (가평 포회촌, added): held 60 m past the pole, one direction only', fn: s36 },
-    { id: 'S37', name: 'S37 청평 경춘로 real route: intersection cameras (source "신호") alert as 신호·과속', fn: s37 },
+    { id: 'S37', name: 'S37 가평→청평 real route: every camera in our direction alerts (signal→신호·과속, lone intersection cams both ways)', fn: s37 },
   ];
 
   // ---------------------------------------------------------------- runner
