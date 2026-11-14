@@ -4,6 +4,7 @@
 //   NCP_KEY             네이버 클라우드 Maps Client Secret
 //   NAVER_SEARCH_ID     (선택) 네이버 개발자센터 검색 API Client ID
 //   NAVER_SEARCH_SECRET (선택) 네이버 개발자센터 검색 API Client Secret
+//   EX_KEY              (선택) 한국도로공사 고속도로 공공데이터 포털(data.ex.co.kr) 인증키 — 하이패스 차로 번호
 // 를 Secret 으로 넣는다.
 // 진단 기록 저장(선택): Bindings 에 KV namespace 를 변수명 LOGS 로 연결한다. 기록은 30일 뒤 자동 삭제.
 
@@ -20,6 +21,9 @@ const ROUTE_GAP_MS = 15000;
 // 접속 기록 키: 최신이 KV 목록 맨 앞에 오도록 (EVR_BASE - 시각) 으로 저장한다
 const EVR_BASE = 9e15;
 const routeHits = new Map();
+// 하이패스 차로 목록 (전국 영업소, 실시간). 5분 동안 메모리에 두고 다시 받는다
+const hipassCache = { list: null, at: 0 };
+const HIPASS_API = 'https://data.ex.co.kr/openapi/trafficOprgPrcd/tolofHipasCrgwOpclPrssList';
 
 function json(body, status, cors, cacheSeconds) {
   const headers = { 'Content-Type': 'application/json; charset=utf-8', ...cors };
@@ -61,6 +65,7 @@ export default {
         ncp: !!(env.NCP_KEY_ID && env.NCP_KEY),
         search: !!(env.NAVER_SEARCH_ID && env.NAVER_SEARCH_SECRET),
         logs: !!env.LOGS,
+        hipass: !!env.EX_KEY,
       }, 200, cors);
     }
     // 브라우저가 아닌 곳에서 마구 부르는 것을 1차로 막는다 (Origin 은 위조 가능하므로 완벽하진 않음)
@@ -89,6 +94,30 @@ export default {
           temp: r.data.current.temperature_2m, code: r.data.current.weather_code,
           rain: pp.length ? Math.max(...pp.slice(0, 2).filter(Number.isFinite)) : null,
         }, 200, cors, 600);
+      }
+
+      // 하이패스 차로: 한국도로공사 '영업소 하이패스 차로 개폐 현황'(실시간). ?name=하남 (톨게이트·영업소 글자는 떼고)
+      // → 그 영업소의 하이패스 차로 [{no 토목차로번호, cls 입구/출구, type 차로유형명, open 개방 여부}]. 인증키는 Secret EX_KEY
+      if (url.pathname === '/hipass') {
+        if (!env.EX_KEY) return json({ error: 'hipass key not configured' }, 501, cors);
+        const name = (p.get('name') || '').replace(/\s+/g, '').replace(/(톨게이트|영업소|요금소|TG)$/i, '');
+        if (!name || name.length > 20) return json({ error: 'bad name' }, 400, cors);
+        const now = Date.now();
+        if (!hipassCache.list || now - hipassCache.at > 5 * 60000) {
+          const r = await upstream(HIPASS_API + '?key=' + encodeURIComponent(env.EX_KEY) + '&type=json', {});
+          const rows = r.data && (r.data.lcsTrafficLists || r.data.list);
+          if (!r.ok || !Array.isArray(rows)) {
+            if (!hipassCache.list) return json({ error: 'upstream', status: r.status, code: r.data && r.data.code, message: r.data && r.data.message }, 502, cors);
+          } else {
+            hipassCache.list = rows; hipassCache.at = now;
+          }
+        }
+        const key = (x) => String(x || '').replace(/\s+/g, '').replace(/(영업소|요금소)$/, '');
+        const lanes = hipassCache.list.filter((x) => key(x.tolofNm) === name).map((x) => ({
+          no: parseInt(x.cvenCrgwNo, 10) || parseInt(x.crgwNo, 10) || 0,
+          cls: String(x.crgwClssNm || ''), type: String(x.crgwTypeNm || ''), open: String(x.lcsStat) === '01',
+        })).filter((x) => x.no > 0);
+        return json({ name, at: hipassCache.at, lanes }, 200, cors, 60);
       }
 
       // 운영 모니터링: 페이지가 보내는 접속·오류 이벤트 (위치 없음, 7일 보관)

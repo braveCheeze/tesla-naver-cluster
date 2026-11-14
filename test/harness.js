@@ -26,7 +26,7 @@
 
   // ---------------------------------------------------------------- config
   const PROXY_DEFAULT = 'https://tesla-nav.cy6789.workers.dev';
-  const ENDPOINTS = ['/route', '/geocode', '/search', '/reverse', '/health', '/log', '/config'];
+  const ENDPOINTS = ['/route', '/geocode', '/search', '/reverse', '/health', '/log', '/config', '/hipass'];
   const BOOT_TIMEOUT_MS = 20000;
   const LS_KEYS = ['tnc.voice', 'tnc.beep', 'tnc.key', 'tnc.recent', 'tnc.cams'];
 
@@ -160,6 +160,7 @@
       '/health': { ok: true, ncp: true, search: true, logs: false },
       '/log': (q, rec) => (rec.method === 'POST' ? { id: 'harness001' } : { __status: 404, body: { error: 'not found' } }),
       '/config': { mapKeyId: '' },   // empty key -> app keeps the Leaflet/OSM fallback map
+      '/hipass': { __status: 501, body: { error: 'hipass key not configured' } },   // 실제 Worker 처럼 인증키 없음
     };
   }
   const stub = {
@@ -1279,7 +1280,11 @@
       await planAndStart(R);
       feed(pointAt(R, 15).p, 15, 0);
       t.renderNav();
-      await new Promise((res) => setTimeout(res, 60));
+      // 길안내 패널은 나타날 때 0.2초 동안 살짝 떠오른다(rise). 화면이 보이는 동안 재면 그 도중이라 위치가 몇 px 다르다.
+      // 끝난 뒤(0.45초) 다시 그리고 잰다
+      await new Promise((res) => setTimeout(res, 450));
+      t.renderNav();
+      await new Promise((res) => setTimeout(res, 30));
       const app = document.getElementById('app').getBoundingClientRect();
       const q = (s) => document.querySelector(s).getBoundingClientRect();
       const clock = q('.timebox'), road = q('#roadName'), gps = q('.gps'), head = q('.heading'), strip = q('#routeStrip'),
@@ -2080,6 +2085,62 @@
     return { pass: ok, detail: 'with section name ' + JSON.stringify(named) + ' | without ' + JSON.stringify(unnamed) + (ok ? '✓' : '✗') };
   }
 
+  // S53: 하이패스 차로 번호 (2026-11-14 요청: 같은 거리는 빼고 '몇 번으로 가야 하이패스'). Worker /hipass(한국도로공사 실시간)를
+  //      흉내 내서: 하남IC 고속도로 진입 뒤의 하남톨게이트 → 입구 차로 중 열린 1·2·5번만 '1 2 – 5'. 톨게이트가 패널의 다음 안내면
+  //      하이패스 칸의 거리는 숨기고, 다른 안내가 먼저면 보인다. 인증키가 없으면(501) 번호 없이 그대로
+  async function s53() {
+    const t = T(), box = document.getElementById('optTesla'), prev = t.prefs.tesla;
+    const set = (on) => { box.checked = on; box.dispatchEvent(new Event('change')); };
+    const raw = [];
+    for (let k = 0; k <= 40; k++) raw.push(dest(NAV_ORIGIN, 0, 100 * k));
+    const path = raw.map((p) => [round6(p.lng), round6(p.lat)]);
+    const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const total = cum[cum.length - 1];
+    const R = {
+      route: { distance: r0(total), duration: r0(total / 25 * 1000), tollFare: 800, fuelPrice: 300, path,
+        guide: [{ i: 20, t: 66, s: "하남IC에서 '서울, 대전' 방면으로 오른쪽 고속도로 진입", d: r0(cum[20]), ms: 80000 },
+                { i: 25, t: 121, s: '하남톨게이트 (통행료 800원)', d: r0(cum[25] - cum[20]), ms: 20000 },
+                { i: 40, t: 88, s: '목적지', d: r0(total - cum[25]), ms: 60000 }],
+        sections: [{ i: 0, n: 41, name: '테스트로', speed: 60, cong: 1 }] },
+      P, cum, total, dest: { name: '하이패스 테스트', addr: '', lat: P[40].lat, lng: P[40].lng },
+    };
+    const lanes = [{ no: 1, cls: '입구', open: true }, { no: 2, cls: '입구', open: true }, { no: 3, cls: '입구', open: false },
+      { no: 5, cls: '입구', open: true }, { no: 4, cls: '출구', open: true }];
+    const snap = () => ({ card: visible('#tollCard'), lanes: visible('#tollLanes') ? text('#tollLanes') : '', dist: visible('#tollDist') ? text('#tollDist') : '' });
+    const r = {};
+    try {
+      set(true);
+      softReset();
+      stub.canned['/hipass'] = (q) => (q.name === '하남톨게이트' || q.name === '하남' ? { name: '하남', lanes } : { name: q.name, lanes: [] });
+      t.tollState.lanesKey = ''; t.tollState.noKeyUntil = 0;   // 앞 시나리오의 '인증키 없음(501)' 기억을 지운다
+      await planAndStart(R);
+      for (let s = 25; s <= 1700; s += 25) { const a = pointAt(R, s); feed(a.p, 25, 0); t.renderNav(); }
+      await new Promise((res) => setTimeout(res, 50)); t.renderNav();
+      r.beforeEntry = snap();                       // 다음 안내는 하남IC 진입, 하남톨게이트는 그 뒤 (1.2km) → 거리 보임
+      for (let s = 1725; s <= 2200; s += 25) { const a = pointAt(R, s); feed(a.p, 25, 0); t.renderNav(); }
+      r.tollNext = snap();                          // 다음 안내가 톨게이트 → 거리 숨김
+      t.endNav();
+      softReset();
+      stub.canned['/hipass'] = { __status: 501, body: { error: 'hipass key not configured' } };
+      t.tollState.lanesKey = ''; t.tollState.noKeyUntil = 0;
+      await planAndStart(R);
+      for (let s = 25; s <= 2200; s += 25) { const a = pointAt(R, s); feed(a.p, 25, 0); t.renderNav(); }
+      await new Promise((res) => setTimeout(res, 50)); t.renderNav();
+      r.noKey = snap();
+      t.endNav();
+    } finally {
+      stub.canned['/hipass'] = { __status: 501, body: { error: 'hipass key not configured' } };
+      t.tollState.lanesKey = ''; t.tollState.noKeyUntil = 0;
+      set(prev);
+      softReset();
+    }
+    const ok = r.beforeEntry.card && r.beforeEntry.lanes === '12–5번 차로' && /km|m$/.test(r.beforeEntry.dist) &&
+      r.tollNext.card && r.tollNext.lanes === '12–5번 차로' && r.tollNext.dist === '' && r.noKey.card && r.noKey.lanes === '';
+    return { pass: ok, detail: JSON.stringify(r) + (ok ? '✓' : '✗') };
+  }
+
   // S25: 하이패스 — 경로 안내에 톨게이트(type 121)가 있으면 2km 앞부터 카드(이름·거리·통행료·하이패스 차로 이용)와 음성
   async function s25() {
     const t = T();
@@ -2431,6 +2492,7 @@
     { id: 'S50', name: 'S50 traffic colors in five steps (green, yellow, orange, red, dark red) from section speed', fn: s50 },
     { id: 'S51', name: "S51 section cameras found from '구간 시점/종점' place text", fn: s51 },
     { id: 'S52', name: 'S52 on the expressway (entry→exit guides) street cameras below stay quiet even without a section name', fn: s52 },
+    { id: 'S53', name: 'S53 hi-pass lane numbers (1 2 – 5) from the Worker; no duplicate distance when the toll is the next guide', fn: s53 },
   ];
 
   // ---------------------------------------------------------------- runner

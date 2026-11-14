@@ -43,7 +43,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-64'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-65'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -2336,7 +2336,51 @@
     el.hidden = false;
     syncDrawer();
   }
-  const tollState = { g: null };
+  const tollState = { g: null, lanesKey: '', lanes: null, lanesAt: 0, noKeyUntil: 0 };
+  // 하이패스 차로 번호 (Worker /hipass → 한국도로공사 '영업소 하이패스 차로 개폐 현황'. 2026-11-14 요청: '몇 번으로 가야 하이패스').
+  // 고속도로에 들어가는 톨게이트(앞 4km 안에 고속도로 진입 안내)면 입구 차로, 나오는 곳(앞 3km 안에 출구 안내)이면 출구 차로,
+  // 모르면(본선 영업소 등) 열린 하이패스 차로 전부. 닫힌 차로는 뺀다
+  function tollSide(g) {
+    const last = nav.cum.length - 1, sg = nav.cum[Math.min(g.i, last)];
+    let side = '';
+    for (const x of nav.guides || []) {
+      const s = nav.cum[Math.min(x.i, last)];
+      if (s >= sg) break;
+      if (sg - s <= 4000 && HW_IN.has(x.t)) side = '입구';
+      if (sg - s <= 3000 && HW_OUT.has(x.t)) side = '출구';
+    }
+    return side;
+  }
+  function pickHipassLanes(lanes, side) {
+    const open = (lanes || []).filter((x) => x.open && x.no > 0);
+    const mine = side ? open.filter((x) => String(x.cls).indexOf(side) >= 0) : open;
+    return [...new Set((mine.length ? mine : open).map((x) => x.no))].sort((a, b) => a - b);
+  }
+  function loadHipassLanes(g, name) {
+    const key = g.i + ':' + name;
+    if (tollState.lanesKey === key || Date.now() < tollState.noKeyUntil) return;
+    tollState.lanesKey = key; tollState.lanes = null;
+    api('/hipass', { name }, null, 8000).then((j) => {
+      if (tollState.lanesKey !== key) return;
+      tollState.lanes = Array.isArray(j.lanes) ? j.lanes : [];
+      tollState.lanesAt = Date.now();
+      renderToll();
+    }).catch((e) => {
+      // 인증키가 아직 없으면(501) 10분 동안 다시 묻지 않는다
+      if (e && e.status === 501) tollState.noKeyUntil = Date.now() + 10 * 60000;
+    });
+  }
+  function renderTollLanes(g) {
+    const el = $('#tollLanes');
+    const nums = tollState.lanes ? pickHipassLanes(tollState.lanes, tollSide(g)) : [];
+    el.hidden = !nums.length;
+    if (!nums.length) { $('#tollCard').classList.remove('has-lanes'); return; }
+    let html = '', prev = null;
+    nums.forEach((n) => { if (prev !== null && n > prev + 1) html += '<i>–</i>'; html += '<b>' + n + '</b>'; prev = n; });
+    el.innerHTML = html + '<span class="tl-unit">번 차로</span>';
+    el.setAttribute('aria-label', '하이패스 ' + nums.join(', ') + '번 차로');
+    $('#tollCard').classList.add('has-lanes');
+  }
   function renderToll() {
     const el = $('#tollCard');
     let g = null, ahead = 0;
@@ -2362,6 +2406,12 @@
     const p = tollParts(g);
     $('#tollName').textContent = p.name;
     $('#tollDist').textContent = fmtDist(ahead);
+    // 이 톨게이트가 길안내 패널의 다음 안내면 거리가 패널에 크게 나오므로 여기서는 뺀다 (2026-11-14: 같은 미터기는 안 보여도 됨)
+    $('#tollDist').hidden = g === nav.next;
+    // 패널에 이름·통행료가 이미 크게 나오면 여기서는 이름 줄도 빼고 차로 번호를 넓게
+    el.classList.toggle('is-next', g === nav.next);
+    loadHipassLanes(g, p.name);
+    renderTollLanes(g);
     $('#tollFare').textContent = p.fare.replace(/^통행료\s*/, ''); // '800원'만 (한 줄 카드라 짧게). 하이패스 안내 문구는 둘째 줄에 고정
     syncDrawer();
   }
@@ -3627,7 +3677,7 @@
       planRoute, doSearch, setFollowing, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
       sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
-      saveTripNow, restoreTripNow, trafficColor, highwaySpans, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, renderJunction,
+      saveTripNow, restoreTripNow, trafficColor, highwaySpans, tollState, pickHipassLanes, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, renderJunction,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
     };

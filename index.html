@@ -1198,6 +1198,21 @@
   #app.tesla .cd-in .toll-fare { color: var(--nv-sub); opacity: 1; }
   #app.tesla .cd-in .toll-dist { color: var(--nv-fg); }
   #app.tesla .cd-in .toll-hint { font-size: 13px; margin-top: 2px; }
+  /* 하이패스 차로 번호 (2026-11-14 요청): 파란 칸에 번호, 떨어진 번호 사이는 '–'. 다른 내비의 'hi-pass 1 2 – 5' 처럼 */
+  .toll-lanes { flex: none; margin-left: auto; display: flex; align-items: center; gap: 4px; }
+  .toll-lanes b {
+    min-width: 26px; height: 30px; padding: 0 6px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center;
+    background: #1565c0; color: #fff; font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; text-shadow: none;
+  }
+  .toll-lanes i { font-style: normal; font-weight: 800; color: #8a94a6; padding: 0 1px; }
+  /* 차로 번호가 있으면 'hi-pass [1][2] – [5] 번 차로'. 안내 문구·통행료는 빼고, 톨게이트가 패널의 다음 안내면 이름 줄도 뺀다
+     (이름·통행료·거리는 패널에 크게 나온다) */
+  .tollcard.has-lanes .toll-hint, .tollcard.has-lanes .toll-fare { display: none; }
+  .tollcard.is-next .toll-name { display: none; }
+  .tollcard.is-next.has-lanes .toll-info { display: none; }
+  .tollcard.is-next.has-lanes .toll-lanes { margin-left: 4px; }
+  .tl-unit { margin-left: 4px; font-size: 14px; font-weight: 700; opacity: .8; white-space: nowrap; }
+  #app.tesla .cd-in .tl-unit { color: var(--nv-sub); opacity: 1; }
 </style>
 </head>
 <body>
@@ -1258,6 +1273,8 @@
               <div class="toll-hint">하이패스 차로 이용</div>
             </div>
             <b id="tollDist" class="toll-dist">0m</b>
+            <!-- 하이패스 차로 번호 (한국도로공사 실시간 자료가 있을 때만): 예) [1][2] – [5] -->
+            <div id="tollLanes" class="toll-lanes" hidden></div>
           </div>
     </div></div></div>
     <!-- 과속방지턱: 200m 앞부터 작은 표지 + 거리 (길안내 중이면 경로 위, 아니면 바로 앞) -->
@@ -1439,6 +1456,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-64"></script>
+<script src="app.js?v=2026.11.14-65"></script>
 </body>
 </html>
