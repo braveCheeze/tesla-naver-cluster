@@ -44,7 +44,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-72'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-73'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   // 브라우저에 저장된 예전 index.html 이 새 app.js 를 불러온 경우(화면 요소가 맞지 않아 버튼 연결에서 멈춘다):
@@ -2165,7 +2165,7 @@
     nav.setAt = state.fix ? state.fix.t : Date.now(); nav.drawnSeg = 0; nav.drawnAlong = 0; nav.drawnAt = 0;
     nav.routeCams = null; nav.routeCamList = []; camState.markerAt = null; // 경로 위 카메라·지도 표시를 새 경로로
     nav.routeBumps = null; bumpState.markerKey = '';
-    nav.routeSigns = null;
+    nav.routeSigns = null; tollState.numsKey = '';
     nav.routeTunnels = null;
     nav.lastTraffic = state.fix ? state.fix.t : Date.now();
     if (!keepAlerts) { nav.said = {}; nav.gap = 10000; }
@@ -2578,10 +2578,24 @@
     el.hidden = false;
     syncDrawer();
   }
-  const tollState = { g: null, lanesKey: '', lanes: null, lanesAt: 0, noKeyUntil: 0 };
-  // 하이패스 차로 번호 (Worker /hipass → 한국도로공사 '영업소 하이패스 차로 개폐 현황'. 2026-11-14 요청: '몇 번으로 가야 하이패스').
-  // 고속도로에 들어가는 톨게이트(앞 4km 안에 고속도로 진입 안내)면 입구 차로, 나오는 곳(앞 3km 안에 출구 안내)이면 출구 차로,
-  // 모르면(본선 영업소 등) 열린 하이패스 차로 전부. 닫힌 차로는 뺀다
+  const tollState = { g: null, numsKey: '', nums: [] };
+  // 하이패스 차로 번호 (2026-11-14 요청: '몇 번으로 가야 하이패스'). 한국도로공사 '영업소별 하이패스차로 운영현황'(data.go.kr 15043760,
+  // 전국 영업소·방향별 1~25번 차로 종류)을 data/hipass.json 에 담아 둔다 (tools/build_hipass.py). 키·서버 없이 바로 찾는다.
+  // (한국도로공사 실시간 API '영업소 하이패스 차로 개폐 현황'은 자율주행 시범 구간 3곳뿐이라 쓰지 않는다)
+  const hipass = { loaded: false, o: {}, date: '' };
+  const SEOUL = { lat: 37.5665, lng: 126.978 };
+  function setHipassData(j) {
+    hipass.o = (j && j.o) || {}; hipass.date = (j && j.date) || ''; hipass.loaded = !!(j && j.o);
+    tollState.numsKey = '';
+  }
+  async function loadHipass() {
+    try {
+      const r = await fetch('data/hipass.json?v=' + APP_VERSION);
+      if (r.ok) setHipassData(await r.json());
+    } catch (e) { /* 차로 자료가 없으면 번호 없이 */ }
+  }
+  const hipassKey = (s) => String(s || '').replace(/\s+/g, '').replace(/\(개방식\)$/, '').replace(/(톨게이트|영업소|요금소|TG)$/i, '');
+  // 폐쇄식 영업소: 고속도로에 들어가는 톨게이트(앞 4km 안에 고속도로 진입 안내)면 입구 차로, 나오는 곳(앞 3km 안에 출구 안내)이면 출구 차로
   function tollSide(g) {
     const last = nav.cum.length - 1, sg = nav.cum[Math.min(g.i, last)];
     let side = '';
@@ -2591,30 +2605,45 @@
       if (sg - s <= 4000 && HW_IN.has(x.t)) side = '입구';
       if (sg - s <= 3000 && HW_OUT.has(x.t)) side = '출구';
     }
-    return side;
+    if (side) return side;
+    // 안내로 모르면: 같은 경로에 앞서 지난 폐쇄식 톨게이트가 있으면 이번이 출구, 뒤에 또 있으면 이번이 입구
+    let before = false, after = false;
+    for (const x of nav.guides || []) {
+      if (x === g || x.t !== 121) continue;
+      const o = hipass.o[hipassKey(tollParts(x).name)];
+      if (!o || o.t) continue;
+      if (x.i < g.i) before = true; else after = true;
+    }
+    return before ? '출구' : after ? '입구' : '';
   }
-  function pickHipassLanes(lanes, side) {
-    const open = (lanes || []).filter((x) => x.open && x.no > 0);
-    const mine = side ? open.filter((x) => String(x.cls).indexOf(side) >= 0) : open;
-    return [...new Set((mine.length ? mine : open).map((x) => x.no))].sort((a, b) => a - b);
+  // 개방식 영업소(상행·하행)에서 우리 방향: 수도권 방사형 노선(s:1)이면 서울 쪽으로 가면 상행. 애매하면 ''
+  function tollDir(g, o) {
+    if (!o.s || !nav.pts) return '';
+    const last = nav.pts.length - 1, i = Math.min(g.i, last), s0 = nav.cum[i];
+    let a = i, b = i;
+    while (a > 0 && s0 - nav.cum[a] < 150) a--;
+    while (b < last && nav.cum[b] - s0 < 150) b++;
+    if (a === b) return '';
+    const diff = angleDiff(bearing(nav.pts[a], nav.pts[b]), bearing(nav.pts[i], SEOUL));
+    return diff <= 35 ? 'u' : diff >= 145 ? 'd' : '';
   }
-  function loadHipassLanes(g, name) {
-    const key = g.i + ':' + name;
-    if (tollState.lanesKey === key || Date.now() < tollState.noKeyUntil) return;
-    tollState.lanesKey = key; tollState.lanes = null;
-    api('/hipass', { name }, null, 8000).then((j) => {
-      if (tollState.lanesKey !== key) return;
-      tollState.lanes = Array.isArray(j.lanes) ? j.lanes : [];
-      tollState.lanesAt = Date.now();
-      renderToll();
-    }).catch((e) => {
-      // 인증키가 아직 없으면(501) 10분 동안 다시 묻지 않는다
-      if (e && e.status === 501) tollState.noKeyUntil = Date.now() + 10 * 60000;
-    });
+  // 승용차 하이패스 차로 번호. 방향을 모르면 양쪽 다 하이패스인 차로만 (틀린 번호를 보여 주지 않게)
+  function hipassNums(g) {
+    const o = hipass.o[hipassKey(tollParts(g).name)];
+    if (!o) return [];
+    const both = (a, b) => (a || []).filter((n) => (b || []).indexOf(n) >= 0);
+    if (o.t) {
+      const d = tollDir(g, o);
+      return d ? (o[d] || []) : both(o.u, o.d);
+    }
+    const side = tollSide(g);
+    return side === '입구' ? (o.i || []) : side === '출구' ? (o.x || []) : both(o.i, o.x);
   }
   function renderTollLanes(g) {
     const el = $('#tollLanes');
-    const nums = tollState.lanes ? pickHipassLanes(tollState.lanes, tollSide(g)) : [];
+    const key = g.i + ':' + g.s + ':' + hipass.date + ':' + Math.round(nav.total || 0) + ':' + (nav.pts && nav.pts.length ? nav.pts[0].lat + ',' + nav.pts[0].lng : '');
+    if (tollState.numsKey !== key) { tollState.numsKey = key; tollState.nums = hipassNums(g); }
+    const nums = tollState.nums;
     el.hidden = !nums.length;
     if (!nums.length) { $('#tollCard').classList.remove('has-lanes'); return; }
     let html = '', prev = null;
@@ -2652,7 +2681,6 @@
     $('#tollDist').hidden = g === nav.next;
     // 패널에 이름·통행료가 이미 크게 나오면 여기서는 이름 줄도 빼고 차로 번호를 넓게
     el.classList.toggle('is-next', g === nav.next);
-    loadHipassLanes(g, p.name);
     renderTollLanes(g);
     $('#tollFare').textContent = p.fare.replace(/^통행료\s*/, ''); // '800원'만 (한 줄 카드라 짧게). 하이패스 안내 문구는 둘째 줄에 고정
     syncDrawer();
@@ -3973,6 +4001,7 @@
   loadCameras();
   loadBumps();
   loadSigns();
+  loadHipass();
   loadTunnels();
   startGps();
   if (store.get('diag') === '1' || params.has('diag')) setDiag(true);
@@ -3998,7 +4027,7 @@
       planRoute, doSearch, setFollowing, canvasPoint, gesture, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
       sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
-      saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, pickHipassLanes, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, renderJunction,
+      saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassNums, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, renderJunction,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
