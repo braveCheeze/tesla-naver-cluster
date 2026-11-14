@@ -2013,7 +2013,7 @@
       P, cum, total, dest: { name: '분기 테스트', addr: '', lat: P[30].lat, lng: P[30].lng },
     };
     const snap = () => { const el = document.getElementById('juncCard');
-      return { shown: visible('#juncCard'), kind: (el.querySelector('#juncSvg svg.jc-ramp') ? 'ramp' : 'fork'), left: el.classList.contains('left'),
+      return { shown: visible('#juncCard'), kind: (el.querySelector('#juncSvg .jc-ramp') ? 'ramp' : 'fork'), left: el.classList.contains('left'),
         hwy: el.classList.contains('hwy'), label: text('#juncLabel'), place: text('#juncPlace'), dist: document.getElementById('juncDist') ? text('#juncDist') : '',
         inDrawer: !!el.closest('#camDrawer .cd-in'), open: document.getElementById('camDrawer').classList.contains('open') }; };
     const go = (s) => { const a = pointAt(R, s); feed(a.p, 20, a.h); t.renderNav(); };

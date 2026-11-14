@@ -85,7 +85,7 @@
     rb: '회전교차로', rb_l: '회전교차로 왼쪽', rb_s: '회전교차로 직진', rb_r: '회전교차로 오른쪽', rb_u: '회전교차로 유턴',
     over_l: '고가 왼쪽', over_r: '고가 오른쪽', over_s: '고가 직진', under_l: '지하차도 왼쪽', under_r: '지하차도 오른쪽', under_s: '지하차도 직진',
     side_l: '지하차도 옆길 왼쪽', side_r: '지하차도 옆길 오른쪽', oside_l: '고가 옆길 왼쪽', oside_r: '고가 옆길 오른쪽', rest: '휴게소', ferry: '여객선', toll: '톨게이트', goal: '도착', via: '경유지',
-    tunnel: '터널', hipass: '하이패스', jc_l: '분기점 왼쪽', jc_r: '분기점 오른쪽', junc_fork_r: '분기점 그림(갈림길)', junc_exit_r: '분기점 그림(출구)',
+    tunnel: '터널', hipass: '하이패스', junc_fork_day: '갈림길 (낮)', junc_fork_night: '갈림길 (밤)', junc_ramp_day: '나가기·들어가기 (낮)', junc_ramp_night: '나가기·들어가기 (밤)', jc_l: '분기점 왼쪽', jc_r: '분기점 오른쪽', junc_fork_r: '분기점 그림(갈림길)', junc_exit_r: '분기점 그림(출구)',
   };
   const SRC = { s: 's.webp', l: 'l.webp', r: 'r.webp', u: 'u.webp', sl: 'sl.png', sr: 'sr.webp', rb: 'rb.webp', kl: 'kl.webp', kr: 'kr.webp',
     outl: 'outl.webp', outr: 'outr.webp', inl: 'inl.webp', inr: 'inr.webp', toll: 'toll.webp', goal: 'goal.webp', via: 'via.webp' };
@@ -115,11 +115,11 @@
       (o.title ? ' title="' + esc(o.title) + '"' : '') + '>' + (o.badge ? '<span class="badge">' + o.badge + '</span>' : '') +
       '<div class="ic">' + o.html + '</div><div class="lb">' + esc(o.label) + '</div></div>';
   }
-  function slotRow(slot, label, appHtml, extra) {
+  function slotRow(slot, label, appHtml, extra, scene) {
     const cur = current(slot), rp = repo()[slot] || '-';
     let t = tile({ slot, file: '-', on: cur === '-', html: appHtml || '<span style="color:var(--sub)">없음</span>', label: '앱 그림', badge: rp === '-' ? '기본' : '' });
     cands(slot).forEach((c) => {
-      t += tile({ slot: c.pink > 30 ? '' : slot, file: c.file, on: cur === c.file, html: img(c.file), cls: c.pink > 30 ? 'pink' : '',
+      t += tile({ slot: c.pink > 30 ? '' : slot, file: c.file, on: cur === c.file, html: img(c.file), cls: (c.pink > 30 ? 'pink' : '') + (scene ? ' scene' : ''),
         label: (MODEL[c.model] || c.model) + ' ' + c.n, badge: rp === c.file ? '기본' : '', title: c.pink > 30 ? '분홍 기가 남아 고를 수 없어요' : c.file });
     });
     if (extra) t += extra;
@@ -148,7 +148,10 @@
     }).join('');
     sec.push(['guide', '안내 아이콘', '길안내 패널의 다음 회전 아이콘이에요. 앱 그림은 직접 만든 AI 그림을 SVG 로 딴 것이에요.', guide]);
     sec.push(['car', '내 차', '지도 위 내 차 모양이에요. 고르면 이 브라우저의 설정 → 자동차 아이콘이 바뀌어요.', carRow()]);
-    const known = new Set(cat.guide.map((g) => g.k).concat(cat.signs.map((x) => x.k), ['tunnel']));
+    const JV = ['junc_fork_day', 'junc_fork_night', 'junc_ramp_day', 'junc_ramp_night'];
+    sec.push(['junc', '분기점 그림', '길안내 서랍 맨 위 그림이에요. 오른쪽으로 가는 그림이고 왼쪽 갈림길이면 앱이 좌우로 뒤집어요. 낮·밤을 둘 다 골라야 쓰여요(앱 그림 = 그려 넣은 원근 그림).',
+      JV.map((k) => slotRow(k, LABEL[k] || k, '<span style="color:var(--sub);font-size:11px">원근 그림</span>', '', true)).join('')]);
+    const known = new Set(cat.guide.map((g) => g.k).concat(cat.signs.map((x) => x.k), ['tunnel'], JV));
     const rest = [...new Set(man.items.filter((x) => x.kind !== 'car' && !known.has(x.slot)).map((x) => x.slot))];
     if (rest.length) {
       const html = rest.map((slot) => {

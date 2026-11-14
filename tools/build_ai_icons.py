@@ -62,7 +62,7 @@ def main():
         pink = 0
         if kind == 'scene':
             im = Image.open(src).convert('RGB')
-            im.thumbnail((480, 320), Image.LANCZOS)
+            im.thumbnail((960, 400), Image.LANCZOS)   # 분기점 장면(8:3)은 서랍 320px 를 DPR 2 로
             im.save(path, 'WEBP', quality=86)
         else:
             try:

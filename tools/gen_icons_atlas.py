@@ -377,6 +377,46 @@ RB_GRASS = (EDIT_KEEP + 'Change ONLY the round center island: make it look like 
             'with fine grass texture, a few darker green tufts and soft natural shading, surrounded by a thin light grey concrete '
             'curb. Keep the route arrow, the roads, the ring and everything else exactly as they are.')
 GRASS = {k: (('ref/base_%s.png' % k,), RB_GRASS, '') for k in RBS}   # --icons grass
+JV = ('Junction close-up illustration for the guidance panel of a premium car navigation display (like the Naver Map or Tmap '
+      'junction view), polished modern flat-vector illustration with soft gradients and crisp edges, very wide 8:3 panorama. '
+      'First-person driver view looking straight ahead along a highway in gentle perspective, horizon at about one quarter from '
+      'the top. ')
+JV_DAY = ' Daytime: soft light-blue sky gradient, faint distant hills, fresh green grass shoulders, mid-grey asphalt with crisp white lane markings and white edge lines.'
+JV_NIGHT = (' Night: deep navy sky gradient with a faint warm glow on the horizon, dark green-grey shoulders, dark asphalt with bright '
+            'white lane markings and edge lines, tiny reflective road studs.')
+JV_END = (' No text, no letters, no road signs, no route numbers, no cars, no people, no logos, no buildings in the foreground. Keep '
+          'the lower-left corner and the upper-right corner calm and simple, because the app places small labels there.')
+JV_FORK = ('The road splits ahead into two equally wide branches, one curving gently to the left and one curving gently to the '
+           'right. The RIGHT branch is the route: its lane is highlighted in vivid blue (#2F7DFF) with one large clean white arrow '
+           'on it that curves into the right branch. The left branch is plain asphalt.')
+JV_RAMP = ('A straight multi-lane highway continues ahead to the horizon; on the right, an exit ramp separates from the rightmost '
+           'lane and curves away to the right. The exit ramp is the route: highlighted in vivid blue (#2F7DFF) with one large clean '
+           'white arrow curving onto it. The main highway lanes are plain asphalt.')
+PANO = {'junc_fork_day', 'junc_fork_night', 'junc_ramp_day', 'junc_ramp_night'}
+JOBS['junc_fork_day'] = ((), JV, JV_FORK + JV_DAY + JV_END)
+JOBS['junc_fork_night'] = ((), JV, JV_FORK + JV_NIGHT + JV_END)
+JOBS['junc_ramp_day'] = ((), JV, JV_RAMP + JV_DAY + JV_END)
+JOBS['junc_ramp_night'] = ((), JV, JV_RAMP + JV_NIGHT + JV_END)
+GREEN_EDIT = ('Edit this navigation icon. Keep exactly the same road layout, the same composition, the same flat top-down bird\'s-eye '
+              'view (no perspective, roads keep their width), the same style and the solid magenta background. Make the ROUTE stand out: '
+              'recolor the route arrow to vivid green (#03C75A) with a thin dark-green outline, make it about twice as thick with a '
+              'bigger, sharper arrowhead, and tint the lane or road the route follows with a soft translucent green. Everything that is '
+              'not the route stays grey and white. ')
+GREEN_ROAD = {
+    'ramp': 'Give the ramp more depth: subtle shading along its edges and a soft shadow where it separates from or joins the '
+            'main road, so it reads as a real highway ramp; the green arrow should feel like it is moving along it.',
+    'over': 'Make the overpass clearly raised: the bridge deck is slightly lighter, has visible concrete side walls and slim pillars, '
+            'and casts a strong soft shadow on the road below; the route visibly climbs up onto the bridge and over the other road.',
+    'under': 'Make the underpass clearly go down: the road dips between light concrete retaining walls that grow taller toward the '
+             'dark tunnel opening, the asphalt gets darker as it goes under, with depth shading inside the opening; the green route '
+             'visibly descends into it.',
+    'side': 'Make the structure in the middle read clearly in 3D (concrete walls and shading, a dark tunnel opening or a raised '
+            'bridge deck with shadow), while the green route stays on the street-level side road beside it.',
+    'rb': 'Keep the green grass island, the ring and the four roads exactly. Only the route arrow changes as described.',
+}
+GREEN_KIND = {'outr': 'ramp', 'inr': 'ramp', 'outs': 'ramp', 'ins': 'ramp', 'over_s': 'over', 'over_r': 'over', 'under_s': 'under',
+              'under_r': 'under', 'side_r': 'side', 'oside_r': 'side', 'rb_l': 'rb', 'rb_s': 'rb', 'rb_r': 'rb', 'rb_u': 'rb'}
+GREEN = {k: (('ref/base2_%s.png' % k,), GREEN_EDIT, GREEN_ROAD[v]) for k, v in GREEN_KIND.items()}   # --icons green
 WIDE = {'junc_fork_r', 'junc_exit_r'}
 
 
@@ -412,10 +452,10 @@ MODELS = {
                                                  'background': 'opaque', 'output_format': 'png', 'n': 1}),
     # 글로만 그리는 모델 (참고 그림을 보내지 않는다)
     'flare26': ('openai/gpt-image-2.6-flare/text-to-image', 0.007,
-                lambda p, imgs, wide=False: {'prompt': p, 'size': '1536x1024' if wide else '1024x1024', 'quality': 'medium',
+                lambda p, imgs, wide=False: {'prompt': p, 'size': '1536x576' if wide == 'pano' else '1536x1024' if wide else '1024x1024', 'quality': 'medium',
                                              'complexity': 'high', 'background': 'opaque', 'output_format': 'png', 'n': 1}),
     'sunburst26': ('openai/gpt-image-2.6-sunburst/text-to-image', 0.007,
-                   lambda p, imgs, wide=False: {'prompt': p, 'size': '1536x1024' if wide else '1024x1024', 'quality': 'medium',
+                   lambda p, imgs, wide=False: {'prompt': p, 'size': '1536x576' if wide == 'pano' else '1536x1024' if wide else '1024x1024', 'quality': 'medium',
                                                 'complexity': 'high', 'background': 'opaque', 'output_format': 'png', 'n': 1}),
     'ideo': ('ideogram/v4/quality/text-to-image', 0.025,
              lambda p, imgs, wide=False: {'prompt': p[:2000], 'image_size': 'landscape_4_3' if wide else 'square_hd',
@@ -428,6 +468,7 @@ MODELS = {
 
 MODELS['flare26b'], MODELS['sunburst26b'] = MODELS['flare26'], MODELS['sunburst26']        # 3판(굵은 화살표)
 MODELS['flare26g'], MODELS['sunburst26g'] = MODELS['flare26e'], MODELS['sunburst26e']      # 회전교차로 잔디
+MODELS['flare26v'], MODELS['sunburst26v'] = MODELS['flare26e'], MODELS['sunburst26e']      # 초록 길·입체감 (2026-11-15)
 T2I_MODELS = {'flare26', 'sunburst26', 'ideo', 'flare26b', 'sunburst26b'}
 
 
@@ -528,6 +569,8 @@ def main():
     a = ap.parse_args()
     if 'grass' in a.icons.split(','):
         JOBS.update(GRASS)   # 회전교차로 4칸을 '잔디' 편집으로
+    if 'green' in a.icons.split(','):
+        JOBS.update(GREEN)   # 고른 그림을 초록 길·입체감으로 고치기
     models = [m for m in (a.models or 'flare,sunburst,flare26,sunburst26').split(',') if m in MODELS]
     # 묶음 이름: cars = 모든 차 아이콘(car_*·cute_*), guide = 차가 아닌 안내 아이콘·분기점 그림 전부
     is_car = lambda k: k.startswith(('car_', 'cute_'))
@@ -535,7 +578,7 @@ def main():
     groups = {'cars': [k for k in JOBS if is_car(k)], 'signs': [k for k in JOBS if is_sign(k)],
               'guide': [k for k in JOBS if not is_car(k) and not is_sign(k)],
               'roads': ROADS, 'rb': RBS, 'redo': ROADS + RBS,
-              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s'], 'fix3': ['outs', 'ins', 'over_r', 'under_s', 'under_r', 'side_r', 'oside_r'], 'grass': RBS}
+              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s'], 'fix3': ['outs', 'ins', 'over_r', 'under_s', 'under_r', 'side_r', 'oside_r'], 'grass': RBS, 'junc': sorted(PANO), 'green': list(GREEN_KIND)}
     want = []
     for i in a.icons.split(','):
         want += groups.get(i, [i])
@@ -570,12 +613,12 @@ def main():
         try:
             ref, style, extra = JOBS[i]
             try:
-                pid = submit(key, mid, mk(style + extra, refs[i], i in WIDE))
+                pid = submit(key, mid, mk(style + extra, refs[i], 'pano' if i in PANO else i in WIDE))
             except RuntimeError as e:
                 if len(refs[i]) < 2:
                     raise
                 print('  (참고 그림 여러 장이 안 돼 밑그림 한 장으로 다시: %s)' % str(e)[:120])
-                pid = submit(key, mid, mk(style + extra, refs[i][:1], i in WIDE))
+                pid = submit(key, mid, mk(style + extra, refs[i][:1], 'pano' if i in PANO else i in WIDE))
             pending.append((i, m, n, pid))
             print('  보냄 %-5s %-5s #%d' % (i, m, n))
         except Exception as e:

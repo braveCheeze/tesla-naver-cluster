@@ -51,7 +51,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-107'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-108'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -789,6 +789,12 @@
       } else this.map.panBy(new N.Point(dx, dy));
     },
     getCenter() { const c = this.map.getCenter(); return { lat: c.lat(), lng: c.lng() }; },
+    coordAt(px, py) {
+      const N = naver.maps, proj = this.map.getProjection(), sz = this.map.getSize();
+      const o = proj.fromCoordToOffset(this.map.getCenter());
+      const c = proj.fromOffsetToCoord(new N.Point(o.x + px - sz.width / 2, o.y + py - sz.height / 2));
+      return { lat: c.lat(), lng: c.lng() };
+    },
     stop() { if (this.map.stop) this.map.stop(); }, // 진행 중인 이동·확대 애니메이션을 멈춘다
     // 캔버스 크기가 바뀐 뒤 지도 크기를 맞춘다 (중심 좌표는 유지)
     resize(w, h) {
@@ -960,6 +966,7 @@
     },
     panPx(dx, dy) { this.map.panBy([dx, dy], { animate: false }); },
     getCenter() { const c = this.map.getCenter(); return { lat: c.lat, lng: c.lng }; },
+    coordAt(px, py) { const c = this.map.containerPointToLatLng([px, py]); return { lat: c.lat, lng: c.lng }; },
     stop() { this.map.stop(); },
     resize() {
       const c = this.map.getCenter();
@@ -3547,7 +3554,10 @@
     const key = g.i + ':' + g.t + ':' + g.s;
     if (juncState.key !== key) {
       juncState.key = key;
-      $('#juncSvg').innerHTML = juncSvg(j);
+      // AI 분기점 장면(낮·밤, 오른쪽 그림. 왼쪽은 CSS 로 좌우 뒤집기)을 골라 두었으면 그것을, 아니면 그려 넣은 원근 그림 (2026-11-15 요청)
+      const jd = ICON_PICKS['junc_' + j.kind + '_day'], jn = ICON_PICKS['junc_' + j.kind + '_night'];
+      const jimg = (f, c) => '<img class="jv-img ' + c + ' jc-' + j.kind + '" src="' + APP_BASE + 'img/ai/' + f + '?v=' + APP_VERSION + '" alt="" draggable="false">';
+      $('#juncSvg').innerHTML = jd && jn ? jimg(jd, 'jv-day') + jimg(jn, 'jv-night') : juncSvg(j);
       $('#juncLabel').textContent = j.label || (j.left ? '왼쪽' : '오른쪽');
       $('#juncPlace').textContent = j.place;
       el.classList.toggle('left', j.left);
@@ -4799,7 +4809,8 @@
   // W/↑ 가속(빠를수록 천천히 붙음) · S/↓ 브레이크 · 아무것도 안 누르면 서서히 줄어듦 · Space 급정거 · Esc 끝.
   // 키는 자판 위치(e.code)로 읽어 한글 입력 상태에서도 된다. 위치는 실제 GPS 처럼 1초에 한 번 onFix 로 넣는다(길안내·단속·재탐색이 그대로 반응).
   // 데모와 같은 표시(state.demoTimer)를 써서 실제 GPS 는 무시하고, 주행 기록은 보관했다가 끝나면 되돌린다
-  const sim = { on: false, lat: 0, lng: 0, h: 0, v: 0, keys: new Set(), last: 0, loop: 0, timer: 0, track: null, s: 0, fetching: false, gen: 0, failAt: 0, note: '', turnFrom: null, straightAt: 0 };
+  const sim = { on: false, lat: 0, lng: 0, h: 0, v: 0, keys: new Set(), last: 0, loop: 0, timer: 0, track: null, s: 0, fetching: false, gen: 0, failAt: 0, note: '', turnFrom: null, straightAt: 0, leftRoute: null, dragging: false };
+  const SIM_CAR = { name: 'RS7', grip: 8.6, P: 394000, m: 2075, k: 0.000291, c: 0.15, vmax: 84.75 };
   const SIM_KEYS = { KeyW: 'up', ArrowUp: 'up', KeyS: 'down', ArrowDown: 'down', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right', Space: 'stop' };
   function simTrack(pts, src) {
     const cum = [0];
@@ -4852,7 +4863,7 @@
     api('/route', { start: from.lng.toFixed(6) + ',' + from.lat.toFixed(6), goal: to.lng.toFixed(6) + ',' + to.lat.toFixed(6), options: 'traoptimal' }, null, 12000)
       .then((j) => {
         const r = (j.alternatives || [])[0];
-        if (!r || gen !== sim.gen || !sim.on || (nav.active && nav.pts)) return;
+        if (!r || gen !== sim.gen || !sim.on || (nav.active && nav.pts && nav.pts !== sim.leftRoute)) return;
         const got = r.path.map((q) => ({ lat: q[1], lng: q[0] }));
         if (got.length < 2) throw new Error('짧은 길');
         // 곧게 갈 앞길이 처음부터 유턴이면 더 먼 곳(3배)으로 한 번 더 묻는다 (짧은 골목 끝에서 돌아 나오는 길을 피하려고)
@@ -4874,9 +4885,11 @@
     if (state.demoTimer !== sim.timer) { simStop(true); return; }   // 설정의 데모 버튼 등으로 멈춘 경우
     const now = performance.now(), dt = Math.min(1, (now - sim.last) / 1000);   // 창이 가려져 타이머가 느려져도 시간은 그대로 흐르게
     sim.last = now;
+    if (sim.dragging) return;   // 차를 끄는 동안은 그 자리에
     const k = sim.keys;
     // 궤도 고르기: 길안내 중이면 안내 경로, 아니면 받은 앞길
-    const navPts = nav.active && nav.pts && nav.pts.length > 1 ? nav.pts : null;
+    // 차를 끌어다 경로 밖에 놓았으면 그 경로는 따르지 않는다 (길을 따라 달리다 재탐색으로 새 경로가 오면 그 경로로)
+    const navPts = nav.active && nav.pts && nav.pts.length > 1 && nav.pts !== sim.leftRoute ? nav.pts : null;
     if (navPts && (!sim.track || sim.track.pts !== navPts)) {
       sim.track = simTrack(navPts, 'nav'); sim.s = simLocate(sim.track, { lat: sim.lat, lng: sim.lng }); sim.note = '';
     } else if (!navPts && sim.track && sim.track.src === 'nav') sim.track = null;   // 안내가 끝나면 앞길을 새로 받는다
@@ -4885,12 +4898,14 @@
       const endDir = tr ? bearing(simPointAt(tr, tr.total - 15), simPointAt(tr, tr.total)) : sim.h;
       simFetchRoad(endDir, 1200, null, tr ? tr.total - sim.s : 0);
     }
+    // 아우디 RS7 기준 (2026-11-15 요청): 처음엔 타이어 접지 한계(8.6m/s²), 그 뒤엔 바퀴 출력(630마력의 약 85%)으로, 공기 저항이
+    // 출력과 맞먹는 305km/h 에서 멈춘다 → 0→100km/h 3.4초, 0→200km/h 약 11초, 최고 305km/h. 떼면 엔진 브레이크 + 공기 저항
     let a;
-    if (k.has('stop')) a = -9;
-    else if (k.has('down')) a = -6;
-    else if (k.has('up')) a = sim.v < 16.7 ? 3 : sim.v < 27.8 ? 2 : 1.1;   // 0→60 약 6초, 60→100 약 5.5초
-    else a = -(0.45 + 0.0008 * sim.v * sim.v);                            // 굴림 + 공기 저항으로 서서히
-    sim.v = Math.max(0, Math.min(50, sim.v + a * dt));                    // 최고 180km/h
+    if (k.has('stop')) a = -10;
+    else if (k.has('down')) a = -8;
+    else if (k.has('up')) a = Math.min(SIM_CAR.grip, SIM_CAR.P / (SIM_CAR.m * Math.max(sim.v, 1))) - SIM_CAR.k * sim.v * sim.v - SIM_CAR.c;
+    else a = -(0.6 + SIM_CAR.k * sim.v * sim.v);
+    sim.v = Math.max(0, Math.min(SIM_CAR.vmax, sim.v + a * dt));
     if (!tr || sim.s >= tr.total - 0.5) {
       sim.v = 0;    // 길이 없거나 길 끝: 그 자리에 선다 (길 밖으로 나가지 않게)
       if (tr && tr.src === 'nav') sim.note = '경로 끝';
@@ -4908,7 +4923,7 @@
   }
   function simTurn(side) {   // A/D: 다음 갈림길에서 그쪽으로 (길안내 중에는 경로를 따라가므로 쓰지 않는다)
     if (!sim.on) return;
-    if (nav.active && nav.pts) { sim.note = '길안내 중에는 경로를 따라가요'; renderSimHud(); return; }
+    if (nav.active && nav.pts && nav.pts !== sim.leftRoute) { sim.note = '길안내 중에는 경로를 따라가요'; renderSimHud(); return; }
     sim.gen++; sim.fetching = false;   // 받고 있던 앞길은 버린다
     sim.turnFrom = sim.h; sim.straightAt = 0;
     simFetchRoad((sim.h + side * 70 + 360) % 360, 400, side < 0 ? '왼쪽 길을 찾는 중…' : '오른쪽 길을 찾는 중…', 15);
@@ -4918,7 +4933,7 @@
     if (state.demoTimer) stopDemo(true);
     const c = state.fix || (mapA && mapA.getCenter && mapA.getCenter()) || { lat: 37.5663, lng: 126.9779 };
     sim.lat = c.lat; sim.lng = c.lng; sim.h = state.heading != null ? state.heading : 0; sim.v = 0;
-    sim.track = null; sim.s = 0; sim.fetching = false; sim.failAt = 0; sim.note = ''; sim.turnFrom = null; sim.straightAt = 0;
+    sim.track = null; sim.s = 0; sim.fetching = false; sim.failAt = 0; sim.note = ''; sim.turnFrom = null; sim.straightAt = 0; sim.leftRoute = null;
     demoSaved = { trip: state.trip, driveMs: state.driveMs, odo: state.odo, maxKmh: state.maxKmh };
     state.trip = 0; state.driveMs = 0; state.maxKmh = 0;
     $('#gpsNotice').hidden = true;
@@ -4943,9 +4958,9 @@
     const el = $('#simHud');
     if (!el) return;
     const mode = !sim.on ? '' : sim.note ? sim.note : sim.track && sim.track.src === 'nav' ? '안내 경로를 따라감' : '도로를 따라감';
-    const help = nav.active ? 'W 가속 · S 브레이크 · Space 급정거 · Esc 끝' : 'W 가속 · S 브레이크 · A/D 다음 갈림길에서 꺾기 · Space 급정거 · Esc 끝';
+    const help = (nav.active ? 'W 가속 · S 브레이크 · Space 급정거' : 'W 가속 · S 브레이크 · A/D 다음 갈림길에서 꺾기 · Space 급정거') + ' · 차를 끌어 옮기기 · Esc 끝';
     el.innerHTML = sim.on
-      ? '<b>모의 주행</b> <span class="sv">' + Math.round(sim.v * 3.6) + '</span> km/h · ' + dirName(sim.h) + ' ' + Math.round(sim.h) + '° · ' + esc(mode) +
+      ? '<b>모의 주행 · ' + SIM_CAR.name + '</b> <span class="sv">' + Math.round(sim.v * 3.6) + '</span> km/h · ' + dirName(sim.h) + ' ' + Math.round(sim.h) + '° · ' + esc(mode) +
         '<small>' + help + '</small>'
       : '<b>모의 주행</b> W 를 누르면 지도 가운데에서 가까운 도로로 출발<small>' + help + '</small>';
   }
@@ -4968,6 +4983,39 @@
     });
     window.addEventListener('keyup', (e) => { const k = SIM_KEYS[e.code]; if (k) sim.keys.delete(k); });
     window.addEventListener('blur', () => sim.keys.clear());   // 창을 벗어나면 누른 키가 남지 않게
+    // 차 끌어 옮기기: 내 차 아이콘 위(반지름 36px)에서 누르면 지도를 끌지 않고 차를 끈다. 놓은 자리 = 새 GPS 위치(가까운 도로로 이어 달림).
+    // 길안내 중 경로 밖에 놓으면 그 길을 따라 달리고, 앱이 경로 이탈로 재탐색한다
+    let ghost = null;
+    const onCar = (e) => { const r = meEl.getBoundingClientRect(); return r.width && Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)) < 36; };
+    $('#map').addEventListener('pointerdown', (e) => {
+      if (!sim.on || e.button !== 0 || !onCar(e)) return;
+      e.stopPropagation(); e.preventDefault();
+      sim.dragging = true;
+      ghost = document.createElement('div'); ghost.className = 'simghost';
+      ghost.style.left = e.clientX + 'px'; ghost.style.top = e.clientY + 'px';
+      document.body.appendChild(ghost);
+    }, true);
+    $('#map').addEventListener('mousedown', (e) => { if (sim.dragging) { e.stopPropagation(); e.preventDefault(); } }, true);
+    window.addEventListener('pointermove', (e) => { if (ghost) { ghost.style.left = e.clientX + 'px'; ghost.style.top = e.clientY + 'px'; } });
+    window.addEventListener('pointerup', (e) => {
+      if (!sim.dragging) return;
+      sim.dragging = false;
+      if (ghost) { ghost.remove(); ghost = null; }
+      const cp = canvasPoint(e.clientX, e.clientY);
+      if (!cp || !mapA || !mapA.coordAt) return;
+      let p = null;
+      try { p = mapA.coordAt(cp.x, cp.y); } catch (err) { p = null; }
+      if (p && Number.isFinite(p.lat) && Number.isFinite(p.lng)) simTeleport(p);
+    });
+  }
+  function simTeleport(p) {
+    sim.lat = p.lat; sim.lng = p.lng; sim.v = 0;
+    sim.gen++; sim.fetching = false; sim.track = null; sim.s = 0; sim.turnFrom = null; sim.straightAt = 0; sim.failAt = 0;
+    if (nav.active && nav.pts) sim.leftRoute = nav.pts;   // 놓은 자리에서는 원래 경로를 따르지 않는다
+    sim.note = '옮겼어요 · W 로 출발';
+    simFix();
+    setFollowing(true);
+    renderSimHud();
   }
 
   // ---------- 버튼 ----------

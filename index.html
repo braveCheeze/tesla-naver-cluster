@@ -924,6 +924,9 @@
   .simhud b { color: #ffcc33; margin-right: 6px; }
   .simhud .sv { font-size: 20px; font-weight: 800; }
   .simhud small { display: block; font-size: 11px; font-weight: 600; color: #c9ced5; }
+  /* 모의 주행: 차를 끄는 동안 손가락(마우스) 밑 표시 */
+  .simghost { position: fixed; z-index: 3000; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; pointer-events: none;
+    background: rgba(3, 199, 90, .35); border: 3px solid #03c75a; box-shadow: 0 0 0 6px rgba(3, 199, 90, .18), 0 6px 16px rgba(0, 0, 0, .35); }
   @keyframes gnin { from { opacity: 0; transform: translate(-50%, -46%); } to { opacity: 1; transform: translate(-50%, -50%); } }
   .gpsnotice .gn-head { display: flex; gap: 12px; align-items: flex-start; }
   .gpsnotice .gn-ic { flex: none; width: 40px; height: 40px; border-radius: 50%; background: var(--nv-red, #e5484d);
@@ -1232,6 +1235,12 @@
   #app.tesla .trip, #app.tesla .heading { transition: opacity .25s ease; }
   #app.tesla.trip-covered .trip, #app.tesla.trip-covered .heading { opacity: 0; }
   .jc-svg svg { display: block; width: 100%; height: auto; }
+  /* AI 분기점 장면 (8:3, 오른쪽으로 가는 그림 → 왼쪽이면 좌우 뒤집기). 낮·밤 두 장 중 지도에 맞는 것만 */
+  .jc-svg .jv-img { display: block; width: 100%; aspect-ratio: 8 / 3; object-fit: cover; }
+  .jc-svg .jv-night { display: none; }
+  body:has(#map.night) .jc-svg .jv-day { display: none; }
+  body:has(#map.night) .jc-svg .jv-night { display: block; }
+  .junccard.left .jv-img { transform: scaleX(-1); }
   /* 원근 그림 (2026-11-14 다시 그림): 하늘·땅 그라데이션, 흰 가장자리·어두운 도로·점선, 가는 차로는 파랗게 + 흰 화살표 */
   .jc .jc-s1 { stop-color: #8fc3f0; } .jc .jc-s2 { stop-color: #e4f1fb; }
   .jc .jc-g1 { stop-color: #c9dcbf; } .jc .jc-g2 { stop-color: #e2ecd9; }
@@ -1648,8 +1657,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.14-107"></script>
-<script src="img/ai/picks.js?v=2026.11.14-107"></script>
-<script src="app.js?v=2026.11.14-107"></script>
+<script src="icons.js?v=2026.11.14-108"></script>
+<script src="img/ai/picks.js?v=2026.11.14-108"></script>
+<script src="app.js?v=2026.11.14-108"></script>
 </body>
 </html>
