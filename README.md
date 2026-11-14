@@ -174,6 +174,20 @@
 - 설정 → '길안내 중 터널 진입·출구 거리'로 끌 수 있습니다. 자동 테스트 S44(가짜 터널 데이터).
 - 차로 안내(몇 번째 차로)는 네이버 길찾기 API 응답에 없고, OpenStreetMap 차로 정보(`turn:lanes`)도 전국 1,402개 도로뿐이라 넣지 않았습니다.
 
+## 나중에 API 키·허락이 필요한 것 (2026-11-14 정리)
+
+| 기능 | 필요한 것 | 어디서 | 상태 |
+|---|---|---|---|
+| 하이패스 차로 번호 'hi-pass [1][2] – [5]' | 한국도로공사 고속도로 공공데이터 포털 인증키 → Cloudflare Worker Secret `EX_KEY` (사용자가 직접 입력) | data.ex.co.kr 회원가입 → 인증키 발급 ('영업소 하이패스 차로 개폐 현황' apiId 0623) | 앱·Worker 코드 완료(`/hipass`), Worker 배포와 실데이터 확인만 남음. 별도 세션에서 진행 |
+| 도로 주의표지 (미끄러운도로·낙석·오르막/내리막·노면고르지못함·횡풍·야생동물) | 공공데이터포털 서비스키 (전국도로안전표지표준데이터 15028194 OpenAPI 활용신청) | data.go.kr | 화면 다운로드는 5만 건 제한(앞쪽 27개 기관뿐)이라 키 필요. 제공 기관이 시군 57곳뿐이라 전국을 다 덮지는 못함. 별도 세션에서 진행 |
+| 터널 진입·출구 거리 | OpenStreetMap 터널 데이터 내려받기 허락 (Overpass, 약 10MB) | overpass-api.de (키 필요 없음) | 앱 코드 완료, 데이터만 받으면 켜짐 |
+| 자연스러운 한국어 음성 안내 | 네이버 클라우드 CLOVA Voice 이용 신청(유료) → Worker Secret | console.ncloud.com | 차 브라우저에 한국어 음성이 있는지 먼저 확인 필요 |
+| 낮·밤 내비 지도 스타일 | 네이버 클라우드 Maps 'Style Editor' 에서 스타일 만들기(무료) → `customStyleId` | console.ncloud.com → Maps → Style Editor | GL(벡터) 지도로 바꿀 때 함께 (아래) |
+| 차로 안내 '몇 번째 차로' | 없음 — 공개 길찾기 API 에 차로 정보가 없고 티맵·카카오는 휴대폰 앱용 SDK 에만 있음 | — | 웹 앱으로는 불가 |
+| 박스형 단속 카메라 | 없음 — 경찰청 공개 데이터에 박스형·이동식이 아예 없음 | — | 주행 중 제보받은 곳만 직접 추가 (`tools/build_cams.py` ADDS) |
+
+**지도 회전(글자 똑바로):** 지금 '진행 방향 위로'는 지도 화면 전체를 CSS 로 돌려서 남쪽으로 갈 때 글자가 거꾸로 보인다. 네이버 지도 JS v3 를 GL(벡터) 모드로 띄우면(`maps.js?…&submodules=gl`, `naver.maps.onJSContentLoaded` 를 기다린 뒤 `new naver.maps.Map(el, { gl: true })`) 문서에 없는 `map.setRotation(각도)`·`map.setTilt(각도)` 가 동작하고, 지도만 돌고 글자는 똑바로 선다(2026-11-14 `test/.audit/gltest.html` 로 확인). 키·허락은 필요 없고, 지도 엔진 쪽을 바꾸는 큰 작업이라 따로 진행(밤 지도 색 뒤집기 필터는 GL 에서는 안 먹으므로 Style Editor 밤 스타일과 함께).
+
 ## 배포 규칙
 
 - `app.js`를 바꾸면 세 곳의 버전을 함께 올립니다: `app.js`의 `APP_VERSION`, `index.html`의 `app.js?v=`, `version.json`. 자동 테스트(S19)가 세 값이 같은지 확인합니다.

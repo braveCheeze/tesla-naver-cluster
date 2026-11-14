@@ -1226,6 +1226,8 @@
   #app.tesla .rstrip:not([hidden]) { animation: rstripIn .5s cubic-bezier(.2, .8, .2, 1); }
   /* ③ 야간 지도 버튼의 자동 'A': 해 아이콘에 바짝 붙이고 크게 */
   #app.tesla #nightBtn.auto::after { right: 6px; bottom: 5px; font-size: 12px; font-weight: 900; color: var(--nv-green-ink, var(--accent)); }
+  /* 그다음 안내 칸(26px)에서는 OUT/IN 글자가 안 보이므로 표지는 빼고 화살표만 (2026-11-14) */
+  .nexticon svg.ramp rect, .nexticon svg.ramp text { display: none; }
 </style>
 </head>
 <body>
@@ -1468,6 +1470,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-67"></script>
+<script src="app.js?v=2026.11.14-68"></script>
 </body>
 </html>

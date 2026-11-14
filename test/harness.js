@@ -2143,6 +2143,31 @@
     return { pass: ok, detail: JSON.stringify(r) + (ok ? '✓' : '✗') };
   }
 
+  // S54: 비켜 가기·나가기/들어가기 표지 (2026-11-14 요청: '신갈분기점에서 대전 방면으로 왼쪽 도로 주행'이 좌회전 화살표로 나왔다.
+  //      좌회전이 아니라 왼쪽 길로 붙어 계속 가는 것). 왼쪽/오른쪽 방향·도로 주행은 비켜 가는 화살표, 고속도로 출구는 OUT, 진입은 IN.
+  //      진짜 좌·우회전은 그대로. 길안내 패널에 실제로 그 그림이 그려진다
+  async function s54() {
+    const t = T(), k = (tt, s) => t.turnKind({ t: tt, s: s || '' });
+    const map = {
+      keepLeft41: k(41, "신갈분기점에서 '대전' 방면으로 왼쪽 도로 주행") === 'kl', keepLeft4: k(4, "'서울' 방면으로 왼쪽 방향") === 'kl',
+      keepRight5: k(5, "팔당대교IC에서 '광주, 하남' 방면으로 오른쪽 방향") === 'kr', keepRight42: k(42) === 'kr',
+      exitRight67: k(67, "성남IC에서 '성남, 광주' 방면으로 오른쪽 고속도로 출구") === 'outr', exitLeft58: k(58) === 'outl',
+      entryRight66: k(66, "하남IC에서 '서울, 대전' 방면으로 오른쪽 고속도로 진입") === 'inr', entryLeft57: k(57) === 'inl',
+      leftTurnStays: k(2, '좌회전') === 'l', rightTurnStays: k(3, '우회전') === 'r', toll: k(121) === 'toll', goal: k(88) === 'goal',
+    };
+    const R = buildNavRoute();
+    R.route.guide = [{ i: 5, t: 41, s: "신갈분기점에서 '대전' 방면으로 왼쪽 도로 주행", d: 600, ms: 40000 },
+                     { i: 9, t: 67, s: "성남IC에서 '성남, 광주' 방면으로 오른쪽 고속도로 출구", d: 480, ms: 30000 }];
+    softReset();
+    await planAndStart(R);
+    const a = pointAt(R, 30); feed(a.p, 15, a.h); t.renderNav();
+    const drawn = { main: !!document.querySelector('#turnIcon svg.keep.kl'), next: !!document.querySelector('#nextIcon svg.ramp.out') };
+    t.endNav(); softReset();
+    const bad = Object.keys(map).filter((x) => !map[x]);
+    const ok = !bad.length && drawn.main && drawn.next;
+    return { pass: ok, detail: (bad.length ? 'wrong: ' + bad.join(', ') : 'mapping ✓') + ' | panel keep-left ' + (drawn.main ? '✓' : '✗') + ', next chip OUT ' + (drawn.next ? '✓' : '✗') };
+  }
+
   // S25: 하이패스 — 경로 안내에 톨게이트(type 121)가 있으면 2km 앞부터 카드(이름·거리·통행료·하이패스 차로 이용)와 음성
   async function s25() {
     const t = T();
@@ -2495,6 +2520,7 @@
     { id: 'S51', name: "S51 section cameras found from '구간 시점/종점' place text", fn: s51 },
     { id: 'S52', name: 'S52 on the expressway (entry→exit guides) street cameras below stay quiet even without a section name', fn: s52 },
     { id: 'S53', name: 'S53 hi-pass lane numbers (1 2 – 5) from the Worker; no duplicate distance when the toll is the next guide', fn: s53 },
+    { id: 'S54', name: 'S54 keep-left/right arrows for 왼쪽/오른쪽 방향·도로 주행, OUT/IN for highway exit/entry', fn: s54 },
   ];
 
   // ---------------------------------------------------------------- runner

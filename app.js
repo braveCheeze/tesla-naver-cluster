@@ -43,7 +43,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-67'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-68'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -2123,6 +2123,13 @@
     if (/목적지|도착/.test(s) || t === 88) return 'goal';
     if (/경유지/.test(s) || t === 87) return 'goal';
     if (t === 121) return 'toll';   // 톨게이트: 직진 화살표 대신 톨게이트 표지 (2026-11-14 요청)
+    // 고속도로·도시고속도로·자동차전용도로로 나가기(OUT)·들어가기(IN): 그쪽으로 빠지는 화살표 + 작은 OUT/IN 표지 (2026-11-14)
+    if ([51, 53, 58, 60, 67, 69, 78, 79, 80].indexOf(t) >= 0) return [58, 60, 79].indexOf(t) >= 0 ? 'outl' : 'outr';
+    if ([57, 59, 66, 68, 76, 77].indexOf(t) >= 0) return [57, 59, 76].indexOf(t) >= 0 ? 'inl' : 'inr';
+    // '왼쪽/오른쪽 방향', '왼쪽/오른쪽 도로 주행', 본선 합류: 꺾는 게 아니라 그쪽 길로 붙어 계속 가는 것이라
+    // 좌·우회전 화살표 대신 비켜 가는 화살표 (2026-11-14 요청: '좌회전이 아니라 좌회전에서 직진하는 느낌')
+    if ([4, 41, 81].indexOf(t) >= 0 || (t === 54 && /왼쪽/.test(s))) return 'kl';
+    if ([5, 42, 82].indexOf(t) >= 0 || (t === 54 && /오른쪽/.test(s))) return 'kr';
     // 회전교차로 'N시 방향': 7~11시는 왼쪽, 1~5시는 오른쪽, 6시는 유턴, 12시는 직진
     const clock = s.match(/(\d{1,2})시\s*방향/);
     if (clock) {
@@ -2145,6 +2152,26 @@
     r: '<svg viewBox="0 0 48 48"><path d="M16 43V25a9 9 0 0 1 9-9h14M31 8l8 8-8 8"/></svg>',
     u: '<svg viewBox="0 0 48 48"><path d="M34 43V18a9 9 0 0 0-18 0v20M9 31l7 8 7-8"/></svg>',
     goal: '<svg viewBox="0 0 48 48"><path d="M13 44V5M13 7h23l-6 8 6 8H13"/></svg>',
+    // 비켜 가기: 아래에서 올라와 그쪽으로 한 번 비켜서 다시 위로 (갈림길·왼쪽/오른쪽 방향)
+    kl: '<svg viewBox="0 0 48 48" class="keep kl"><path d="M31 44V31c0-7-12-9-12-17V7M12 14l7-7 7 7"/></svg>',
+    kr: '<svg viewBox="0 0 48 48" class="keep kr"><path d="M17 44V31c0-7 12-9 12-17V7M22 14l7-7 7 7"/></svg>',
+    // 나가기(OUT): 회색 본선 옆으로 빠져나가는 화살표 + 파란 OUT 표지. 들어가기(IN): 옆에서 본선으로 들어오는 화살표 + IN
+    outr: '<svg viewBox="0 0 48 48" class="ramp out"><path d="M14 47V2" stroke="#c3c9d1" stroke-width="6" stroke-linecap="butt"/>' +
+      '<path d="M14 44V33c0-9 13-10 18-21M25.5 12.5l7-1 1.5 7"/>' +
+      '<rect x="27" y="34" width="20" height="12" rx="2.5" fill="#2f6fe4" stroke="none"/>' +
+      '<text x="37" y="43.2" text-anchor="middle" font-size="8.5" font-weight="800" fill="#fff" stroke="none" font-family="Pretendard, sans-serif">OUT</text></svg>',
+    outl: '<svg viewBox="0 0 48 48" class="ramp out"><path d="M34 47V2" stroke="#c3c9d1" stroke-width="6" stroke-linecap="butt"/>' +
+      '<path d="M34 44V33c0-9-13-10-18-21M22.5 12.5l-7-1-1.5 7"/>' +
+      '<rect x="1" y="34" width="20" height="12" rx="2.5" fill="#2f6fe4" stroke="none"/>' +
+      '<text x="11" y="43.2" text-anchor="middle" font-size="8.5" font-weight="800" fill="#fff" stroke="none" font-family="Pretendard, sans-serif">OUT</text></svg>',
+    inr: '<svg viewBox="0 0 48 48" class="ramp in"><path d="M22 47V2" stroke="#c3c9d1" stroke-width="6" stroke-linecap="butt"/>' +
+      '<path d="M36 44V35c0-8-14-9-14-18V7M15 14l7-7 7 7"/>' +
+      '<rect x="1" y="34" width="16" height="12" rx="2.5" fill="#2f6fe4" stroke="none"/>' +
+      '<text x="9" y="43.2" text-anchor="middle" font-size="8.5" font-weight="800" fill="#fff" stroke="none" font-family="Pretendard, sans-serif">IN</text></svg>',
+    inl: '<svg viewBox="0 0 48 48" class="ramp in"><path d="M26 47V2" stroke="#c3c9d1" stroke-width="6" stroke-linecap="butt"/>' +
+      '<path d="M12 44V35c0-8 14-9 14-18V7M19 14l7-7 7 7"/>' +
+      '<rect x="31" y="34" width="16" height="12" rx="2.5" fill="#2f6fe4" stroke="none"/>' +
+      '<text x="39" y="43.2" text-anchor="middle" font-size="8.5" font-weight="800" fill="#fff" stroke="none" font-family="Pretendard, sans-serif">IN</text></svg>',
     // 톨게이트: 파란 'TG' 표지 + 앞으로 좁아지는 도로 + 흰 화살표 (네이버·다른 내비의 톨게이트 그림처럼)
     toll: '<svg viewBox="0 0 48 48" class="toll"><rect x="6" y="1" width="36" height="17" rx="3.5" fill="#2f6fe4" stroke="none"/>' +
       '<text x="24" y="14.6" text-anchor="middle" font-size="14" font-weight="800" fill="#fff" stroke="none" font-family="Pretendard, sans-serif">TG</text>' +
@@ -3676,7 +3703,7 @@
       planRoute, doSearch, setFollowing, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
       sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
-      saveTripNow, restoreTripNow, trafficColor, highwaySpans, tollState, pickHipassLanes, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, renderJunction,
+      saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, pickHipassLanes, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, renderJunction,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
     };
