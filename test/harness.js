@@ -2711,6 +2711,7 @@
     { id: 'S59', name: "S59 destination → its parking entrance ('…주차장입구' from place search), '정문으로' switches back; no entrance = unchanged", fn: s59 },
     { id: 'S60', name: 'S60 white turn arrow on the map at the next turn (400 m before), destination pin + dots from the route end', fn: s60 },
     { id: 'S61', name: 'S61 highway rest areas on the route: only my side (right) or both-way ones, duplicates merged, next within 30 km + the one after; not on local roads', fn: s61 },
+    { id: 'S62', name: 'S62 Naver guide codes → icons: roundabout exits, overpass/underpass/side road not as turns, hi-pass/one-toll gates, rest area, entry/exit ahead', fn: s62 },
     { id: 'S58', name: "S58 no-parking cameras: '주정차 단속' only ahead in my direction, when slow (no sound); not behind or on a side street; setting off", fn: s58 },
     { id: 'S57', name: 'S57 fast reroute: wrong-way turn caught in 2 fixes, start asked ahead of the car, a new route that starts behind the car is retried at once (only once)', fn: s57 },
   ];
@@ -3008,6 +3009,30 @@
     const ok = r.found === '양방향휴게소,오른쪽휴게소' && /^양방향휴게소 50m \/ 다음 오른쪽 7\d0m$/.test(r.card1) && r.markers === 2 &&
       /^오른쪽휴게소 4\d0m$/.test(r.card2) && r.endHidden && r.localNone;
     return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + r[k]).join(', ') };
+  }
+
+  // S62: 네이버 '분기점 안내 코드' 표 전체로 맞춘 아이콘 (2026-11-14). 고가·지하차도 진입/옆길이 좌·우회전 화살표로 나오던 것,
+  //      회전교차로가 나가는 방향과 상관없이 한 그림이던 것, 하이패스 전용·원톨링 톨게이트가 직진으로 나오던 것을 바로잡았다
+  async function s62() {
+    const t = T(), k = (tt, s) => t.turnKind({ t: tt, s: s || '' });
+    const want = {
+      23: 'rb_l', 27: 'rb_l', 21: 'rb_s', 28: 'rb_s', 29: 'rb_r', 33: 'rb_r', 22: 'rb_u', 34: 'rb_u',
+      93: 'rb_l', 98: 'rb_s', 101: 'rb_r', 104: 'rb_u', 121: 'toll', 122: 'toll', 123: 'toll',
+      62: 'over_l', 71: 'over_r', 55: 'over_s', 64: 'under_l', 73: 'under_r', 56: 'under_s', 63: 'side_l', 74: 'side_r',
+      47: 'rest', 48: 'ferry', 50: 'ins', 52: 'ins', 75: 'ins', 51: 'outs', 78: 'outs', 11: 'sharp_l', 16: 'sharp_r',
+      13: 'sl', 14: 'sr', 12: 'l', 15: 'r', 8: 'l', 1: 's', 2: 'l', 3: 'r', 6: 'u', 87: 'via', 88: 'goal',
+      41: 'kl', 42: 'kr', 81: 'kl', 82: 'kr', 57: 'inl', 66: 'inr', 58: 'outl', 67: 'outr',
+    };
+    const bad = Object.keys(want).filter((c) => k(+c, '') !== want[c]).map((c) => c + '→' + k(+c, '') + '≠' + want[c]);
+    // 코드가 없을 때 글자로: 회전교차로 3시 → 오른쪽 출구, 로터리 9시 → 왼쪽, 고가차도 글자는 꺾는 화살표가 아님
+    const txt = { r3: k(0, '회전교차로에서 3시 방향') === 'rb_r', l9: k(0, '로터리에서 9시 방향') === 'rb_l', u6: k(0, '회전교차로에서 6시 방향') === 'rb_u' };
+    // 모든 종류에 그림이 있다 (없으면 가까운 그림으로)
+    const kinds = [...new Set(Object.values(want))];
+    const noIcon = kinds.filter((x) => !/<svg/.test(t.ico(x) || ''));
+    const rbIcons = ['rb_l', 'rb_s', 'rb_r', 'rb_u'].every((x) => new RegExp('ti-' + x + '\\b').test(t.ico(x)));
+    const ok = !bad.length && txt.r3 && txt.l9 && txt.u6 && !noIcon.length && rbIcons;
+    return { pass: ok, detail: (bad.length ? 'wrong: ' + bad.join(', ') : Object.keys(want).length + ' codes ✓') +
+      ' | text ' + JSON.stringify(txt) + ' | icons ' + (noIcon.length ? 'missing ' + noIcon.join(',') : 'all ✓') + ' | roundabout icons ' + (rbIcons ? '✓' : '✗') };
   }
 
   async function s55() {

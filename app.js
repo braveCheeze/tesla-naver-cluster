@@ -48,7 +48,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-87'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-88'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   // 브라우저에 저장된 예전 index.html 이 새 app.js 를 불러온 경우(화면 요소가 맞지 않아 버튼 연결에서 멈춘다):
@@ -2881,33 +2881,49 @@
     setFollowing(true);
   }
 
+  // 네이버 길찾기 안내 종류(guide.type) → 아이콘. 2026-11-14 네이버 문서의 '분기점 안내 코드' 표 전체로 다시 맞췄다
+  // (로터리 21~34·회전교차로 91~104 는 나가는 방향별, 고가·지하차도 진입/옆길은 꺾는 화살표가 아니라 그쪽 길,
+  //  하이패스 전용·원톨링 톨게이트도 톨게이트, 휴게소 진입·페리·전방 고속도로 진입/진출도 각각). 코드가 없을 때만 글자로 본다
+  function rbKind(n) { // 0 직진, 1 유턴, 2~6 왼쪽 7~11시, 7 12시, 8~12 오른쪽 1~5시, 13 6시
+    if (n === 0 || n === 7) return 'rb_s';
+    if (n === 1 || n === 13) return 'rb_u';
+    return n <= 6 ? 'rb_l' : 'rb_r';
+  }
+  const KIND_BY_CODE = {
+    1: 's', 2: 'l', 3: 'r', 4: 'kl', 5: 'kr', 6: 'u', 8: 'l',
+    11: 'sharp_l', 12: 'l', 13: 'sl', 14: 'sr', 15: 'r', 16: 'sharp_r',
+    41: 'kl', 42: 'kr', 47: 'rest', 48: 'ferry', 49: 'ferry',
+    50: 'ins', 51: 'outs', 52: 'ins', 53: 'outs', 55: 'over_s', 56: 'under_s',
+    57: 'inl', 58: 'outl', 59: 'inl', 60: 'outl', 62: 'over_l', 63: 'side_l', 64: 'under_l', 65: 'side_l',
+    66: 'inr', 67: 'outr', 68: 'inr', 69: 'outr', 71: 'over_r', 72: 'side_r', 73: 'under_r', 74: 'side_r',
+    75: 'ins', 76: 'inl', 77: 'inr', 78: 'outs', 79: 'outl', 80: 'outr', 81: 'kl', 82: 'kr',
+    87: 'via', 88: 'goal', 121: 'toll', 122: 'toll', 123: 'toll',
+  };
   function turnKind(g) {
     const s = g.s || '', t = g.t;
-    if (/유턴|U턴/i.test(s) || t === 6) return 'u';
-    if (/목적지|도착/.test(s) || t === 88) return 'goal';
-    if (/경유지/.test(s) || t === 87) return 'via';
-    if (t === 121) return 'toll';   // 톨게이트: 직진 화살표 대신 톨게이트 표지 (2026-11-14 요청)
-    // 고속도로·도시고속도로·자동차전용도로로 나가기(OUT)·들어가기(IN): 그쪽으로 빠지는 화살표 + 작은 OUT/IN 표지 (2026-11-14)
-    if ([51, 53, 58, 60, 67, 69, 78, 79, 80].indexOf(t) >= 0) return [58, 60, 79].indexOf(t) >= 0 ? 'outl' : 'outr';
-    if ([57, 59, 66, 68, 76, 77].indexOf(t) >= 0) return [57, 59, 76].indexOf(t) >= 0 ? 'inl' : 'inr';
-    // '왼쪽/오른쪽 방향', '왼쪽/오른쪽 도로 주행', 본선 합류: 꺾는 게 아니라 그쪽 길로 붙어 계속 가는 것이라
-    // 좌·우회전 화살표 대신 비켜 가는 화살표 (2026-11-14 요청: '좌회전이 아니라 좌회전에서 직진하는 느낌')
-    if ([4, 41, 81].indexOf(t) >= 0 || (t === 54 && /왼쪽/.test(s))) return 'kl';
-    if ([5, 42, 82].indexOf(t) >= 0 || (t === 54 && /오른쪽/.test(s))) return 'kr';
-    if (/회전교차로/.test(s)) return 'rb'; // 회전교차로 그림 (몇 시 방향인지는 글자로)
-    // 'N시 방향': 10·11시는 살짝 왼쪽, 1·2시는 살짝 오른쪽, 7~9시 왼쪽, 3~5시 오른쪽, 6시 유턴, 12시 직진
+    if (t >= 21 && t <= 34) return rbKind(t - 21);   // 로터리
+    if (t >= 91 && t <= 104) return rbKind(t - 91);  // 회전교차로
+    if (t === 54) return /왼쪽/.test(s) ? 'kl' : /오른쪽/.test(s) ? 'kr' : 's'; // 전방 분기 도로
+    if (KIND_BY_CODE[t]) return KIND_BY_CODE[t];
+    // 코드가 없거나 표에 없는 코드: 안내 글자로
+    if (/유턴|U턴/i.test(s)) return 'u';
+    if (/목적지|도착/.test(s)) return 'goal';
+    if (/경유지/.test(s)) return 'via';
     const clock = s.match(/(\d{1,2})시\s*방향/);
     if (clock) {
-      const h = +clock[1];
+      const h = +clock[1], rb = /회전교차로|로터리/.test(s);
+      if (rb) return h === 12 ? 'rb_s' : h === 6 ? 'rb_u' : h >= 7 ? 'rb_l' : 'rb_r';
       if (h === 10 || h === 11) return 'sl';
       if (h === 1 || h === 2) return 'sr';
-      if (h >= 7 && h <= 9) return 'l';
-      if (h >= 3 && h <= 5) return 'r';
+      if (h === 7 || h === 8) return 'sharp_l';
+      if (h === 4 || h === 5) return 'sharp_r';
+      if (h === 9) return 'l';
+      if (h === 3) return 'r';
       if (h === 6) return 'u';
       return 's';
     }
-    if (/좌회전|왼쪽/.test(s) || [2, 4, 8, 11, 12, 13].indexOf(t) >= 0) return 'l';
-    if (/우회전|오른쪽/.test(s) || [3, 5, 14, 15, 16].indexOf(t) >= 0) return 'r';
+    if (/좌회전|왼쪽/.test(s)) return 'l';
+    if (/우회전|오른쪽/.test(s)) return 'r';
     return 's';
   }
   // 목적지·경유지 핀 (그다음 칸에서): 빨간 핀 안에 흰 점
@@ -2952,7 +2968,14 @@
   };
 
   // 사용자가 AI 로 그린 아이콘(icons.js, tools/build_icons.py 로 분홍 배경 없이 SVG 로 딴 것)이 있으면 그것으로 바꾼다
-  Object.assign(TURN_ICONS, { sl: TURN_ICONS.l, sr: TURN_ICONS.r, rb: TURN_ICONS.r, via: TURN_ICONS.goal }, window.TNC_ICONS || {});
+  Object.assign(TURN_ICONS, window.TNC_ICONS || {});
+  // 아직 그림이 없는 종류는 가장 가까운 그림으로 (꺾는 화살표로 잘못 보이지 않게): 순서대로 채운다
+  const ICON_FALLBACK = {
+    sl: 'l', sr: 'r', rb: 'r', via: 'goal', rb_l: 'rb', rb_s: 's', rb_r: 'r', rb_u: 'u', sharp_l: 'l', sharp_r: 'r',
+    outs: 'outr', ins: 'inr', over_l: 'kl', under_l: 'kl', side_l: 'kl', over_r: 'kr', under_r: 'kr', side_r: 'kr',
+    over_s: 's', under_s: 's', rest: 'kr', ferry: 's',
+  };
+  Object.keys(ICON_FALLBACK).forEach((k) => { if (!TURN_ICONS[k]) TURN_ICONS[k] = TURN_ICONS[ICON_FALLBACK[k]] || TURN_ICONS.s; });
   // 같은 아이콘을 두 곳에 넣어도 그라데이션 id 가 겹치지 않게 넣을 때마다 번호를 붙인다
   let icoN = 0;
   function ico(k) {
@@ -2964,7 +2987,8 @@
   const pinIco = (via) => (window.TNC_ICONS && window.TNC_ICONS[via ? 'via' : 'goal'] ? ico(via ? 'via' : 'goal') : PIN_ICON);
 
   // 다음 회전 지점 화살표: 회전·비켜 가기·나가기/들어가기·유턴·회전교차로이고 400m 안이면 그 지점 45m 앞부터 30m 뒤까지
-  const ARROW_KINDS = new Set(['l', 'r', 'u', 'sl', 'sr', 'kl', 'kr', 'outl', 'outr', 'inl', 'inr', 'rb']);
+  const ARROW_KINDS = new Set(['l', 'r', 'u', 'sl', 'sr', 'sharp_l', 'sharp_r', 'kl', 'kr', 'outl', 'outr', 'outs', 'inl', 'inr', 'ins',
+    'rb', 'rb_l', 'rb_s', 'rb_r', 'rb_u', 'over_l', 'over_r', 'over_s', 'under_l', 'under_r', 'under_s', 'side_l', 'side_r', 'rest']);
   function renderTurnArrow() {
     if (!mapA || !mapA.setTurnArrow) return;
     const g = nav.active ? nav.next : null;

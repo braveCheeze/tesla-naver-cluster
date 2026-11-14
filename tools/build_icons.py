@@ -338,7 +338,15 @@ def build_layers(key, kind, alpha, fg):
     raise ValueError(kind)
 
 
+def shade(c, k):
+    """k>0 밝게(흰색 쪽으로), k<0 어둡게"""
+    c = np.array(c, dtype=np.float64)
+    return tuple(np.clip(c + (255 - c) * k if k > 0 else c * (1 + k), 0, 255))
+
+
 def build_pin(key, alpha, fg):
+    """도착·경유 핀: 사용자 그림을 따되 입체감을 준다 (2026-11-14 요청 '조금 더 3D, 명도')
+    — 왼쪽 위에서 빛이 오는 둥근 그라데이션, 아래쪽 어둡게, 머리 부분 광택, 가장자리 선, 글자 밑 그림자"""
     on = alpha > 0.5
     white = on & (fg.min(-1) > 205) & (np.abs(fg[..., 0] - fg[..., 2]) < 40)
     body = on & ~white
@@ -347,16 +355,62 @@ def build_pin(key, alpha, fg):
     top = body & (np.arange(body.shape[0])[:, None] < y0 + (y1 - y0) * 0.25)
     bot = body & (np.arange(body.shape[0])[:, None] > y0 + (y1 - y0) * 0.6)
     c_top, c_bot = fg[top].mean(0), fg[bot].mean(0)
+    base = (np.array(c_top) + np.array(c_bot)) / 2
     tf = make_tf(*frame(on))
-    gid = 'tg-' + key
+    g = 'tg-' + key
     sil = path_d(trace(soften(alpha), 0.5), tf)
     txt = path_d(trace(soften(alpha * white), 0.5, eps=0.5, min_area=12), tf)
-    _, gy0 = tf((0, y0))
-    _, gy1 = tf((0, y1))
-    return ('<svg viewBox="0 0 48 48" class="ti ti-%s %s"><defs><linearGradient id="%s" x1="0" y1="%.1f" x2="0" y2="%.1f" gradientUnits="userSpaceOnUse">'
-            '<stop offset="0" stop-color="%s"/><stop offset="1" stop-color="%s"/></linearGradient></defs>'
-            '<path fill="url(#%s)" stroke="none" d="%s"/><path fill="#ffffff" stroke="none" fill-rule="evenodd" d="%s"/></svg>') % (
-        key, CLASSES[key], gid, gy0, gy1, hexc(c_top), hexc(c_bot), gid, sil, txt)
+    bx0, by0 = tf((xs.min(), y0))
+    bx1, by1 = tf((xs.max(), y1))
+    w, h = bx1 - bx0, by1 - by0
+    # 머리(위쪽 둥근 부분) 광택: 왼쪽 위에 흰 타원
+    gx, gy, grx, gry = bx0 + w * 0.36, by0 + h * 0.2, w * 0.24, h * 0.12
+    return ('<svg viewBox="0 0 48 48" class="ti ti-%s %s"><defs>'
+            '<radialGradient id="%s" cx="%.2f" cy="%.2f" r="%.2f" gradientUnits="userSpaceOnUse">'
+            '<stop offset="0" stop-color="%s"/><stop offset=".55" stop-color="%s"/><stop offset="1" stop-color="%s"/></radialGradient>'
+            '<radialGradient id="%s-gl" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#ffffff" stop-opacity=".75"/>'
+            '<stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>'
+            '<clipPath id="%s-c"><path d="%s"/></clipPath></defs>'
+            '<path fill="url(#%s)" stroke="%s" stroke-width=".7" stroke-opacity=".55" d="%s"/>'
+            '<ellipse cx="%.2f" cy="%.2f" rx="%.2f" ry="%.2f" fill="url(#%s-gl)" clip-path="url(#%s-c)"/>'
+            '<path fill="#000000" fill-opacity=".22" stroke="none" fill-rule="evenodd" transform="translate(0 .7)" d="%s"/>'
+            '<path fill="#ffffff" stroke="none" fill-rule="evenodd" d="%s"/></svg>') % (
+        key, CLASSES[key], g, bx0 + w * 0.35, by0 + h * 0.28, max(w, h) * 0.75,
+        hexc(shade(c_top, 0.28)), hexc(base), hexc(shade(c_bot, -0.32)),
+        g, g, sil, g, hexc(shade(c_bot, -0.45)), sil,
+        gx, gy, grx, gry, g, g, txt, txt)
+
+
+def rb_svg(key):
+    """회전교차로 (2026-11-14, 사용자 요청 '네이버 지도처럼, 기업 내비 느낌'): 한 색(currentColor, 패널 초록) 글리프.
+    회전교차로 고리·네 갈래 길은 옅게, 가는 길만 다른 화살표 아이콘과 같은 굵기의 굵은 화살표 + 큰 화살촉.
+    아래 길 가운데로 들어와 시계 반대 방향(우측 통행)으로 돌아 나간다. 나가는 방향별 4가지: 왼쪽·직진·오른쪽·유턴"""
+    exit_ = key.split('_')[1]
+    cx, cy, R = 24.0, 23.0, 11.0
+    f = lambda v: ('%.2f' % v).rstrip('0').rstrip('.')
+    pt = lambda deg: (cx + R * math.cos(math.radians(deg)), cy + R * math.sin(math.radians(deg)))
+    faint = ('<g fill="none" stroke="currentColor" stroke-opacity=".3" stroke-width="6">'
+             '<circle cx="24" cy="23" r="11"/><path d="M24 34V48M24 12V0M13 23H0M35 23H48"/></g>'
+             '<circle cx="24" cy="23" r="4.6" fill="currentColor" fill-opacity=".22"/>')
+    if exit_ == 'u':
+        start, end, large, out_dir = 74.2, 105.8 - 360, 1, (0, 1)
+        x0 = 27.0
+    else:
+        start, x0 = 90.0, 24.0
+        end, large, out_dir = {'r': (0, 0, (1, 0)), 's': (-90, 0, (0, -1)), 'l': (-180, 1, (-1, 0))}[exit_]
+    p0, p1 = pt(start), pt(end)
+    stem = 4.0 if exit_ != 'u' else 3.6
+    se = (p1[0] + out_dir[0] * stem, p1[1] + out_dir[1] * stem)
+    hl, hw = 8.6, 7.4
+    tip = (se[0] + out_dir[0] * hl, se[1] + out_dir[1] * hl)
+    nx, ny = -out_dir[1], out_dir[0]
+    head = [tip, (se[0] + nx * hw, se[1] + ny * hw), (se[0] - nx * hw, se[1] - ny * hw)]
+    path = 'M%s 47.5L%s %sA%s %s 0 %d 0 %s %sL%s %s' % (f(x0), f(p0[0]), f(p0[1]), f(R), f(R), large, f(p1[0]), f(p1[1]),
+                                                       f(se[0] + out_dir[0] * 0.8), f(se[1] + out_dir[1] * 0.8))
+    hd = 'M%s %sL%s %sL%s %sZ' % tuple(f(v) for q in head for v in q)
+    return ('<svg viewBox="0 0 48 48" class="ti ti-%s rb">%s'
+            '<path d="%s" fill="none" stroke="currentColor" stroke-width="5.4" stroke-linecap="round" stroke-linejoin="round"/>'
+            '<path d="%s" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/></svg>') % (key, faint, path, hd)
 
 
 def ramp_svg(key):
@@ -416,6 +470,9 @@ def main():
             out[k] = ramp_svg(k)   # 딴 그림 대신 같은 모양새로 다시 그린 것 (합류·진출이 잘 보이게)
         else:
             out[k] = build_layers(k, kind, alpha, fg)
+        print('%-5s %6d bytes' % (k, len(out[k])))
+    for k in ('rb_l', 'rb_s', 'rb_r', 'rb_u'):
+        out[k] = rb_svg(k)   # 회전교차로 나가는 방향별 (그려 넣은 것)
         print('%-5s %6d bytes' % (k, len(out[k])))
     js = ('// 자동 생성 파일: tools/build_icons.py (사용자가 AI 로 그린 길안내 아이콘을 분홍 배경 없이 SVG 로 딴 것). 직접 고치지 말 것\n'
           'window.TNC_ICONS = ' + json.dumps(out, ensure_ascii=False, indent=0) + ';\n')
