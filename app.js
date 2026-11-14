@@ -38,12 +38,12 @@
     routeOpt: store.get('routeOpt') || 'traoptimal', // 기본은 '추천'(네이버 실시간 최적)
     // 테슬라 모드: 속도는 차 화면에 이미 나오므로 왼쪽 계기판을 없애고 지도를 넓게, 시계·날씨 등은 지도 위 글자로.
     // 테슬라 브라우저는 'X11; Linux x86_64' 로만 보이므로 그때 기본으로 켠다 (설정에서 바꾸면 그 값을 따른다)
-    tesla: store.get('tesla') ? store.get('tesla') === '1' : /X11; Linux x86_64/.test(navigator.userAgent),
+    tesla: true,   // 2026-11-14: 테슬라 모드가 유일한 화면 (예전 계기판 화면과 설정의 전환 스위치는 없앴다)
   };
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-65'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-66'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -3395,7 +3395,7 @@
   $('#navEnd').onclick = () => { endNav(); say('안내를 종료합니다.', 1); };
 
   function applyTesla() {
-    $('#app').classList.toggle('tesla', prefs.tesla);
+    $('#app').classList.add('tesla');   // 테슬라 모드만 쓴다 (2026-11-14)
     queueLayout(); // 지도 칸 너비가 바뀌므로 다시 배치
     placeAlerts();
   }
@@ -3486,7 +3486,6 @@
     $('#optWeather').checked = prefs.weather;
     $('#optHup').checked = prefs.headingUp;
     $('#optStopNorth').checked = prefs.stopNorth;
-    $('#optTesla').checked = prefs.tesla;
     $('#optNight').value = nightMode();
     $('#optTilt').checked = prefs.tilt;
     $('#optTilt').disabled = !prefs.headingUp;
@@ -3560,10 +3559,6 @@
   $('#optVoice').onchange = (e) => { prefs.voice = e.target.checked; store.set('voice', prefs.voice ? null : '0'); updateSoundPill(); };
   $('#optBeep').onchange = (e) => { prefs.beep = e.target.checked; store.set('beep', prefs.beep ? null : '0'); updateSoundPill(); };
   $('#optNight').onchange = (e) => setNightMode(e.target.value);
-  $('#optTesla').onchange = (e) => {
-    prefs.tesla = e.target.checked; store.set('tesla', prefs.tesla ? '1' : '0');
-    applyTesla();
-  };
   $('#optJunction').onchange = (e) => {
     prefs.junction = e.target.checked; store.set('junction', prefs.junction ? null : '0');
     if (nav.active) renderNav();

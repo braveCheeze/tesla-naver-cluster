@@ -30,6 +30,9 @@
   const BOOT_TIMEOUT_MS = 20000;
   const LS_KEYS = ['tnc.voice', 'tnc.beep', 'tnc.key', 'tnc.recent', 'tnc.cams'];
 
+  // 2026-11-14: 테슬라 모드가 유일한 화면이 되어 설정의 전환 스위치(#optTesla)가 없어졌다. 예전 시나리오의 켜기·끄기는 아무 일도 하지 않는다
+  const TESLA_ONLY = { checked: true, dispatchEvent() { return true; } };
+
   const RESULTS = [];
   window.__testResults = RESULTS;
   window.__testsDone = false;
@@ -461,15 +464,14 @@
       const tg = t.camState.target;
       if (tg && sameCam(tg.c, C)) {
         label = text('#camType'); at = r0(tg.d);
-        // 도로 주의 표지 모양 타일: 삼각 표지 + 빨간 띠의 남은 거리 + '어린이보호' + 제한속도
-        const el = document.querySelector('#camCard .zone-tile');
+        // 테슬라 화면(2026-11-14 부터 유일한 화면): 큰 보호구역 타일 대신 경고 밑에 작은 주의 표지 '어린이 조심'
         tile = {
-          shown: hasCls('#camCard', 'zonecam') && !!el && el.getClientRects().length > 0,
-          sign: !!document.querySelector('#ztSign svg'), label: text('#ztLabel'), limit: text('#ztLimit'), dist: text('#ztDist'),
+          shown: hasCls('#camCard', 'zonecam') && visible('#zoneBadge'),
+          sign: !!document.querySelector('#zbSign svg'), label: text('#zbLabel'), limit: text('#camLimit'), dist: text('#camDist'),
         };
       }
     }
-    const tileOk = !!tile && tile.shown && tile.sign && tile.label === '어린이보호' && tile.limit === '30' && /m$/.test(tile.dist);
+    const tileOk = !!tile && tile.shown && tile.sign && tile.label === '어린이 조심' && tile.limit === '30' && /m$/.test(tile.dist);
     return {
       pass: label !== null && label.indexOf('어린이보호구역') >= 0 && tileOk,
       detail: label === null ? 'camera never became target' : '#camType="' + label + '" at ' + at + ' m (limit ' + text('#camLimit') + ')' +
@@ -957,7 +959,7 @@
 
   // S16: 테슬라 모드 — 계기판 칸이 사라지고 지도가 꽉 차며, 속도는 숨기고 시계·날짜는 지도 위 글자로
   async function s16() {
-    const t = T(), box = document.getElementById('optTesla'), prev = t.prefs.tesla;
+    const t = T(), box = TESLA_ONLY, prev = t.prefs.tesla;
     const set = (on) => { box.checked = on; box.dispatchEvent(new Event('change')); };
     const snap = () => {
       const cl = document.querySelector('.timebox'), map = document.getElementById('map'); // 테슬라 모드에서는 시계 등이 지도 위에 따로 뜬다
@@ -974,19 +976,18 @@
       // 화면 배치는 CSS 로 바로 바뀐다 (창이 가려져 있으면 requestAnimationFrame 이 멈추므로 타이머로 기다린다)
       set(true); await new Promise((r) => setTimeout(r, 60));
       on = snap();
-      set(false); await new Promise((r) => setTimeout(r, 60));
-      off = snap();
+      off = { gone: !document.getElementById('optTesla') };   // 예전 계기판 화면과 전환 스위치는 없앴다 (2026-11-14)
     } finally {
       set(prev);
     }
     // 속도는 차 화면에 나오므로 테슬라 모드에서는 숨김. 단, 화면이 넓으면(1000px 이상: 브라우저를 크게 펼쳐 차 속도계가 가려짐) 왼쪽에 보인다
     const wantSpeed = innerWidth >= 1000;
     const okOn = on.pos === 'absolute' && on.mapW >= on.appW - 2 && on.speedShown === wantSpeed && /월 \d+일/.test(on.date) && on.clockShown;
-    const okOff = off.pos !== 'absolute' && off.mapW < off.appW - 100 && off.speedShown && !off.date;
+    const okOff = off.gone && document.getElementById('app').classList.contains('tesla');
     return {
       pass: okOn && okOff,
       detail: 'on: map ' + on.mapW + '/' + on.appW + ' px, cluster ' + on.pos + ', speed ' + (on.speedShown ? 'shown' : 'hidden') + ' (want ' + (wantSpeed ? 'shown, wide' : 'hidden') + '), date "' + on.date + '"' + (okOn ? '✓' : '✗') +
-        '; off: map ' + off.mapW + '/' + off.appW + ' px, speed ' + (off.speedShown ? 'shown' : 'HIDDEN') + (okOff ? '✓' : '✗'),
+        '; old layout switch removed, always Tesla ' + (okOff ? '✓' : '✗'),
     };
   }
   const C_A = () => CAM_ISO_A;
@@ -1111,7 +1112,7 @@
     t.renderWeather();
     const w = document.getElementById('weather');
     checks.rendered = !!w.querySelector('svg.wxicon') && /10°/.test(w.textContent) && /이슬비/.test(w.textContent);
-    const box = document.getElementById('optTesla'), prevT = t.prefs.tesla, prevW = t.prefs.weather;
+    const box = TESLA_ONLY, prevT = t.prefs.tesla, prevW = t.prefs.weather;
     try {
       box.checked = true; box.dispatchEvent(new Event('change'));
       t.prefs.weather = true; t.renderWeather();
@@ -1271,7 +1272,7 @@
   // S24: 테슬라 모드 배치 — 시계 오른쪽 위, 주소 가운데 아래, GPS 오른쪽 아래, 나침반 왼쪽 아래,
   //      경로 막대 오른쪽 끝(얇게, 가장자리에서 조금 띄워서), 단속 경고는 길안내 패널 바로 밑, 버튼은 70% 크기(40px)
   async function s24() {
-    const t = T(), box = document.getElementById('optTesla'), prev = t.prefs.tesla;
+    const t = T(), box = TESLA_ONLY, prev = t.prefs.tesla;
     const set = (on) => { box.checked = on; box.dispatchEvent(new Event('change')); };
     let r = {};
     try {
@@ -1327,7 +1328,7 @@
   //      순서: 맨 위 내 속도 띠(2026-11-14 요청) → 보통 과속 단속(제한 표지·거리) → 맨 밑 작은 '어린이 조심' 표지.
   //      큰 보호구역 타일은 안 쓴다. 테슬라 모드가 꺼져 있으면 내 속도는 안 보인다(왼쪽 속도계가 있으니까)
   async function s34() {
-    const t = T(), C = CAM_SCHOOL, box = document.getElementById('optTesla'), prev = t.prefs.tesla;
+    const t = T(), C = CAM_SCHOOL, box = TESLA_ONLY, prev = t.prefs.tesla;
     const set = (on) => { box.checked = on; box.dispatchEvent(new Event('change')); };
     const shown = () => { const e = document.getElementById('mySpeed'); return !e.hidden && e.getClientRects().length > 0; };
     const approach = (kmh) => {
@@ -1364,8 +1365,7 @@
       nextIcon = !nx.hidden && getComputedStyle(nx.querySelector('.nx-label')).display === 'none' &&
         nx.querySelector('.mini-sign').textContent === '70' && /\d(\.\d)?k?m$/.test(nx.querySelector('b').textContent) && nx.getAttribute('aria-label').indexOf('다음 단속') === 0;
       t.camState.peek = null;
-      set(false);
-      off = approach(45);
+      off = { removed: true };   // 예전 화면이 없어져 '테슬라 모드 끔' 상태는 없다
     } finally {
       set(prev);
       softReset();
@@ -1373,7 +1373,7 @@
     const okFast = !!fast && fast.shown && fast.over && fast.val === '45' && /제한 30/.test(fast.lim) && fast.order && fast.badge === '어린이 조심' &&
       fast.iconH !== null && fast.iconH <= 32 && !fast.bigTile;
     const okSlow = !!slow && slow.shown && !slow.over && slow.val === '25';
-    const okOff = !!off && !off.shown && off.bigTile;
+    const okOff = !!off && off.removed;
     return {
       pass: okFast && okSlow && !none && okOff && nextIcon,
       detail: '45 km/h: ' + JSON.stringify(fast) + (okFast ? '✓' : '✗') + ' | 25 km/h: ' + JSON.stringify(slow) + (okSlow ? '✓' : '✗') +
@@ -1559,7 +1559,7 @@
   //      카드에 '지금 경로' + 다른 경로를 띄워 고르면 바로 그 경로로, '원래 경로로'면 되돌린다.
   //      경유지는 검색해서 고르면 목적지는 그대로 waypoints 를 붙여 다시 찾고, 근처를 지나면 목록에서 빠진다
   async function s39() {
-    const t = T(), box = document.getElementById('optTesla'), prev = t.prefs.tesla;
+    const t = T(), box = TESLA_ONLY, prev = t.prefs.tesla;
     const set = (on) => { box.checked = on; box.dispatchEvent(new Event('change')); };
     const vis = (q) => { const e = document.querySelector(q); return !!e && !e.hidden && e.getClientRects().length > 0; };
     const click = (q) => document.querySelector(q).click();
@@ -1830,7 +1830,7 @@
   // S45: 하이패스도 단속 서랍 안에 (2026-11-14 요청). 테슬라 모드에서 톨게이트 1km 앞: 하이패스 카드가 서랍(.cd-in) 안에 보이고
   //      서랍이 열리며 안내 패널 바로 밑에 붙는다. 지도 위 흰 글자(그림자) 대신 패널 글자. 톨게이트를 지나면 카드가 빠지고 서랍이 접힌다
   async function s45() {
-    const t = T(), box = document.getElementById('optTesla'), prev = t.prefs.tesla;
+    const t = T(), box = TESLA_ONLY, prev = t.prefs.tesla;
     const set = (on) => { box.checked = on; box.dispatchEvent(new Event('change')); };
     const raw = [];
     for (let k = 0; k <= 40; k++) raw.push(dest(NAV_ORIGIN, 0, 100 * k));
@@ -1941,7 +1941,7 @@
   //      안내 지점 800m 앞부터 서랍 맨 위에 그림: 진입로는 'ramp'·오른쪽, 방면 '서울 · 대전', 지점 '하남IC'.
   //      분기점은 'fork'·왼쪽, 방면은 짧은 이름 '대전 · 호법'. 900m 앞·지난 뒤에는 없음
   async function s48() {
-    const t = T(), box = document.getElementById('optTesla'), prev = t.prefs.tesla;
+    const t = T(), box = TESLA_ONLY, prev = t.prefs.tesla;
     const set = (on) => { box.checked = on; box.dispatchEvent(new Event('change')); };
     const raw = [];
     for (let k = 0; k <= 30; k++) raw.push(dest(NAV_ORIGIN, 0, 100 * k));
@@ -2089,7 +2089,7 @@
   //      흉내 내서: 하남IC 고속도로 진입 뒤의 하남톨게이트 → 입구 차로 중 열린 1·2·5번만 '1 2 – 5'. 톨게이트가 패널의 다음 안내면
   //      하이패스 칸의 거리는 숨기고, 다른 안내가 먼저면 보인다. 인증키가 없으면(501) 번호 없이 그대로
   async function s53() {
-    const t = T(), box = document.getElementById('optTesla'), prev = t.prefs.tesla;
+    const t = T(), box = TESLA_ONLY, prev = t.prefs.tesla;
     const set = (on) => { box.checked = on; box.dispatchEvent(new Event('change')); };
     const raw = [];
     for (let k = 0; k <= 40; k++) raw.push(dest(NAV_ORIGIN, 0, 100 * k));
