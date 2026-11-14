@@ -1007,6 +1007,13 @@
     #app.tesla .speedbox .limit { width: 60px; height: 60px; border-width: 6px; font-size: 24px; text-shadow: none; box-shadow: 0 3px 10px rgba(0, 0, 0, .3); }
     #app.tesla .speedbox .unit { font-size: 16px; font-weight: 700; color: var(--ov-sub); margin-top: 4px; }
   }
+  /* ================= 주행 기록 글자만 검정 (2026-11-14 요청) =================
+     주행 거리·주행 시간·평균 속도·최고 속도만 검정 글자에 얇은 흰 테두리. 밤(어두운 지도)에는 검정이 안 보이므로 흰 글자 그대로 */
+  #app.tesla:not(:has(#map.night)) .trip {
+    color: #1d2126; text-shadow: 0 0 1px rgba(255, 255, 255, .95), 0 0 2px rgba(255, 255, 255, .85), 0 1px 4px rgba(255, 255, 255, .5);
+  }
+  #app.tesla:not(:has(#map.night)) .trip .stat .v { color: #1d2126; }
+  #app.tesla:not(:has(#map.night)) .trip .stat .k, #app.tesla:not(:has(#map.night)) .trip .stat small { color: #3a4048; }
 </style>
 </head>
 <body>
@@ -1230,6 +1237,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-46"></script>
+<script src="app.js?v=2026.11.14-47"></script>
 </body>
 </html>
