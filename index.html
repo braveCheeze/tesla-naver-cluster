@@ -728,7 +728,6 @@
   #app.tesla .camcard.over .cam-dist, #app.tesla .cam-avg.over b, #app.tesla .seccard.over .sec-avg { color: var(--ov-bad); }
   #app.tesla .cam-hint, #app.tesla .seccard.over .sec-remain { color: var(--ov-bad); }
   #app.tesla .cam-bar { background: var(--ov-track); }
-  #app.tesla:not(:has(#map.night)) .compass { background: rgba(255, 255, 255, .75); border-color: rgba(0, 0, 0, .15); }
   /* 오른쪽 아래: 네이버 로고·출처 표시 위로 GPS 를 올리고, 가운데 아래 주소는 그 옆과 안 겹치게 폭을 줄인다 */
   #app.tesla .gps { bottom: 44px; }
   #app.tesla .road { max-width: 44%; bottom: 10px; }
@@ -820,9 +819,9 @@
   .navtray button:active { transform: scale(.96); }
   .navtray button.on { border-color: var(--accent); color: #c8f5dc; }
   .navtray button.upd { border-color: #2f7dff; color: #cfe0ff; }
-  /* 작은 업데이트 버튼: 오른쪽 위 날씨 밑. 새 버전이 있을 때만, 운전 중에도 늘 보인다 */
+  /* 작은 업데이트 버튼: 오른쪽 아래. 새 버전이 있을 때만, 운전 중에도 늘 보인다 */
   .updbtn {
-    position: absolute; top: 132px; right: 38px; z-index: 1065; display: inline-flex; align-items: center; gap: 5px;
+    position: absolute; bottom: 16px; right: 16px; z-index: 1065; display: inline-flex; align-items: center; gap: 5px;
     height: 30px; padding: 0 11px 0 9px; border-radius: 15px; border: 0; background: #2f7dff; color: #fff;
     font: inherit; font-size: 13px; font-weight: 800; box-shadow: 0 4px 12px rgba(0, 0, 0, .3); cursor: pointer;
   }
@@ -933,6 +932,34 @@
   body:has(#app.tesla) .tev-m b { color: var(--nv-red); }
   body:has(#app.tesla) .ftag { color: #fff; }
   body:has(#app.tesla) hr { border-top-color: var(--nv-line); }
+  /* ================= 2026-11-14 주행 피드백 (지도 위 글자·아래쪽 배치) =================
+     지도 위 글자(시계·날씨·주행 기록·나침반·단속 경고·다음 단속·GPS)는 예전처럼 흰 글자. 진한 그림자가 문제였으므로 옅은 그림자만 */
+  #app.tesla {
+    --ov-fg: #ffffff; --ov-sub: #eef1f5; --ov-bad: #ff6b6b; --ov-rain: #8fd0ff; --ov-track: rgba(0, 0, 0, .25);
+    --ov-halo: 0 0 1px rgba(0, 0, 0, .95), 0 0 2px rgba(0, 0, 0, .85), 0 1px 4px rgba(0, 0, 0, .45); /* 글자 둘레만 얇게 (예전처럼 넓게 번지지 않게) */
+  }
+  #app.tesla:has(#map.night) {
+    --ov-fg: #f4f6f9; --ov-sub: #d3d8df; --ov-bad: #ff6b6b; --ov-rain: #8fd0ff; --ov-track: rgba(255, 255, 255, .16);
+    --ov-halo: 0 0 1px rgba(0, 0, 0, .95), 0 0 2px rgba(0, 0, 0, .8), 0 1px 4px rgba(0, 0, 0, .4);
+  }
+  #app.tesla .compass { background: rgba(0, 0, 0, .3); border-color: rgba(255, 255, 255, .3); }
+  /* 왼쪽 아래 주행 기록·나침반, 가운데 아래 위치 띠 글자 조금 크게 */
+  #app.tesla .stat .k { font-size: 13px; }
+  #app.tesla .stat .v { font-size: 19px; }
+  #app.tesla .stat small { font-size: 13px; }
+  #app.tesla .heading { bottom: 126px; font-size: 16px; }
+  #app.tesla .road { font-size: 18px; }
+  #app.tesla .road small { font-size: 15px; }
+  /* 오른쪽 아래: GPS 는 맨 아래로 내리고, 새 버전이 있으면 그 바로 위에 업데이트 버튼 */
+  #app.tesla .gps { bottom: 14px; }
+  #app.tesla .updbtn { top: auto; bottom: 40px; right: 38px; }
+  /* 지도 출처 표시(© NAVER Corp. /국토교통부 …)는 네이버 지도 이용 약관상 지울 수 없어서, 왼쪽 아래 구석에 작게 (상자 없이) */
+  #app.tesla #map .attrib {
+    right: auto; left: 10px; bottom: 6px; padding: 0; font-size: 10px; background: none;
+    color: rgba(255, 255, 255, .88); text-shadow: 0 1px 2px rgba(0, 0, 0, .6);
+  }
+  /* 단속 경고 묶음: 내 속도 띠를 맨 위로, 신호·과속 카드는 그 밑으로 */
+  #app.tesla #mySpeed { order: -1; }
 </style>
 </head>
 <body>
@@ -1156,6 +1183,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-43"></script>
+<script src="app.js?v=2026.11.14-44"></script>
 </body>
 </html>

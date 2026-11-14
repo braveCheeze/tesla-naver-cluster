@@ -1309,7 +1309,7 @@
   }
 
   // S34: 테슬라 모드 — 단속 경고 밑에 '내 속도 / 제한'. 제한을 넘으면 빨갛게, 안 넘으면 평소색, 단속이 없으면 숨김.
-  //      보호구역 단속은 단속이 우선: 맨 위 보통 과속 단속(제한 표지·거리) → 내 속도 → 맨 밑 작은 '어린이 조심' 표지.
+  //      순서: 맨 위 내 속도 띠(2026-11-14 요청) → 보통 과속 단속(제한 표지·거리) → 맨 밑 작은 '어린이 조심' 표지.
   //      큰 보호구역 타일은 안 쓴다. 테슬라 모드가 꺼져 있으면 내 속도는 안 보인다(왼쪽 속도계가 있으니까)
   async function s34() {
     const t = T(), C = CAM_SCHOOL, box = document.getElementById('optTesla'), prev = t.prefs.tesla;
@@ -1325,7 +1325,7 @@
           const box = (sel) => { const e = document.querySelector(sel); return e && e.getClientRects().length ? e.getBoundingClientRect() : null; };
           const sign = box('#camCard .cam-sign'), my = box('#mySpeed'), zb = box('#zoneBadge'), tile = box('#camCard .zone-tile'), icon = box('#zbSign svg');
           o = { shown: shown(), over: hasCls('#mySpeed', 'over'), val: text('#mySpeedVal'), lim: text('#mySpeedLim'),
-            order: !!sign && !!my && !!zb && sign.top < my.top && my.bottom <= zb.top + 1, badge: text('#zbLabel'), iconH: icon ? r0(icon.height) : null, bigTile: !!tile };
+            order: !!sign && !!my && !!zb && my.bottom <= sign.top + 1 && sign.top < zb.top, badge: text('#zbLabel'), iconH: icon ? r0(icon.height) : null, bigTile: !!tile };
         }
       }
       return o;
@@ -1630,7 +1630,7 @@
       t.upd.newer = '2026.11.14-99'; t.renderUpdBtn();
       // 작은 '업데이트' 버튼은 띠를 안 눌러도 오른쪽 위에 늘 보인다 (운전 중에도)
       const ub = document.getElementById('updBtn').getBoundingClientRect(), app = document.getElementById('app').getBoundingClientRect();
-      r.smallBtn = vis('#updBtn') && ub.height <= 34 && ub.right > app.right - 80 && ub.top < app.top + 200;
+      r.smallBtn = vis('#updBtn') && ub.height <= 34 && ub.right > app.right - 80 && ub.bottom > app.bottom - 90; // 오른쪽 아래 GPS 바로 위
       t.openTray(); await wait(40);
       r.button = vis('#ntUpdate') && /새 버전 11\.14-99/.test(text('#ntVer'));
       t.closeTray(); await wait(220);
