@@ -1035,6 +1035,8 @@
   .bump-sign svg { width: 34px; height: auto; display: block; }
   .bumpcard b { font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; }
   #app.tesla .bumpcard { color: var(--ov-fg); }
+  .signcard .bump-sign { width: 38px; }
+  .signcard .bump-sign svg { width: 38px; }
   .bumpmk { width: 22px; height: 20px; pointer-events: none; }
   .bumpmk svg { width: 22px; height: 20px; display: block; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .45)); }
   #map.drive .bumpmk { transform: rotate(var(--crot)); transition: transform .9s linear; }
@@ -1294,6 +1296,8 @@
     </div></div></div>
     <!-- 과속방지턱: 200m 앞부터 작은 표지 + 거리 (길안내 중이면 경로 위, 아니면 바로 앞) -->
     <div id="bumpCard" class="bumpcard" hidden><span class="bump-sign"><svg viewBox="0 0 100 88" aria-hidden="true"><path d="M50 7 L94 82 L6 82 Z" fill="#fff" stroke="#e53935" stroke-width="10" stroke-linejoin="round"/><path d="M25 69 H75" stroke="#111" stroke-width="6" stroke-linecap="round"/><path d="M33 69 Q50 42 67 69 Z" fill="#111"/></svg></span><span id="bumpLabel" class="bump-label">과속방지턱</span><b id="bumpDist">0m</b></div>
+    <!-- 주의 표지 (미끄러운 도로·낙석·급경사 등): 300m 앞부터 표지 그림 + 거리, 지나친 뒤 150m 는 '주의' (전국도로안전표지표준데이터, 제공 지자체만) -->
+    <div id="signCard" class="bumpcard signcard" hidden><span id="signIcon" class="bump-sign"></span><span id="signLabel" class="bump-label">주의</span><b id="signDist">0m</b></div>
     <div id="camNext" class="camnext" hidden></div>
     </div>
     <div id="weather" class="weather" hidden></div>
@@ -1419,6 +1423,7 @@
     <label class="check"><input type="checkbox" id="optCams"> 단속 카메라 경고</label>
     <label class="check"><input type="checkbox" id="optSigCams"> 제한속도 없는 신호 전용 카메라도 알림</label>
     <label class="check"><input type="checkbox" id="optBumps"> 과속방지턱 알림 (전국 과속방지턱 표준데이터)</label>
+    <label class="check"><input type="checkbox" id="optSigns"> 주의 표지 알림: 미끄러운 도로·낙석·급경사 등 (표지 자료를 낸 지자체만)</label>
     <label class="check"><input type="checkbox" id="optJunction"> 분기점 그림 (고속도로 진출입·갈림길 800m 앞부터)</label>
     <label class="check"><input type="checkbox" id="optTunnels"> 길안내 중 터널 진입·출구 거리 (터널 위치 © OpenStreetMap 기여자, ODbL)</label>
     <label class="check"><input type="checkbox" id="optTraffic"> 실시간 교통 (도로를 막힘 정도로 색칠)</label>
@@ -1470,6 +1475,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-69"></script>
+<script src="app.js?v=2026.11.14-70"></script>
 </body>
 </html>

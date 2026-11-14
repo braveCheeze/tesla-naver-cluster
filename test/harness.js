@@ -2523,7 +2523,76 @@
     { id: 'S52', name: 'S52 on the expressway (entry→exit guides) street cameras below stay quiet even without a section name', fn: s52 },
     { id: 'S53', name: 'S53 hi-pass lane numbers (1 2 – 5) from the Worker; no duplicate distance when the toll is the next guide', fn: s53 },
     { id: 'S54', name: 'S54 keep-left/right arrows for 왼쪽/오른쪽 방향·도로 주행, OUT/IN for highway exit/entry', fn: s54 },
+    { id: 'S55', name: "S55 road caution signs (slippery, rockfall…): 300 m ahead on our side of the route, '주의' just after, setting off", fn: s55 },
   ];
+
+  // S55: 주의 표지 (전국도로안전표지표준데이터의 주의표지, data/signs.json · tools/build_signs.py, 2026-11-14 요청).
+  //      시험 경로(북쪽 600m → 동쪽 480m)에 표지를 직접 넣어
+  //      (a) 경로 오른쪽 6m 미끄러운 도로 표지(450m)는 300m 앞부터 '미끄러운 도로 250m', 지나친 뒤 150m 는 '주의'
+  //      (b) 경로 왼쪽 9m 오르막 표지(250m)는 반대 방향용 → 안 알림  (c) 300m 떨어진 표지 → 안 알림
+  //      (d) 꺾은 뒤 동쪽 길 오른쪽(남쪽) 7m 낙석 표지 → '낙석 주의'  (e) 길안내 없이 같은 길: 바로 앞 표지만
+  //      (f) 설정을 끄면 숨김  (g) 실제 data/signs.json 이 읽힌다 (지자체 자료 있는 곳만)
+  async function s55() {
+    const t = T(), R = buildNavRoute();
+    const north = (m) => dest(NAV_ORIGIN, 0, m);
+    const turn = R.P[5];
+    const pts = [
+      ['slip', dest(north(450), 90, 6)],
+      ['up', dest(north(250), 270, 9)],
+      ['danger', dest(north(300), 90, 300)],
+      ['rock', dest(dest(turn, 90, 300), 180, 7)],
+    ];
+    const types = pts.map((x) => x[0]);
+    const d = [];
+    let pa = 0, pb = 0;
+    pts.forEach((x, i) => {
+      const a = Math.round(x[1].lat * 1e5), b = Math.round(x[1].lng * 1e5);
+      d.push(a - pa, b - pb, i); pa = a; pb = b;
+    });
+    const card = () => ({ shown: visible('#signCard'), label: text('#signLabel'), dist: text('#signDist'),
+      icon: !!document.querySelector('#signIcon svg'), type: document.getElementById('signCard').dataset.type || '' });
+    const go = (m, v) => { const a = pointAt(R, m); feed(a.p, v == null ? 15 : v, a.h); };
+    const prevPref = t.prefs.signs;
+    const r = {};
+    try {
+      t.setSignData({ v: 1, scale: 1e5, date: '2026-11-14', count: pts.length, types, d });
+      softReset();
+      await planAndStart(R);
+      go(15); go(100);
+      r.at100 = card();                                   // 왼쪽 오르막(반대 방향)·멀리 있는 표지는 안 알림
+      for (let m = 120; m <= 200; m += 20) go(m);
+      r.at200 = card();                                   // 미끄러운 도로 250m
+      r.found = (t.nav.routeSigns || []).map((x) => t.SIGN_TYPES[t.signs.type[x.k]].id + '@' + Math.round(x.at));
+      for (let m = 220; m <= 500; m += 20) go(m);
+      r.at500 = card();                                   // 지나친 뒤 '주의'
+      for (let m = 520; m <= 610; m += 15) go(m);
+      r.at610 = card();                                   // 낙석 주의 (동쪽 길 오른쪽)
+      t.prefs.signs = false; go(625);
+      r.off = card();
+      t.prefs.signs = true;
+      t.endNav();
+      softReset();
+      feed(R.P[0], 0, null);
+      for (let m = 0; m <= 150; m += 15) go(m);
+      r.free150 = card();                                 // 길안내 없이: 앞 100m 왼쪽 오르막은 반대 방향 → 안 알림
+      for (let m = 165; m <= 300; m += 15) go(m);
+      r.free300 = card();                                 // 앞 150m 오른쪽 미끄러운 도로
+    } finally {
+      t.prefs.signs = prevPref;
+      t.setSignData(null);
+      await t.loadSigns();
+      softReset();
+    }
+    r.real = { loaded: t.signs.loaded, n: t.signs.n, date: t.signs.date };
+    const ok = !r.at100.shown &&
+      r.at200.shown && r.at200.label === '미끄러운 도로' && r.at200.dist === '250m' && r.at200.icon && r.at200.type === 'slip' &&
+      r.found.join(',') === 'slip@450,rock@900' &&
+      r.at500.shown && r.at500.label === '미끄러운 도로' && r.at500.dist === '주의' &&
+      r.at610.shown && r.at610.label === '낙석 주의' && /^\d+m$/.test(r.at610.dist) && r.at610.type === 'rock' &&
+      !r.off.shown && !r.free150.shown && r.free300.shown && r.free300.type === 'slip' &&
+      r.real.loaded && r.real.n > 100;
+    return { pass: ok, detail: JSON.stringify(r) + (ok ? ' ✓' : ' ✗') };
+  }
 
   // ---------------------------------------------------------------- runner
   async function runOne(id) {

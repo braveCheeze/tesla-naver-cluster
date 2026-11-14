@@ -27,6 +27,7 @@
     cams: store.get('cams') !== '0',
     signalCams: store.get('sigcam') === '1', // 신호 전용 카메라 알림 (기본 끔)
     bumps: store.get('bumps') !== '0',       // 과속방지턱 알림 (기본 켬)
+    signs: store.get('signs') !== '0',       // 주의 표지 알림: 미끄러운 도로·낙석·급경사 등 (기본 켬)
     tunnels: store.get('tunnels') !== '0',   // 길안내 중 터널 진입·출구 거리 (기본 켬)
     junction: store.get('junction') !== '0', // 고속도로 진출입·갈림길 그림 (기본 켬)
     traffic: store.get('traffic') !== '0',
@@ -43,7 +44,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-69'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-70'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   // 브라우저에 저장된 예전 index.html 이 새 app.js 를 불러온 경우(화면 요소가 맞지 않아 버튼 연결에서 멈춘다):
@@ -928,6 +929,144 @@
     if (!b) return;
     $('#bumpLabel').textContent = b.cont ? '연속 과속방지턱' : '과속방지턱';
     $('#bumpDist').textContent = fmtDist(b.d);
+  }
+  // ---------- 주의 표지 (전국도로안전표지표준데이터의 주의표지, data/signs.json · tools/build_signs.py) ----------
+  // 다른 내비의 '미끄럼 주의'처럼 미끄러운 도로·낙석·급경사 같은 주의 표지를 300m 앞부터 표지 그림 + 거리로 알린다 (2026-11-14 요청).
+  // 길안내 중이면 경로 25m 안의 표지를, 아니면 진행 방향 바로 앞(200m)의 표지를. 표지는 도로 오른쪽(우측 통행)에 서므로
+  // 경로 왼쪽으로 5m 넘게 떨어진 표지는 반대 방향용으로 보고 뺀다 (오르막·내리막이 뒤바뀌지 않게). 지나친 뒤 150m 동안은 '주의'로 남긴다.
+  // 이 자료는 표지를 등록한 지자체(전국 약 57곳)만 들어 있어 전국을 다 덮지 못한다
+  const SIGN_TRI_PATH = '<path d="M50 5 L95 83 L5 83 Z" fill="#e53935" stroke="#e53935" stroke-width="8" stroke-linejoin="round"/>' +
+    '<path d="M50 20 L83 77 L17 77 Z" fill="#ffd200" stroke="#ffd200" stroke-width="4" stroke-linejoin="round"/>';
+  const signSvg = (g) => '<svg viewBox="0 0 100 88" aria-hidden="true">' + SIGN_TRI_PATH +
+    '<g fill="#111" stroke="#111" stroke-linecap="round" stroke-linejoin="round">' + g + '</g></svg>';
+  // 순서는 상관없다 (signs.json 의 types 이름으로 맞춘다). label 은 카드 글자
+  const SIGN_TYPES = [
+    { id: 'slip', label: '미끄러운 도로', g: '<rect x="40" y="37" width="20" height="11" rx="3" stroke="none"/><rect x="40" y="46" width="5" height="5" rx="1" stroke="none"/><rect x="55" y="46" width="5" height="5" rx="1" stroke="none"/>' +
+      '<path d="M44 55 Q37 61 44 66 T44 76 M57 55 Q50 61 57 66 T57 76" fill="none" stroke-width="3.2"/>' },
+    { id: 'rock', label: '낙석 주의', g: '<path d="M52 42 L60 42 L76 74 L62 74 L64 62 L56 54 Z" stroke-width="1"/>' +
+      '<path d="M38 52 l5 -3 l4 3 l-1 5 l-6 1 z M31 66 l6 -3 l5 3 l-1 6 l-8 1 z" stroke-width="1"/><circle cx="47" cy="43" r="2.4" stroke="none"/>' },
+    { id: 'up', label: '오르막 경사', g: '<path d="M24 75 L70 75 L70 56 Z" stroke-width="2"/>' },
+    { id: 'down', label: '내리막 경사', g: '<path d="M30 56 L30 75 L76 75 Z" stroke-width="2"/>' },
+    { id: 'rough', label: '노면 고르지 못함', g: '<path d="M24 74 L24 69 Q32 55 40 68 Q50 71 60 68 Q68 55 76 69 L76 74 Z" stroke-width="1.5"/>' },
+    { id: 'wind', label: '횡풍 주의', g: '<path d="M38 45 V75" fill="none" stroke-width="3.5"/><path d="M40 47 L64 51 L64 58 L40 62 Z" fill="none" stroke-width="2.2"/>' +
+      '<path d="M40 47 L48 48.3 L48 60.7 L40 62 Z M56 49.7 L64 51 L64 58 L56 59.3 Z" stroke-width="1"/>' },
+    { id: 'animal', label: '야생동물 주의', g: '<ellipse cx="53" cy="62" rx="12" ry="5.5" transform="rotate(-12 53 62)" stroke="none"/>' +
+      '<path d="M45 60 L39.5 51.5" fill="none" stroke-width="4.5"/><ellipse cx="38" cy="50" rx="4.6" ry="3" transform="rotate(-20 38 50)" stroke="none"/>' +
+      '<path d="M39 48 L38 42.5 M38.5 45 L42.5 42.5 M45 64 L37 69 L33 68 M47 65 L42 73 M61 62 L69 69 L72 75 M59 64 L63 74 M64 57.5 L68 55" fill="none" stroke-width="2.6"/>' },
+    { id: 'narrow', label: '도로 폭 좁아짐', g: '<path d="M34 75 V66 L44 54 V42 M66 75 V66 L56 54 V42" fill="none" stroke-width="5"/>' },
+    { id: 'rail', label: '철길 건널목', g: '<rect x="30" y="54" width="33" height="12" rx="1.5" stroke="none"/><rect x="52" y="47" width="11" height="9" stroke="none"/>' +
+      '<rect x="35" y="48" width="5" height="7" stroke="none"/><circle cx="36" cy="70.5" r="4" stroke="none"/><circle cx="47" cy="70.5" r="4" stroke="none"/><circle cx="58" cy="70.5" r="4" stroke="none"/>' },
+    { id: 'danger', label: '위험 구간', g: '<path d="M50 38 V60" fill="none" stroke-width="8"/><circle cx="50" cy="69.5" r="4.6" stroke="none"/>' },
+  ];
+  const SIGN_INDEX = Object.fromEntries(SIGN_TYPES.map((x, i) => [x.id, i]));
+  const signs = { loaded: false, n: 0, lat: null, lng: null, type: null, grid: new Map(), date: '' };
+  const signState = { next: null, shownKey: '' };
+  const SIGN_AHEAD = 300, SIGN_AFTER = 150, SIGN_ROUTE_M = 25, SIGN_LEFT_M = 5;
+  function setSignData(j) {
+    signs.loaded = false; signs.grid = new Map();
+    nav.routeSigns = null; signState.shownKey = '';
+    if (!j || !Array.isArray(j.d)) return;
+    const n = j.count, sc = j.scale || 1e5, d = j.d, names = j.types || [];
+    const lat = new Float64Array(n), lng = new Float64Array(n), type = new Int8Array(n);
+    let a = 0, b = 0;
+    for (let k = 0; k < n; k++) {
+      a += d[3 * k]; b += d[3 * k + 1];
+      lat[k] = a / sc; lng[k] = b / sc;
+      const ti = SIGN_INDEX[names[d[3 * k + 2]]];
+      type[k] = ti === undefined ? -1 : ti;
+      const key = Math.floor(lat[k] * 100) + ':' + Math.floor(lng[k] * 100);
+      let cell = signs.grid.get(key);
+      if (!cell) signs.grid.set(key, cell = []);
+      cell.push(k);
+    }
+    Object.assign(signs, { n, lat, lng, type, date: j.date || '', loaded: true });
+  }
+  async function loadSigns() {
+    try {
+      const r = await fetch('data/signs.json?v=' + APP_VERSION);
+      if (r.ok) setSignData(await r.json());
+    } catch (e) { /* 표지 데이터가 없어도 나머지는 그대로 */ }
+  }
+  function signsNear(la, ln, r) {
+    const out = [], cy = Math.floor(la * 100), cx = Math.floor(ln * 100);
+    const sy = Math.ceil(r / 1100), sx = Math.ceil(r / 880);
+    for (let y = cy - sy; y <= cy + sy; y++) for (let x = cx - sx; x <= cx + sx; x++) {
+      const cell = signs.grid.get(y + ':' + x);
+      if (!cell) continue;
+      for (const k of cell) {
+        if (signs.type[k] < 0) continue;
+        const d = haversine({ lat: la, lng: ln }, { lat: signs.lat[k], lng: signs.lng[k] });
+        if (d <= r) out.push({ k, d });
+      }
+    }
+    return out;
+  }
+  // a→b 방향에서 p 가 오른쪽으로 몇 m (왼쪽이면 음수)
+  function rightOf(p, a, b) {
+    const kx = Math.cos(toRad(a.lat)) * 111320, ky = 110540;
+    const bx = (b.lng - a.lng) * kx, by = (b.lat - a.lat) * ky;
+    const px = (p.lng - a.lng) * kx, py = (p.lat - a.lat) * ky;
+    const len = Math.hypot(bx, by);
+    return len > 0 ? (by * px - bx * py) / len : 0;
+  }
+  // 길안내 경로 위 주의 표지 (경로 거리순). 앞쪽 4km 까지만 찾아 두고 달리면서 늘린다
+  function ensureRouteSigns() {
+    if (!signs.loaded || !nav.pts || nav.pts.length < 2) return false;
+    if (!nav.routeSigns) { nav.routeSigns = []; nav.signSeen = new Set(); nav.signUpto = 0; }
+    const pts = nav.pts, want = nav.along + 4000;
+    let i = nav.signUpto, added = false;
+    for (; i < pts.length - 1 && nav.cum[i] < want; i++) {
+      const a = pts[i], b = pts[i + 1], half = (nav.cum[i + 1] - nav.cum[i]) / 2;
+      for (const it of signsNear((a.lat + b.lat) / 2, (a.lng + b.lng) / 2, half + SIGN_ROUTE_M + 5)) {
+        if (nav.signSeen.has(it.k)) continue;
+        const p = { lat: signs.lat[it.k], lng: signs.lng[it.k] };
+        const pr = projectSeg(p, a, b);
+        if (pr.dist > SIGN_ROUTE_M || rightOf(p, a, b) < -SIGN_LEFT_M) continue;
+        nav.signSeen.add(it.k);
+        nav.routeSigns.push({ k: it.k, at: nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]) });
+        added = true;
+      }
+    }
+    nav.signUpto = i;
+    if (added) nav.routeSigns.sort((x, y) => x.at - y.at);
+    return true;
+  }
+  function evalSigns(f) {
+    let next = null;
+    if (signs.loaded && prefs.signs) {
+      if (nav.active && nav.pts && ensureRouteSigns()) {
+        const up = nav.routeSigns.find((s) => s.at >= nav.along && s.at - nav.along <= SIGN_AHEAD);
+        let past = null;
+        if (!up) for (const s of nav.routeSigns) { if (s.at >= nav.along) break; if (nav.along - s.at <= SIGN_AFTER) past = s; }
+        const s = up || past;
+        if (s) next = { k: s.k, type: signs.type[s.k], d: Math.max(0, s.at - nav.along), passed: !up };
+      } else if (state.heading !== null && state.speedKmh >= 8) {
+        for (const it of signsNear(f.lat, f.lng, 220)) {
+          const p = { lat: signs.lat[it.k], lng: signs.lng[it.k] };
+          const diff = angleDiff(bearing(f, p), state.heading);
+          if (it.d < 8 || diff > 30) continue;
+          const side = it.d * Math.sin(toRad(diff)) * (((bearing(f, p) - state.heading + 540) % 360) - 180 >= 0 ? 1 : -1);
+          if (side < -SIGN_LEFT_M || side > 20) continue;
+          if (it.d <= 200 && (!next || it.d < next.d)) next = { k: it.k, type: signs.type[it.k], d: it.d, passed: false };
+        }
+      }
+    }
+    signState.next = next;
+    renderSign();
+  }
+  function renderSign() {
+    const el = $('#signCard'), s = signState.next;
+    if (!el) return;
+    el.hidden = !s;
+    if (!s) { signState.shownKey = ''; return; }
+    const t = SIGN_TYPES[s.type];
+    if (signState.shownKey !== t.id) {
+      signState.shownKey = t.id;
+      $('#signIcon').innerHTML = signSvg(t.g);
+      $('#signLabel').textContent = t.label;
+      el.dataset.type = t.id;
+    }
+    $('#signDist').textContent = s.passed ? '주의' : fmtDist(s.d);
   }
   // ---------- 터널 (OpenStreetMap 의 터널 도로, data/tunnels.json · tools/build_tunnels.py) ----------
   // 네이버 길찾기 안내에는 터널이 없다 (지하차도는 있음). 길안내 경로가 지나는 터널을 찾아
@@ -1988,6 +2127,7 @@
     nav.setAt = state.fix ? state.fix.t : Date.now(); nav.drawnSeg = 0; nav.drawnAlong = 0; nav.drawnAt = 0;
     nav.routeCams = null; nav.routeCamList = []; camState.markerAt = null; // 경로 위 카메라·지도 표시를 새 경로로
     nav.routeBumps = null; bumpState.markerKey = '';
+    nav.routeSigns = null;
     nav.routeTunnels = null;
     nav.lastTraffic = state.fix ? state.fix.t : Date.now();
     if (!keepAlerts) { nav.said = {}; nav.gap = 10000; }
@@ -2898,6 +3038,7 @@
     evalCameras(f);
     refreshCamMarkers(f);
     evalBumps(f);
+    evalSigns(f);
     autoZoom(f);
     updateRoad(f);
     updateWeather(f);
@@ -3525,6 +3666,7 @@
     $('#optCams').checked = prefs.cams;
     $('#optSigCams').checked = prefs.signalCams;
     $('#optBumps').checked = prefs.bumps;
+    $('#optSigns').checked = prefs.signs;
     $('#optTunnels').checked = prefs.tunnels;
     $('#optJunction').checked = prefs.junction;
     $('#optTraffic').checked = prefs.traffic;
@@ -3617,6 +3759,10 @@
     bumpState.markerKey = '';
     if (state.fix) evalBumps(state.fix);
   };
+  $('#optSigns').onchange = (e) => {
+    prefs.signs = e.target.checked; store.set('signs', prefs.signs ? null : '0');
+    if (state.fix) evalSigns(state.fix);
+  };
   $('#optSigCams').onchange = (e) => {
     prefs.signalCams = e.target.checked; store.set('sigcam', prefs.signalCams ? '1' : null);
     camState.markerAt = null;
@@ -3692,6 +3838,7 @@
   bootMap();
   loadCameras();
   loadBumps();
+  loadSigns();
   loadTunnels();
   startGps();
   if (store.get('diag') === '1' || params.has('diag')) setDiag(true);
@@ -3718,6 +3865,7 @@
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
       sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
       saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, pickHipassLanes, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, renderJunction,
+      signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
     };
