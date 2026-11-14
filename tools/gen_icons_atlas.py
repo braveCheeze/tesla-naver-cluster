@@ -107,14 +107,17 @@ T2I_ROAD = ('Professional flat vector icon for the turn-by-turn panel of a premi
             'constant width and split or merge with smooth, natural tapers like real highway ramps. The drawing fills about 85% '
             'of the canvas, centered. No perspective, no 3D, no shadows unless described, no gradients, no texture, no outline '
             'around the whole icon, no text except the letters described.' + BG + ' Layout: ')
-T2I_RB = ('Professional flat vector roundabout turn icon for the turn-by-turn panel of a premium car navigation app, designed by '
-          'a senior icon designer (Naver Map quality). Top-down view. A perfectly round light mint-green ring road (#C9ECD6) '
-          'about half the icon width, four short light mint road stubs (top, bottom, left, right) and a small round island in '
-          'the center; exactly ONE slim solid green arrow (#03C75A) of even width, about 1/14 of the icon width, with a crisp, '
-          'sharp triangular arrowhead, drawn on top of the ring. Right-hand traffic: the arrow comes up the bottom road, joins '
-          'the ring with a smooth curve turning RIGHT, travels counter-clockwise (seen from above) and leaves on the exit road '
-          'with a smooth curve; the arrowhead sits just outside the ring on the exit road and never touches the ring or the '
-          'canvas edge. Flat, no outlines, no shadows, no gradients, no text.' + BG + ' Exit: ')
+T2I_RB = ('Professional flat vector roundabout turn icon for the turn-by-turn panel of a premium car navigation app, designed '
+          'by a senior icon designer, in the same visual system as a top-down road-map icon set. Top-down view of a '
+          'roundabout: a circular ring road with four straight roads (top, bottom, left, right) joining it through smooth flared '
+          'corners, all dark charcoal asphalt (#313B42) with thin white edge lines and short white dashed lane lines (a dashed '
+          'circle around the ring, dashed center lines on the four roads). In the middle, a round island of fresh green grass '
+          '(#7CC24A) with a thin light grey curb, about one third of the ring width. Exactly ONE slim solid white route arrow '
+          '(about 1/16 of the icon width) with a clean, sharp triangular arrowhead, drawn on the asphalt. Right-hand traffic: '
+          'the arrow comes up the bottom road, enters the ring turning RIGHT, travels counter-clockwise (seen from above) around '
+          'the green island and leaves on the exit road; the arrowhead sits on the exit road just outside the ring and never '
+          'touches the canvas edge. The roads fill about 85% of the canvas, centered. Flat, no 3D, no shadows, no gradients, '
+          'no text, no extra arrows.' + BG + ' Exit: ')
 # 그림 이름 → (참고 그림: tools/icon-src 기준 경로, 스타일 문장, 내용)
 JOBS = {
     # 고속도로 들어가기·나가기 (지금 앱 그림과 같은 구도: 두툼한 도로, 합류·진출 지점이 가운데)
@@ -237,9 +240,11 @@ _ROADS = {
     'outr': 'Highway EXIT to the RIGHT: a straight three-lane highway runs vertically; in the vertical middle of the icon a single-lane '
             'exit ramp splits off its right side and leaves through the right edge, rising gently. The arrow comes up the middle '
             'lane and curves onto the exit ramp, arrowhead pointing up-right.' + OUT_SH % ('OUT', 'top-left'),
-    'inr': 'Highway ENTRANCE from the RIGHT: a single-lane on-ramp comes in from the lower part of the right edge and merges into '
-           'the right side of a vertical three-lane highway in the vertical middle of the icon. The arrow follows the on-ramp, '
-           'merges and continues straight up the highway, arrowhead pointing up.' + OUT_SH % ('IN', 'top-right'),
+    'inr': 'Highway ENTRANCE from the RIGHT: a vertical three-lane highway runs straight up the left-center of the icon. A '
+           'single-lane on-ramp enters from the lower part of the RIGHT edge, runs diagonally up-left and merges into the right '
+           'side of the highway in the vertical middle of the icon. The arrow STARTS ON THE ON-RAMP at the lower right (not on '
+           'the highway), follows the ramp diagonally up-left, merges into the highway and then turns straight up, arrowhead '
+           'pointing up near the top. No arrow on the highway below the merge.' + OUT_SH % ('IN', 'top-right'),
     'outs': 'Highway EXIT STRAIGHT AHEAD: a three-lane highway comes up from the bottom; in the vertical middle of the icon the '
             'highway itself curves away to the left edge while a single-lane exit road continues straight up. The arrow goes '
             'straight up the exit road.' + OUT_SH % ('OUT', 'top-right'),
