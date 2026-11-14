@@ -17,6 +17,8 @@ const ROUTE_OPTIONS = new Set(['trafast', 'tracomfort', 'traoptimal', 'traavoidt
 // 재탐색·교통 갱신(단일 옵션 경로)은 같은 접속지에서 15초에 한 번까지만 (호출 폭주로 무료 한도를 쓰지 않게).
 // 처음 길찾기(여러 경로)는 제한하지 않는다. 메모리 기반이라 완벽하진 않지만 폭주는 막는다.
 const ROUTE_GAP_MS = 15000;
+// 접속 기록 키: 최신이 KV 목록 맨 앞에 오도록 (EVR_BASE - 시각) 으로 저장한다
+const EVR_BASE = 9e15;
 const routeHits = new Map();
 
 function json(body, status, cors, cacheSeconds) {
@@ -101,18 +103,32 @@ export default {
         const ts = Date.now();
         ev.serverAt = ts;
         ev.country = (req.cf && req.cf.country) || '';
-        const key = 'evt:' + String(ts).padStart(15, '0') + ':' + crypto.randomUUID().slice(0, 6);
+        // KV 목록은 키 이름 순서로 앞에서부터 1000개만 준다. 예전처럼 시각 오름차순 키('evt:')면 기록이 1000개를 넘는 순간
+        // 새 기록이 목록에 안 보인다(2026-11-14 실제로 11:30 뒤 기록이 안 보였음). 그래서 최신이 맨 앞에 오도록 뒤집은 시각으로 저장한다
+        const key = 'evr:' + String(EVR_BASE - ts).padStart(16, '0') + ':' + crypto.randomUUID().slice(0, 6);
         await env.LOGS.put(key, JSON.stringify(ev), { expirationTtl: 60 * 60 * 24 * 7 });
         return json({ ok: true }, 200, cors);
       }
       if (url.pathname === '/events') {
         if (!env.LOGS) return json({ items: [] }, 200, cors);
         const since = Number(p.get('since')) || 0;
-        const listed = await env.LOGS.list({ prefix: 'evt:', limit: 1000 });
-        const keys = listed.keys.map((k) => k.name).filter((n) => Number(n.split(':')[1]) > since).sort().slice(-50);
+        // 최신 기록부터 (목록 한 번). since 보다 새 것만, 최대 50개를 시간순으로
+        const listed = await env.LOGS.list({ prefix: 'evr:', limit: 1000 });
+        let keys = listed.keys.map((k) => k.name).filter((n) => EVR_BASE - Number(n.split(':')[1]) > since).slice(0, 50).reverse();
+        // 예전 형식('evt:') 기록: legacy=1 일 때만 끝까지 넘겨 가며 찾는다 (목록 호출이 여러 번 들어 평소엔 안 씀. 7일 뒤 모두 사라짐)
+        if (p.get('legacy') === '1') {
+          let cursor, old = [];
+          for (let page = 0; page < 10; page++) {
+            const l = await env.LOGS.list({ prefix: 'evt:', limit: 1000, cursor });
+            old = old.concat(l.keys.map((k) => k.name).filter((n) => Number(n.split(':')[1]) > since));
+            if (l.list_complete || !l.cursor) break;
+            cursor = l.cursor;
+          }
+          keys = old.sort().slice(-50).concat(keys).slice(-50);
+        }
         const items = (await Promise.all(keys.map((k) => env.LOGS.get(k)))).filter(Boolean).map((v) => {
           try { return JSON.parse(v); } catch (e) { return { raw: v }; }
-        });
+        }).sort((a, b) => (a.serverAt || 0) - (b.serverAt || 0));
         return json({ items }, 200, cors);
       }
 

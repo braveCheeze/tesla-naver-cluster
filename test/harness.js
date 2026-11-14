@@ -1010,7 +1010,11 @@
       document.getElementById('searchSheet').hidden = true;
       t.nav.preview = false;
     }
-    const want = { moving: 'moving', justStopped: 'just-stopped', touched: 'touched', screen: 'screen-open', nav: 'nav', check: 'check', again: 'waiting', later: 'check' };
+    // 새 버전으로 옮겨 갈 때는 주소에 ?v=새 버전 (저장된 예전 index.html 을 쓰지 않게). 다른 값(debug)과 #은 그대로
+    r.url1 = t.updateUrl('2026.11.14-99', { pathname: '/tesla-naver-cluster/', search: '', hash: '' });
+    r.url2 = t.updateUrl('2026.11.14-99', { pathname: '/tesla-naver-cluster/', search: '?debug&v=2026.11.14-38', hash: '#x' });
+    const want = { moving: 'moving', justStopped: 'just-stopped', touched: 'touched', screen: 'screen-open', nav: 'nav', check: 'check', again: 'waiting', later: 'check',
+      url1: '/tesla-naver-cluster/?v=2026.11.14-99', url2: '/tesla-naver-cluster/?debug=&v=2026.11.14-99#x' };
     const bad = Object.keys(want).filter((k) => r[k] !== want[k]);
     return { pass: bad.length === 0, detail: Object.keys(want).map((k) => k + '=' + r[k] + (r[k] === want[k] ? '' : '✗')).join(', ') };
   }
@@ -1104,7 +1108,18 @@
     t.renderWeather();
     const w = document.getElementById('weather');
     checks.rendered = !!w.querySelector('svg.wxicon') && /10°/.test(w.textContent) && /이슬비/.test(w.textContent);
+    const box = document.getElementById('optTesla'), prevT = t.prefs.tesla, prevW = t.prefs.weather;
+    try {
+      box.checked = true; box.dispatchEvent(new Event('change'));
+      t.prefs.weather = true; t.renderWeather();
+      const tb = w.querySelector('b').getBoundingClientRect(), ic = w.querySelector('.wxi svg').getBoundingClientRect();
+      checks.teslaIconInPlaceOfText = getComputedStyle(w.querySelector('.wxt')).display === 'none' && ic.left >= tb.right - 1 && ic.width >= 24;
+    } finally {
+      box.checked = prevT; box.dispatchEvent(new Event('change'));
+      t.prefs.weather = prevW;
+    }
     t.weather.last = prev;
+    t.renderWeather();
     const bad = Object.keys(checks).filter((k) => !checks[k]);
     return { pass: bad.length === 0, detail: Object.keys(checks).map((k) => k + (checks[k] ? '✓' : '✗')).join(', ') };
   }

@@ -740,6 +740,10 @@
   #app.tesla .timebox { top: 22px; right: 38px; }
   #app.tesla .weather { top: 96px; right: 38px; font-size: 15px; font-weight: 700; }
   #app.tesla .weather b { font-size: 19px; color: var(--ov-fg); }
+  /* 날씨: 기온 바로 뒤에 아이콘. 테슬라 모드에서는 "구름 조금" 같은 글자 대신 아이콘만 크게 */
+  .wxi .wxicon { margin: 0 2px 0 6px; }
+  #app.tesla .weather .wxt { display: none; }
+  #app.tesla .wxi .wxicon { width: 1.9em; height: 1.9em; vertical-align: -0.62em; margin: 0 0 0 4px; }
   /* 오른쪽 경로 막대: 세로 가운데, 오른쪽 끝은 시계와 같은 줄 (확대·축소 버튼은 그 왼쪽, 아래 .ctrls) */
   #app.tesla .rstrip { top: 50%; bottom: auto; right: 36px; transform: translateY(-50%); }
   /* 아래쪽은 전체를 테두리에서 띄워 올린다: 주행 기록·나침반(왼쪽), 주소(가운데), GPS(오른쪽) */
@@ -768,10 +772,9 @@
     font-variant-numeric: tabular-nums; padding: 10px 16px 11px; border-radius: 14px;
     background: rgba(11, 13, 16, .62); color: #fff; text-shadow: none; box-shadow: 0 6px 18px rgba(0, 0, 0, .25);
   }
-  #app.tesla .myspeed span { font-size: 15px; font-weight: 800; color: #cfd5dd; margin-right: 2px; }
   #app.tesla .myspeed b { font-size: 44px; font-weight: 800; line-height: 1; letter-spacing: -0.02em; }
   #app.tesla .myspeed i { font-style: normal; font-size: 16px; font-weight: 700; }
-  #app.tesla .myspeed em { font-style: normal; font-size: 17px; font-weight: 800; color: #cfd5dd; margin-left: auto; }
+  #app.tesla .myspeed em { font-style: normal; font-size: 23px; font-weight: 800; color: #e6e9ee; margin-left: auto; letter-spacing: -0.01em; }
   #app.tesla .myspeed.over { background: #e53935; box-shadow: 0 6px 18px rgba(229, 57, 53, .45); animation: overblink2 1s ease-in-out infinite; }
   #app.tesla .myspeed.over span, #app.tesla .myspeed.over em { color: #ffe0e0; }
   @keyframes overblink2 { 50% { background: #b71c1c; } }
@@ -813,6 +816,7 @@
   }
   .navtray button:active { transform: scale(.96); }
   .navtray button.on { border-color: var(--accent); color: #c8f5dc; }
+  .nt-ver { position: absolute; right: 4px; top: -19px; font-size: 11px; font-weight: 700; color: #e6e9ee; text-shadow: 0 0 2px rgba(0, 0, 0, .85); white-space: nowrap; }
   .navtray svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 </style>
 </head>
@@ -854,7 +858,7 @@
       </div>
     </div>
     <!-- 테슬라 모드: 단속 경고가 떠 있으면 내 속도를 함께 (제한을 넘으면 빨갛게) -->
-    <div id="mySpeed" class="myspeed" hidden><span>내 속도</span><b id="mySpeedVal">0</b><i>km/h</i><em id="mySpeedLim"></em></div>
+    <div id="mySpeed" class="myspeed" hidden><b id="mySpeedVal">0</b><i>km/h</i><em id="mySpeedLim"></em></div>
     <!-- 테슬라 모드: 보호구역 단속이면 과속 정보 밑에 작은 주의 표지 (단속이 우선) -->
     <div id="zoneBadge" class="zonebadge" hidden><span id="zbSign" class="zb-sign"></span><b id="zbLabel">어린이 조심</b></div>
     <div id="secCard" class="seccard" hidden>
@@ -926,6 +930,7 @@
       <button id="ntCompare"><svg viewBox="0 0 24 24"><path d="M6 21V11a4 4 0 0 1 4-4h9"/><path d="M15 3l4 4-4 4"/><path d="M6 21V3"/></svg><span>경로 비교</span></button>
       <button id="ntReroute"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg><span>재추천</span></button>
       <button id="ntVia"><svg viewBox="0 0 24 24"><path d="M12 21s-6.5-5.6-6.5-10.5a6.5 6.5 0 0 1 13 0C18.5 15.4 12 21 12 21z"/><path d="M12 7.5v6M9 10.5h6"/></svg><span id="ntViaLabel">경유지 추가</span></button>
+      <div id="ntVer" class="nt-ver"></div>
       <button id="ntSearch"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg><span>목적지 검색</span></button>
     </div>
 
@@ -1032,6 +1037,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-38"></script>
+<script src="app.js?v=2026.11.14-39"></script>
 </body>
 </html>

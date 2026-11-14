@@ -40,7 +40,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-38'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-39'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -53,7 +53,7 @@
     let ctx = {};
     try { ctx = tele.ctx ? tele.ctx() : {}; } catch (e) { /* 초기화 전 오류 */ }
     const body = Object.assign({
-      type, sid: tele.sid, v: APP_VERSION, at: Date.now(), page: location.host + location.pathname,
+      type, sid: tele.sid, v: APP_VERSION, at: Date.now(), page: location.host + location.pathname + location.search.slice(0, 40),
       ua: navigator.userAgent.slice(0, 180),
     }, ctx, data || {});
     try {
@@ -2033,8 +2033,11 @@
     if (!w) return;
     const p = weather.at || state.fix || DEFAULT_CENTER;
     const night = sunElevation(new Date(), p.lat, p.lng) < -2;
-    el.innerHTML = wxIcon(w.code, night) + '<b>' + Math.round(w.temp) + '°</b> ' + esc(wmoText(w.code)) +
-      (w.pp != null ? ' · <span class="' + (w.pp >= 50 ? 'rain' : '') + '">비 ' + w.pp + '%</span>' : '');
+    // 기온 → 날씨 아이콘 → 날씨 글자(테슬라 모드에서는 글자 대신 아이콘만) · 비 확률
+    const desc = wmoText(w.code);
+    el.innerHTML = '<b>' + Math.round(w.temp) + '°</b><span class="wxi" title="' + esc(desc) + '" aria-label="' + esc(desc) + '">' + wxIcon(w.code, night) +
+      '</span><span class="wxt">' + esc(desc) + '</span>' +
+      (w.pp != null ? '<span class="wxsep"> · </span><span class="' + (w.pp >= 50 ? 'rain' : '') + '">비 ' + w.pp + '%</span>' : '');
     el.hidden = !prefs.weather;
   }
   async function updateWeather(f) {
@@ -2371,6 +2374,13 @@
   const busyDriving = () => nav.active || nav.busy || state.speedKmh >= 3 || !!state.demoTimer;
   // 돌려주는 값: 'reload' 새로고침함 · 'latest' 이미 최신 · 'driving' 운전 중이라 미룸 · 'tried' 이번 창에서 이미 시도함 · 'skip' · 'error'
   // opt.dry: 새로고침 없이 판단만 (테스트용), opt.latest: version.json 대신 쓸 값 (테스트용)
+  // 새 버전으로 옮겨 갈 주소: 지금 주소의 다른 값(debug 등)은 두고 v 만 새 버전으로
+  function updateUrl(v, loc) {
+    const l = loc || location;
+    const qs = new URLSearchParams(l.search);
+    qs.set('v', String(v));
+    return l.pathname + '?' + qs.toString() + (l.hash || '');
+  }
   async function checkForUpdate(why, opt) {
     const o = opt || {};
     if ((testPage && !o.dry) || upd.checking) return 'skip';
@@ -2392,9 +2402,9 @@
       if (o.dry) return 'reload';
       try { sessionStorage.setItem('tnc.updTried', String(v)); } catch (e) { /* 저장소 막힘 */ }
       report('info', { msg: 'auto update', from: APP_VERSION, to: String(v), why });
-      // 브라우저에 저장된 예전 페이지를 새로 받아 둔 뒤 새로고침한다
-      try { await fetch(location.pathname + location.search, { cache: 'reload' }); } catch (e) { /* 새로고침이 다시 받는다 */ }
-      location.reload();
+      // 주소에 ?v=새 버전 을 붙여 이동한다. 그냥 새로고침하면 브라우저·CDN 에 저장된 예전 index.html(최대 10분)이
+      // 다시 뜰 수 있다(2026-11-14 차에서 새로고침했는데 예전 버전). 주소가 바뀌면 저장된 것을 쓰지 않는다
+      location.replace(updateUrl(v));
       return 'reload';
     } catch (e) {
       return 'error'; // 오프라인 등: 지금 버전으로 계속
@@ -2990,6 +3000,14 @@
   if (store.get('diag') === '1' || params.has('diag')) setDiag(true);
   if (params.has('demo')) startDemo();
   checkForUpdate('open');
+  // 자동 업데이트로 새 버전이 뜬 직후 한 번 알린다 (바뀐 게 맞는지 운전자가 알 수 있게)
+  try {
+    if (sessionStorage.getItem('tnc.updTried') === APP_VERSION && sessionStorage.getItem('tnc.updShown') !== APP_VERSION) {
+      sessionStorage.setItem('tnc.updShown', APP_VERSION);
+      setTimeout(() => toast('새 버전으로 바뀌었어요 · ' + APP_VERSION.slice(5), '', 4000), 1500);
+    }
+  } catch (e) { /* 저장소 막힘 */ }
+  $('#ntVer').textContent = '버전 ' + APP_VERSION.slice(5);
   document.addEventListener('visibilitychange', () => {
     // 화면이 오래(5분 넘게) 가려졌다가 다시 보이면 새 버전을 확인한다 (길안내 중·주행 중이면 하지 않음)
     if (document.visibilityState === 'hidden') upd.hiddenAt = Date.now();
@@ -3001,7 +3019,7 @@
       state, camState, nav, cams, prefs, onFix, setRoute, startNav, endNav, startDemo, stopDemo, renderNav,
       planRoute, doSearch, setFollowing, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
-      sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest,
+      sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
     };
