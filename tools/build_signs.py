@@ -6,9 +6,11 @@
   - 이 데이터는 지자체가 설치한 표지만 들어 있고 제공 지자체도 일부뿐이다 (고속도로·국도 대부분은 없음).
 사용법: py -I tools/build_signs.py <전국도로안전표지표준데이터.csv 또는 fetch_signs.py 가 만든 .json> [...] data/signs.json
 
-출력: {"v":1, "scale":100000, "date":"YYYY-MM-DD", "count":N, "types":[...], "d":[dLat, dLng, type, ...]}
+출력: {"v":2, "scale":100000, "date":"YYYY-MM-DD", "count":N, "types":[...], "names":["", "하남대로", ...], "d":[dLat, dLng, type, road, ...]}
   - 좌표는 위도·경도 x 100000 정수(약 1m). 0.02° 칸 순서로 정렬한 뒤 앞 점과의 차이만 적는다 (build_bumps.py 와 같음)
-  - type: types 배열의 번호 (아래 TYPES 순서. 앱의 SIGN_TYPES 와 같은 순서여야 한다)
+  - type: types 배열의 번호 (앱은 이름으로 맞춘다)
+  - road: names 의 도로 이름 번호 (0 = 모름). '도로노선명'이 'OO로'·'OO길' 꼴이면 그것, 아니면 '소재지도로명주소'의 도로 이름
+    (2026-11-14: 거리만 보면 옆 골목·고가 밑 도로의 표지가 섞여서, 앱이 경로의 도로 이름과 맞춰 본다)
   - 안전표지구분 1(주의표지)만. 지자체마다 '안전표지종별일련번호' 칸에 표지 코드 대신 일련번호를 넣은 곳이 많아서
     '안전표지설명' 글을 먼저 보고, 설명이 없을 때만 코드로 고른다
   - 같은 종류가 15m 안에 겹치면 하나로 합친다 (양면 표지·중복 입력)
@@ -48,7 +50,19 @@ FIELDS = {
     'code': ('안전표지종별일련번호', 'asortSn'),
     'desc': ('안전표지설명', 'sflblDc'),
     'date': ('데이터기준일자', 'referenceDate'),
+    'road': ('도로노선명', 'roadRouteNm'),
+    'addr': ('소재지도로명주소', 'rdnmadr'),
 }
+ROAD_RE = re.compile(r'^[가-힣][가-힣0-9]*(?:대로|로|길)(?:\d+(?:번)?길)?$')
+
+
+def road_name(*cands):
+    for c in cands:
+        for t in reversed((c or '').split()):
+            t = re.sub(r'[(,].*$', '', t)
+            if ROAD_RE.match(t):
+                return t
+    return ''
 
 
 def read_rows(path):
@@ -111,7 +125,7 @@ def main(srcs, out):
             if not (33 < lat < 39 and 124 < lng < 132):
                 skipped['outside'] += 1
                 continue
-            pts.append([round(lat * 1e5), round(lng * 1e5), t])
+            pts.append([round(lat * 1e5), round(lng * 1e5), t, road_name(pick(r, 'road'), pick(r, 'addr'))])
             d = pick(r, 'date')
             if d:
                 dates[d[:10]] += 1
@@ -128,16 +142,19 @@ def main(srcs, out):
         cells.setdefault((cy, cx), []).append(p)
         kept.append(p)
         kinds[NAMES[p[2]]] += 1
+    freq = Counter(p[3] for p in kept if p[3])
+    roads = [''] + [n for n, _ in freq.most_common()]
+    ridx = {n: i for i, n in enumerate(roads)}
 
     kept.sort(key=lambda p: (p[0] // 2000, p[1] // 2000, p[0], p[1]))
     d, plat, plng = [], 0, 0
     for p in kept:
-        d += [p[0] - plat, p[1] - plng, p[2]]
+        d += [p[0] - plat, p[1] - plng, p[2], ridx[p[3]]]
         plat, plng = p[0], p[1]
     latest = max(dates) if dates else ''
     with open(out, 'w', encoding='utf-8') as f:
-        json.dump({'v': 1, 'scale': 100000, 'date': latest, 'count': len(kept), 'types': NAMES, 'd': d}, f, separators=(',', ':'))
-    print('rows', total, 'kept', len(kept), 'skipped', dict(skipped), 'date', latest)
+        json.dump({'v': 2, 'scale': 100000, 'date': latest, 'count': len(kept), 'types': NAMES, 'names': roads, 'd': d}, f, ensure_ascii=False, separators=(',', ':'))
+    print('rows', total, 'kept', len(kept), 'skipped', dict(skipped), 'date', latest, 'with road name', sum(1 for p in kept if p[3]))
     print('types', dict(kinds.most_common()))
 
 

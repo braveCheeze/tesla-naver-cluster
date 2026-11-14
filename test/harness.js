@@ -1715,6 +1715,9 @@
       if (withNav) t.endNav();
       return { alerted: seen.size, maxShownD: Math.round(maxShownD), markers, label };
     };
+    // 가짜 역지오코딩('하네스로')이 진짜 방지턱 도로 이름(광장로 등)과 달라 길안내 없는 주행이 다 걸러지지 않게, 지금 도로 이름은 모름으로
+    const prevRev = stub.canned['/reverse'];
+    stub.canned['/reverse'] = { road: '', area: '' }; t.road.name = '';
     const nav = await drive(true), free = await drive(false);
     const prev = t.prefs.bumps;
     t.prefs.bumps = false;
@@ -1722,28 +1725,42 @@
     t.prefs.bumps = prev;
     // (d) 경로가 꺾이는 모퉁이 옆 골목 방지턱은 안 잡는다 (2026-11-14 실제 하남 덕풍동 경로: 모퉁이에서 8.8m 떨어진 옆 골목 방지턱이
     //     '과속방지턱 170m'로 떴다). 시험 경로(북쪽 600m → 동쪽)의 모퉁이 너머 북쪽 8m 방지턱은 빼고, 곧은 길 옆 8m 방지턱은 그대로 잡는다
-    const keep = { n: t.bumps.n, lat: t.bumps.lat, lng: t.bumps.lng, flag: t.bumps.flag, grid: t.bumps.grid };
-    let corner = null;
+    // (e) 2026-11-14 다시 설계: 방지턱의 도로 이름이 경로 구간 이름(시험 경로: 북쪽 '테스트로', 동쪽 '율곡로')과 다르면 옆 골목 것이라 뺀다.
+    //     이름이 같으면 12m 까지 잡는다. 고속도로 구간(안내상 진입~출구)이면 이름이 같아도 일반도로 방지턱은 안 잡는다
+    const keep = { n: t.bumps.n, lat: t.bumps.lat, lng: t.bumps.lng, flag: t.bumps.flag, road: t.bumps.road, names: t.bumps.names, grid: t.bumps.grid };
+    let corner = null, named = null, highway = null;
     try {
-      const RB = buildNavRoute(), nb = (m) => dest(NAV_ORIGIN, 0, m);
-      const bp = [dest(nb(600), 0, 8), dest(nb(300), 90, 8)];
+      const nb = (m) => dest(NAV_ORIGIN, 0, m);
+      const bp = [[dest(nb(600), 0, 8), 0], [dest(nb(300), 90, 8), 0], [dest(nb(200), 90, 4), 2], [dest(nb(400), 90, 11), 1]];
       const grid = new Map();
-      bp.forEach((p, k) => { const key = Math.floor(p.lat * 100) + ':' + Math.floor(p.lng * 100); if (!grid.has(key)) grid.set(key, []); grid.get(key).push(k); });
-      Object.assign(t.bumps, { n: 2, lat: Float64Array.from(bp.map((p) => p.lat)), lng: Float64Array.from(bp.map((p) => p.lng)), flag: new Uint8Array(2), grid });
-      softReset();
-      await planAndStart(RB);
-      feed(pointAt(RB, 20).p, 10, 0);
-      corner = (t.nav.routeBumps || []).map((x) => x.k + '@' + Math.round(x.at)).join(',');
-      t.endNav();
+      bp.forEach(([p], k) => { const key = Math.floor(p.lat * 100) + ':' + Math.floor(p.lng * 100); if (!grid.has(key)) grid.set(key, []); grid.get(key).push(k); });
+      Object.assign(t.bumps, { n: bp.length, lat: Float64Array.from(bp.map((x) => x[0].lat)), lng: Float64Array.from(bp.map((x) => x[0].lng)),
+        flag: new Uint8Array(bp.length), road: Int32Array.from(bp.map((x) => x[1])), names: ['', '테스트로', '옆골목길'], grid });
+      const drive1 = async (R) => {
+        softReset();
+        await planAndStart(R);
+        feed(pointAt(R, 20).p, 10, 0);
+        const v = (t.nav.routeBumps || []).map((x) => x.k + '@' + Math.round(x.at)).join(',');
+        t.endNav();
+        return v;
+      };
+      named = await drive1(buildNavRoute());   // 0 모퉁이 옆 골목(이름 모름) 빠짐 · 1 이름 모름 곧은 길 8m 잡음 · 2 '옆골목길' 4m 빠짐 · 3 '테스트로' 11m 잡음
+      corner = named;
+      const RH = buildNavRoute();
+      RH.route = JSON.parse(JSON.stringify(RH.route));
+      RH.route.guide = [{ i: 1, t: 66, s: '테스트IC에서 고속도로 진입', d: r0(RH.cum[1]), ms: 10000 }, { i: 8, t: 67, s: '시험IC에서 고속도로 출구', d: r0(RH.cum[8] - RH.cum[1]), ms: 60000 },
+        { i: 9, t: 88, s: '목적지', d: r0(RH.cum[9] - RH.cum[8]), ms: 10000 }];
+      highway = await drive1(RH);              // 고속도로 구간 안이라 하나도 안 잡음
     } finally {
       Object.assign(t.bumps, keep);
+      stub.canned['/reverse'] = prevRev;
     }
     softReset();
     const mapOk = !t.getMap() || nav.markers >= 1;
-    const ok = nav.alerted >= 5 && nav.maxShownD <= 200 && mapOk && /과속방지턱 \d+m/.test(nav.label) && free.alerted >= 3 && off.alerted === 0 && corner === '1@300';
+    const ok = nav.alerted >= 5 && nav.maxShownD <= 200 && mapOk && /과속방지턱 \d+m/.test(nav.label) && free.alerted >= 3 && off.alerted === 0 && named === '1@300,3@400' && highway === '';
     return {
       pass: ok,
-      detail: 'with nav: ' + JSON.stringify(nav) + ' | no nav: ' + JSON.stringify(free) + ' | setting off: ' + JSON.stringify(off) + ' | corner side-street bump: ' + corner + (ok ? '✓' : '✗'),
+      detail: 'with nav: ' + JSON.stringify(nav) + ' | no nav: ' + JSON.stringify(free) + ' | setting off: ' + JSON.stringify(off) + ' | names/corner: ' + named + ' | on highway: ' + JSON.stringify(highway) + (ok ? '✓' : '✗'),
     };
   }
 
@@ -3066,6 +3083,7 @@
       ['up', dest(north(250), 270, 9)],
       ['down', dest(north(350), 270, 3)],     // 왼쪽 3m 내리막: 오르막·내리막은 오른쪽만 → 안 잡음
       ['narrow', dest(dest(turn, 90, 450), 0, 3)],   // 동쪽 길 왼쪽(북쪽) 3m 도로 폭 좁아짐: 방향 없는 표지는 5m 까지 → 잡음
+      ['animal', dest(north(150), 90, 6)],           // 오른쪽 6m 지만 도로 이름이 '옆골목길' → 옆 골목 표지라 안 잡음
       ['danger', dest(north(300), 90, 300)],
       ['rock', dest(dest(turn, 90, 300), 180, 7)],
     ];
@@ -3082,7 +3100,12 @@
     const prevPref = t.prefs.signs;
     const r = {};
     try {
-      t.setSignData({ v: 1, scale: 1e5, date: '2026-11-14', count: pts.length, types, d });
+      // 표지 도로 이름(v2): 미끄러운 도로·낙석은 경로 구간 이름과 같고, '옆골목길' 동물 표지는 경로 오른쪽 6m 지만 다른 길이라 빠진다
+      const roadOf = { slip: 1, rock: 2, animal: 3 };
+      const d2 = [];
+      for (let k = 0; k < pts.length; k++) d2.push(d[3 * k], d[3 * k + 1], d[3 * k + 2], roadOf[types[k]] || 0);
+      stub.canned['/reverse'] = { road: '', area: '' }; t.road.name = '';
+      t.setSignData({ v: 2, scale: 1e5, date: '2026-11-14', count: pts.length, types, names: ['', '테스트로', '율곡로', '옆골목길'], d: d2 });
       softReset();
       await planAndStart(R);
       go(15); go(100);
@@ -3106,6 +3129,7 @@
       r.free300 = card();                                 // 앞 150m 오른쪽 미끄러운 도로
     } finally {
       t.prefs.signs = prevPref;
+      stub.canned['/reverse'] = { road: '하네스로', area: '테스트시 테스트구 테스트동' };
       t.setSignData(null);
       await t.loadSigns();
       softReset();

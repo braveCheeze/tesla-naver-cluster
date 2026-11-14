@@ -49,7 +49,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-91'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-92'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   // 브라우저에 저장된 예전 index.html 이 새 app.js 를 불러온 경우(화면 요소가 맞지 않아 버튼 연결에서 멈춘다):
@@ -1263,25 +1263,28 @@
   // ---------- 과속방지턱 (전국 과속방지턱 표준데이터, data/bumps.json) ----------
   // 길안내 중이면 경로 10m 안의 방지턱을, 아니면 진행 방향 바로 앞(120m, 좌우 8m)의 방지턱을 200m 앞부터 알린다.
   // 지도에는 길안내 중 앞쪽 1.5km 안, 아니면 앞쪽 300m 안의 방지턱을 작은 삼각 표지로
-  const bumps = { loaded: false, n: 0, lat: null, lng: null, flag: null, grid: new Map(), date: '' };
+  const bumps = { loaded: false, n: 0, lat: null, lng: null, flag: null, road: null, names: [''], grid: new Map(), date: '' };
   const bumpState = { next: null, markerAt: null, markerKey: '' };
   const BUMP_ALERT = 200, BUMP_ROUTE_M = 10;
   async function loadBumps() {
     try {
       const r = await fetch('data/bumps.json?v=' + APP_VERSION);
       if (!r.ok) return;
-      const j = await r.json(), n = j.count, sc = j.scale || 1e5, d = j.d;
-      const lat = new Float64Array(n), lng = new Float64Array(n), flag = new Uint8Array(n);
+      const j = await r.json(), n = j.count, sc = j.scale || 1e5, d = j.d, v2 = (j.v || 1) >= 2;
+      // v2: 셋째 값 = 도로 이름 번호 x 2 + 연속형 (tools/build_bumps.py)
+      const lat = new Float64Array(n), lng = new Float64Array(n), flag = new Uint8Array(n), road = new Int32Array(n);
       let a = 0, b = 0;
       for (let k = 0; k < n; k++) {
         a += d[3 * k]; b += d[3 * k + 1];
-        lat[k] = a / sc; lng[k] = b / sc; flag[k] = d[3 * k + 2];
+        lat[k] = a / sc; lng[k] = b / sc;
+        const x = d[3 * k + 2];
+        flag[k] = v2 ? x & 1 : x; road[k] = v2 ? x >> 1 : 0;
         const key = Math.floor(lat[k] * 100) + ':' + Math.floor(lng[k] * 100);
         let cell = bumps.grid.get(key);
         if (!cell) bumps.grid.set(key, cell = []);
         cell.push(k);
       }
-      Object.assign(bumps, { n, lat, lng, flag, date: j.date || '', loaded: true });
+      Object.assign(bumps, { n, lat, lng, flag, road, names: (v2 && j.names) || [''], date: j.date || '', loaded: true });
     } catch (e) { /* 방지턱 데이터가 없어도 나머지는 그대로 */ }
   }
   function bumpsNear(la, ln, r) {
@@ -1298,6 +1301,62 @@
     return out;
   }
   // 길안내 경로 위 방지턱 (경로 거리순). 카메라처럼 앞쪽 4km 까지만 찾아 두고 달리면서 늘린다
+  // ---------- 일반도로 자료(과속방지턱·주의 표지)가 '내가 달리는 그 도로' 것인지 (2026-11-14 다시 설계) ----------
+  // 거리만 보면 옆 골목·교차로의 가로 도로·고가(고속도로) 밑 도로의 자료가 섞인다. 사용자: '근처'가 아니라 '내 길'의 데이터인지를 봐야 한다.
+  // 실제 경로 점검(하남·송파·판교 경로 40여 개): 경로선 10m 안의 방지턱 189개 중 도로 이름이 같은 것 43, 다른 것 146
+  // (덕풍공원로 경로의 덕풍북로·덕풍북로71번길 골목, 수도권제1순환고속도로 밑 거마로7길·오금로57길은 경로선 0.1m 에도 있었다).
+  //   1) 고속도로 구간(안내상 진입~출구, 또는 구간 이름이 고속도로)에서는 일반도로 자료를 쓰지 않는다 (지자체 자료라 고속도로 위에는 없다)
+  //   2) 자료의 도로 이름이 그 지점 앞뒤의 경로 도로 이름(길찾기 구간 이름 + 앞뒤 40m 안 안내 문구의 도로 이름) 중 하나와 같으면 내 길,
+  //      다 다르면 아님. 'OO로12번길'은 'OO로'와 다른 길
+  //   3) 경로 쪽 이름을 모르면, 그 지점까지 다음 안내가 없을 때(지금 도로가 이어질 때) 지금 달리는 도로 이름(역지오코딩)과 비교
+  //   4) 그래도 모르면 거리로 (곧은 길 10m, 모퉁이 근처 5m)
+  const streetKey = (s) => String(s || '').replace(/\s+/g, '');
+  function sameStreet(a, b) {
+    const x = streetKey(a), y = streetKey(b);
+    if (!x || !y) return false;
+    if (x === y) return true;
+    if (/\d+(번)?길$/.test(x) || /\d+(번)?길$/.test(y)) return false;
+    return x.indexOf(y) >= 0 || y.indexOf(x) >= 0;
+  }
+  const STREET = /^[가-힣][가-힣0-9]*(?:대로|로|길)(?:\d+(?:번)?길)?$/;
+  const NOT_STREET = /(교차로|사거리|삼거리|오거리|으로)$/;
+  // 경로 at(m) 지점 앞뒤의 도로 이름들
+  function routeNamesAt(at) {
+    const names = [], last = nav.cum.length - 1;
+    for (const s of (nav.route && nav.route.sections) || []) {
+      const a = nav.cum[Math.min(s.i, last)], b = nav.cum[Math.min(s.i + Math.max(1, s.n) - 1, last)];
+      if (s.name && b >= at - 30 && a <= at + 30) names.push(s.name);
+    }
+    for (const g of nav.guides || []) {
+      if (Math.abs(nav.cum[Math.min(g.i, last)] - at) > 40) continue;
+      // 안내 문구의 '…' 안 이름과 'X에서'의 X 중 도로 이름 꼴인 것 ("'덕풍공원로99번길' 방면으로 좌회전")
+      const t = String(g.s || '');
+      const parts = (t.match(/'[^']*'/g) || []).join(',').replace(/'/g, '').split(/[,\s]+/);
+      const m = t.match(/^\s*(\S+?)에서/);
+      if (m) parts.push(m[1]);
+      for (const x of parts) if (STREET.test(x) && !NOT_STREET.test(x)) names.push(x);
+    }
+    return names;
+  }
+  const onHighwayRoute = (at) => onHighwayAt(at) || routeNamesAt(at).some((x) => /고속도로|고속국도/.test(x));
+  // 'no' 내 길 아님 · 'yes' 이름까지 같은 내 길 · 'maybe' 이름으로는 모름
+  function localOnRoute(at, pn) {
+    if (onHighwayRoute(at)) return 'no';
+    if (!specificRoad(pn)) return 'maybe';
+    const rn = routeNamesAt(at).filter(specificRoad);
+    if (!rn.length) return 'maybe';
+    return rn.some((x) => sameStreet(x, pn)) ? 'yes' : 'no';
+  }
+  // 이름으로 모르는(maybe) 자료를 알릴 때: 그 지점 전에 다음 안내가 없으면 지금 달리는 도로 이름과 같아야 한다
+  function liveRoadSays(at, pn) {
+    if (!specificRoad(road.name) || !specificRoad(pn)) return true;
+    const ng = nav.next && nav.cum ? nav.cum[Math.min(nav.next.i, nav.cum.length - 1)] : Infinity;
+    if (ng < at) return true;
+    return sameStreet(road.name, pn);
+  }
+  // 길안내 없이 달릴 때: 지금 도로 이름과 자료의 도로 이름이 둘 다 구체적인데 다르면 아님
+  const freeRoadOk = (pn) => !(specificRoad(road.name) && specificRoad(pn) && !sameStreet(road.name, pn));
+  const bumpRoad = (k) => (bumps.road ? bumps.names[bumps.road[k]] : '') || '';
   // 경로 위 s(m) 지점의 좌표, 그 지점 앞뒤 30m 사이 진행 방향이 몇 도 꺾이는지
   function routePointAt(s) {
     const P = nav.pts, C = nav.cum;
@@ -1322,13 +1381,15 @@
       for (const it of bumpsNear((a.lat + b.lat) / 2, (a.lng + b.lng) / 2, half + 15)) {
         if (nav.bumpSeen.has(it.k)) continue;
         const pr = projectSeg({ lat: bumps.lat[it.k], lng: bumps.lng[it.k] }, a, b);
-        if (pr.dist > BUMP_ROUTE_M) continue;
+        if (pr.dist > BUMP_ROUTE_M + 2) continue;
         const at = nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]);
-        // 경로가 꺾이는 곳(앞뒤 30m 사이 진행 방향이 30° 넘게 바뀜)에서 5m 넘게 떨어진 방지턱은 갈라지는 옆 골목 것으로 본다
-        // (2026-11-14 실제 하남 덕풍동 경로: 모퉁이에서 8.8m 떨어진 옆 골목 방지턱이 '과속방지턱 170m'로 떴다. 곧은 길에서는 10m 까지 그대로)
-        if (pr.dist > 5 && routeTurnAt(at) > 30) continue;
+        // 내 길의 방지턱인지 (위 '일반도로 자료'). 이름이 같은 내 길이면 12m 까지(넓은 길), 이름으로 모르면 10m 까지,
+        // 그리고 경로가 꺾이는 곳(앞뒤 30m 사이 진행 방향이 30° 넘게 바뀜)에서는 5m 까지 (2026-11-14 하남 덕풍동: 모퉁이 옆 골목 8.8m)
+        const st = localOnRoute(at, bumpRoad(it.k));
+        if (st === 'no') continue;
+        if (st === 'maybe' && (pr.dist > BUMP_ROUTE_M || (pr.dist > 5 && routeTurnAt(at) > 30))) continue;
         nav.bumpSeen.add(it.k);
-        nav.routeBumps.push({ k: it.k, at });
+        nav.routeBumps.push({ k: it.k, at, st });
         added = true;
       }
     }
@@ -1340,7 +1401,7 @@
     let next = null, markers = [];
     if (bumps.loaded && prefs.bumps) {
       if (nav.active && nav.pts && ensureRouteBumps()) {
-        const ahead = nav.routeBumps.filter((b) => b.at > nav.along - 8 && b.at < nav.along + 1500);
+        const ahead = nav.routeBumps.filter((b) => b.at > nav.along - 8 && b.at < nav.along + 1500 && (b.st !== 'maybe' || liveRoadSays(b.at, bumpRoad(b.k))));
         const first = ahead[0];
         if (first && first.at - nav.along <= BUMP_ALERT) {
           // 첫 방지턱부터 100m 안에 더 있으면 연속
@@ -1352,7 +1413,7 @@
         for (const it of bumpsNear(f.lat, f.lng, 300)) {
           const p = { lat: bumps.lat[it.k], lng: bumps.lng[it.k] };
           const diff = angleDiff(bearing(f, p), state.heading);
-          if (it.d < 6 || diff > 20 || it.d * Math.sin(toRad(diff)) > 8) continue;
+          if (it.d < 6 || diff > 20 || it.d * Math.sin(toRad(diff)) > 8 || !freeRoadOk(bumpRoad(it.k))) continue;
           markers.push(it);
           if (it.d <= 120 && (!next || it.d < next.d)) next = { k: it.k, d: it.d, cont: bumps.flag[it.k] === 1 };
         }
@@ -1583,7 +1644,8 @@
     { id: 'danger', label: '위험 구간', g: '<path d="M50 38 V60" fill="none" stroke-width="8"/><circle cx="50" cy="69.5" r="4.6" stroke="none"/>' },
   ];
   const SIGN_INDEX = Object.fromEntries(SIGN_TYPES.map((x, i) => [x.id, i]));
-  const signs = { loaded: false, n: 0, lat: null, lng: null, type: null, grid: new Map(), date: '' };
+  const signs = { loaded: false, n: 0, lat: null, lng: null, type: null, road: null, roads: [''], grid: new Map(), date: '' };
+  const signRoad = (k) => (signs.road ? signs.roads[signs.road[k]] : '') || '';
   const signState = { next: null, shownKey: '' };
   const SIGN_AHEAD = 300, SIGN_AFTER = 150, SIGN_ROUTE_M = 25, SIGN_LEFT_M = 5;
   function setSignData(j) {
@@ -1591,19 +1653,21 @@
     nav.routeSigns = null; signState.shownKey = '';
     if (!j || !Array.isArray(j.d)) return;
     const n = j.count, sc = j.scale || 1e5, d = j.d, names = j.types || [];
-    const lat = new Float64Array(n), lng = new Float64Array(n), type = new Int8Array(n);
+    const w = Array.isArray(j.names) ? 4 : 3;   // v2: [dLat, dLng, type, 도로 이름 번호]
+    const lat = new Float64Array(n), lng = new Float64Array(n), type = new Int8Array(n), road = new Int32Array(n);
     let a = 0, b = 0;
     for (let k = 0; k < n; k++) {
-      a += d[3 * k]; b += d[3 * k + 1];
+      a += d[w * k]; b += d[w * k + 1];
       lat[k] = a / sc; lng[k] = b / sc;
-      const ti = SIGN_INDEX[names[d[3 * k + 2]]];
+      road[k] = w === 4 ? d[w * k + 3] : 0;
+      const ti = SIGN_INDEX[names[d[w * k + 2]]];
       type[k] = ti === undefined ? -1 : ti;
       const key = Math.floor(lat[k] * 100) + ':' + Math.floor(lng[k] * 100);
       let cell = signs.grid.get(key);
       if (!cell) signs.grid.set(key, cell = []);
       cell.push(k);
     }
-    Object.assign(signs, { n, lat, lng, type, date: j.date || '', loaded: true });
+    Object.assign(signs, { n, lat, lng, type, road, roads: w === 4 ? j.names : [''], date: j.date || '', loaded: true });
   }
   async function loadSigns() {
     try {
@@ -1646,8 +1710,13 @@
         const p = { lat: signs.lat[it.k], lng: signs.lng[it.k] };
         const pr = projectSeg(p, a, b);
         if (pr.dist > SIGN_ROUTE_M || rightOf(p, a, b) < (SIGN_TYPES[signs.type[it.k]].dir ? 0 : -SIGN_LEFT_M)) continue;
+        const at = nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]);
+        // 내 길의 표지인지 (위 '일반도로 자료'): 이름이 같으면 25m 까지, 이름으로 모르면 15m 까지(모퉁이 근처 8m)
+        const st = localOnRoute(at, signRoad(it.k));
+        if (st === 'no') continue;
+        if (st === 'maybe' && (pr.dist > 15 || (pr.dist > 8 && routeTurnAt(at) > 30))) continue;
         nav.signSeen.add(it.k);
-        nav.routeSigns.push({ k: it.k, at: nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]) });
+        nav.routeSigns.push({ k: it.k, at, st });
         added = true;
       }
     }
@@ -1659,9 +1728,10 @@
     let next = null;
     if (signs.loaded && prefs.signs) {
       if (nav.active && nav.pts && ensureRouteSigns()) {
-        const up = nav.routeSigns.find((s) => s.at >= nav.along && s.at - nav.along <= SIGN_AHEAD);
+        const live = (s) => s.st !== 'maybe' || liveRoadSays(s.at, signRoad(s.k));
+        const up = nav.routeSigns.find((s) => s.at >= nav.along && s.at - nav.along <= SIGN_AHEAD && live(s));
         let past = null;
-        if (!up) for (const s of nav.routeSigns) { if (s.at >= nav.along) break; if (nav.along - s.at <= SIGN_AFTER) past = s; }
+        if (!up) for (const s of nav.routeSigns) { if (s.at >= nav.along) break; if (nav.along - s.at <= SIGN_AFTER && live(s)) past = s; }
         const s = up || past;
         if (s) next = { k: s.k, type: signs.type[s.k], d: Math.max(0, s.at - nav.along), passed: !up };
       } else if (state.heading !== null && state.speedKmh >= 8) {
@@ -1670,7 +1740,7 @@
           const diff = angleDiff(bearing(f, p), state.heading);
           if (it.d < 8 || diff > 30) continue;
           const side = it.d * Math.sin(toRad(diff)) * (((bearing(f, p) - state.heading + 540) % 360) - 180 >= 0 ? 1 : -1);
-          if (side < (SIGN_TYPES[signs.type[it.k]].dir ? 0 : -SIGN_LEFT_M) || side > 20) continue;
+          if (side < (SIGN_TYPES[signs.type[it.k]].dir ? 0 : -SIGN_LEFT_M) || side > 20 || !freeRoadOk(signRoad(it.k))) continue;
           if (it.d <= 200 && (!next || it.d < next.d)) next = { k: it.k, type: signs.type[it.k], d: it.d, passed: false };
         }
       }
@@ -4899,7 +4969,7 @@
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
       sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
       saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassNums, hipassLayout, laneNums, laneStripHtml, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, setCarIcon, carIcons: CAR_ICONS, parking, parkState, setParkingData, loadParking, evalParking, rest, setRestData, loadRest, ensureRouteRest, renderRest, placeBase, findParking, renderTurnArrow,
-      signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES,
+      signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
     };
