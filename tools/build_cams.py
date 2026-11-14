@@ -1,6 +1,6 @@
 """전국무인교통단속카메라표준데이터 CSV -> 페이지용 압축 JSON (v2).
 
-rows: [lat, lng, limit, kind, sec, len, zone, road, rtype, dir(, rear)]
+rows: [lat, lng, limit, kind, sec, len, zone, road, rtype, dir(, flags)]
 kind : 1 과속, 2 신호 전용, 3 과속+신호, 9 구간단속/기타
        (원본 단속구분: 1=속도, 2=신호, '01+02'=속도+신호, 3=통행위반, 4=주정차, 99=기타)
        원본 '신호(2)'라도 제한속도가 있으면 3(신호·과속)으로 바꾼다 (아래 설명). 2 는 제한속도가 없는 것만 남는다.
@@ -10,8 +10,8 @@ zone : 0 없음, 1 노인보호구역, 2 어린이보호구역
 road : roads[] 의 번호 (도로노선명, 없으면 -1)
 rtype: 1 고속국도, 3 일반국도, 4 지방도, 5 시도(특별·광역시도 포함), 6 군도·구도·기타
 dir  : 도로노선방향 1 상행, 2 하행, 3 양방향, 0 모름 (같은 자리에 상행·하행이 따로 있으면 3으로 합친다)
-rear : 후면 단속 카메라면 1 (지나간 뒤 차 뒤를 찍는다). 원본에는 이 구분이 없어서 직접 확인한 것만 있고,
-       그 줄에만 11번째 값으로 붙는다 (나머지 줄은 10개 그대로)
+flags: 1 후면 단속 (지나간 뒤 차 뒤를 찍는다), 2 박스형 (단속 부스. 원본 경찰청 데이터에는 없다). 원본에는 이 구분이 없어서
+       직접 확인한 것만 있고, 그 줄에만 11번째 값으로 붙는다 (나머지 줄은 10개 그대로). 예전 'rear'(1)와 같은 자리
 
 사용법: py -I tools/build_cams.py <원본.csv> data/cameras.json
 원본 CSV: data.go.kr '전국무인교통단속카메라표준데이터' (cp949). 새 원본으로 다시 만들어도 아래 FIXES 는 그대로 적용된다.
@@ -55,6 +55,10 @@ ADDS = [
     # 원본에는 같은 교차로의 반대 방향(H7738, 청평→가평군청, 과속 60)만 있다.
     # 남서행 네이버 경로 기준 정지선 쪽(교차로 12m 앞) 오른쪽 12m. 북동행 경로에서는 왼쪽 21m 라 잡히지 않는다.
     {'id': 'U0001', 'lat': 37.79681, 'lng': 127.48014, 'limit': 70, 'kind': 3, 'road': '경춘로', 'rtype': 3, 'dir': 2, 'rear': 1},
+    # 2026-11-14 주행 제보: 남양주 와부읍 팔당리 다산로(강변 옛길), 양평→팔당대교IC(북서행) 제한 60 박스형 과속 단속.
+    # 원본(경찰청)에는 박스형이 없다. 다른 내비가 팔당대교IC 2km 앞에서 239m 앞으로 알린 자리 = 네이버 경로에서 IC 1.76km 앞(±50m).
+    # 북서행 경로 오른쪽 10m. 남동행 경로에서는 왼쪽 10m 라 반대편으로 보고 잡히지 않는다.
+    {'id': 'U0002', 'lat': 37.53968, 'lng': 127.25632, 'limit': 60, 'kind': 1, 'road': '다산로', 'rtype': 4, 'dir': 1, 'box': 1},
 ]
 
 roads, road_idx = [], {}
@@ -145,8 +149,9 @@ for r in rows:
         skipped['dup'] += 1
         continue
     row = [round(lat, 5), round(lng, 5), limit, kind, sec, length, zone, ri, rtype, direction]
-    if fix and fix.get('rear'):
-        row.append(1)
+    flags = (1 if fix and fix.get('rear') else 0) | (2 if fix and fix.get('box') else 0)
+    if flags:
+        row.append(flags)
     seen[key] = row
     data.append(row)
     dates[r[20]] += 1
@@ -157,8 +162,9 @@ for a in ADDS:
         road_idx[name] = len(roads)
         roads.append(name)
     row = [a['lat'], a['lng'], a['limit'], a['kind'], 0, 0, a.get('zone', 0), road_idx[name], a['rtype'], a['dir']]
-    if a.get('rear'):
-        row.append(1)
+    flags = (1 if a.get('rear') else 0) | (2 if a.get('box') else 0)
+    if flags:
+        row.append(flags)
     data.append(row)
     fixed[a['id']] += 1
 FIXES.update({a['id']: a for a in ADDS})   # 아래 'NOT FOUND' 확인에 함께 넣는다
@@ -229,7 +235,7 @@ print('signal+speed cameras with no opposite-direction partner -> both direction
 latest = max(d for d in dates if d)
 with open(out, 'w', encoding='utf-8') as f:
     json.dump({'v': 2, 'date': latest, 'count': len(data),
-               'fields': ['lat', 'lng', 'limit', 'kind', 'sec', 'len', 'zone', 'road', 'rtype', 'dir', 'rear'],
+               'fields': ['lat', 'lng', 'limit', 'kind', 'sec', 'len', 'zone', 'road', 'rtype', 'dir', 'flags'],
                'roads': roads, 'rows': data}, f, ensure_ascii=False, separators=(',', ':'))
 
 print('kept', len(data), 'roads', len(roads), 'skipped', dict(skipped))

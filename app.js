@@ -42,7 +42,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-58'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-59'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -1070,9 +1070,11 @@
   const CAM_HOLD = 30;
   // 후면 단속 카메라는 지나간 차의 뒤를 찍으므로 기둥을 지난 뒤가 단속 지점이다: 더 길게(60m) 경고를 유지한다
   const REAR_HOLD = 60;
-  const isRear = (c) => c[10] === 1;
+  // 11번째 값(flags): 1 후면 단속, 2 박스형 (둘 다 원본에 없어 직접 확인한 것만)
+  const isRear = (c) => ((c[10] | 0) & 1) === 1;
+  const isBox = (c) => ((c[10] | 0) & 2) === 2;
   const camHold = (c) => (isRear(c) ? REAR_HOLD : CAM_HOLD);
-  // 카메라 행: [lat, lng, limit, kind, sec, len, zone, road, rtype, dir(, rear)] — rear 는 직접 확인한 후면 단속만 1
+  // 카메라 행: [lat, lng, limit, kind, sec, len, zone, road, rtype, dir(, flags)]
   // kind: 1 과속, 2 신호 전용, 3 과속+신호, 9 구간/기타 · rtype: 1 고속국도, 3 일반국도, 4 지방도, 5 시도, 6 기타
   // 8 이동식: 경찰청 공개 데이터는 고정식만 담고 있어 지금은 없다. 이동식 위치 데이터가 생기면 kind 8 로 넣으면 파란색으로 뜬다
   const KIND_NAME = { 1: '과속 단속', 2: '신호 단속', 3: '신호·과속 단속', 8: '이동식 단속', 9: '단속 구간' };
@@ -1085,6 +1087,7 @@
     if (c[6] === 2) s = '어린이보호구역 ' + (c[3] === 2 ? '단속' : s);
     else if (c[6] === 1) s = '노인보호구역 ' + s;
     if (isRear(c)) s = s.replace(/ ?단속$/, ' 후면단속');   // 예: '신호·과속 후면단속'
+    if (isBox(c)) s = '박스형 ' + s;                        // 예: '박스형 과속 단속' (2026-11-14 팔당 제보)
     return s;
   }
   const camRoad = (c) => (cams.roads && c[7] >= 0 ? cams.roads[c[7]] : '') || '';
@@ -1429,6 +1432,7 @@
       card.classList.toggle('over', speedCam && state.speedKmh > tg.c[2] + 1 && tg.d < 600);
       card.classList.toggle('signal', !speedCam);
       card.classList.toggle('mobile', tg.c[3] === 8); // 이동식 단속은 파란색
+      card.classList.toggle('box', isBox(tg.c));       // 박스형은 종류 글자를 주황으로
       card.classList.toggle('sigspeed', tg.c[3] === 3); // 신호·과속: 표지 위에 작은 신호등
       // 어린이·노인 보호구역: 도로 주의 표지 모양 타일 (삼각 표지 + 빨간 띠에 남은 거리 + '어린이보호' 와 제한속도)
       const zone = tg.c[6] === 2 ? 'kid' : tg.c[6] === 1 ? 'elder' : '';
@@ -2046,6 +2050,7 @@
     if (/유턴|U턴/i.test(s) || t === 6) return 'u';
     if (/목적지|도착/.test(s) || t === 88) return 'goal';
     if (/경유지/.test(s) || t === 87) return 'goal';
+    if (t === 121) return 'toll';   // 톨게이트: 직진 화살표 대신 톨게이트 표지 (2026-11-14 요청)
     // 회전교차로 'N시 방향': 7~11시는 왼쪽, 1~5시는 오른쪽, 6시는 유턴, 12시는 직진
     const clock = s.match(/(\d{1,2})시\s*방향/);
     if (clock) {
@@ -2068,6 +2073,11 @@
     r: '<svg viewBox="0 0 48 48"><path d="M16 43V25a9 9 0 0 1 9-9h14M31 8l8 8-8 8"/></svg>',
     u: '<svg viewBox="0 0 48 48"><path d="M34 43V18a9 9 0 0 0-18 0v20M9 31l7 8 7-8"/></svg>',
     goal: '<svg viewBox="0 0 48 48"><path d="M13 44V5M13 7h23l-6 8 6 8H13"/></svg>',
+    // 톨게이트: 파란 'TG' 표지 + 앞으로 좁아지는 도로 + 흰 화살표 (네이버·다른 내비의 톨게이트 그림처럼)
+    toll: '<svg viewBox="0 0 48 48" class="toll"><rect x="6" y="1" width="36" height="17" rx="3.5" fill="#2f6fe4" stroke="none"/>' +
+      '<text x="24" y="14.6" text-anchor="middle" font-size="14" font-weight="800" fill="#fff" stroke="none" font-family="Pretendard, sans-serif">TG</text>' +
+      '<path class="tg-road" d="M7 47 17 21h14l10 26z" fill="#2b3440" stroke="none"/>' +
+      '<path d="M24 43V28M19.5 32.5 24 28l4.5 4.5" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   };
 
   // 남은 경로만 다시 그린다: 지금 위치(경로 위로 붙인 점)부터 목적지까지, 교통 색 구간도 번호를 맞춰 옮긴다

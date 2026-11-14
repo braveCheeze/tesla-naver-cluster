@@ -1135,6 +1135,12 @@
   #app.tesla .cd-in .toll-hint { color: #1565c0; }
   body:has(#app.tesla):has(#map.night) #app.tesla .cd-in .tollcard { background: rgba(66, 133, 244, .16); box-shadow: inset 0 0 0 1px rgba(130, 177, 255, .22); }
   body:has(#app.tesla):has(#map.night) #app.tesla .cd-in .toll-hint { color: #8ab4ff; }
+  /* ================= 박스형 카메라·톨게이트 표지 (2026-11-14 요청) ================= */
+  .camcard.box .cam-type, #app.tesla .camcard.box .cam-type { color: #f59e0b; }
+  #app.tesla .cd-in .camcard.box .cam-type { color: #d97706; }
+  body:has(#app.tesla):has(#map.night) #app.tesla .cd-in .camcard.box .cam-type { color: #fbbf24; }
+  /* 톨게이트 표지: 밤에는 도로 부분을 조금 밝게 (어두운 패널 위에서 보이게) */
+  body:has(#app.tesla):has(#map.night) svg.toll .tg-road { fill: #5b6676; }
 </style>
 </head>
 <body>
@@ -1373,6 +1379,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-58"></script>
+<script src="app.js?v=2026.11.14-59"></script>
 </body>
 </html>

@@ -1855,6 +1855,7 @@
       r.underPanel = Math.abs(db.top - np.bottom) <= 2;
       r.noHalo = getComputedStyle(document.getElementById('tollName')).textShadow === 'none';
       r.text = text('#tollName') + ' ' + text('#tollDist') + ' ' + text('#tollFare');
+      r.tollIcon = !!document.querySelector('#turnIcon svg.toll');   // 직진 화살표 대신 톨게이트 표지
       for (let s = 1525; s <= 2700; s += 25) { const a = pointAt(R, s); feed(a.p, 25, 0); t.renderNav(); }
       r.goneAfter = !visible('#tollCard') && !dr.classList.contains('open');
       t.endNav();
@@ -1862,8 +1863,38 @@
       set(prev);
       softReset();
     }
-    const ok = r.shown && r.inDrawer && r.open && r.underPanel && r.noHalo && /하남톨게이트 1\.0km/.test(r.text) && r.goneAfter;
+    const ok = r.shown && r.inDrawer && r.open && r.underPanel && r.noHalo && /하남톨게이트 1\.0km/.test(r.text) && r.tollIcon && r.goneAfter;
     return { pass: ok, detail: JSON.stringify(r) + (ok ? '✓' : '✗') };
+  }
+
+  // S46: 박스형 과속 카메라 (2026-11-14 주행 제보: 남양주 와부읍 팔당리 다산로, 양평→팔당대교IC 제한 60).
+  //      경찰청 원본에는 박스형이 없어 직접 넣었다 (tools/build_cams.py U0002, flags 2).
+  //      실제 네이버 경로(test/fixtures/route-paldang-west|east.json)로: 북서행에서는 '박스형 과속 단속'으로 뜨고, 남동행(반대편)에서는 안 뜬다
+  async function s46() {
+    const t = T(), CAM = { lat: 37.53968, lng: 127.25632 };
+    const run = async (file) => {
+      const fx = await (await realFetch(harnessDir + 'fixtures/' + file, { cache: 'no-store' })).json();
+      const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0];
+      for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+      const total = cum[cum.length - 1];
+      const R = { route: fx, P, cum, total, dest: { name: '팔당', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+      softReset();
+      await planAndStart(R);
+      let hit = null;
+      for (let s = 0; s <= total - 30; s += 12) {
+        const a = pointAt(R, s);
+        feed(a.p, 55 / 3.6, a.h);
+        const tg = t.camState.target;
+        if (!hit && tg && sameCam(tg.c, CAM)) hit = { label: text('#camType'), box: document.getElementById('camCard').classList.contains('box'), dist: text('#camDist') };
+      }
+      t.endNav();
+      return hit;
+    };
+    const west = await run('route-paldang-west.json'), east = await run('route-paldang-east.json');
+    softReset();
+    const ok = !!west && west.label === '박스형 과속 단속' && west.box && !east;
+    return { pass: ok, detail: 'northwest (toward 팔당대교IC) ' + JSON.stringify(west) + ' | southeast (opposite) ' + (east ? 'ALERTED✗' : 'quiet✓') + (ok ? '✓' : '✗') };
   }
 
   // S25: 하이패스 — 경로 안내에 톨게이트(type 121)가 있으면 2km 앞부터 카드(이름·거리·통행료·하이패스 차로 이용)와 음성
@@ -2209,7 +2240,8 @@
     { id: 'S42', name: "S42 next-step chip: Naver-style '↱ 360m', or a red pin '480m' when the destination is next", fn: s42 },
     { id: 'S43', name: 'S43 one-way speed camera marked both ways in the data (양서면 북한강로): quiet on the opposite side', fn: s43 },
     { id: 'S44', name: 'S44 tunnel row: entry distance + length, then distance to the exit (OSM tunnels)', fn: s44 },
-    { id: 'S45', name: 'S45 hi-pass card sits in the camera drawer under the nav panel (Tesla mode)', fn: s45 },
+    { id: 'S45', name: 'S45 hi-pass card sits in the camera drawer under the nav panel (Tesla mode) + toll gate icon', fn: s45 },
+    { id: 'S46', name: 'S46 box-type speed camera added by hand (팔당 다산로): shown as 박스형 one way only', fn: s46 },
   ];
 
   // ---------------------------------------------------------------- runner
