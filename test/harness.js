@@ -820,33 +820,40 @@
     };
   }
 
-  // S13: 신호 위반 전용 카메라는 기본 꺼짐, 설정을 켜면 '신호'로 알림
-  // 제주 일주동로 [33.37693,126.87362,50,2,0,0,0] — 5.2km 안에 다른 카메라 없음
+  // S13: 원본 '신호' 카메라 — 제한속도가 있으면 신호·과속으로 기본 알림(교차로 다기능 카메라. 2026-11-14 청평 경춘로 주행 제보),
+  //      제한속도가 없는 진짜 신호 전용만 기본 꺼짐이고 설정을 켜면 '신호'로 알림
+  // 제주 일주동로 [33.37693,126.87362,50] — 원본 '신호', 5.2km 안에 다른 카메라 없음
   const CAM_SIGNAL = { lat: 33.37693, lng: 126.87362 };
+  // 이천 경충대로 [37.25055,127.48265,0,2] — 제한속도 없는 신호 전용. 남남서(200°)에서 다가가면 앞쪽 다른 카메라는 750m 넘게 떨어져 있다
+  const CAM_SIGONLY = { lat: 37.25055, lng: 127.48265 };
   async function s13() {
-    const t = T(), C = CAM_SIGNAL, prev = t.prefs.signalCams;
-    const drive = () => {
+    const t = T(), prev = t.prefs.signalCams;
+    const drive = (C, from) => {
+      softReset();
       let hit = null;
-      for (let s = 0; s <= 600; s += 14) {
-        feed(dest(C, 180, 700 - s), 14, 0);
+      for (let s = 0; s <= from - 100; s += 14) {
+        feed(dest(C, from === 700 ? 180 : 200, from - s), 14, from === 700 ? 0 : 20);
         const tg = t.camState.target;
-        if (tg && sameCam(tg.c, C) && !hit) hit = { d: r0(tg.d), sign: text('#camLimit'), signal: hasCls('#camCard', 'signal') };
+        if (tg && sameCam(tg.c, C) && !hit) hit = { d: r0(tg.d), sign: text('#camLimit'), type: text('#camType'), signal: hasCls('#camCard', 'signal'), sig: hasCls('#camCard', 'sigspeed') };
       }
       return hit;
     };
-    let off, on;
+    let withLimit, off, on;
     try {
       t.prefs.signalCams = false;
-      off = drive();
-      softReset();
+      withLimit = drive(CAM_SIGNAL, 700);
+      off = drive(CAM_SIGONLY, 380);
       t.prefs.signalCams = true;
-      on = drive();
+      on = drive(CAM_SIGONLY, 380);
     } finally {
       t.prefs.signalCams = prev;
+      softReset();
     }
+    const okLimit = !!withLimit && withLimit.sign === '50' && withLimit.type === '신호·과속 단속' && withLimit.sig;
     return {
-      pass: !off && !!on && on.sign === '신호' && on.signal,
-      detail: 'setting off: ' + (off ? 'WRONG alert at ' + off.d + ' m' : 'no alert') +
+      pass: okLimit && !off && !!on && on.sign === '신호' && on.signal,
+      detail: 'signal camera with limit 50 (default): ' + (withLimit ? JSON.stringify(withLimit) : 'NO ALERT') + (okLimit ? '✓' : '✗') +
+        '; no-limit signal-only, setting off: ' + (off ? 'WRONG alert at ' + off.d + ' m' : 'no alert✓') +
         '; setting on: ' + (on ? 'alert at ' + on.d + ' m, sign "' + on.sign + '", .signal=' + on.signal : 'NO ALERT'),
     };
   }
@@ -1420,6 +1427,37 @@
     };
   }
 
+  // S37: 청평 경춘로 (2026-11-14 주행 제보 "청평 쪽은 다 안 잡힌다") — 원본에 '신호'로만 올라 있던 교차로 카메라들이
+  //      신호·과속으로 잡히는지, 실제 네이버 경로(test/fixtures/route-cheongpyeong-sw.json: 가평 포회촌 → 청평 → 대성리)로 길안내하며 확인.
+  //      초옥동마을입구교차로(가평→서울, 60)·원대성리 삼거리앞(청평터미널→대성리역, 70)은 꼭 잡혀야 한다
+  async function s37() {
+    const t = T();
+    const fx = await (await realFetch(harnessDir + 'fixtures/route-cheongpyeong-sw.json', { cache: 'no-store' })).json();
+    const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const total = cum[cum.length - 1];
+    const R = { route: fx, P, cum, total, dest: { name: '대성리', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    softReset();
+    await planAndStart(R);
+    const seen = new Map();
+    for (let s = 0; s <= total - 30; s += 15) {
+      const a = pointAt(R, s);
+      feed(a.p, 75 / 3.6, a.h);
+      const tg = t.camState.target;
+      if (tg) { const k = tg.c[0] + ',' + tg.c[1]; if (!seen.has(k)) seen.set(k, { limit: tg.c[2], type: text('#camType') }); }
+    }
+    t.endNav();
+    softReset();
+    const must = { '초옥동마을입구교차로': '37.77894,127.46407', '원대성리 삼거리앞': '37.69729,127.38401' };
+    const missing = Object.keys(must).filter((k) => !seen.has(must[k]));
+    const list = [...seen.entries()].map(([k, v]) => k + ' ' + v.limit + ' ' + v.type);
+    return {
+      pass: missing.length === 0 && seen.size >= 5,
+      detail: seen.size + ' cameras alerted along 17 km: ' + list.join(' | ') + (missing.length ? ' — MISSING ' + missing.join(', ') : ''),
+    };
+  }
+
   // S25: 하이패스 — 경로 안내에 톨게이트(type 121)가 있으면 2km 앞부터 카드(이름·거리·통행료·하이패스 차로 이용)와 음성
   async function s25() {
     const t = T();
@@ -1731,7 +1769,7 @@
     { id: 'S10', name: 'S10 route behind car erased', fn: s10 },
     { id: 'S11', name: 'S11 reroute when never on route', fn: s11 },
     { id: 'S12', name: 'S12 camera hold 30 m after', fn: s12 },
-    { id: 'S13', name: 'S13 signal-only cameras', fn: s13 },
+    { id: 'S13', name: 'S13 signal cameras: with a limit = 신호·과속 by default; no-limit signal-only off', fn: s13 },
     { id: 'S14', name: 'S14 adjacent-road / opposite-lane cameras', fn: s14 },
     { id: 'S15', name: 'S15 over-speed beep once a second', fn: s15 },
     { id: 'S16', name: 'S16 Tesla mode layout', fn: s16 },
@@ -1755,6 +1793,7 @@
     { id: 'S34', name: 'S34 Tesla mode: camera → my speed → small zone sign, red when over', fn: s34 },
     { id: 'S35', name: 'S35 Gapyeong 계량교 30 camera (data fix): 신호·과속, alerts when over', fn: s35 },
     { id: 'S36', name: 'S36 rear-enforcement camera (가평 포회촌, added): held 60 m past the pole, one direction only', fn: s36 },
+    { id: 'S37', name: 'S37 청평 경춘로 real route: intersection cameras (source "신호") alert as 신호·과속', fn: s37 },
   ];
 
   // ---------------------------------------------------------------- runner

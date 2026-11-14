@@ -3,6 +3,7 @@
 rows: [lat, lng, limit, kind, sec, len, zone, road, rtype, dir(, rear)]
 kind : 1 과속, 2 신호 전용, 3 과속+신호, 9 구간단속/기타
        (원본 단속구분: 1=속도, 2=신호, '01+02'=속도+신호, 3=통행위반, 4=주정차, 99=기타)
+       원본 '신호(2)'라도 제한속도가 있으면 3(신호·과속)으로 바꾼다 (아래 설명). 2 는 제한속도가 없는 것만 남는다.
 sec  : 0 없음, 1 구간 시점, 2 구간 종점
 len  : 구간 길이 m
 zone : 0 없음, 1 노인보호구역, 2 어린이보호구역
@@ -86,6 +87,12 @@ for r in rows:
     else:
         skipped['unknown kind'] += 1
         continue
+    # 원본의 '신호(2)'는 대부분 교차로 다기능 카메라(신호·과속)다: 신호 전용이 1만 8천여 대인데 99% 넘게 제한속도가 적혀 있고
+    # 대부분 2019년 이후 설치. 실제로 달려 보니 계량교(30)·청평 경춘로 카메라들이 과속도 찍는데 '신호'로만 올라 있었다.
+    # 그래서 제한속도가 있는 신호 카메라는 신호·과속(3)으로 본다. 제한속도가 없는(0) 것만 신호 전용으로 남긴다.
+    if kind == 2 and limit > 0:
+        kind = 3
+        skipped['(info) signal→signal+speed'] += 1
     fix = FIXES.get(r[0].strip())
     if fix:
         kind = fix.get('kind', kind)
@@ -99,6 +106,15 @@ for r in rows:
     except ValueError:
         length = 0
     zone = {'1': 1, '2': 2}.get(norm(r[16]), 0)
+    # 보호구역 코드가 비어 있어도(99 등) 설치장소에 '어린이보호구역'·'스쿨존'·'노인보호구역'이 적혀 있으면 보호구역으로 본다
+    if not zone:
+        place = r[11]
+        if '어린이보호' in place or '스쿨존' in place:
+            zone = 2
+            skipped['(info) zone from place text'] += 1
+        elif '노인보호' in place:
+            zone = 1
+            skipped['(info) zone from place text'] += 1
     name = r[5].strip()
     if name:
         if name not in road_idx:
