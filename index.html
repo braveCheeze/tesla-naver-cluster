@@ -960,6 +960,38 @@
   }
   /* 단속 경고 묶음: 내 속도 띠를 맨 위로, 신호·과속 카드는 그 밑으로 */
   #app.tesla #mySpeed { order: -1; }
+  /* ================= 아주 살짝 유리 느낌 (2026-11-14 요청: 안내 패널·모달에 약한 블러 + 리퀴드 글래스) =================
+     흰 바탕을 조금 비치게(78%) 하고 뒤를 흐리게, 위쪽에 얇은 빛 한 줄과 아주 옅은 윤광. 밤에는 어두운 유리 */
+  body:has(#app.tesla) {
+    --nv-glass: rgba(255, 255, 255, .78);
+    --nv-glass-hi: rgba(255, 255, 255, .95);
+    --nv-glass-edge: rgba(255, 255, 255, .55);
+    --nv-sheen: linear-gradient(180deg, rgba(255, 255, 255, .5), rgba(255, 255, 255, 0) 55%);
+    --nv-soft: rgba(0, 0, 0, .045);
+    --nv-blur: blur(14px) saturate(170%);
+  }
+  body:has(#app.tesla):has(#map.night) {
+    --nv-glass: rgba(34, 37, 42, .74);
+    --nv-glass-hi: rgba(255, 255, 255, .13);
+    --nv-glass-edge: rgba(255, 255, 255, .07);
+    --nv-sheen: linear-gradient(180deg, rgba(255, 255, 255, .07), rgba(255, 255, 255, 0) 55%);
+    --nv-soft: rgba(255, 255, 255, .06);
+  }
+  #app.tesla .navpanel, #app.tesla .routecard, #app.tesla .navtray button:not(.upd), #app.tesla .road,
+  #app.tesla .myspeed:not([hidden]):not(.over), #app.tesla .btn, #app.tesla .searchbtn, #app.tesla .rs-top,
+  body:has(#app.tesla) .sheet-card {
+    background-color: var(--nv-glass); background-image: var(--nv-sheen);
+    -webkit-backdrop-filter: var(--nv-blur); backdrop-filter: var(--nv-blur);
+    box-shadow: inset 0 1px 0 var(--nv-glass-hi), inset 0 0 0 1px var(--nv-glass-edge), var(--nv-shadow-lg);
+  }
+  /* 길안내 패널 안쪽 칸도 비치게 (위 칸은 투명, 아래 회색 줄은 아주 옅게) */
+  #app.tesla .turn { background: transparent; }
+  #app.tesla .nextturn, #app.tesla .navmeta { background: var(--nv-soft); }
+  /* 경유지가 잡혀 있을 때의 초록 테두리는 유리 위에 그대로 */
+  #app.tesla .navtray button.on { box-shadow: inset 0 0 0 2px var(--nv-green), inset 0 1px 0 var(--nv-glass-hi), var(--nv-shadow-lg); }
+  /* 알림도 어두운 유리 */
+  #app.tesla .toast { background: rgba(36, 38, 42, .82); -webkit-backdrop-filter: var(--nv-blur); backdrop-filter: var(--nv-blur); }
+  body:has(#app.tesla) .sheet { -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
 </style>
 </head>
 <body>
@@ -1183,6 +1215,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-44"></script>
+<script src="app.js?v=2026.11.14-45"></script>
 </body>
 </html>
