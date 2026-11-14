@@ -1044,6 +1044,48 @@
   .nextturn { font-size: 16px; padding: 5px 14px; gap: 8px; }
   .nextturn.goal .nexticon, .nextturn.goal .nexticon svg { width: 22px; height: 22px; }
   .nextturn.goal #nextDist { font-weight: 800; }
+  /* ================= 단속 서랍 (2026-11-14 요청) =================
+     단속 경고는 따로 뜨는 창이 아니라 길안내 패널(맨 밑 '안내 종료' 줄) 밑에서 스르륵 내려오는 서랍.
+     패널은 그대로 있고 서랍만 그 밑으로 열린다(패널 뒤에서 나오듯 양옆이 조금 안쪽). 길안내가 없으면 혼자 둥근 카드 */
+  .camdrawer, .cd-clip, .cd-in { display: contents; }
+  #app.tesla .camdrawer {
+    display: grid; grid-template-rows: 0fr; margin: 0 6px 14px;
+    transition: grid-template-rows .34s cubic-bezier(.2, .8, .2, 1);
+  }
+  #app.tesla .camdrawer.open { grid-template-rows: 1fr; }
+  #app.tesla .cd-clip { display: block; min-height: 0; overflow: hidden; }
+  #app.tesla .cd-in {
+    display: flex; flex-direction: column; gap: 10px; padding: 12px 14px 14px;
+    background-color: var(--nv-glass); background-image: var(--nv-sheen);
+    -webkit-backdrop-filter: var(--nv-blur); backdrop-filter: var(--nv-blur);
+    border-radius: 0 0 16px 16px; box-shadow: inset 0 1px 0 var(--nv-line);
+    color: var(--nv-fg); text-shadow: none;
+    transform: translateY(-100%); transition: transform .34s cubic-bezier(.2, .8, .2, 1);
+  }
+  #app.tesla .camdrawer.open .cd-in { transform: none; }
+  /* 서랍이 열리면 패널 아래 모서리를 살짝만 둥글게 (서랍과 이어져 보이게) */
+  #app.tesla .navpanel { transition: border-radius .2s ease; }
+  #app.tesla:has(#camDrawer.open) .navpanel { border-bottom-left-radius: 6px; border-bottom-right-radius: 6px; }
+  /* 길안내가 없으면 패널이 없으므로 혼자 둥근 카드 */
+  #app.tesla:has(#navPanel[hidden]) .camdrawer { margin: 0 0 14px; }
+  #app.tesla:has(#navPanel[hidden]) .cd-in { border-radius: 16px; }
+  /* 서랍 안: 지도 위 흰 글자 대신 패널 글자색 */
+  #app.tesla .cd-in .myspeed:not([hidden]) {
+    background: var(--nv-soft); background-image: none; color: var(--nv-fg); box-shadow: none;
+    -webkit-backdrop-filter: none; backdrop-filter: none; padding: 8px 12px 9px; border-radius: 12px;
+  }
+  #app.tesla .cd-in .myspeed b { font-size: 40px; }
+  #app.tesla .cd-in .myspeed em { color: var(--nv-fg2); }
+  #app.tesla .cd-in .myspeed.over:not([hidden]) { background: #e53935; color: #fff; }
+  #app.tesla .cd-in .myspeed.over em, #app.tesla .cd-in .myspeed.over i { color: #ffe0e0; }
+  #app.tesla .cd-in .cam-type, #app.tesla .cd-in .cam-avg small, #app.tesla .cd-in .sec-top,
+  #app.tesla .cd-in .seccard .sec-avg small { color: var(--nv-sub); }
+  #app.tesla .cd-in .cam-dist, #app.tesla .cd-in .cam-avg b, #app.tesla .cd-in .seccard .sec-avg,
+  #app.tesla .cd-in .seccard .sec-remain, #app.tesla .cd-in .zonebadge b { color: var(--nv-fg); }
+  #app.tesla .cd-in .camcard.over .cam-dist, #app.tesla .cd-in .cam-avg.over b, #app.tesla .cd-in .seccard.over .sec-avg,
+  #app.tesla .cd-in .cam-hint, #app.tesla .cd-in .seccard.over .sec-remain { color: var(--nv-red); }
+  #app.tesla .cd-in .cam-bar { background: var(--nv-line); }
+  #app.tesla .cd-in .camcard.mobile .cam-type { color: #2f7dff; }
 </style>
 </head>
 <body>
@@ -1067,33 +1109,36 @@
     </div>
     <!-- 경고 묶음: 일반 화면에서는 그대로 풀어 놓고(display: contents), 테슬라 모드에서는 길안내 패널 바로 밑에 세로로 쌓는다 -->
     <div class="alerts">
-    <div id="camCard" class="camcard" hidden>
-      <div class="cam-sign"><span id="camLimit">60</span></div>
-      <div class="cam-info">
-        <div id="camType" class="cam-type">과속 단속</div>
-        <!-- 구간단속 중이면 거리 오른쪽 끝(게이지 끝)에 구간 평균 속도 -->
-        <div class="cam-row"><div id="camDist" class="cam-dist">0m</div><div id="camAvg" class="cam-avg" hidden></div></div>
-        <div class="cam-bar"><i id="camBar"></i></div>
-        <div id="camHint" class="cam-hint" hidden></div>
-      </div>
-      <!-- 어린이·노인 보호구역일 때만 보이는 도로 주의 표지 모양 타일 -->
-      <div class="zone-tile" aria-hidden="true">
-        <div id="ztSign" class="zt-sign"></div>
-        <div id="ztDist" class="zt-dist">0m</div>
-        <div class="zt-body"><div id="ztLabel" class="zt-label">어린이보호</div><div id="ztLimit" class="zt-limit">30</div></div>
-      </div>
-    </div>
-    <!-- 테슬라 모드: 단속 경고가 떠 있으면 내 속도를 함께 (제한을 넘으면 빨갛게) -->
-    <div id="mySpeed" class="myspeed" hidden><b id="mySpeedVal">0</b><i>km/h</i><em id="mySpeedLim"></em></div>
-    <!-- 테슬라 모드: 보호구역 단속이면 과속 정보 밑에 작은 주의 표지 (단속이 우선) -->
-    <div id="zoneBadge" class="zonebadge" hidden><span id="zbSign" class="zb-sign"></span><b id="zbLabel">어린이 조심</b></div>
+    <!-- 단속 서랍: 테슬라 모드에서는 길안내 패널 밑에서 스르륵 내려온다 (일반 화면에서는 그대로 풀어 놓음) -->
+    <div id="camDrawer" class="camdrawer"><div class="cd-clip"><div class="cd-in">
+          <div id="camCard" class="camcard" hidden>
+            <div class="cam-sign"><span id="camLimit">60</span></div>
+            <div class="cam-info">
+              <div id="camType" class="cam-type">과속 단속</div>
+              <!-- 구간단속 중이면 거리 오른쪽 끝(게이지 끝)에 구간 평균 속도 -->
+              <div class="cam-row"><div id="camDist" class="cam-dist">0m</div><div id="camAvg" class="cam-avg" hidden></div></div>
+              <div class="cam-bar"><i id="camBar"></i></div>
+              <div id="camHint" class="cam-hint" hidden></div>
+            </div>
+            <!-- 어린이·노인 보호구역일 때만 보이는 도로 주의 표지 모양 타일 -->
+            <div class="zone-tile" aria-hidden="true">
+              <div id="ztSign" class="zt-sign"></div>
+              <div id="ztDist" class="zt-dist">0m</div>
+              <div class="zt-body"><div id="ztLabel" class="zt-label">어린이보호</div><div id="ztLimit" class="zt-limit">30</div></div>
+            </div>
+          </div>
+          <!-- 테슬라 모드: 단속 경고가 떠 있으면 내 속도를 함께 (제한을 넘으면 빨갛게) -->
+          <div id="mySpeed" class="myspeed" hidden><b id="mySpeedVal">0</b><i>km/h</i><em id="mySpeedLim"></em></div>
+          <!-- 테슬라 모드: 보호구역 단속이면 과속 정보 밑에 작은 주의 표지 (단속이 우선) -->
+          <div id="zoneBadge" class="zonebadge" hidden><span id="zbSign" class="zb-sign"></span><b id="zbLabel">어린이 조심</b></div>
+          <div id="secCard" class="seccard" hidden>
+            <div class="sec-top">구간단속 · 제한 <b id="secLimit">100</b> km/h</div>
+            <div class="sec-avg"><span id="secAvg">-</span><small> km/h 평균</small></div>
+            <div id="secRemain" class="sec-remain">-</div>
+          </div>
+    </div></div></div>
     <!-- 과속방지턱: 200m 앞부터 작은 표지 + 거리 (길안내 중이면 경로 위, 아니면 바로 앞) -->
     <div id="bumpCard" class="bumpcard" hidden><span class="bump-sign"><svg viewBox="0 0 100 88" aria-hidden="true"><path d="M50 7 L94 82 L6 82 Z" fill="#fff" stroke="#e53935" stroke-width="10" stroke-linejoin="round"/><path d="M25 69 H75" stroke="#111" stroke-width="6" stroke-linecap="round"/><path d="M33 69 Q50 42 67 69 Z" fill="#111"/></svg></span><span id="bumpLabel" class="bump-label">과속방지턱</span><b id="bumpDist">0m</b></div>
-    <div id="secCard" class="seccard" hidden>
-      <div class="sec-top">구간단속 · 제한 <b id="secLimit">100</b> km/h</div>
-      <div class="sec-avg"><span id="secAvg">-</span><small> km/h 평균</small></div>
-      <div id="secRemain" class="sec-remain">-</div>
-    </div>
     <!-- 톨게이트(하이패스) 안내: 길안내 경로에 톨게이트가 있으면 2km 앞부터 -->
     <div id="tollCard" class="tollcard" hidden>
       <div class="toll-badge">하이패스</div>
@@ -1276,6 +1321,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-52"></script>
+<script src="app.js?v=2026.11.14-53"></script>
 </body>
 </html>

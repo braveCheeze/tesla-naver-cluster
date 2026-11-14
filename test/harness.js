@@ -1297,7 +1297,8 @@
         stripMiddle: Math.abs((strip.top + strip.bottom) / 2 - (app.top + app.bottom) / 2) < 12,
         // 오른쪽·위 테두리에서 띄우기: 시계·경로 막대가 테두리에 붙지 않는다
         rightGap: app.right - clock.right >= 30 && clock.top - app.top >= 16 && app.right - strip.right >= 30,
-        alertsUnderNav: alerts.top - np.bottom >= 18 && alerts.top - np.bottom < 30 && alerts.left < app.left + 40, // 패널과 조금 띄워서(약 22px)
+        // 단속 서랍은 패널 바로 밑에 붙고(서랍이 접혀 있으면 그 밑 항목은 22px 떨어짐)
+        alertsUnderNav: Math.abs(alerts.top - np.bottom) <= 2 && alerts.left < app.left + 40,
         buttons70: btn.width >= 36 && btn.width <= 42,
         // 길안내 패널 맨 위에 목적지 줄(아이콘 + 이름 + 밑줄), 그 밑에 회전 안내
         destRow: (() => { const d = document.querySelector('.navdest').getBoundingClientRect(), tn = document.querySelector('.turn').getBoundingClientRect();

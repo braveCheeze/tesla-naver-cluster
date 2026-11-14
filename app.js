@@ -41,7 +41,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-52'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-53'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -1284,8 +1284,11 @@
       nxEl.setAttribute('aria-label', '다음 단속 ' + fmtDist(d));
     }
     if (!tg || !prefs.cams) {
-      card.hidden = true;
+      // 테슬라 모드에서 서랍이 열려 있으면 위로 접히는 동안(0.36초)은 내용을 그대로 두었다가 숨긴다
+      if (!card.hidden && drawerAnimated()) startDrawerClose();
+      else if (!drawer.closing) card.hidden = true;
     } else {
+      cancelDrawerClose();
       card.hidden = false;
       const speedCam = isSpeedCam(tg.c);
       $('#camLimit').textContent = speedCam ? tg.c[2] : '신호';
@@ -1322,6 +1325,36 @@
     renderCamAvg();
     renderMySpeed();
     renderLimit();
+    syncDrawer();
+  }
+  // ---------- 단속 서랍 (테슬라 모드: 길안내 패널 밑에서 스르륵) ----------
+  // 안의 것(단속 카드·내 속도·보호구역 표지·구간단속 카드) 중 하나라도 보이면 열고, 다 숨으면 접는다
+  const drawer = { t: 0, hideT: 0, closing: false };
+  const drawerAnimated = () => !testPage && $('#app').classList.contains('tesla') && $('#camDrawer').classList.contains('open');
+  function syncDrawer() {
+    const dr = $('#camDrawer');
+    if (drawer.closing) return;
+    const any = ['#camCard', '#mySpeed', '#zoneBadge', '#secCard'].some((q) => !$(q).hidden);
+    if (any === dr.classList.contains('open')) return;
+    clearTimeout(drawer.t);
+    // 처음 보일 때 접힌 상태에서 한 번 그린 뒤 열어야 내려오는 움직임이 보인다
+    if (any) { if (testPage) dr.classList.add('open'); else drawer.t = setTimeout(() => dr.classList.add('open'), 30); }
+    else dr.classList.remove('open');
+  }
+  function startDrawerClose() {
+    if (drawer.closing) return;
+    drawer.closing = true;
+    $('#camDrawer').classList.remove('open');
+    drawer.hideT = setTimeout(() => {
+      drawer.closing = false;
+      if (!camState.target) $('#camCard').hidden = true;
+      syncDrawer();
+    }, 360);
+  }
+  function cancelDrawerClose() {
+    if (!drawer.closing) return;
+    clearTimeout(drawer.hideT);
+    drawer.closing = false;
   }
   // 구간단속 계산: 평균 속도, 남은 거리, 평균을 넘었을 때 남은 구간에서 지킬 속도(need)
   function sectionStats(s) {
@@ -2046,7 +2079,8 @@
     const setVar = (k, px) => { const v = Math.round(px) + 'px'; if (app.style.getPropertyValue(k) !== v) app.style.setProperty(k, v); };
     const np = $('#navPanel'), sb = $('#searchBtn');
     // 안내 패널(맨 밑 '안내 종료' 줄)과 그 밑 경고 사이를 조금 띄운다 (2026-11-14: 너무 붙어 보임)
-    setVar('--tl-top', !np.hidden ? np.getBoundingClientRect().bottom - base.top + 22 : 58);
+    // 단속 서랍은 패널 바로 밑에 붙는다. 그 밑의 다음 단속 등은 서랍 아래 여백(14px)+간격(8px)만큼 떨어진다
+    setVar('--tl-top', !np.hidden ? np.getBoundingClientRect().bottom - base.top : 58);
     const anchor = !np.hidden ? np : !sb.hidden ? sb : null;
     if (anchor) {
       const r = anchor.getBoundingClientRect();
