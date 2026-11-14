@@ -311,15 +311,16 @@ def http(method, url, key, body=None, timeout=60):
 
 
 def ref_input(rel):
-    """참고 그림: GitHub Pages 주소가 열리면 주소, 아니면 base64 data URI"""
+    """참고 그림: GitHub Pages 주소가 열리고 내 파일과 같은 크기면 주소, 아니면 base64 data URI
+    (밑그림을 고쳐 올린 직후에는 Pages 가 10분쯤 예전 파일을 줄 수 있어 크기로 확인한다)"""
     url = PAGES + rel
+    path = os.path.join(SRC, rel)
     try:
         with urllib.request.urlopen(urllib.request.Request(url, method='HEAD', headers={'User-Agent': UA}), timeout=15) as r:
-            if r.status == 200:
+            if r.status == 200 and str(os.path.getsize(path)) == (r.headers.get('Content-Length') or ''):
                 return url
     except Exception:
         pass
-    path = os.path.join(SRC, rel)
     mime = 'image/webp' if path.endswith('.webp') else 'image/png'
     with open(path, 'rb') as fh:
         return 'data:%s;base64,' % mime + base64.b64encode(fh.read()).decode('ascii')
