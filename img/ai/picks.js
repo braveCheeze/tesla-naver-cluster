@@ -34,5 +34,7 @@ window.TNC_PICKS = {
   "sign_slip": "sign_slip__sunburst__2.webp",
   "sign_up": "sign_up__sunburst__2.webp",
   "sign_wind": "sign_wind__sunburst__2.webp",
+  "sl": "sl__bold__1.webp",
+  "sr": "sr__bold__1.webp",
   "tunnel": "tunnel__sunburst__2.webp"
 };

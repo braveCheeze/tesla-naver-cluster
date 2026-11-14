@@ -482,6 +482,12 @@ SHARP_EDIT = ('Draw a bold solid green (#03C75A) navigation arrow for a SHARP RI
               'about 135 degrees), ending in the arrowhead pointing down-right. Clean flat vector, centered, no outline, no shadow, no '
               'road, no text.' + BG + ' ')
 SHARPBOLD = {'sharp_r': (('s.webp',), SHARP_EDIT, '')}
+# 살짝 왼쪽('11시·10시 방향'): 마지막 남은 가는 화살표 (최종 검토 P2). 오른쪽은 뒤집는다
+SL_EDIT = ('Draw a bold solid green (#03C75A) navigation arrow for a SLIGHT LEFT turn (bear left at about 11 o clock), with exactly the '
+           'same stroke thickness, rounded tail and big sharp arrowhead as the arrow in the reference image. The stem rises straight '
+           'up from the bottom center, then bends gently to the upper left by about 40 degrees, ending in the arrowhead pointing '
+           'up-left. Clean flat vector, centered, no outline, no shadow, no road, no text.' + BG + ' ')
+SLBOLD = {'sl': (('s.webp',), SL_EDIT, '')}
 JV_LONG = (' The route arrow is ONE big bold white arrow painted flat on the blue lane like a road marking: its tail starts low '
            'in the image close to the viewer, it sweeps smoothly along the blue lane following its curve without any gap, and '
            'ends in a large clear arrowhead pointing where the route goes. Highly readable at a glance. Show the road details '
@@ -656,6 +662,8 @@ def main():
         JOBS.update(SOFT)    # 분기점 그림 파란 빛 은은하게
     if 'rbdepth' in a.icons.split(','):
         JOBS.update(RBDEPTH)   # 회전교차로 거리감
+    if 'slbold' in a.icons.split(','):
+        JOBS.update(SLBOLD)   # 살짝 왼쪽 굵게
     if 'sharp' in a.icons.split(','):
         JOBS.update(SHARPBOLD)   # 급회전 굵게
     if 'klbold' in a.icons.split(','):
@@ -671,7 +679,7 @@ def main():
     groups = {'cars': [k for k in JOBS if is_car(k)], 'signs': [k for k in JOBS if is_sign(k)],
               'guide': [k for k in JOBS if not is_car(k) and not is_sign(k)],
               'roads': ROADS, 'rb': RBS, 'redo': ROADS + RBS,
-              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s'], 'fix3': ['outs', 'ins', 'over_r', 'under_s', 'under_r', 'side_r', 'oside_r'], 'grass': RBS, 'junc': sorted(PANO), 'green': list(GREEN_KIND), 'junc2': JV2, 'soft': list(SOFT), 'rbdepth': list(RBDEPTH), 'junc3': list(JUNC3), 'clean': list(CLEAN), 'klbold': ['kl'], 'sharp': ['sharp_r']}
+              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s'], 'fix3': ['outs', 'ins', 'over_r', 'under_s', 'under_r', 'side_r', 'oside_r'], 'grass': RBS, 'junc': sorted(PANO), 'green': list(GREEN_KIND), 'junc2': JV2, 'soft': list(SOFT), 'rbdepth': list(RBDEPTH), 'junc3': list(JUNC3), 'clean': list(CLEAN), 'klbold': ['kl'], 'sharp': ['sharp_r'], 'slbold': ['sl']}
     want = []
     for i in a.icons.split(','):
         want += groups.get(i, [i])

@@ -813,7 +813,7 @@
       const mine = tg && sameCam(tg.c, C);
       if (past < 0 && past >= -25 && mine && seen.near === null) seen.near = { past, type: text('#camType'), dist: text('#camDist') };
       if (past >= 15 && past <= 25) {
-        seen.after.push({ past, ok: !!mine && visible('#camCard') && text('#camDist') === '0m' && !/후면|단속 지점|\+/.test(text('#camType') + text('#camDist')) });
+        seen.after.push({ past, ok: !!mine && visible('#camCard') && text('#camDist') === '통과' && !/후면|단속 지점|\+/.test(text('#camType') + text('#camDist')) });
       }
       if (past >= 35 && seen.cleared === null) seen.cleared = { past, gone: !mine && !visible('#camCard') };
     }

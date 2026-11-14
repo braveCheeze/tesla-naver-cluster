@@ -760,7 +760,7 @@
   /* 날씨: 기온 바로 뒤에 아이콘. 테슬라 모드에서는 "구름 조금" 같은 글자 대신 아이콘만 크게 */
   .wxi .wxicon { margin: 0 2px 0 6px; }
   #app.tesla .weather .wxt { display: none; }
-  #app.tesla .wxi .wxicon { width: 1.9em; height: 1.9em; vertical-align: -0.62em; margin: 0 0 0 4px; }
+  #app.tesla .wxi .wxicon { width: 1.9em; height: 1.9em; vertical-align: -0.62em; margin: 0 0 0 4px; filter: drop-shadow(0 0 1px rgba(0, 0, 0, .85)) drop-shadow(0 1px 3px rgba(0, 0, 0, .5)); }   /* v112: 낮 지도에서 흰 구름이 안 보였다 */
   /* 오른쪽 경로 막대: 세로 가운데, 오른쪽 끝은 시계와 같은 줄 (확대·축소 버튼은 그 왼쪽, 아래 .ctrls) */
   #app.tesla .rstrip { top: 50%; bottom: auto; right: 36px; transform: translateY(-50%); }
   /* 아래쪽은 전체를 테두리에서 띄워 올린다: 주행 기록·나침반(왼쪽), 주소(가운데), GPS(오른쪽) */
@@ -1381,7 +1381,8 @@
   /* 초록 화살표뿐인 AI 그림(비켜 가기 kl/kr)은 밝히지 않는다 (밤엔 형광으로 번짐) */
   body:has(#app.tesla):has(#map.night) .turnicon img.aiimg[src*="/kl__"], body:has(#app.tesla):has(#map.night) .turnicon img.aiimg[src*="/kr__"],
   body:has(#app.tesla):has(#map.night) .nexticon img.aiimg[src*="/kl__"], body:has(#app.tesla):has(#map.night) .nexticon img.aiimg[src*="/kr__"],
-  body:has(#app.tesla):has(#map.night) .turnicon img.aiimg[src*="/sharp_"], body:has(#app.tesla):has(#map.night) .nexticon img.aiimg[src*="/sharp_"] { filter: none; }
+  body:has(#app.tesla):has(#map.night) .turnicon img.aiimg[src*="/sharp_"], body:has(#app.tesla):has(#map.night) .nexticon img.aiimg[src*="/sharp_"],
+  body:has(#app.tesla):has(#map.night) .turnicon img.aiimg[src*="/s__bold"], body:has(#app.tesla):has(#map.night) .nexticon img.aiimg[src*="/sl__"], body:has(#app.tesla):has(#map.night) .nexticon img.aiimg[src*="/sr__"], body:has(#app.tesla):has(#map.night) .turnicon img.aiimg[src*="/sl__"], body:has(#app.tesla):has(#map.night) .turnicon img.aiimg[src*="/sr__"] { filter: none; }
   #app.tesla .turnicon svg.ti, #app.tesla .nexticon svg.ti { color: var(--nv-green); stroke: none; }
   /* 밤(어두운 패널): 어두운 도로를 조금 밝게 */
   body:has(#app.tesla):has(#map.night) svg.ti .rd { fill: #5b6676; }
@@ -1674,8 +1675,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.14-112"></script>
-<script src="img/ai/picks.js?v=2026.11.14-112"></script>
-<script src="app.js?v=2026.11.14-112"></script>
+<script src="icons.js?v=2026.11.14-113"></script>
+<script src="img/ai/picks.js?v=2026.11.14-113"></script>
+<script src="app.js?v=2026.11.14-113"></script>
 </body>
 </html>

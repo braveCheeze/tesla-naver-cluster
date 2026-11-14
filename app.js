@@ -51,7 +51,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-112'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-113'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -2474,7 +2474,7 @@
       $('#camLimit').textContent = speedCam ? (tg.c[2] || '?') : '신호';
       // 지나간 뒤에도 CAM_HOLD(30m)까지는 카메라 바로 앞인 것처럼 그대로 보여 주고(오차 거리는 따로 알리지 않음), 그 뒤 사라진다
       $('#camType').textContent = camLabel(tg.c);
-      $('#camDist').textContent = tg.after ? '0m' : fmtDist(tg.d);
+      $('#camDist').textContent = tg.after ? '통과' : fmtDist(tg.d);   // v112: 지나친 뒤 '0m' 대신 (문구 검토)
       const span = Math.max(tg.first, 300);
       $('#camBar').style.width = tg.after ? '100%' : Math.max(0, Math.min(100, (1 - tg.d / span) * 100)) + '%';
       card.classList.toggle('over', speedCam && tg.c[2] > 0 && state.speedKmh > tg.c[2] + 1 && tg.d < 600);
@@ -2488,7 +2488,7 @@
       if (zone) {
         const sign = $('#ztSign');
         if (sign.dataset.zone !== zone) { sign.innerHTML = zone === 'kid' ? SIGN_KID : SIGN_ELDER; sign.dataset.zone = zone; }
-        $('#ztDist').textContent = tg.after ? '0m' : fmtDist(tg.d);
+        $('#ztDist').textContent = tg.after ? '통과' : fmtDist(tg.d);
         $('#ztLabel').textContent = zone === 'kid' ? '어린이보호' : '노인보호';
         $('#ztLimit').textContent = speedCam ? (tg.c[2] || '?') : '신호';
       }
@@ -3452,7 +3452,7 @@
     const r = k && act.match(new RegExp('^(?:(왼쪽|오른쪽)\\s+)?' + k[1] + '\\s+진입$'));
     if (r) { act = (r[1] ? r[1] + ' ' : '') + place + ' 진입'; place = ''; }
     const d = dirNames(m[2]);
-    return (place ? place + '에서 ' : '') + act + (d.length ? ' · ' + d.join(', ') + ' 방면' : '');
+    return (place ? place + '에서 ' : '') + act + (d.length ? ' · ' + d.join(', ') + '\u00a0방면' : '');   // '방면' 한 낱말만 다음 줄로 떨어지지 않게
   }
   // 통행료 글: '통행료 800원' → '800원', 0원은 '무료'
   const fareText = (f) => { const x = String(f || '').replace(/^통행료\s*/, ''); return /^0\s*원$/.test(x) ? '무료' : x; };
