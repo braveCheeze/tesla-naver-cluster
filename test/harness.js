@@ -2831,6 +2831,8 @@
     const pts = [
       ['slip', dest(north(450), 90, 6)],
       ['up', dest(north(250), 270, 9)],
+      ['down', dest(north(350), 270, 3)],     // 왼쪽 3m 내리막: 오르막·내리막은 오른쪽만 → 안 잡음
+      ['narrow', dest(dest(turn, 90, 450), 0, 3)],   // 동쪽 길 왼쪽(북쪽) 3m 도로 폭 좁아짐: 방향 없는 표지는 5m 까지 → 잡음
       ['danger', dest(north(300), 90, 300)],
       ['rock', dest(dest(turn, 90, 300), 180, 7)],
     ];
@@ -2878,7 +2880,7 @@
     r.real = { loaded: t.signs.loaded, n: t.signs.n, date: t.signs.date };
     const ok = !r.at100.shown &&
       r.at200.shown && r.at200.label === '미끄러운 도로' && r.at200.dist === '250m' && r.at200.icon && r.at200.type === 'slip' &&
-      r.found.join(',') === 'slip@450,rock@900' &&
+      r.found.join(',') === 'slip@450,rock@900,narrow@1050' &&
       r.at500.shown && r.at500.label === '미끄러운 도로' && r.at500.dist === '주의' &&
       r.at610.shown && r.at610.label === '낙석 주의' && /^\d+m$/.test(r.at610.dist) && r.at610.type === 'rock' &&
       !r.off.shown && !r.free150.shown && r.free300.shown && r.free300.type === 'slip' &&

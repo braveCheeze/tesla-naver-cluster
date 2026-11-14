@@ -46,7 +46,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-80'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-81'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   // 브라우저에 저장된 예전 index.html 이 새 app.js 를 불러온 경우(화면 요소가 맞지 않아 버튼 연결에서 멈춘다):
@@ -1118,7 +1118,8 @@
   // ---------- 주의 표지 (전국도로안전표지표준데이터의 주의표지, data/signs.json · tools/build_signs.py) ----------
   // 다른 내비의 '미끄럼 주의'처럼 미끄러운 도로·낙석·급경사 같은 주의 표지를 300m 앞부터 표지 그림 + 거리로 알린다 (2026-11-14 요청).
   // 길안내 중이면 경로 25m 안의 표지를, 아니면 진행 방향 바로 앞(200m)의 표지를. 표지는 도로 오른쪽(우측 통행)에 서므로
-  // 경로 왼쪽으로 5m 넘게 떨어진 표지는 반대 방향용으로 보고 뺀다 (오르막·내리막이 뒤바뀌지 않게). 지나친 뒤 150m 동안은 '주의'로 남긴다.
+  // 경로 왼쪽으로 5m 넘게 떨어진 표지는 반대 방향용으로 보고 뺀다. 오르막·내리막(dir)은 오른쪽에 있을 때만 (2026-11-14 실제 경로 확인:
+  // 하남 덕풍공원로 내리막 표지가 남행 오른쪽 3.4m — 북행(오르막)에 '내리막'이 뜨면 안 된다). 지나친 뒤 150m 동안은 '주의'로 남긴다.
   // 이 자료는 표지를 등록한 지자체(전국 약 57곳)만 들어 있어 전국을 다 덮지 못한다
   const SIGN_TRI_PATH = '<path d="M50 5 L95 83 L5 83 Z" fill="#e53935" stroke="#e53935" stroke-width="8" stroke-linejoin="round"/>' +
     '<path d="M50 20 L83 77 L17 77 Z" fill="#ffd200" stroke="#ffd200" stroke-width="4" stroke-linejoin="round"/>';
@@ -1130,8 +1131,8 @@
       '<path d="M44 55 Q37 61 44 66 T44 76 M57 55 Q50 61 57 66 T57 76" fill="none" stroke-width="3.2"/>' },
     { id: 'rock', label: '낙석 주의', g: '<path d="M52 42 L60 42 L76 74 L62 74 L64 62 L56 54 Z" stroke-width="1"/>' +
       '<path d="M38 52 l5 -3 l4 3 l-1 5 l-6 1 z M31 66 l6 -3 l5 3 l-1 6 l-8 1 z" stroke-width="1"/><circle cx="47" cy="43" r="2.4" stroke="none"/>' },
-    { id: 'up', label: '오르막 경사', g: '<path d="M24 75 L70 75 L70 56 Z" stroke-width="2"/>' },
-    { id: 'down', label: '내리막 경사', g: '<path d="M30 56 L30 75 L76 75 Z" stroke-width="2"/>' },
+    { id: 'up', label: '오르막 경사', dir: true, g: '<path d="M24 75 L70 75 L70 56 Z" stroke-width="2"/>' },
+    { id: 'down', label: '내리막 경사', dir: true, g: '<path d="M30 56 L30 75 L76 75 Z" stroke-width="2"/>' },
     { id: 'rough', label: '노면 고르지 못함', g: '<path d="M24 74 L24 69 Q32 55 40 68 Q50 71 60 68 Q68 55 76 69 L76 74 Z" stroke-width="1.5"/>' },
     { id: 'wind', label: '횡풍 주의', g: '<path d="M38 45 V75" fill="none" stroke-width="3.5"/><path d="M40 47 L64 51 L64 58 L40 62 Z" fill="none" stroke-width="2.2"/>' +
       '<path d="M40 47 L48 48.3 L48 60.7 L40 62 Z M56 49.7 L64 51 L64 58 L56 59.3 Z" stroke-width="1"/>' },
@@ -1206,7 +1207,7 @@
         if (nav.signSeen.has(it.k)) continue;
         const p = { lat: signs.lat[it.k], lng: signs.lng[it.k] };
         const pr = projectSeg(p, a, b);
-        if (pr.dist > SIGN_ROUTE_M || rightOf(p, a, b) < -SIGN_LEFT_M) continue;
+        if (pr.dist > SIGN_ROUTE_M || rightOf(p, a, b) < (SIGN_TYPES[signs.type[it.k]].dir ? 0 : -SIGN_LEFT_M)) continue;
         nav.signSeen.add(it.k);
         nav.routeSigns.push({ k: it.k, at: nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]) });
         added = true;
@@ -1231,7 +1232,7 @@
           const diff = angleDiff(bearing(f, p), state.heading);
           if (it.d < 8 || diff > 30) continue;
           const side = it.d * Math.sin(toRad(diff)) * (((bearing(f, p) - state.heading + 540) % 360) - 180 >= 0 ? 1 : -1);
-          if (side < -SIGN_LEFT_M || side > 20) continue;
+          if (side < (SIGN_TYPES[signs.type[it.k]].dir ? 0 : -SIGN_LEFT_M) || side > 20) continue;
           if (it.d <= 200 && (!next || it.d < next.d)) next = { k: it.k, type: signs.type[it.k], d: it.d, passed: false };
         }
       }
