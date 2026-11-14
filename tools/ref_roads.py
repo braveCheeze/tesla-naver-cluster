@@ -198,9 +198,9 @@ def straight_ramp(key, out):
 
 
 # ------------------------------------------------------------------ 고가차도·지하차도·옆길
-def span_over(p, cy, half):
-    """경로 p 중 가로 길(가운데 y=cy, 반폭 half)을 넘는 부분"""
-    m = np.abs(p[:, 1] - cy) <= half + 2.2
+def span_over(p, cy, half, extra=2.2):
+    """경로 p 중 가로 길(가운데 y=cy, 반폭 half)을 넘는 부분 (extra: 가로 길 밖으로 더 넣는 길이. 그림자는 0 → 가로 길 위에만)"""
+    m = np.abs(p[:, 1] - cy) <= half + extra
     idx = np.nonzero(m)[0]
     return p[idx.min():idx.max() + 1]
 
@@ -240,16 +240,17 @@ def over(key):
         p = pts([('M', (24, 49.5)), ('L', (24, -1.5))])
         w1, t1 = road(p, MAIN_W)
         sp = span_over(p, 21, 5.25)
-        body = (cross_road(21, 10.5) + shadow(sp, MAIN_W) + w1 + t1 + parapets(sp, MAIN_W) +
+        body = (cross_road(21, 10.5) + shadow(span_over(p, 21, 5.25, 0), MAIN_W) + w1 + t1 + parapets(sp, MAIN_W) +
                 lanes(p, MAIN_W, 3, skip=(1, 2)) + arrow(p, start=3.4, end=4.4))
         return svg(key, 'over', body)
     main = pts([('M', (15, 49.5)), ('L', (15, -1.5))])
-    r = pts([('M', (15, 49.5)), ('L', (15, 34)), ('C', (15, 27), (22, 24), (28, 21.5)), ('C', (32.5, 19.6), (35, 16.5), (35, 11)), ('L', (35, -1.5))])
+    r = pts([('M', (15, 49.5)), ('L', (15, 37)), ('C', (15, 30), (35, 32), (35, 25)), ('L', (35, -1.5))])
     w1, t1 = road(main, MAIN_W, 'rd')
     w2, t2 = road(r, 7.2)
-    sp = span_over(r, 12, 4.75)
-    body = (cross_road(12, 9.5, 21.5) + shadow(sp, 7.2) + w1 + w2 + t1 + t2 + lanes(main, MAIN_W, 3) + parapets(sp, 7.2) +
-            arrow(r, start=3.4, end=3.6))
+    sp = span_over(r, 13, 4.75, 1.8)
+    # 연결로의 흰 테는 본선 칠 밑에 (본선 위에 테가 보이지 않게), 그림자는 가로 길 위·연결로 밑에
+    body = (cross_road(13, 9.5) + shadow(span_over(r, 13, 4.75, 0), 7.2) + w1 + w2 + t1 + t2 + lanes(main, MAIN_W, 3) +
+            parapets(sp, 7.2) + arrow(r, start=3.4, end=3.6))
     return svg(key, 'over', body, left=(side == 'l'))
 
 
@@ -282,7 +283,7 @@ def side(key, kind):
         body = w1 + w2 + t1 + t2 + lanes(mid_up, MAIN_W, 3) + portal(19, 3.4, 15.5, 12.4) + arrow(sr, start=3.4, end=4.4)
     else:
         sp = span_over(mid, 11, 4.75)
-        body = (cross_road(11, 9.5) + w2 + t2 + shadow(sp, MAIN_W) + w1 + t1 + parapets(sp, MAIN_W) + lanes(mid, MAIN_W, 3) +
+        body = (cross_road(11, 9.5) + w2 + t2 + shadow(span_over(mid, 11, 4.75, 0), MAIN_W) + w1 + t1 + parapets(sp, MAIN_W) + lanes(mid, MAIN_W, 3) +
                 arrow(sr, start=3.4, end=4.4))
     return svg(key, 'side', body, left=left)
 
@@ -290,17 +291,24 @@ def side(key, kind):
 def rb(key):
     """회전교차로 (2026-11-14 다시: '화살표가 너무 두껍고 대충 만든 것 같다'): 한 색(currentColor) 글리프.
     옅은 고리·네 갈래 길 + 가는 화살표(굵기 3.4)와 뾰족한 화살촉. 아래 길로 들어와 시계 반대 방향(우측 통행)으로 돌아 나간다"""
+    # 2026-11-14 사용자 지적(밑그림이라도 디테일): 왼쪽 출구 화살촉이 고리에 붙고, 유턴 화살촉이 들어오는 선에 닿았다.
+    # → 고리를 조금 작게, 들어오기·나가기는 고리에서 부드럽게 휘어(직각 꺾임 없이), 화살촉은 고리 밖 3 이상·테두리에서 3 안쪽,
+    #   유턴은 들어오는 선(오른쪽)과 나가는 선(왼쪽)을 7 넘게 떼어 화살촉이 닿지 않게
     ex = key.split('_')[1]
-    cx, cy, R = 24.0, 23.5, 10.5
-    faint = ('<g fill="none" stroke="currentColor" stroke-opacity=".26"><circle cx="24" cy="23.5" r="10.5" stroke-width="5.2"/>'
-             '<path d="M24 34.5V49M24 12.5V-1M13.5 23.5H-1M34.5 23.5H49" stroke-width="5.2"/></g>'
-             '<circle cx="24" cy="23.5" r="4.2" fill="currentColor" fill-opacity=".16" stroke="none"/>')
-    pt = lambda a: (cx + R * math.cos(math.radians(a)), cy + R * math.sin(math.radians(a)))
-    x0 = 26.2 if ex == 'u' else 24.0
-    a0 = math.degrees(math.acos((x0 - cx) / R))          # 들어오는 아래 길이 고리와 만나는 각
-    a1 = {'r': 0, 's': -90, 'l': -180, 'u': -360 + (180 - a0)}[ex]
-    od = {'r': (1, 0), 's': (0, -1), 'l': (-1, 0), 'u': (0, 1)}[ex]
-    spec = [('M', (x0, 49)), ('L', pt(a0))]
+    cx, cy, R, J = 24.0, 24.0, 9.0, 4.5     # J: 고리 바깥에서 들어오기·나가기 선이 곧게 시작하는 거리
+    faint = ('<g fill="none" stroke="currentColor" stroke-opacity=".26"><circle cx="24" cy="24" r="9" stroke-width="5"/>'
+             '<path d="M24 33V49M24 15V-1M15 24H-1M33 24H49" stroke-width="%s"/></g>'
+             '<circle cx="24" cy="24" r="4" fill="currentColor" fill-opacity=".16" stroke="none"/>') % ('10' if ex == 'u' else '7')
+    pt = lambda a: np.array((cx + R * math.cos(math.radians(a)), cy + R * math.sin(math.radians(a))))
+    tan = lambda a: np.array((math.sin(math.radians(a)), -math.cos(math.radians(a))))   # 각이 줄어드는(시계 반대) 쪽
+    xin, xout = (27.6, 20.4) if ex == 'u' else (24.0, 24.0)
+    a0 = 50.0 if ex == 'u' else 60.0                       # 고리에 올라타는 각 (아래쪽 조금 오른쪽)
+    a1 = {'r': 30, 's': -60, 'l': -150, 'u': -230}[ex]     # 고리에서 내리는 각 (출구 30° 앞)
+    od = np.array({'r': (1, 0), 's': (0, -1), 'l': (-1, 0), 'u': (0, 1)}[ex], float)
+    e0 = np.array((xin, cy + R + J))
+    x0 = (np.array((xout, cy)) if ex == 'u' else np.array((cx, cy))) + od * (R + J)
+    tip = x0 + od * (20.5 - R - J + (0 if ex == 'u' else 0))          # 화살촉 끝: 가운데에서 20.5 (테두리에서 3.5 안쪽)
+    spec = [('M', (xin, 49)), ('L', tuple(e0)), ('C', tuple(e0 + np.array((0, -2.6))), tuple(pt(a0) - tan(a0) * 2.6), tuple(pt(a0)))]
     # 원호를 3차 곡선 여러 개로
     steps = max(2, int(abs(a1 - a0) / 30))
     angs = np.linspace(a0, a1, steps + 1)
@@ -311,10 +319,10 @@ def rb(key):
         c1 = p0 + k * R * np.array([-math.sin(t0), math.cos(t0)])
         c2 = p1 - k * R * np.array([-math.sin(t1), math.cos(t1)])
         spec.append(('C', tuple(c1), tuple(c2), tuple(p1)))
-    end = np.array(pt(a1))
-    spec.append(('L', tuple(end + np.array(od) * (12.5 if ex != 'u' else 14.5))))
-    p = pts(spec, 10)
-    a = arrow(p, start=1.0, end=0.6, w=3.4, hl=7.6, hw=5.0, color='currentColor')
+    spec.append(('C', tuple(pt(a1) + tan(a1) * 2.6), tuple(x0 - od * 2.6), tuple(x0)))
+    spec.append(('L', tuple(tip)))
+    p = pts(spec, 12)
+    a = arrow(p, start=1.0, end=0.0, w=3.2, hl=6.4, hw=4.0, color='currentColor')
     return '<svg viewBox="0 0 48 48" class="ti ti-%s rb">%s%s</svg>' % (key, faint, a)
 
 
