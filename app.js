@@ -27,6 +27,7 @@
     cams: store.get('cams') !== '0',
     signalCams: store.get('sigcam') === '1', // 신호 전용 카메라 알림 (기본 끔)
     bumps: store.get('bumps') !== '0',       // 과속방지턱 알림 (기본 켬)
+    tunnels: store.get('tunnels') !== '0',   // 길안내 중 터널 진입·출구 거리 (기본 켬)
     traffic: store.get('traffic') !== '0',
     weather: store.get('weather') !== '0',
     headingUp: store.get('hup') !== '0',
@@ -41,7 +42,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-56'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-57'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -129,7 +130,8 @@
   const dirName = (h) => DIRS[Math.round(h / 45) % 8];
   const pad = (n) => String(n).padStart(2, '0');
   const hhmm = (d) => pad(d.getHours()) + ':' + pad(d.getMinutes());
-  const fmtDist = (m) => (m >= 1000 ? (m / 1000).toFixed(m >= 10000 ? 0 : 1) + 'km' : Math.max(0, Math.round(m / 10) * 10) + 'm');
+  // 995m 부터는 '1000m' 대신 '1.0km' (10m 단위로 반올림하면 1000이 되므로)
+  const fmtDist = (m) => (m >= 995 ? (m / 1000).toFixed(m >= 9950 ? 0 : 1) + 'km' : Math.max(0, Math.round(m / 10) * 10) + 'm');
   const fmtMin = (ms) => {
     const m = Math.max(1, Math.round(ms / 60000));
     return m >= 60 ? Math.floor(m / 60) + '시간 ' + (m % 60) + '분' : m + '분';
@@ -900,6 +902,132 @@
     $('#bumpLabel').textContent = b.cont ? '연속 과속방지턱' : '과속방지턱';
     $('#bumpDist').textContent = fmtDist(b.d);
   }
+  // ---------- 터널 (OpenStreetMap 의 터널 도로, data/tunnels.json · tools/build_tunnels.py) ----------
+  // 네이버 길찾기 안내에는 터널이 없다 (지하차도는 있음). 길안내 경로가 지나는 터널을 찾아
+  // 안내 패널에 '남한터널 진입 3.5km · 길이 1.2km', 터널 안에서는 '출구까지 799m'를 보여 준다 (2026-11-14 요청)
+  const tunnels = { loaded: false, ways: [], grid: new Map(), date: '' };
+  const TUNNEL_SHOW = 3000;   // 이만큼 앞부터 보여 준다
+  const TUNNEL_NEAR = 9;      // 경로 점이 터널 도로에서 이 안이면 터널 안
+  const TUNNEL_STEP = 10;     // 경로를 이 간격으로 훑는다
+  const TUNNEL_ICON = '<svg viewBox="0 0 24 24" class="tunnel"><path class="tn-arch" d="M2.5 21V12.5a9.5 9.5 0 0 1 19 0V21z"/>' +
+    '<path class="tn-hole" d="M6 21v-8a6 6 0 0 1 12 0v8z"/><path class="tn-road" d="M11.2 21l.4-7h.8l.4 7z"/></svg>';
+  const UNDERPASS_GUIDES = new Set([56, 64, 65, 73, 74]); // 네이버가 따로 안내하는 지하차도 진입·옆길
+  function setTunnelData(j) {
+    tunnels.loaded = false; tunnels.ways = []; tunnels.grid = new Map();
+    nav.routeTunnels = null;
+    if (!j || !j.w) return;
+    const sc = j.scale || 1e5, names = j.names || [];
+    j.w.forEach((r, wi) => {
+      let a = r[2], b = r[3];
+      const pts = [{ lat: a / sc, lng: b / sc }];
+      for (let k = 4; k + 1 < r.length; k += 2) { a += r[k]; b += r[k + 1]; pts.push({ lat: a / sc, lng: b / sc }); }
+      tunnels.ways.push({ name: r[0] >= 0 ? names[r[0]] || '' : '', oneway: r[1] === 1, pts });
+      // 선분마다 지나는 칸(0.01도)에 넣는다. 경계 근처 점도 찾게 20~30m 넉넉히
+      for (let s = 0; s < pts.length - 1; s++) {
+        const p = pts[s], q = pts[s + 1];
+        const y0 = Math.floor((Math.min(p.lat, q.lat) - 0.0002) * 100), y1 = Math.floor((Math.max(p.lat, q.lat) + 0.0002) * 100);
+        const x0 = Math.floor((Math.min(p.lng, q.lng) - 0.0003) * 100), x1 = Math.floor((Math.max(p.lng, q.lng) + 0.0003) * 100);
+        for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+          const key = y + ':' + x;
+          let cell = tunnels.grid.get(key);
+          if (!cell) tunnels.grid.set(key, cell = []);
+          cell.push(wi, s);
+        }
+      }
+    });
+    tunnels.date = j.date || '';
+    tunnels.loaded = true;
+  }
+  async function loadTunnels() {
+    try {
+      const r = await fetch('data/tunnels.json?v=' + APP_VERSION);
+      if (r.ok) setTunnelData(await r.json());
+    } catch (e) { /* 터널 데이터가 없어도 나머지는 그대로 */ }
+  }
+  // 경로 위 점 p(진행 방향 hb)가 터널 도로 위인지: 9m 안 + 방향이 맞아야 (일방이면 같은 방향만)
+  function tunnelWayAt(p, hb) {
+    const cell = tunnels.grid.get(Math.floor(p.lat * 100) + ':' + Math.floor(p.lng * 100));
+    if (!cell) return -1;
+    let best = -1, bestD = TUNNEL_NEAR;
+    for (let k = 0; k < cell.length; k += 2) {
+      const w = tunnels.ways[cell[k]], s = cell[k + 1];
+      const q1 = w.pts[s], q2 = w.pts[s + 1];
+      const pr = projectSeg(p, q1, q2);
+      if (pr.dist > bestD) continue;
+      const d = angleDiff(hb, bearing(q1, q2));
+      if (w.oneway ? d >= 40 : (d >= 40 && d <= 140)) continue;
+      best = cell[k]; bestD = pr.dist;
+    }
+    return best;
+  }
+  // 터널 구간 하나를 마무리: 지하차도(네이버가 안내)·짧은 굴다리는 뺀다
+  function closeTunnelRun(run) {
+    let name = '', top = 0;
+    run.names.forEach((n, k) => { if (n > top) { top = n; name = k; } });
+    const len = run.s1 - run.s0;   // 터널 끝 9m 밖 점까지 잡히므로 훑는 간격을 더하지 않는다
+    if (len < (/터널/.test(name) ? 60 : 150)) return;
+    const last = nav.cum.length - 1;
+    if (nav.guides.some((g) => UNDERPASS_GUIDES.has(g.t) && Math.abs(nav.cum[Math.min(g.i, last)] - run.s0) < 300)) return;
+    nav.routeTunnels.push({ s0: run.s0, s1: run.s1, len, name });
+  }
+  // 길안내 경로 위 터널 구간 (경로 거리순). 카메라처럼 앞쪽만 찾아 두고 달리면서 늘린다 (긴 터널도 끝까지 알게 9km)
+  function ensureRouteTunnels() {
+    if (!tunnels.loaded || !nav.pts || nav.pts.length < 2) return false;
+    if (!nav.routeTunnels) { nav.routeTunnels = []; nav.tnUpto = 0; nav.tnRun = null; }
+    const pts = nav.pts, want = nav.along + TUNNEL_SHOW + 6000;
+    let i = nav.tnUpto;
+    for (; i < pts.length - 1 && nav.cum[i] < want; i++) {
+      const a = pts[i], b = pts[i + 1], L = nav.cum[i + 1] - nav.cum[i];
+      if (!(L > 0)) continue;
+      const hb = bearing(a, b), n = Math.max(1, Math.ceil(L / TUNNEL_STEP));
+      for (let k = 0; k < n; k++) {
+        const f = k / n, s = nav.cum[i] + L * f;
+        const wi = tunnelWayAt({ lat: a.lat + (b.lat - a.lat) * f, lng: a.lng + (b.lng - a.lng) * f }, hb);
+        const run = nav.tnRun;
+        if (wi >= 0) {
+          const nm = tunnels.ways[wi].name;
+          if (run && s - run.s1 <= 30) run.s1 = s;
+          else { if (run) closeTunnelRun(run); nav.tnRun = { s0: s, s1: s, names: new Map() }; }
+          nav.tnRun.names.set(nm, (nav.tnRun.names.get(nm) || 0) + (nm ? 2 : 1));
+        } else if (run && s - run.s1 > 30) { closeTunnelRun(run); nav.tnRun = null; }
+      }
+    }
+    nav.tnUpto = i;
+    if (i >= pts.length - 1 && nav.tnRun) { closeTunnelRun(nav.tnRun); nav.tnRun = null; }
+    return true;
+  }
+  // 터널 안에서 위치가 멈추면(신호 끊김) 마지막 속도로 출구까지 거리를 줄여 간다 (안내 패널 표시만)
+  const tnDR = { along: -1, at: 0, v: 0 };
+  function tunnelAhead() {
+    if (!nav.active || !prefs.tunnels || !ensureRouteTunnels()) return null;
+    const now = Date.now();
+    if (Math.abs(nav.along - tnDR.along) > 1) { tnDR.along = nav.along; tnDR.at = now; tnDR.v = state.speedKmh / 3.6; }
+    const list = nav.routeTunnels;
+    let along = nav.along;
+    const lag = (now - tnDR.at) / 1000;
+    const near = list.find((t) => t.s1 > along && t.s0 - along < 150);
+    if (near && lag > 1.5 && lag < 180 && tnDR.v > 3 && (now - lastFixWall > 3000 || state.speedKmh >= 10)) {
+      along = Math.min(near.s1, tnDR.along + tnDR.v * lag);
+    }
+    for (const t of list) {
+      if (t.s1 <= along) continue;
+      if (t.s0 <= along) return { inside: true, t, d: t.s1 - along, p: (along - t.s0) / Math.max(1, t.s1 - t.s0) };
+      return t.s0 - along <= TUNNEL_SHOW ? { inside: false, t, d: t.s0 - along } : null;
+    }
+    return null;
+  }
+  function renderTunnel() {
+    const el = $('#tunnelRow'), a = tunnelAhead();
+    el.hidden = !a;
+    if (!a) return;
+    const ic = $('#tunnelIcon');
+    if (!ic.firstChild) ic.innerHTML = TUNNEL_ICON;
+    el.classList.toggle('inside', a.inside);
+    const name = a.t.name || '터널';
+    $('#tunnelDist').textContent = fmtDist(a.d);
+    $('#tunnelText').textContent = a.inside ? name + ' 출구까지' : name + ' 진입 · 길이 ' + fmtDist(a.t.len);
+    $('#tunnelBar').style.width = a.inside ? Math.round(Math.max(0, Math.min(1, a.p)) * 100) + '%' : '0';
+  }
   async function loadCameras() {
     try {
       // 버전을 붙여 새 버전과 함께 바뀐 카메라 데이터를 바로 받는다 (브라우저 10분 캐시 우회)
@@ -1284,8 +1412,9 @@
       nxEl.setAttribute('aria-label', '다음 단속 ' + fmtDist(d));
     }
     if (!tg || !prefs.cams) {
-      // 테슬라 모드에서 서랍이 열려 있으면 위로 접히는 동안(0.36초)은 내용을 그대로 두었다가 숨긴다
-      if (!card.hidden && drawerAnimated()) startDrawerClose();
+      // 테슬라 모드에서 서랍이 열려 있으면 위로 접히는 동안(0.36초)은 내용을 그대로 두었다가 숨긴다.
+      // 서랍에 남는 것(구간단속·하이패스)이 있으면 접지 않고 카드만 뺀다
+      if (!card.hidden && drawerAnimated() && !drawerKeeps('#camCard')) startDrawerClose();
       else if (!drawer.closing) card.hidden = true;
     } else {
       cancelDrawerClose();
@@ -1328,13 +1457,17 @@
     syncDrawer();
   }
   // ---------- 단속 서랍 (테슬라 모드: 길안내 패널 밑에서 스르륵) ----------
-  // 안의 것(단속 카드·내 속도·보호구역 표지·구간단속 카드) 중 하나라도 보이면 열고, 다 숨으면 접는다
+  // 안의 것(단속 카드·내 속도·보호구역 표지·구간단속 카드·하이패스) 중 하나라도 보이면 열고, 다 숨으면 접는다
   const drawer = { t: 0, hideT: 0, closing: false };
+  const DRAWER_ITEMS = ['#camCard', '#mySpeed', '#zoneBadge', '#secCard', '#tollCard'];
   const drawerAnimated = () => !testPage && $('#app').classList.contains('tesla') && $('#camDrawer').classList.contains('open');
+  // q 를 빼도 서랍에 남는 것이 있는지 (내 속도·보호구역 표지는 단속 카드에 딸려 함께 빠진다)
+  const drawerKeeps = (q) => ['#secCard', '#tollCard'].some((x) => x !== q && !$(x).hidden) ||
+    (q !== '#camCard' && !$('#camCard').hidden);
   function syncDrawer() {
     const dr = $('#camDrawer');
     if (drawer.closing) return;
-    const any = ['#camCard', '#mySpeed', '#zoneBadge', '#secCard'].some((q) => !$(q).hidden);
+    const any = DRAWER_ITEMS.some((q) => !$(q).hidden);
     if (any === dr.classList.contains('open')) return;
     clearTimeout(drawer.t);
     // 처음 보일 때 접힌 상태에서 한 번 그린 뒤 열어야 내려오는 움직임이 보인다
@@ -1348,6 +1481,7 @@
     drawer.hideT = setTimeout(() => {
       drawer.closing = false;
       if (!camState.target) $('#camCard').hidden = true;
+      if (!tollState.g) $('#tollCard').hidden = true;
       syncDrawer();
     }, 360);
   }
@@ -1764,6 +1898,7 @@
     nav.setAt = state.fix ? state.fix.t : Date.now(); nav.drawnSeg = 0; nav.drawnAlong = 0; nav.drawnAt = 0;
     nav.routeCams = null; nav.routeCamList = []; camState.markerAt = null; // 경로 위 카메라·지도 표시를 새 경로로
     nav.routeBumps = null; bumpState.markerKey = '';
+    nav.routeTunnels = null;
     nav.lastTraffic = state.fix ? state.fix.t : Date.now();
     if (!keepAlerts) { nav.said = {}; nav.gap = 10000; }
     nav.remain = nav.total; nav.next = null; nav.dg = null;
@@ -2051,6 +2186,7 @@
     }
   }
   // 하이패스(톨게이트) 카드: 경로 위 다음 톨게이트가 2km 안이면 이름·남은 거리·통행료를 보여 준다
+  const tollState = { g: null };
   function renderToll() {
     const el = $('#tollCard');
     let g = null, ahead = 0;
@@ -2063,12 +2199,21 @@
         break;
       }
     }
-    el.hidden = !g;
-    if (!g) return;
+    tollState.g = g;
+    if (!g) {
+      // 서랍에 하이패스만 있으면 접히는 동안은 그대로 두었다가 숨긴다
+      if (!el.hidden && drawerAnimated() && !drawerKeeps('#tollCard')) startDrawerClose();
+      else if (!drawer.closing) el.hidden = true;
+      syncDrawer();
+      return;
+    }
+    cancelDrawerClose();
+    el.hidden = false;
     const p = tollParts(g);
     $('#tollName').textContent = p.name;
     $('#tollDist').textContent = fmtDist(ahead);
     $('#tollFare').textContent = p.fare; // 하이패스 안내 문구는 카드의 셋째 줄에 고정
+    syncDrawer();
   }
   // 테슬라 모드에서 단속 경고 묶음을 길안내 패널(없으면 검색 버튼) 바로 밑에 붙이고,
   // 위쪽 버튼(야간·전체화면·설정)은 그 패널(또는 검색 버튼) 바로 오른쪽에 붙인다
@@ -2173,6 +2318,7 @@
     }
     const remain = nav.remain != null ? nav.remain : nav.total;
     const remMs = nav.route.duration * (remain / Math.max(1, nav.total));
+    renderTunnel();
     $('#navRemain').textContent = fmtDist(remain);
     $('#navTime').textContent = fmtMin(remMs);
     $('#navEta').textContent = '도착 ' + hhmm(new Date(Date.now() + remMs));
@@ -3094,6 +3240,7 @@
     $('#optCams').checked = prefs.cams;
     $('#optSigCams').checked = prefs.signalCams;
     $('#optBumps').checked = prefs.bumps;
+    $('#optTunnels').checked = prefs.tunnels;
     $('#optTraffic').checked = prefs.traffic;
     $('#optWeather').checked = prefs.weather;
     $('#optHup').checked = prefs.headingUp;
@@ -3176,6 +3323,10 @@
     prefs.tesla = e.target.checked; store.set('tesla', prefs.tesla ? '1' : '0');
     applyTesla();
   };
+  $('#optTunnels').onchange = (e) => {
+    prefs.tunnels = e.target.checked; store.set('tunnels', prefs.tunnels ? null : '0');
+    if (nav.active) renderNav();
+  };
   $('#optBumps').onchange = (e) => {
     prefs.bumps = e.target.checked; store.set('bumps', prefs.bumps ? null : '0');
     bumpState.markerKey = '';
@@ -3255,6 +3406,7 @@
   bootMap();
   loadCameras();
   loadBumps();
+  loadTunnels();
   startGps();
   if (store.get('diag') === '1' || params.has('diag')) setDiag(true);
   if (params.has('demo')) startDemo();
@@ -3279,6 +3431,7 @@
       planRoute, doSearch, setFollowing, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
       sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps,
+      tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
     };

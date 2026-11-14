@@ -1104,6 +1104,38 @@
   #app.tesla .nextturn.goal { background: rgba(239, 68, 68, .09); }
   #app.tesla .nextturn.via { background: rgba(245, 158, 11, .1); }
   .nextturn.goal #nextDist, .nextturn.via #nextDist { font-weight: 800; }
+  /* ================= 터널 (2026-11-14 요청: 터널 몇 m 남았는지) =================
+     네이버 길찾기에는 터널 안내가 없어 OpenStreetMap 터널 도로로 찾는다. 3km 앞부터 '남한터널 진입 · 길이 1.2km',
+     터널 안에서는 '출구까지 799m'와 지나온 만큼 밑에 초록 막대. 그다음 칸과 같은 모양(아이콘 + 굵은 거리) */
+  .tunnelrow {
+    position: relative; display: flex; align-items: center; gap: 8px; padding: 5px 14px;
+    border-top: 1px solid rgba(255,255,255,.08); font-variant-numeric: tabular-nums;
+  }
+  .tunnelrow .tn-icon, .tunnelrow .tn-icon svg { width: 26px; height: 26px; flex: none; display: block; }
+  .tunnelrow b { font-size: 19px; font-weight: 800; flex: none; }
+  .tunnelrow #tunnelText { min-width: 0; font-size: 14px; font-weight: 600; opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tn-arch { fill: #4b5563; } .tn-hole { fill: #1f2937; } .tn-road { fill: #fff; }
+  .tn-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; }
+  .tn-bar i { display: block; height: 100%; width: 0; background: #03c75a; transition: width .9s linear; }
+  .tunnelrow:not(.inside) .tn-bar { display: none; }
+  #app.tesla .tunnelrow { border-top: 1px solid var(--nv-line); color: var(--nv-fg); }
+  #app.tesla .tunnelrow #tunnelText { color: var(--nv-sub); opacity: 1; }
+  #app.tesla .tn-bar i { background: var(--nv-green); }
+  body:has(#app.tesla):has(#map.night) .tn-arch { fill: #6b7280; }
+  body:has(#app.tesla):has(#map.night) .tn-hole { fill: #111827; }
+  /* ================= 하이패스도 단속 서랍 안에 (2026-11-14 요청) =================
+     지도 위 흰 글자 대신 서랍(유리 패널) 안에 연한 파랑 칸: 파란 '하이패스' 배지 + 톨게이트 이름 / 굵은 거리 + 통행료 / 안내 문구 */
+  #app.tesla .cd-in .tollcard {
+    display: flex; gap: 12px; align-items: center; padding: 10px 12px; border-radius: 12px;
+    background: rgba(21, 101, 192, .08); box-shadow: inset 0 0 0 1px rgba(21, 101, 192, .16);
+  }
+  #app.tesla .cd-in .toll-badge { padding: 7px 10px; font-size: 15px; background: #1565c0; box-shadow: none; }
+  #app.tesla .cd-in .toll-name { color: var(--nv-fg); font-size: 15px; }
+  #app.tesla .cd-in .toll-sub { color: var(--nv-sub); font-weight: 600; margin-top: 1px; }
+  #app.tesla .cd-in .toll-sub b { color: var(--nv-fg); font-size: 24px; }
+  #app.tesla .cd-in .toll-hint { color: #1565c0; }
+  body:has(#app.tesla):has(#map.night) #app.tesla .cd-in .tollcard { background: rgba(66, 133, 244, .16); box-shadow: inset 0 0 0 1px rgba(130, 177, 255, .22); }
+  body:has(#app.tesla):has(#map.night) #app.tesla .cd-in .toll-hint { color: #8ab4ff; }
 </style>
 </head>
 <body>
@@ -1154,18 +1186,18 @@
             <div class="sec-avg"><span id="secAvg">-</span><small> km/h 평균</small></div>
             <div id="secRemain" class="sec-remain">-</div>
           </div>
+          <!-- 톨게이트(하이패스) 안내: 길안내 경로에 톨게이트가 있으면 2km 앞부터. 테슬라 모드에서는 단속 서랍 맨 밑 (2026-11-14 요청) -->
+          <div id="tollCard" class="tollcard" hidden>
+            <div class="toll-badge">하이패스</div>
+            <div class="toll-info">
+              <div id="tollName" class="toll-name">톨게이트</div>
+              <div class="toll-sub"><b id="tollDist">0m</b><span id="tollFare"></span></div>
+              <div class="toll-hint">하이패스 차로로 지나가세요</div>
+            </div>
+          </div>
     </div></div></div>
     <!-- 과속방지턱: 200m 앞부터 작은 표지 + 거리 (길안내 중이면 경로 위, 아니면 바로 앞) -->
     <div id="bumpCard" class="bumpcard" hidden><span class="bump-sign"><svg viewBox="0 0 100 88" aria-hidden="true"><path d="M50 7 L94 82 L6 82 Z" fill="#fff" stroke="#e53935" stroke-width="10" stroke-linejoin="round"/><path d="M25 69 H75" stroke="#111" stroke-width="6" stroke-linecap="round"/><path d="M33 69 Q50 42 67 69 Z" fill="#111"/></svg></span><span id="bumpLabel" class="bump-label">과속방지턱</span><b id="bumpDist">0m</b></div>
-    <!-- 톨게이트(하이패스) 안내: 길안내 경로에 톨게이트가 있으면 2km 앞부터 -->
-    <div id="tollCard" class="tollcard" hidden>
-      <div class="toll-badge">하이패스</div>
-      <div class="toll-info">
-        <div id="tollName" class="toll-name">톨게이트</div>
-        <div class="toll-sub"><b id="tollDist">0m</b><span id="tollFare"></span></div>
-        <div class="toll-hint">하이패스 차로로 지나가세요</div>
-      </div>
-    </div>
     <div id="camNext" class="camnext" hidden></div>
     </div>
     <div id="weather" class="weather" hidden></div>
@@ -1208,6 +1240,8 @@
         </div>
       </div>
       <div id="nextTurn" class="nextturn" hidden aria-label="그다음 안내"><span id="nextIcon" class="nexticon"></span><span id="nextDist"></span></div>
+      <!-- 터널: 3km 앞부터 '남한터널 진입 · 길이 1.2km', 안에서는 '출구까지 799m' + 지나온 만큼 초록 막대 -->
+      <div id="tunnelRow" class="tunnelrow" hidden aria-label="터널 안내"><span id="tunnelIcon" class="tn-icon" aria-hidden="true"></span><b id="tunnelDist">-</b><span id="tunnelText"></span><span class="tn-bar" aria-hidden="true"><i id="tunnelBar"></i></span></div>
       <div class="navmeta">
         <b id="navRemain">-</b><span id="navTime">-</span><span id="navEta">-</span>
         <button id="navEnd">안내 종료</button>
@@ -1289,6 +1323,7 @@
     <label class="check"><input type="checkbox" id="optCams"> 단속 카메라 경고</label>
     <label class="check"><input type="checkbox" id="optSigCams"> 제한속도 없는 신호 전용 카메라도 알림</label>
     <label class="check"><input type="checkbox" id="optBumps"> 과속방지턱 알림 (전국 과속방지턱 표준데이터)</label>
+    <label class="check"><input type="checkbox" id="optTunnels"> 길안내 중 터널 진입·출구 거리 (터널 위치 © OpenStreetMap 기여자, ODbL)</label>
     <label class="check"><input type="checkbox" id="optTraffic"> 실시간 교통 (도로를 막힘 정도로 색칠)</label>
     <label class="check"><input type="checkbox" id="optWeather"> 날씨 표시 (위치는 약 10km 단위로만 보냄)</label>
     <p class="hint">단속 카메라 <b id="camCount">-</b>대 · 기준일 <b id="camDate">-</b> (경찰청 공공데이터)</p>
@@ -1339,6 +1374,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-56"></script>
+<script src="app.js?v=2026.11.14-57"></script>
 </body>
 </html>

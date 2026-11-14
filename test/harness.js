@@ -1765,6 +1765,107 @@
     return { pass: ok, detail: 'southbound (opposite) nav ' + (southNav ? 'ALERTED✗' : 'quiet✓') + ', no nav ' + (southFree ? 'ALERTED✗' : 'quiet✓') + ' | northbound nav ' + (northNav ? 'alerted✓' : 'MISSED✗') };
   }
 
+  // S44: 터널 (2026-11-14 요청: 터널 몇 m 남았는지). 네이버 안내에는 터널이 없어 OpenStreetMap 터널 도로(data/tunnels.json)로 찾는다.
+  //      가짜 터널 데이터로: 경로 북쪽 구간 200~500m 의 일방 '테스트터널'은 잡고, 반대 방향 일방 터널·가로지르는 터널은 안 잡는다.
+  //      15m 지점: '테스트터널 진입 · 길이 300m' 190m 앞 / 350m 지점(안): '출구까지' + 초록 막대 /
+  //      위치가 멈추면 마지막 속도로 출구까지 거리가 줄어든다 / 터널을 지나면 숨김 / 설정을 끄면 숨김
+  async function s44() {
+    const t = T(), R = buildNavRoute();
+    const north = (m) => dest(NAV_ORIGIN, 0, m);
+    const enc = (pts, nameIdx, oneway) => {
+      const q = pts.map((x) => [Math.round(x.lat * 1e5), Math.round(x.lng * 1e5)]);
+      const row = [nameIdx, oneway ? 1 : 0, q[0][0], q[0][1]];
+      for (let k = 1; k < q.length; k++) row.push(q[k][0] - q[k - 1][0], q[k][1] - q[k - 1][1]);
+      return row;
+    };
+    const side = (p, m) => dest(p, 90, m);
+    const data = { v: 1, scale: 1e5, names: ['테스트터널', '가로터널', '반대터널'], w: [
+      enc([north(200), north(350), north(500)], 0, true),                    // 잡아야 할 터널 (같은 방향 일방)
+      enc([side(north(40), 3), side(north(180), 3)].reverse(), 2, true),     // 반대 방향 일방 (남쪽으로) → 안 잡음
+      enc([dest(north(100), 270, 200), dest(north(100), 90, 200)], 1, false), // 가로지르는 터널 → 안 잡음
+    ] };
+    const prevPref = t.prefs.tunnels;
+    t.setTunnelData(data);
+    const row = () => ({ shown: visible('#tunnelRow'), inside: document.getElementById('tunnelRow').classList.contains('inside'),
+      dist: text('#tunnelDist'), text: text('#tunnelText'), bar: document.getElementById('tunnelBar').style.width,
+      icon: !!document.querySelector('#tunnelIcon svg.tunnel') });
+    const go = (m, v) => { const a = pointAt(R, m); feed(a.p, v == null ? 15 : v, a.h); t.renderNav(); };
+    const r = {};
+    try {
+      softReset();
+      await planAndStart(R);
+      go(15);
+      r.ahead = row();
+      r.found = (t.nav.routeTunnels || []).map((x) => x.name + ':' + Math.round(x.s0) + '-' + Math.round(x.s1));
+      for (let m = 30; m <= 350; m += 20) go(m, 20);
+      r.inside = row();
+      t.prefs.tunnels = false; t.renderNav();
+      r.offHidden = !visible('#tunnelRow');                  // 설정을 끄면 숨김
+      t.prefs.tunnels = true; t.renderNav();
+      await new Promise((res) => setTimeout(res, 2600));   // 터널 안에서 위치가 안 온다
+      t.renderNav();
+      r.dr = row();
+      for (let m = 370; m <= 560; m += 20) go(m);
+      r.after = row();
+      t.endNav();
+    } finally {
+      t.prefs.tunnels = prevPref;
+      t.setTunnelData(null);
+      await t.loadTunnels();
+      softReset();
+    }
+    const m = (s) => parseInt(s, 10) * (/km/.test(s) ? 1000 : 1);
+    const ok = r.found.length === 1 && /^테스트터널:2\d\d-5\d\d$/.test(r.found[0]) &&
+      r.ahead.shown && !r.ahead.inside && r.ahead.icon && /^1[89]0m$/.test(r.ahead.dist) && /^테스트터널 진입 · 길이 (29|30|31)0m$/.test(r.ahead.text) &&
+      r.inside.shown && r.inside.inside && r.inside.text === '테스트터널 출구까지' && m(r.inside.dist) >= 130 && m(r.inside.dist) <= 170 && parseInt(r.inside.bar, 10) >= 40 &&
+      r.dr.inside && m(r.inside.dist) - m(r.dr.dist) >= 30 && !r.after.shown && r.offHidden;
+    return { pass: ok, detail: JSON.stringify(r) + (ok ? '✓' : '✗') };
+  }
+
+  // S45: 하이패스도 단속 서랍 안에 (2026-11-14 요청). 테슬라 모드에서 톨게이트 1km 앞: 하이패스 카드가 서랍(.cd-in) 안에 보이고
+  //      서랍이 열리며 안내 패널 바로 밑에 붙는다. 지도 위 흰 글자(그림자) 대신 패널 글자. 톨게이트를 지나면 카드가 빠지고 서랍이 접힌다
+  async function s45() {
+    const t = T(), box = document.getElementById('optTesla'), prev = t.prefs.tesla;
+    const set = (on) => { box.checked = on; box.dispatchEvent(new Event('change')); };
+    const raw = [];
+    for (let k = 0; k <= 40; k++) raw.push(dest(NAV_ORIGIN, 0, 100 * k));
+    const path = raw.map((p) => [round6(p.lng), round6(p.lat)]);
+    const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const total = cum[cum.length - 1];
+    const R = {
+      route: { distance: r0(total), duration: r0(total / 25 * 1000), tollFare: 800, fuelPrice: 300, path,
+        guide: [{ i: 25, t: 121, s: '하남톨게이트 (통행료 800원)', d: r0(cum[25]), ms: 100000 },
+                { i: 40, t: 88, s: '목적지', d: r0(total - cum[25]), ms: 60000 }],
+        sections: [{ i: 0, n: 41, name: '테스트고속도로', speed: 100, cong: 1 }] },
+      P, cum, total, dest: { name: '톨 테스트', addr: '', lat: P[40].lat, lng: P[40].lng },
+    };
+    const r = {};
+    try {
+      set(true);
+      softReset();
+      await planAndStart(R);
+      for (let s = 25; s <= 1500; s += 25) { const a = pointAt(R, s); feed(a.p, 25, 0); t.renderNav(); }
+      const card = document.getElementById('tollCard'), dr = document.getElementById('camDrawer');
+      const np = document.getElementById('navPanel').getBoundingClientRect(), db = dr.getBoundingClientRect();
+      r.shown = visible('#tollCard');
+      r.inDrawer = !!card.closest('#camDrawer .cd-in');
+      r.open = dr.classList.contains('open');
+      r.underPanel = Math.abs(db.top - np.bottom) <= 2;
+      r.noHalo = getComputedStyle(document.getElementById('tollName')).textShadow === 'none';
+      r.text = text('#tollName') + ' ' + text('#tollDist') + ' ' + text('#tollFare');
+      for (let s = 1525; s <= 2700; s += 25) { const a = pointAt(R, s); feed(a.p, 25, 0); t.renderNav(); }
+      r.goneAfter = !visible('#tollCard') && !dr.classList.contains('open');
+      t.endNav();
+    } finally {
+      set(prev);
+      softReset();
+    }
+    const ok = r.shown && r.inDrawer && r.open && r.underPanel && r.noHalo && /하남톨게이트 1\.0km/.test(r.text) && r.goneAfter;
+    return { pass: ok, detail: JSON.stringify(r) + (ok ? '✓' : '✗') };
+  }
+
   // S25: 하이패스 — 경로 안내에 톨게이트(type 121)가 있으면 2km 앞부터 카드(이름·거리·통행료·하이패스 차로 이용)와 음성
   async function s25() {
     const t = T();
@@ -2107,6 +2208,8 @@
     { id: 'S41', name: 'S41 speed bumps (national data): route bumps 200 m ahead + map signs, also without nav', fn: s41 },
     { id: 'S42', name: "S42 next-step chip: Naver-style '↱ 360m', or a red '도착 480m' when the destination is next", fn: s42 },
     { id: 'S43', name: 'S43 one-way speed camera marked both ways in the data (양서면 북한강로): quiet on the opposite side', fn: s43 },
+    { id: 'S44', name: 'S44 tunnel row: entry distance + length, then distance to the exit (OSM tunnels)', fn: s44 },
+    { id: 'S45', name: 'S45 hi-pass card sits in the camera drawer under the nav panel (Tesla mode)', fn: s45 },
   ];
 
   // ---------------------------------------------------------------- runner
