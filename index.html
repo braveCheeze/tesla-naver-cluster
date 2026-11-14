@@ -1093,14 +1093,13 @@
   .nextturn:not(.goal):not(.via) #nextDist { font-size: 19px; font-weight: 800; }
   /* ================= 그다음 칸 구분감 (2026-11-14) =================
      위 회전 안내·아래 회색 요약 줄('910m 2분 도착 13:56')과 헷갈리지 않게: 그다음 칸은 흰(유리) 바탕에 위아래 얇은 줄,
-     목적지면 연한 빨강 바탕 + 빨간 핀 + 빨간 '도착' 꼬리표, 경유지면 주황 */
+     목적지면 연한 빨강 바탕 + 빨간 핀, 경유지면 주황 */
   #app.tesla .nextturn { background: transparent; border-top: 1px solid var(--nv-line); }
   #app.tesla .navmeta { border-top: 1px solid var(--nv-line); }
-  .arrive-tag {
-    display: inline-block; margin-right: 7px; padding: 2px 8px 3px; border-radius: 999px; vertical-align: 1px;
-    background: #ef4444; color: #fff; font-size: 13px; font-weight: 800; letter-spacing: 0; line-height: 1.2;
-  }
-  .nextturn.via .arrive-tag { background: #f59e0b; }
+  /* 2026-11-14: '도착'·'경유지' 글자는 뺐다. 핀은 회전 아이콘과 같은 크기, 경유지 핀은 주황, 거리는 회전과 같은 굵기 */
+  .nextturn.goal .nexticon, .nextturn.goal .nexticon svg, .nextturn.via .nexticon, .nextturn.via .nexticon svg { width: 26px; height: 26px; }
+  .nextturn.via svg.pin path { fill: #f59e0b; }
+  .nextturn.goal #nextDist, .nextturn.via #nextDist { font-size: 19px; }
   #app.tesla .nextturn.goal { background: rgba(239, 68, 68, .09); }
   #app.tesla .nextturn.via { background: rgba(245, 158, 11, .1); }
   .nextturn.goal #nextDist, .nextturn.via #nextDist { font-weight: 800; }
@@ -1374,6 +1373,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-57"></script>
+<script src="app.js?v=2026.11.14-58"></script>
 </body>
 </html>

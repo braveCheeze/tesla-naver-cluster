@@ -1712,7 +1712,7 @@
   }
 
   // S42: 그다음 칸 (2026-11-14 요청). 이번 회전을 하고 나서 무엇이 얼마 뒤에 오는지 (거리는 이번 안내 지점 → 그다음 안내 지점).
-  //      그다음이 회전이면 네이버 지도처럼 그 회전 아이콘 + '360m'만, 목적지면 빨간 핀 + 빨간 '도착' 꼬리표 + '480m' (구분감), 마지막 안내면 숨김
+  //      그다음이 회전이면 네이버 지도처럼 그 회전 아이콘 + '360m'만, 목적지면 연한 빨강 바탕에 빨간 핀 + '480m' ('도착' 글자 없이), 마지막 안내면 숨김
   async function s42() {
     const t = T(), R = buildNavRoute();
     softReset();
@@ -1724,13 +1724,13 @@
     go(15);
     const atStart = snap();                 // 이번: 직진(240m) → 360m 뒤 우회전 (우회전 아이콘 + 360m)
     for (let s = 30; s <= 300; s += 15) go(s);
-    const beforeTurn = snap();              // 이번: 우회전 → 우회전하고 480m 뒤 도착 (빨간 핀·꼬리표)
+    const beforeTurn = snap();              // 이번: 우회전 → 우회전하고 480m 뒤 도착 (빨간 핀, 글자 없음)
     for (let s = 315; s <= 640; s += 15) go(s);
     const afterTurn = snap();               // 이번: 목적지 → 그다음 없음
     t.endNav();
     softReset();
     const ok = atStart.shown && atStart.text === '360m' && atStart.rightIcon && !atStart.goal &&
-      beforeTurn.shown && beforeTurn.goal && beforeTurn.pin && beforeTurn.tag && /^도착\s*480m$/.test(beforeTurn.text) && !afterTurn.shown;
+      beforeTurn.shown && beforeTurn.goal && beforeTurn.pin && !beforeTurn.tag && beforeTurn.text === '480m' && !afterTurn.shown;
     return { pass: ok, detail: 'start ' + JSON.stringify(atStart) + ' | before the right turn ' + JSON.stringify(beforeTurn) + ' | after ' + JSON.stringify(afterTurn) + (ok ? '✓' : '✗') };
   }
 
@@ -2206,7 +2206,7 @@
     { id: 'S39', name: 'S39 bottom location bar → 경로 비교 · 재추천 · 경유지', fn: s39 },
     { id: 'S40', name: 'S40 new version while driving: tray button, resume the same guidance after updating', fn: s40 },
     { id: 'S41', name: 'S41 speed bumps (national data): route bumps 200 m ahead + map signs, also without nav', fn: s41 },
-    { id: 'S42', name: "S42 next-step chip: Naver-style '↱ 360m', or a red '도착 480m' when the destination is next", fn: s42 },
+    { id: 'S42', name: "S42 next-step chip: Naver-style '↱ 360m', or a red pin '480m' when the destination is next", fn: s42 },
     { id: 'S43', name: 'S43 one-way speed camera marked both ways in the data (양서면 북한강로): quiet on the opposite side', fn: s43 },
     { id: 'S44', name: 'S44 tunnel row: entry distance + length, then distance to the exit (OSM tunnels)', fn: s44 },
     { id: 'S45', name: 'S45 hi-pass card sits in the camera drawer under the nav panel (Tesla mode)', fn: s45 },

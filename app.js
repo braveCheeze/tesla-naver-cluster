@@ -42,7 +42,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-57'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-58'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -2296,7 +2296,7 @@
     $('#turnText').textContent = g ? g.s : nav.dest.name;
     // 그다음 칸: 이번 회전을 하고 나서 무엇이 얼마 뒤에 오는지 (거리는 이번 안내 지점 → 그다음 안내 지점).
     //   그다음이 회전이면 네이버 지도처럼 그 회전 아이콘 + 거리만 '↰ 1.2km' (2026-11-14: '직진 … 좌회전'처럼 풀어 쓰지 않음)
-    //   그다음이 목적지면 빨간 핀 + 빨간 '도착' 꼬리표 + '20m', 경유지면 주황 '경유지' (2026-11-14: 도착은 잘 보이니 구분감만 더)
+    //   그다음이 목적지면 연한 빨강 바탕에 빨간 핀 + '20m', 경유지면 주황 (2026-11-14: '도착' 글자는 빼고 핀·바탕색으로만 구분)
     const g2 = g ? nav.guides[nav.gi + 1] : null;
     const nn = $('#nextTurn');
     nn.hidden = !g2;
@@ -2310,7 +2310,7 @@
       nn.classList.toggle('via', isVia);
       if (isGoal || isVia) {
         $('#nextIcon').innerHTML = PIN_ICON;
-        $('#nextDist').innerHTML = '<span class="arrive-tag">' + (isGoal ? '도착' : '경유지') + '</span>' + fmtDist(gap);
+        $('#nextDist').textContent = fmtDist(gap);
       } else {
         $('#nextIcon').innerHTML = TURN_ICONS[k2] || TURN_ICONS.s;
         $('#nextDist').textContent = fmtDist(gap);
