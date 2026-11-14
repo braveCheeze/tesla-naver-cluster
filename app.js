@@ -49,7 +49,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-89'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-90'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   // 브라우저에 저장된 예전 index.html 이 새 app.js 를 불러온 경우(화면 요소가 맞지 않아 버튼 연결에서 멈춘다):
@@ -353,22 +353,35 @@
   // 내 차 아이콘 (2026-11-14 요청: 네이버 지도처럼 고를 수 있게, 우리 차 모양도). 모두 앞쪽이 위, viewBox 40×56
   // 테슬라 모델 Y 를 위에서 본 모양: 차체 색만 바꾼다. 같은 그림이 지도와 설정 미리보기에 같이 있어도 그라데이션이
   // 서로 엉키지 않게 id 뒤에 붙일 글자(sfx)를 받는다
+  // 2026-11-14: 사용자가 보낸 테슬라 앱 '컨트롤' 화면처럼 — 짙은 차체, 앞유리에서 뒷유리까지 이어지는 큰 통유리 지붕(안에 좌석이
+  // 살짝 비침), 지붕 이음새 두 줄, 뒤로 누운 사이드미러, 둥근 앞코. 밤 지도에서 묻히지 않게 바깥에 옅은 흰 테를 두른다
   function modelY(id, c, sfx) {
     const g = 'cy-' + id + sfx, gl = 'cg-' + id + sfx;
+    const body = 'M20 2C24.5 2 28.5 2.6 30 4.6C31 6 31.2 8 31 10.5L30.3 17C30.2 22 30.6 30 31 38C31.2 44 31 48.5 29.8 51.3' +
+      'C28.4 53.4 24.6 54.2 20 54.2C15.4 54.2 11.6 53.4 10.2 51.3C9 48.5 8.8 44 9 38C9.4 30 9.8 22 9.7 17L9 10.5C8.8 8 9 6 10 4.6' +
+      'C11.5 2.6 15.5 2 20 2Z';
     return '<svg class="me-arrow car-' + id + '" viewBox="0 0 40 56"><defs>' +
-      '<linearGradient id="' + g + '" x1="0" x2="1"><stop offset="0" stop-color="' + c[2] + '"/><stop offset=".2" stop-color="' + c[1] + '"/>' +
-      '<stop offset=".5" stop-color="' + c[0] + '"/><stop offset=".8" stop-color="' + c[1] + '"/><stop offset="1" stop-color="' + c[2] + '"/></linearGradient>' +
-      '<linearGradient id="' + gl + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5f6d7c"/><stop offset=".3" stop-color="#171c23"/>' +
-      '<stop offset="1" stop-color="#0a0d11"/></linearGradient></defs>' +
-      '<path d="M9.2 15.4 6.3 16.5c-.7.3-.7 1.2 0 1.5l2.9 1zM30.8 15.4l2.9 1.1c.7.3.7 1.2 0 1.5l-2.9 1z" fill="' + c[2] + '"/>' +
-      '<path d="M20 2.2c6.2 0 9.4 1.7 10.3 6.6l.9 9.6c.4 6 .6 15.5.4 25.4-.2 6-3.6 10-11.6 10s-11.4-4-11.6-10c-.2-9.9 0-19.4.4-25.4l.9-9.6C10.6 3.9 13.8 2.2 20 2.2z" ' +
-      'fill="url(#' + g + ')" stroke="rgba(0,0,0,.4)" stroke-width=".5"/>' +
-      '<path d="M13.2 14.6c4.4-1.4 9.2-1.4 13.6 0l1.7 7.6.3 17.6c-.3 3.6-2.6 5.6-8.8 5.8-6.2-.2-8.5-2.2-8.8-5.8l.3-17.6z" fill="url(#' + gl + ')"/>' +
-      '<path d="M11.6 22.4h16.8M11.5 37.4h17" stroke="' + c[1] + '" stroke-width=".9" opacity=".85"/>' +
-      '<path d="M15 16.2c3.4-.8 6.6-.8 10 0l.6 3c-3.6-.7-7.6-.7-11.2 0z" fill="#fff" opacity=".13"/>' +
-      '<path d="M11.4 5.6c1.6-1.4 3.6-2 5.6-2.2-1.6 1-3.4 2.1-5 3.3zM28.6 5.6c-1.6-1.4-3.6-2-5.6-2.2 1.6 1 3.4 2.1 5 3.3z" fill="#eaf5ff" opacity=".95"/>' +
-      '<path d="M11.6 49.8c5.4 1.6 11.4 1.6 16.8 0l-.4 1.3c-5.3 1.3-10.7 1.3-16 0z" fill="#e0242f"/>' +
-      '<path d="M20 3.8v9.2" stroke="#fff" stroke-width=".6" opacity=".2"/></svg>';
+      '<linearGradient id="' + g + '" x1="0" x2="1"><stop offset="0" stop-color="' + c[2] + '"/><stop offset=".12" stop-color="' + c[0] + '"/>' +
+      '<stop offset=".3" stop-color="' + c[1] + '"/><stop offset=".7" stop-color="' + c[1] + '"/><stop offset=".88" stop-color="' + c[0] + '"/>' +
+      '<stop offset="1" stop-color="' + c[2] + '"/></linearGradient>' +
+      '<linearGradient id="' + gl + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2c333d"/><stop offset=".1" stop-color="#121519"/>' +
+      '<stop offset=".6" stop-color="#0c0e11"/><stop offset="1" stop-color="#07080a"/></linearGradient></defs>' +
+      '<path d="M30.1 16.4 32.9 19.3c.4.5.1 1.2-.6 1.1l-2.1-.8zM9.9 16.4 7.1 19.3c-.4.5-.1 1.2.6 1.1l2.1-.8z" fill="' + c[1] + '" stroke="rgba(0,0,0,.45)" stroke-width=".4"/>' +
+      '<path d="' + body + '" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1.4"/>' +
+      '<path d="' + body + '" fill="url(#' + g + ')" stroke="rgba(0,0,0,.45)" stroke-width=".45"/>' +
+      '<ellipse cx="20" cy="6.4" rx="6.4" ry="3.6" fill="#fff" opacity=".07"/>' +
+      '<path d="M15.6 2.4C14 5.5 12.4 9 11.9 13.4M24.4 2.4C26 5.5 27.6 9 28.1 13.4M9.7 30C9.5 38 9.6 45 10.3 50M30.3 30C30.5 38 30.4 45 29.7 50" ' +
+      'fill="none" stroke="' + c[0] + '" stroke-width=".55" opacity=".65"/>' +
+      '<path d="M11.2 5.4C12.5 4.2 14.2 3.5 15.8 3.2M28.8 5.4C27.5 4.2 25.8 3.5 24.2 3.2" fill="none" stroke="#e6f0fa" stroke-width=".7" stroke-linecap="round" opacity=".55"/>' +
+      '<path d="M11.9 14C14.8 12.7 25.2 12.7 28.1 14L28.4 24.6C28.3 32 28 38 27.6 43.2C27.3 47.4 26.7 50.1 25.7 50.7C22.5 51.5 17.5 51.5 14.3 50.7' +
+      'C13.3 50.1 12.7 47.4 12.4 43.2C12 38 11.7 32 11.6 24.6Z" fill="url(#' + gl + ')" stroke="rgba(255,255,255,.12)" stroke-width=".35"/>' +
+      '<g fill="#fff" opacity=".04"><rect x="13.4" y="16.4" width="5.4" height="6.6" rx="1.6"/><rect x="21.2" y="16.4" width="5.4" height="6.6" rx="1.6"/>' +
+      '<rect x="13.2" y="28" width="13.6" height="10.6" rx="2.2"/></g>' +
+      '<rect x="15.2" y="45" width="9.6" height="5" rx="1.8" fill="#000" opacity=".45"/>' +
+      '<path d="M12.4 14.4C15.4 13.3 24.6 13.3 27.6 14.4L27.7 16C24.5 15.2 15.5 15.2 12.3 16Z" fill="#fff" opacity=".1"/>' +
+      '<path d="M11.6 25.1Q20 24.3 28.4 25.1M12.4 43.5Q20 42.9 27.6 43.5" fill="none" stroke="' + c[0] + '" stroke-width=".6" opacity=".6"/>' +
+      '<path d="M10.9 50.4C11.3 51.7 12.1 52.6 13.3 53.1M29.1 50.4C28.7 51.7 27.9 52.6 26.7 53.1" fill="none" stroke="#e0242f" stroke-width=".9" stroke-linecap="round" opacity=".9"/>' +
+      '</svg>';
   }
   const CAR_ICONS = [
     { id: 'cute', name: '초록 꼬마차', svg: () => '<svg class="me-arrow car-cute" viewBox="0 0 40 56">' +
@@ -386,7 +399,7 @@
       '<circle cx="9.3" cy="16.5" r="1.9" fill="#ff8fa3" opacity=".8"/><circle cx="30.7" cy="16.5" r="1.9" fill="#ff8fa3" opacity=".8"/>' +
       '<path d="M16.8 16.2 Q20 19 23.2 16.2" fill="none" stroke="#0b4a2b" stroke-width="1.7" stroke-linecap="round"/></svg>' },
     // 사용자 차 (테슬라 앱의 짙은 회색 모델 Y)
-    { id: 'my', name: '내 차 (모델 Y 그레이)', svg: (sfx) => modelY('my', ['#545c68', '#323842', '#1c2027'], sfx) },
+    { id: 'my', name: '내 차 (모델 Y 그레이)', svg: (sfx) => modelY('my', ['#5a6475', '#2c323c', '#14171c'], sfx) },
     { id: 'red', name: '모델 Y 레드', svg: (sfx) => modelY('red', ['#f2555c', '#c5121f', '#7c0b13'], sfx) },
     { id: 'white', name: '모델 Y 화이트', svg: (sfx) => modelY('white', ['#ffffff', '#e8ebef', '#b3bac3'], sfx) },
     // 네이버 지도 같은 내비 화살표

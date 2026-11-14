@@ -7,7 +7,9 @@
 - 결과: tools/icon-src/ai/<그림>__<모델>__<번호>.png 와 한눈에 보는 contact.png
 - 비용(2026-11-14 Atlas 가격, 장당): GPT Image 2.5 Flare edit $0.005, GPT Image 2.5 Sunburst edit $0.005 (developer 판은 $0.03 으로 더 비쌈),
   GPT Image 2 developer $0.005, GPT Image 1.5 $0.005, GPT Image 2 $0.006, Seedream 5.5 $0.016, Seedream 5.0 Pro $0.036, Nano Banana 2 $0.08.
-  기본: GPT Image 2.5 Flare·Sunburst × 그림 16가지 × 1장 = 32장 ≈ $0.16
+  기본: GPT Image 2.5 Flare·Sunburst × 그림 19가지 × 1장 = 38장 ≈ $0.19
+- 내 차 아이콘만:  py -X utf8 tools\gen_icons_atlas.py --icons car_my,car_red,car_white --per 2   (12장 ≈ $0.06)
+  테슬라 앱 차 사진을 tools\icon-srcefef_car_app.png 로 저장해 두면 그 느낌을 따라 그린다 (저장소에는 안 올라감)
 - 옵션: --models flare,sunburst,gpt15   --per 2   --icons over_r,junc_fork_r   --dry (요청 없이 계획과 예상 비용만)
 """
 import argparse
@@ -35,6 +37,20 @@ ROAD = ('Flat vector navigation icon in exactly the style of the reference image
 ARROW = ('Flat vector navigation turn icon in exactly the style of the reference image: one bold solid white arrow with rounded '
          'ends and a sharp triangular arrowhead, clean geometric shapes, no road, no shadows, no gradients, no extra text.'
          + CORP + BG + ' ')
+CARS = ('Top-down view, seen from directly above, of a Tesla Model Y in exactly the style of the official Tesla phone app car '
+        'render: realistic 3D render, smooth satin paint with soft studio reflections along the hood and front fenders, one huge '
+        'dark tinted glass roof running from the windshield to the rear window with the seats faintly visible through the glass, '
+        'thin roof seams, small side mirrors angled back, rounded short nose, wide rear haunches, nose pointing straight up, '
+        'perfectly symmetric, centered, filling 85% of the image height. Remove any text, labels, padlock icon and charging cable. '
+        'No logos, no ground shadow, no other objects.' + BG + ' ')
+# 차 참고 그림: 사용자가 테슬라 앱 화면을 ref/ref_car_app.png 로 저장해 두면 그걸 쓴다 (저장소에는 올리지 않는다: .gitignore)
+CAR_APP = os.path.join(SRC, 'ref', 'ref_car_app.png')
+
+
+def car_ref(c):
+    return 'ref/ref_car_app.png' if os.path.exists(CAR_APP) else 'ref/ref_car_%s.png' % c
+
+
 SHIELD = ' Small interstate-style shield (red top band, blue body, white border, bold white letters) in an empty corner'
 # 그림 이름 → (참고 그림: tools/icon-src 기준 경로, 스타일 문장, 내용)
 JOBS = {
@@ -72,6 +88,10 @@ JOBS = {
     'rb_l': ('rb.webp', ARROW, 'Roundabout, exit to the LEFT: a pale thin ring with four short pale road stubs; one bold white '
              'arrow enters from the bottom, goes counter-clockwise three quarters around and exits to the left with a large '
              'arrowhead. Single color, like Naver Map turn icons.'),
+    # 내 차 아이콘: 위에서 본 테슬라 모델 Y (사용자 차). 참고 그림은 앱에 그려 넣은 것 (설정 → 자동차 아이콘)
+    'car_my': (car_ref('my'), CARS, 'Paint: dark slate grey metallic with a faint blue tint (Stealth Grey), like the reference.'),
+    'car_red': (car_ref('red'), CARS, 'Same car, but paint: deep glossy Ultra Red.'),
+    'car_white': (car_ref('white'), CARS, 'Same car, but paint: Pearl White with soft grey shading.'),
     # 분기점 확대 그림 (가로로 넓게, 길안내 패널 밑 서랍에 들어간다: 글자는 넣지 않는다 - 앱이 위에 올린다)
     'junc_fork_r': ('ref/ref_outr.png', 'Navigation junction close-up illustration for a car display, clean flat vector style '
                     'like a premium car navigation, no text, no signs: first-person view of a highway splitting into two '
