@@ -44,7 +44,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-70'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-71'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   // 브라우저에 저장된 예전 index.html 이 새 app.js 를 불러온 경우(화면 요소가 맞지 않아 버튼 연결에서 멈춘다):
@@ -100,6 +100,7 @@
     driveMs: 0,
     odo: 0,             // m (구간단속 계산용, 초기화 안 함)
     following: true,
+    peek: false,        // 주행 화면에서 지도를 끌어 앞길을 보는 중 (방향·기울기는 그대로, 따라가기만 멈춤)
     refollowTimer: 0,
     demoTimer: 0,
     night: store.get('night') === '1',
@@ -437,6 +438,21 @@
     zoomBy(d) { this.map.setZoom(this.map.getZoom() + d, true); },
     getZoom() { return this.map.getZoom(); },
     setZoom(z) { this.map.setZoom(z, true); },
+    // 주행 화면(돌리고 기울인 캔버스)에서는 지도 라이브러리의 손 조작을 끄고 앱이 직접 옮긴다
+    // (라이브러리는 화면 좌표를 돌리지 않고 써서 끄는 방향과 지도가 따로 논다)
+    setInteract(on) {
+      this.map.setOptions({ draggable: on, pinchZoom: on, scrollWheel: on, disableDoubleTapZoom: !on, disableDoubleClickZoom: !on });
+    },
+    // 지도 가운데를 캔버스 픽셀만큼 옮긴다 (애니메이션 없이)
+    panPx(dx, dy) {
+      const N = naver.maps, proj = this.map.getProjection && this.map.getProjection();
+      if (proj && proj.fromCoordToOffset) {
+        const o = proj.fromCoordToOffset(this.map.getCenter());
+        this.map.setCenter(proj.fromOffsetToCoord(new N.Point(o.x + dx, o.y + dy)));
+      } else this.map.panBy(new N.Point(dx, dy));
+    },
+    getCenter() { const c = this.map.getCenter(); return { lat: c.lat(), lng: c.lng() }; },
+    stop() { if (this.map.stop) this.map.stop(); }, // 진행 중인 이동·확대 애니메이션을 멈춘다
     // 캔버스 크기가 바뀐 뒤 지도 크기를 맞춘다 (중심 좌표는 유지)
     resize(w, h) {
       const c = this.map.getCenter();
@@ -547,6 +563,12 @@
     zoomBy(d) { this.map.setZoom(this.map.getZoom() + d); },
     getZoom() { return this.map.getZoom(); },
     setZoom(z) { this.map.setZoom(z); },
+    setInteract(on) {
+      ['dragging', 'touchZoom', 'scrollWheelZoom', 'doubleClickZoom'].forEach((k) => { if (this.map[k]) this.map[k][on ? 'enable' : 'disable'](); });
+    },
+    panPx(dx, dy) { this.map.panBy([dx, dy], { animate: false }); },
+    getCenter() { const c = this.map.getCenter(); return { lat: c.lat, lng: c.lng }; },
+    stop() { this.map.stop(); },
     resize() {
       const c = this.map.getCenter();
       this.map.invalidateSize({ pan: false });
@@ -644,7 +666,7 @@
   const view = { drive: false, key: '', rot: 0, w: 0, h: 0, cs: 0, cx: 0, cy: 0, tilt: 0 };
 
   function wantDrive() {
-    return !!(state.following && prefs.headingUp && state.heading !== null && !nav.preview && !state.stopNorth);
+    return !!((state.following || state.peek) && prefs.headingUp && state.heading !== null && !nav.preview && !state.stopNorth);
   }
   // 멈춤 판단: 시속 3km 아래로 3초 넘게 있으면 북쪽 위로, 다시 시속 8km 를 넘으면 진행 방향 위로 (서고 가는 사이 흔들리지 않게 차이를 둔다)
   function checkStopNorth(now) {
@@ -708,6 +730,7 @@
       setViewRot();
     }
     host.classList.toggle('drive', drive);
+    if (mapA && mapA.setInteract) { try { mapA.setInteract(!drive); } catch (e) { /* 다음 배치 때 다시 */ } }
     let jumped = false;
     if (mapA && mapA.resize && w && h) {
       // 지도 라이브러리가 캔버스에 직접 넣은 크기는 지우고 CSS 크기를 따르게 한다
@@ -715,7 +738,7 @@
       clear();
       try { mapA.resize(drive ? cs : w, drive ? cs : h); } catch (e) { /* 다음 배치 때 다시 */ }
       clear();
-      if (state.fix && (drive || wasDrive || state.following)) {
+      if (state.fix && !state.peek && (drive || wasDrive || state.following)) { // 앞길을 보는 중이면 보던 자리 그대로
         const p = mePos();
         mapA.center(p.lat, p.lng, true);
         jumped = true;
@@ -2300,6 +2323,26 @@
   // 목적지·경유지 핀 (그다음 칸에서): 빨간 핀 안에 흰 점
   const PIN_ICON = '<svg viewBox="0 0 24 24" class="pin"><path d="M12 2.5a7 7 0 0 0-7 7c0 5.2 7 12 7 12s7-6.8 7-12a7 7 0 0 0-7-7z" fill="#ef4444" stroke="none"/>' +
     '<circle cx="12" cy="9.5" r="2.6" fill="#fff" stroke="none"/></svg>';
+  // 고속도로 나가기(OUT)·들어가기(IN) 그림 (2026-11-14 요청: 다른 내비처럼). 톨게이트(TG) 그림과 같은 모양:
+  // 어두운 본선 + 갈라져 나가는(또는 들어오는) 어두운 연결로 위에 흰 화살표, 오른쪽 위에 고속도로 방패 모양 OUT/IN 표지.
+  // 오른쪽으로 그리고, 왼쪽은 도로·화살표만 좌우로 뒤집고 표지는 왼쪽 위로 옮긴다. 그다음 안내 칸(작은 크기)에서는 표지를 숨긴다
+  function rampIcon(out, left) {
+    const flip = left ? ' transform="matrix(-1 0 0 1 48 0)"' : '';
+    const road = '<path class="rd-f" d="M4 47V3h15v44z" fill="#2b3440" stroke="none"/>' +
+      '<path d="M11.5 44V5" stroke="#fff" stroke-width="1.6" stroke-dasharray="4 4" opacity=".55" fill="none"/>' +
+      (out ? '<path class="rd-s" d="M14 47C14 35 22 27 37 21" stroke="#2b3440" stroke-width="12" fill="none"/>' +
+             '<path d="M13 45C13 34.5 20 28.6 31 23.6" stroke="#fff" stroke-width="4.5" stroke-linecap="round" fill="none"/>' +
+             '<path d="M38.5 20.2 33.3 28 29.2 19z" fill="#fff" stroke="none"/>'
+           : '<path class="rd-s" d="M38 47C38 35 30 26 15 20" stroke="#2b3440" stroke-width="12" fill="none"/>' +
+             '<path d="M36 45C36 34 27 28 15.5 22 12.5 20.3 11.5 18 11.5 14" stroke="#fff" stroke-width="4.5" stroke-linecap="round" fill="none"/>' +
+             '<path d="M11.5 4 16.5 12.5H6.5z" fill="#fff" stroke="none"/>');
+    const shield = '<g class="shield"' + (left ? ' transform="translate(-24 0)"' : '') + '>' +
+      '<path d="M26.5 2.5h19v8.2c0 4.6-4.2 7.4-9.5 9.3-5.3-1.9-9.5-4.7-9.5-9.3z" fill="#1d4fb8" stroke="#fff" stroke-width="1.2"/>' +
+      '<path d="M27.1 3.1h17.8v3.6H27.1z" fill="#d93b3b" stroke="none"/>' +
+      '<text x="36" y="14.6" text-anchor="middle" font-size="' + (out ? 7.5 : 8.5) + '" font-weight="800" fill="#fff" stroke="none" font-family="Pretendard, sans-serif">' +
+      (out ? 'OUT' : 'IN') + '</text></g>';
+    return '<svg viewBox="0 0 48 48" class="ramp ' + (out ? 'out' : 'in') + '"><g' + flip + '>' + road + '</g>' + shield + '</svg>';
+  }
   const TURN_ICONS = {
     s: '<svg viewBox="0 0 48 48"><path d="M24 43V7M12 19 24 7l12 12"/></svg>',
     l: '<svg viewBox="0 0 48 48"><path d="M32 43V25a9 9 0 0 0-9-9H9M17 8l-8 8 8 8"/></svg>',
@@ -2309,23 +2352,8 @@
     // 비켜 가기: 아래에서 올라와 그쪽으로 한 번 비켜서 다시 위로 (갈림길·왼쪽/오른쪽 방향)
     kl: '<svg viewBox="0 0 48 48" class="keep kl"><path d="M31 44V31c0-7-12-9-12-17V7M12 14l7-7 7 7"/></svg>',
     kr: '<svg viewBox="0 0 48 48" class="keep kr"><path d="M17 44V31c0-7 12-9 12-17V7M22 14l7-7 7 7"/></svg>',
-    // 나가기(OUT): 회색 본선 옆으로 빠져나가는 화살표 + 파란 OUT 표지. 들어가기(IN): 옆에서 본선으로 들어오는 화살표 + IN
-    outr: '<svg viewBox="0 0 48 48" class="ramp out"><path d="M14 47V2" stroke="#c3c9d1" stroke-width="6" stroke-linecap="butt"/>' +
-      '<path d="M14 44V33c0-9 13-10 18-21M25.5 12.5l7-1 1.5 7"/>' +
-      '<rect x="27" y="34" width="20" height="12" rx="2.5" fill="#2f6fe4" stroke="none"/>' +
-      '<text x="37" y="43.2" text-anchor="middle" font-size="8.5" font-weight="800" fill="#fff" stroke="none" font-family="Pretendard, sans-serif">OUT</text></svg>',
-    outl: '<svg viewBox="0 0 48 48" class="ramp out"><path d="M34 47V2" stroke="#c3c9d1" stroke-width="6" stroke-linecap="butt"/>' +
-      '<path d="M34 44V33c0-9-13-10-18-21M22.5 12.5l-7-1-1.5 7"/>' +
-      '<rect x="1" y="34" width="20" height="12" rx="2.5" fill="#2f6fe4" stroke="none"/>' +
-      '<text x="11" y="43.2" text-anchor="middle" font-size="8.5" font-weight="800" fill="#fff" stroke="none" font-family="Pretendard, sans-serif">OUT</text></svg>',
-    inr: '<svg viewBox="0 0 48 48" class="ramp in"><path d="M22 47V2" stroke="#c3c9d1" stroke-width="6" stroke-linecap="butt"/>' +
-      '<path d="M36 44V35c0-8-14-9-14-18V7M15 14l7-7 7 7"/>' +
-      '<rect x="1" y="34" width="16" height="12" rx="2.5" fill="#2f6fe4" stroke="none"/>' +
-      '<text x="9" y="43.2" text-anchor="middle" font-size="8.5" font-weight="800" fill="#fff" stroke="none" font-family="Pretendard, sans-serif">IN</text></svg>',
-    inl: '<svg viewBox="0 0 48 48" class="ramp in"><path d="M26 47V2" stroke="#c3c9d1" stroke-width="6" stroke-linecap="butt"/>' +
-      '<path d="M12 44V35c0-8 14-9 14-18V7M19 14l7-7 7 7"/>' +
-      '<rect x="31" y="34" width="16" height="12" rx="2.5" fill="#2f6fe4" stroke="none"/>' +
-      '<text x="39" y="43.2" text-anchor="middle" font-size="8.5" font-weight="800" fill="#fff" stroke="none" font-family="Pretendard, sans-serif">IN</text></svg>',
+    // 나가기(OUT)·들어가기(IN): 아래 rampIcon (톨게이트 그림처럼 어두운 도로 + 흰 화살표 + 고속도로 방패 표지)
+    outr: rampIcon(true, false), outl: rampIcon(true, true), inr: rampIcon(false, false), inl: rampIcon(false, true),
     // 톨게이트: 파란 'TG' 표지 + 앞으로 좁아지는 도로 + 흰 화살표 (네이버·다른 내비의 톨게이트 그림처럼)
     toll: '<svg viewBox="0 0 48 48" class="toll"><rect x="6" y="1" width="36" height="17" rx="3.5" fill="#2f6fe4" stroke="none"/>' +
       '<text x="24" y="14.6" text-anchor="middle" font-size="14" font-weight="800" fill="#fff" stroke="none" font-family="Pretendard, sans-serif">TG</text>' +
@@ -3261,36 +3289,108 @@
   }
 
   // ---------- 따라가기 ----------
-  function setFollowing(on, noAutoReturn) {
+  // peek: 주행 화면에서 지도를 끌었을 때. 방향·기울기는 그대로 두고 따라가기만 멈춘다
+  const REFOLLOW_MS = 5000, REFOLLOW_PARKED_MS = 15000;
+  function setFollowing(on, noAutoReturn, peek) {
     state.following = on;
+    state.peek = !on && !!peek;
     $('#locate').classList.toggle('alert', !on);
     clearTimeout(state.refollowTimer);
     const jumped = layoutView(); // 주행 화면 ↔ 평면 지도 전환
     if (on && state.fix && mapA && !jumped) { const p = mePos(); mapA.center(p.lat, p.lng, false); }
-    if (!on && !noAutoReturn) state.refollowTimer = setTimeout(() => setFollowing(true), 15000); // 15초 손 안 대면 복귀
+    renderBackMe();
+    if (!on && !noAutoReturn) armRefollow();
   }
-  function onUserPan() { setFollowing(false, nav.preview); }
-  // 지도 손 조작: 톡 치기는 화면 버튼만 보여 주고, 실제로 끌거나(10px 이상) 두 손가락을 쓰면
-  // 주행 화면을 평면(북쪽 위) 지도로 바꿔 조작을 이어간다
-  const gesture = { x: 0, y: 0, used: false, pointers: new Set() };
-  const NOT_MAP = '.btn, .searchbtn, .navpanel, .routecard, .toast, #diagBox, .ctrls, .topctrls, .badge, .soundpill, .navtray, .updbtn';
+  // 손을 떼고 기다리면 내 위치로 돌아간다: 주행 중·길안내 중 5초, 서서 지도를 둘러볼 때 15초.
+  // '내 위치로' 아래 막대가 줄어드는 것으로 남은 시간을 보여 준다
+  function armRefollow() {
+    clearTimeout(state.refollowTimer);
+    const b = $('#backMe');
+    b.classList.remove('count');
+    if (state.following || nav.preview) return;
+    const ms = (state.peek || nav.active || state.speedKmh >= 8) ? REFOLLOW_MS : REFOLLOW_PARKED_MS;
+    state.refollowTimer = setTimeout(() => setFollowing(true), ms);
+    b.style.setProperty('--bm-ms', ms + 'ms');
+    void b.offsetWidth;
+    b.classList.add('count');
+  }
+  function holdRefollow() { clearTimeout(state.refollowTimer); $('#backMe').classList.remove('count'); }
+  function renderBackMe() { $('#backMe').hidden = state.following || nav.preview || !state.fix; }
+  // 지도 라이브러리가 직접 끌기 시작(북쪽 위 평면 지도): 손가락이 닿아 있는 동안은 기다렸다가 뗄 때부터 시간을 잰다
+  function onUserPan() { setFollowing(false, nav.preview || gesture.pointers.size > 0); }
+  // 지도 손 조작: 톡 치기는 화면 버튼만 보여 준다.
+  // 진행 방향 위 주행 화면에서 10px 넘게 끌면 방향·기울기는 그대로 둔 채 지도만 손가락을 따라 옮긴다(앞길 보기).
+  // 두 손가락·휠은 가운데(내 차)를 그대로 두고 한 단계씩 확대/축소. 북쪽 위 평면 지도는 지도 라이브러리가 직접 처리한다.
+  const gesture = { x: 0, y: 0, lx: 0, ly: 0, used: false, panning: false, pinch: 0, wheelAt: 0, pointers: new Map() };
+  const NOT_MAP = '.btn, .searchbtn, .navpanel, .routecard, .toast, #diagBox, .ctrls, .topctrls, .badge, .soundpill, .navtray, .updbtn, .backme';
   function userMapGesture() {
     gesture.used = true;
     // 손으로 바꾼 배율은 30초 동안 자동 줌이 덮어쓰지 않게 한다
     zoomCtl.manualUntil = (state.fix ? state.fix.t : Date.now()) + 30000;
-    if (view.drive) setFollowing(false);
   }
+  // 화면 좌표 → 돌리고 기울인 지도 캔버스 안의 좌표. CSS 변환을 거꾸로 풀어 손가락 아래 지점이 손가락을 그대로 따라오게 한다
+  function canvasPoint(sx, sy) {
+    const canvas = $('#map .mapcanvas');
+    if (!canvas) return null;
+    const cs = getComputedStyle(canvas);
+    const m = cs.transform && cs.transform !== 'none' ? new DOMMatrix(cs.transform) : new DOMMatrix();
+    const o = cs.transformOrigin.split(' ').map(parseFloat);
+    const host = $('#map').getBoundingClientRect();
+    const ux = sx - host.left - canvas.offsetLeft - o[0], uy = sy - host.top - canvas.offsetTop - o[1];
+    const a = m.m11 - ux * m.m14, b = m.m21 - ux * m.m24, c = m.m12 - uy * m.m14, d = m.m22 - uy * m.m24;
+    const e = ux * m.m44 - m.m41, f = uy * m.m44 - m.m42, det = a * d - b * c;
+    if (Math.abs(det) < 1e-9) return null;
+    return { x: (e * d - b * f) / det + o[0], y: (a * f - e * c) / det + o[1] };
+  }
+  const pinchDist = () => { const [p, q] = [...gesture.pointers.values()]; return Math.hypot(p.x - q.x, p.y - q.y); };
   function onMapDown(e) {
     if (e.target.closest && e.target.closest(NOT_MAP)) return;
-    gesture.pointers.add(e.pointerId);
-    if (gesture.pointers.size === 1) { gesture.x = e.clientX; gesture.y = e.clientY; gesture.used = false; }
-    else if (!gesture.used) userMapGesture(); // 두 손가락 = 확대/축소
+    gesture.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    holdRefollow(); // 손가락이 닿아 있는 동안은 돌아가지 않는다
+    if (gesture.pointers.size === 1) {
+      gesture.x = gesture.lx = e.clientX; gesture.y = gesture.ly = e.clientY;
+      gesture.used = false; gesture.panning = false;
+    } else if (gesture.pointers.size === 2) { gesture.pinch = pinchDist(); userMapGesture(); }
   }
   function onMapMove(e) {
-    if (gesture.used || !gesture.pointers.has(e.pointerId)) return;
-    if (Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) > 10) userMapGesture();
+    const p = gesture.pointers.get(e.pointerId);
+    if (!p) return;
+    p.x = e.clientX; p.y = e.clientY;
+    if (gesture.pointers.size >= 2) {
+      // 주행 화면: 두 손가락 간격이 1.35배 벌어지거나 줄면 한 단계씩
+      if (view.drive && gesture.pinch && mapA) {
+        const d = pinchDist(), r = d / gesture.pinch;
+        if (r > 1.35 || r < 0.74) { mapA.zoomBy(r > 1 ? 1 : -1); gesture.pinch = d; }
+      }
+      return;
+    }
+    if (!gesture.used && Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) > 10) {
+      userMapGesture();
+      if (view.drive) {
+        gesture.panning = true;
+        if (mapA && mapA.stop) mapA.stop(); // '내 위치로' 돌아가는 중이었으면 멈추고 손가락을 따른다
+        if (!state.peek) setFollowing(false, true, true); // 주행 화면 그대로 앞길 보기 시작
+      }
+    }
+    if (!gesture.panning || !view.drive || !mapA || !mapA.panPx) return;
+    const a = canvasPoint(gesture.lx, gesture.ly), b = canvasPoint(e.clientX, e.clientY);
+    if (a && b) mapA.panPx(a.x - b.x, a.y - b.y);
+    gesture.lx = e.clientX; gesture.ly = e.clientY;
   }
-  function onMapUp(e) { gesture.pointers.delete(e.pointerId); }
+  function onMapUp(e) {
+    if (!gesture.pointers.delete(e.pointerId)) return;
+    if (gesture.pointers.size < 2) gesture.pinch = 0;
+    // 두 손가락 중 하나만 떼면 남은 손가락 자리부터 이어서 끈다
+    if (gesture.pointers.size === 1) { const q = [...gesture.pointers.values()][0]; gesture.lx = q.x; gesture.ly = q.y; }
+    if (!gesture.pointers.size && !state.following) armRefollow();
+  }
+  function onMapWheel(e) {
+    if (e.target.closest && e.target.closest(NOT_MAP)) return;
+    userMapGesture();
+    if (!view.drive || !mapA || !e.deltaY) return;
+    const now = Date.now();
+    if (now - gesture.wheelAt > 250) { gesture.wheelAt = now; mapA.zoomBy(e.deltaY < 0 ? 1 : -1); }
+  }
 
   // ---------- 화면 버튼 자동 숨김: 화면을 한 번 터치하면 3초 동안 보인다 ----------
   const CHROME_MS = 3000;
@@ -3334,7 +3434,7 @@
   $('#map').addEventListener('pointermove', onMapMove, { capture: true, passive: true });
   window.addEventListener('pointerup', onMapUp, true);
   window.addEventListener('pointercancel', onMapUp, true);
-  $('#map').addEventListener('wheel', (e) => { if (!(e.target.closest && e.target.closest(NOT_MAP))) userMapGesture(); }, { capture: true, passive: true });
+  $('#map').addEventListener('wheel', onMapWheel, { capture: true, passive: true });
   window.addEventListener('resize', queueLayout);
   window.addEventListener('orientationchange', queueLayout);
   if (window.ResizeObserver) new ResizeObserver(queueLayout).observe($('#map'));
@@ -3557,6 +3657,7 @@
   $('#zin').onclick = () => manualZoom(1);
   $('#zout').onclick = () => manualZoom(-1);
   $('#locate').onclick = () => setFollowing(true);
+  $('#backMe').onclick = () => setFollowing(true);
   $('#searchBtn').onclick = () => openSearch('dest');
   $('#searchClose').onclick = closeSearch;
   $('#searchSheet').addEventListener('click', (e) => { if (e.target === $('#searchSheet')) closeSearch(); });
@@ -3861,7 +3962,7 @@
   if (params.has('debug')) {
     window.__tnc = {
       state, camState, nav, cams, prefs, onFix, setRoute, startNav, endNav, startDemo, stopDemo, renderNav,
-      planRoute, doSearch, setFollowing, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
+      planRoute, doSearch, setFollowing, canvasPoint, gesture, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
       sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
       saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, pickHipassLanes, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, renderJunction,

@@ -1229,7 +1229,32 @@
   /* ③ 야간 지도 버튼의 자동 'A': 해 아이콘에 바짝 붙이고 크게 */
   #app.tesla #nightBtn.auto::after { right: 6px; bottom: 5px; font-size: 12px; font-weight: 900; color: var(--nv-green-ink, var(--accent)); }
   /* 그다음 안내 칸(26px)에서는 OUT/IN 글자가 안 보이므로 표지는 빼고 화살표만 (2026-11-14) */
-  .nexticon svg.ramp rect, .nexticon svg.ramp text { display: none; }
+  .nexticon svg.ramp .shield { display: none; }
+  /* 나가기·들어가기 그림의 어두운 도로: 밤에는 조금 밝게 (톨게이트 그림과 같이) */
+  body:has(#app.tesla):has(#map.night) svg.ramp .rd-f { fill: #5b6676; }
+  body:has(#app.tesla):has(#map.night) svg.ramp .rd-s { stroke: #5b6676; }
+
+  /* ---------- 지도를 끌어 앞길을 볼 때: 아래 가운데 '내 위치로' (2026-11-14) ----------
+     주행 화면은 방향·기울기 그대로. 손을 떼면 아래 막대가 줄어들고, 다 줄면(주행 중 5초) 저절로 내 위치로 돌아간다 */
+  #map.drive { touch-action: none; }
+  .backme {
+    position: absolute; left: 50%; bottom: 84px; z-index: 1065; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 8px; height: 50px; padding: 0 24px 0 18px; border: 0; border-radius: 25px;
+    background: var(--nv-green, #03c75a); color: #fff; font: 800 18px/1 Pretendard, system-ui, sans-serif; letter-spacing: -.3px;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, .3); overflow: hidden; cursor: pointer; pointer-events: auto; white-space: nowrap;
+    animation: bmIn .22s cubic-bezier(.2, .8, .2, 1);
+  }
+  .backme[hidden] { display: none; }
+  .backme svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+  .backme::after {
+    content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(255, 255, 255, .8);
+    transform-origin: left center; transform: scaleX(1);
+  }
+  .backme.count::after { animation: bmCount var(--bm-ms, 5000ms) linear forwards; }
+  .backme:active { transform: translateX(-50%) scale(.96); }
+  .navtray.open ~ .backme { bottom: 150px; }
+  @keyframes bmIn { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
+  @keyframes bmCount { to { transform: scaleX(0); } }
 </style>
 </head>
 <body>
@@ -1369,6 +1394,9 @@
       <button id="ntUpdate" class="upd" hidden><svg viewBox="0 0 24 24"><path d="M12 4v11"/><path d="M7 10.5l5 5 5-5"/><path d="M5 20h14"/></svg><span>새 버전</span></button>
     </div>
 
+    <!-- 지도를 끌어 앞길을 보는 동안만: 누르면(또는 손 떼고 5초 뒤) 내 위치로 -->
+    <button id="backMe" class="backme" hidden><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.4" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg><span>내 위치로</span></button>
+
     <div id="toast" class="toast" hidden></div>
     <div class="topctrls">
       <button class="btn" id="nightBtn" aria-label="야간 지도"></button>
@@ -1475,6 +1503,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-70"></script>
+<script src="app.js?v=2026.11.14-71"></script>
 </body>
 </html>

@@ -2170,6 +2170,112 @@
     return { pass: ok, detail: (bad.length ? 'wrong: ' + bad.join(', ') : 'mapping ✓') + ' | panel keep-left ' + (drawn.main ? '✓' : '✗') + ', next chip OUT ' + (drawn.next ? '✓' : '✗') };
   }
 
+  // S56: 주행 화면(진행 방향 위)에서 지도를 끌면 (2026-11-14 요청)
+  //   - 방향·기울기는 그대로 두고 지도만 손가락을 따라간다 (손가락 아래 지점이 그대로 손가락 아래에)
+  //   - 아래 가운데 '내 위치로'가 뜨고, 새 GPS 가 와도 보던 자리 그대로
+  //   - '내 위치로'를 누르거나 손을 떼고 5초 지나면 내 위치로 돌아간다
+  //   - 톡 치기(10px 안)는 따라가기를 안 끊고, 두 손가락·휠 확대/축소도 주행 화면·따라가기 그대로
+  async function s56() {
+    const t = T(), r = {}, prevHup = t.prefs.headingUp, prevStop = t.prefs.stopNorth;
+    const lmap = () => t.getMap().map;
+    const cv = () => document.querySelector('#map .mapcanvas');
+    const fire = (type, id, x, y) => cv().dispatchEvent(new PointerEvent(type, { pointerId: id, clientX: x, clientY: y, bubbles: true, cancelable: true, pointerType: 'touch', isPrimary: id === 1 }));
+    const finish = () => document.getAnimations().forEach((a) => { try { a.finish(); } catch (e) { /* 무한 애니메이션 */ } });
+    const center = () => t.getMap().getCenter();
+    // 화면 (x, y) 손가락 아래의 지도 좌표 (네이버 지도 / Leaflet 둘 다)
+    const under = (x, y) => {
+      const p = t.canvasPoint(x, y), m = lmap(), el = cv();
+      if (m.containerPointToLatLng) { const ll = m.containerPointToLatLng([p.x, p.y]); return { lat: ll.lat, lng: ll.lng }; }
+      const proj = m.getProjection(), o = proj.fromCoordToOffset(m.getCenter());
+      const ll = proj.fromOffsetToCoord(new naver.maps.Point(o.x + p.x - el.offsetWidth / 2, o.y + p.y - el.offsetHeight / 2));
+      return { lat: ll.lat(), lng: ll.lng() };
+    };
+    const drag = async (x0, y0, dx, dy) => {
+      fire('pointerdown', 1, x0, y0);
+      for (let k = 1; k <= 4; k++) { fire('pointermove', 1, x0 + dx * k / 4, y0 + dy * k / 4); await sleep(16); }
+    };
+    // 창이 가려져 있으면 Leaflet 애니메이션(requestAnimationFrame)이 멈춘다: 확대/축소는 바로, 옮기기는 시간이 지나면 끝까지 돌린다
+    // (Leaflet 일 때만 해당. 네이버 지도는 배율이 바로 바뀌고 옮기기도 끝난다)
+    const zoomAnim = lmap()._zoomAnimated;
+    if (zoomAnim !== undefined) lmap()._zoomAnimated = false;
+    const endPan = () => { const pa = lmap()._panAnim; if (pa && pa._inProgress) pa._step(); };
+    let pos = TRIP_ORIGIN;
+    const drive = (n) => { for (let k = 0; k < n; k++) { pos = dest(pos, 80, 15); feed(pos, 15, 80); } };
+    try {
+      t.prefs.headingUp = true; t.prefs.stopNorth = true;
+      t.setFollowing(true);
+      drive(8);
+      // 앞 시나리오 자리에서 넘어오는 지도 이동이 끝나게 차 자리로 바로 옮겨 놓고 시작
+      // 자동 줌이 끌기 도중에 배율을 바꾸지 않게 고정 (앱도 앞길을 보는 동안은 자동 줌을 멈춘다)
+      t.zoomCtl.manualUntil = clock + 1e9;
+      t.getMap().stop(); t.getMap().setZoom(17); t.getMap().center(t.state.fix.lat, t.state.fix.lng, true);
+      await sleep(700); t.getMap().stop(); finish();
+      r.drive0 = t.view.drive;
+      const c0 = center();
+      const host = document.getElementById('map').getBoundingClientRect();
+      const sx = host.left + host.width * 0.5, sy = host.top + host.height * 0.42;
+      // 톡 치기: 4px 만 움직이면 그대로 따라간다
+      fire('pointerdown', 1, sx, sy); fire('pointermove', 1, sx + 3, sy + 2); fire('pointerup', 1, sx + 3, sy + 2);
+      r.tapKeeps = t.state.following === true && t.view.drive === true;
+      // 끌기
+      const L0 = under(sx, sy), rot0 = t.view.rot;
+      await drag(sx, sy, 70, 110);
+      r.peek = t.state.peek === true && t.state.following === false;
+      r.stillDrive = t.view.drive === true && document.getElementById('map').classList.contains('drive');
+      const L1 = under(sx + 70, sy + 110);
+      r.followsFinger = hav(L0, L1);          // 손가락 아래 지점이 손가락을 따라왔는지 (m)
+      r.moved = hav(center(), c0);            // 지도 가운데가 옮겨졌는지 (m)
+      r.pill = visible('#backMe');
+      // 끌고 있는 중에 GPS 가 와도 보던 자리 그대로, 방향은 진행 방향 그대로
+      const c1 = center(); drive(1); finish();
+      r.stays = hav(c1, center());
+      r.rotKept = Math.abs(t.view.rot - rot0) < 1;
+      fire('pointerup', 1, sx + 70, sy + 110);
+      r.counting = document.getElementById('backMe').classList.contains('count');
+      // '내 위치로' 누르기
+      document.getElementById('backMe').click();
+      r.btnBack = t.state.following === true && t.state.peek === false && !visible('#backMe');
+      // 돌아가는 곳은 지도 위 내 차 표시 자리 (GPS 점을 부드럽게 이은 위치)
+      const meAt = () => t.motion.cur || t.state.fix;
+      await waitFor(() => { finish(); endPan(); return hav(center(), meAt()) < 3; }, 3000);
+      r.btnCenter = hav(center(), meAt());
+      // 5초 뒤 저절로 복귀
+      await drag(sx, sy, -80, 60);
+      fire('pointerup', 1, sx - 80, sy + 60);
+      r.peek2 = t.state.peek === true;
+      await sleep(4500);
+      r.notYet = t.state.following === false;
+      await waitFor(() => t.state.following, 2500);
+      r.autoBack = t.state.following === true && !visible('#backMe') && t.view.drive === true;
+      // 휠: 주행 화면·따라가기 그대로 한 단계 확대
+      await sleep(300);
+      const z0 = lmap().getZoom();
+      cv().dispatchEvent(new WheelEvent('wheel', { deltaY: -120, clientX: sx, clientY: sy, bubbles: true, cancelable: true }));
+      await waitFor(() => { finish(); return lmap().getZoom() === z0 + 1; }, 2000);
+      r.wheel = lmap().getZoom() - z0;
+      r.wheelKeeps = t.state.following === true && t.view.drive === true;
+      // 두 손가락 벌리기: 한 단계 축소 후 확대 확인 대신, 벌리면 +1
+      await sleep(300);
+      const z1 = lmap().getZoom();
+      fire('pointerdown', 1, sx - 40, sy); fire('pointerdown', 2, sx + 40, sy);
+      fire('pointermove', 1, sx - 80, sy); fire('pointermove', 2, sx + 80, sy);
+      fire('pointerup', 1, sx - 80, sy); fire('pointerup', 2, sx + 80, sy);
+      await waitFor(() => { finish(); return lmap().getZoom() === z1 + 1; }, 2000);
+      r.pinch = lmap().getZoom() - z1;
+      r.pinchKeeps = t.state.following === true && t.view.drive === true;
+    } finally {
+      ['pointerup'].forEach((ty) => { fire(ty, 1, 0, 0); fire(ty, 2, 0, 0); });
+      t.prefs.headingUp = prevHup; t.prefs.stopNorth = prevStop;
+      t.zoomCtl.manualUntil = 0;
+      t.setFollowing(true);
+      if (zoomAnim !== undefined) lmap()._zoomAnimated = zoomAnim;
+    }
+    const ok = r.drive0 && r.tapKeeps && r.peek && r.stillDrive && r.followsFinger < 4 && r.moved > 20 && r.pill && r.stays < 1 && r.rotKept &&
+      r.counting && r.btnBack && r.btnCenter < 3 && r.peek2 && r.notYet && r.autoBack && r.wheel === 1 && r.wheelKeeps && r.pinch === 1 && r.pinchKeeps;
+    const m = (v) => (typeof v === 'number' ? Math.round(v * 10) / 10 : v);
+    return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + m(r[k])).join(', ') };
+  }
+
   // S25: 하이패스 — 경로 안내에 톨게이트(type 121)가 있으면 2km 앞부터 카드(이름·거리·통행료·하이패스 차로 이용)와 음성
   async function s25() {
     const t = T();
@@ -2524,6 +2630,7 @@
     { id: 'S53', name: 'S53 hi-pass lane numbers (1 2 – 5) from the Worker; no duplicate distance when the toll is the next guide', fn: s53 },
     { id: 'S54', name: 'S54 keep-left/right arrows for 왼쪽/오른쪽 방향·도로 주행, OUT/IN for highway exit/entry', fn: s54 },
     { id: 'S55', name: "S55 road caution signs (slippery, rockfall…): 300 m ahead on our side of the route, '주의' just after, setting off", fn: s55 },
+    { id: 'S56', name: "S56 dragging the heading-up map keeps the direction, shows '내 위치로', returns after 5 s; pinch/wheel zoom keeps following", fn: s56 },
   ];
 
   // S55: 주의 표지 (전국도로안전표지표준데이터의 주의표지, data/signs.json · tools/build_signs.py, 2026-11-14 요청).
