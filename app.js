@@ -46,7 +46,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-79'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-80'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   // 브라우저에 저장된 예전 index.html 이 새 app.js 를 불러온 경우(화면 요소가 맞지 않아 버튼 연결에서 멈춘다):
@@ -2479,7 +2479,7 @@
     const s = g.s || '', t = g.t;
     if (/유턴|U턴/i.test(s) || t === 6) return 'u';
     if (/목적지|도착/.test(s) || t === 88) return 'goal';
-    if (/경유지/.test(s) || t === 87) return 'goal';
+    if (/경유지/.test(s) || t === 87) return 'via';
     if (t === 121) return 'toll';   // 톨게이트: 직진 화살표 대신 톨게이트 표지 (2026-11-14 요청)
     // 고속도로·도시고속도로·자동차전용도로로 나가기(OUT)·들어가기(IN): 그쪽으로 빠지는 화살표 + 작은 OUT/IN 표지 (2026-11-14)
     if ([51, 53, 58, 60, 67, 69, 78, 79, 80].indexOf(t) >= 0) return [58, 60, 79].indexOf(t) >= 0 ? 'outl' : 'outr';
@@ -2488,12 +2488,15 @@
     // 좌·우회전 화살표 대신 비켜 가는 화살표 (2026-11-14 요청: '좌회전이 아니라 좌회전에서 직진하는 느낌')
     if ([4, 41, 81].indexOf(t) >= 0 || (t === 54 && /왼쪽/.test(s))) return 'kl';
     if ([5, 42, 82].indexOf(t) >= 0 || (t === 54 && /오른쪽/.test(s))) return 'kr';
-    // 회전교차로 'N시 방향': 7~11시는 왼쪽, 1~5시는 오른쪽, 6시는 유턴, 12시는 직진
+    if (/회전교차로/.test(s)) return 'rb'; // 회전교차로 그림 (몇 시 방향인지는 글자로)
+    // 'N시 방향': 10·11시는 살짝 왼쪽, 1·2시는 살짝 오른쪽, 7~9시 왼쪽, 3~5시 오른쪽, 6시 유턴, 12시 직진
     const clock = s.match(/(\d{1,2})시\s*방향/);
     if (clock) {
       const h = +clock[1];
-      if (h >= 7 && h <= 11) return 'l';
-      if (h >= 1 && h <= 5) return 'r';
+      if (h === 10 || h === 11) return 'sl';
+      if (h === 1 || h === 2) return 'sr';
+      if (h >= 7 && h <= 9) return 'l';
+      if (h >= 3 && h <= 5) return 'r';
       if (h === 6) return 'u';
       return 's';
     }
@@ -2541,6 +2544,18 @@
       '<path class="tg-road" d="M7 47 17 21h14l10 26z" fill="#2b3440" stroke="none"/>' +
       '<path d="M24 43V28M19.5 32.5 24 28l4.5 4.5" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   };
+
+  // 사용자가 AI 로 그린 아이콘(icons.js, tools/build_icons.py 로 분홍 배경 없이 SVG 로 딴 것)이 있으면 그것으로 바꾼다
+  Object.assign(TURN_ICONS, { sl: TURN_ICONS.l, sr: TURN_ICONS.r, rb: TURN_ICONS.r, via: TURN_ICONS.goal }, window.TNC_ICONS || {});
+  // 같은 아이콘을 두 곳에 넣어도 그라데이션 id 가 겹치지 않게 넣을 때마다 번호를 붙인다
+  let icoN = 0;
+  function ico(k) {
+    const svg = TURN_ICONS[k] || TURN_ICONS.s;
+    if (svg.indexOf('id="') < 0) return svg;
+    const n = ++icoN;
+    return svg.replace(/(id="|url\(#)(tg-[\w-]+)/g, '$1$2-' + n);
+  }
+  const pinIco = (via) => (window.TNC_ICONS && window.TNC_ICONS[via ? 'via' : 'goal'] ? ico(via ? 'via' : 'goal') : PIN_ICON);
 
   // 남은 경로만 다시 그린다: 지금 위치(경로 위로 붙인 점)부터 목적지까지, 교통 색 구간도 번호를 맞춰 옮긴다
   function drawRemaining() {
@@ -2689,25 +2704,92 @@
     return { kind: JUNC_RAMP.has(g.t) ? 'ramp' : 'fork', left, place: m ? m[1] : '', label,
       hwy: /고속|분기점|IC\b|JC\b|IC에서|JC에서/i.test(s) || (g.t >= 57 && g.t <= 69) };
   }
-  // 오른쪽으로 갈 때를 그리고, 왼쪽이면 길만 좌우로 뒤집는다 (글자는 CSS 로 반대쪽에)
+  // 앞을 내려다본 원근 그림 (2026-11-14 다시 그림: 다른 내비의 분기점 확대 그림처럼 하늘·지평선·멀어질수록 좁아지는 도로).
+  // 땅 위 좌표(X 오른쪽 m, Z 앞쪽 m)로 길을 정하고 화면으로 투영한다. 왼쪽으로 갈 때는 X 만 뒤집는다(글자는 CSS 로 반대쪽에)
+  const JV = { W: 320, H: 120, HZ: 30, Z0: 26, S: 15 };
+  function jvP(X, Z) { const k = JV.Z0 / (Z + JV.Z0); return [JV.W / 2 + X * JV.S * k, JV.HZ + (JV.H - JV.HZ) * k]; }
+  // 3차 베지어 중심선 (땅 좌표) → 점 목록
+  function jvCurve(p, n) {
+    const out = [];
+    for (let i = 0; i <= n; i++) {
+      const t = i / n, u = 1 - t;
+      out.push([u * u * u * p[0][0] + 3 * u * u * t * p[1][0] + 3 * u * t * t * p[2][0] + t * t * t * p[3][0],
+        u * u * u * p[0][1] + 3 * u * u * t * p[1][1] + 3 * u * t * t * p[2][1] + t * t * t * p[3][1]]);
+    }
+    return out;
+  }
+  // 중심선의 길이 a..b(m) 부분만
+  function jvSlice(c, a, b) {
+    const s = [0];
+    for (let i = 1; i < c.length; i++) s.push(s[i - 1] + Math.hypot(c[i][0] - c[i - 1][0], c[i][1] - c[i - 1][1]));
+    const at = (t) => {
+      let i = 0;
+      while (i < c.length - 2 && s[i + 1] < t) i++;
+      const r = Math.max(0, Math.min(1, (t - s[i]) / ((s[i + 1] - s[i]) || 1)));
+      return [c[i][0] + (c[i + 1][0] - c[i][0]) * r, c[i][1] + (c[i + 1][1] - c[i][1]) * r];
+    };
+    const out = [at(a)];
+    for (let i = 0; i < c.length; i++) if (s[i] > a && s[i] < b) out.push(c[i]);
+    out.push(at(Math.min(b, s[s.length - 1])));
+    return out;
+  }
+  // 중심선을 따라 폭 w (또는 w(i, n)) 인 띠, 중심에서 오른쪽으로 side 만큼 → 화면 다각형
+  function jvRibbon(c, w, side) {
+    const L = [], R = [], o = side || 0;
+    for (let i = 0; i < c.length; i++) {
+      const a = c[Math.max(0, i - 1)], b = c[Math.min(c.length - 1, i + 1)];
+      let dx = b[0] - a[0], dz = b[1] - a[1];
+      const n = Math.hypot(dx, dz) || 1;
+      dx /= n; dz /= n;
+      const hw = (typeof w === 'function' ? w(i, c.length) : w) / 2;
+      L.push(jvP(c[i][0] + dz * (o - hw), c[i][1] - dx * (o - hw)));
+      R.push(jvP(c[i][0] + dz * (o + hw), c[i][1] - dx * (o + hw)));
+    }
+    const f = (q) => q[0].toFixed(1) + ' ' + q[1].toFixed(1);
+    return 'M' + L.map(f).join('L') + 'L' + R.reverse().map(f).join('L') + 'Z';
+  }
+  // 차선 점선: 중심선에서 오른쪽으로 off 만큼, 10m 마다 4m
+  function jvDashes(c, off, from, to) {
+    let d = '';
+    for (let s = from; s < to; s += 10) d += jvRibbon(jvSlice(c, s, s + 4), 0.32, off);
+    return d;
+  }
+  // 굵은 흰 화살표: 중심선을 따라 몸통 + 끝에 화살촉 (땅 위에 칠한 것처럼 원근)
+  function jvArrow(c, end) {
+    const head = end * 0.3; // 원근으로 먼 쪽이 작아지므로 화살촉을 길게
+    return jvRibbon(jvSlice(c, 2, end - head + 1), 1.5) + jvRibbon(jvSlice(c, end - head, end), (i, n) => 4.6 * (1 - i / Math.max(1, n - 1)) + 0.05);
+  }
+  let jvN = 0;
   function juncSvg(j) {
-    const P = j.kind === 'fork'
-      ? { base: 'M160 100 L160 68 C160 50 122 36 80 4 M160 68 C160 50 198 36 240 4', bw: 40,
-          hi: 'M160 100 L160 68 C160 50 198 36 240 4', hw: 30,
-          arrow: 'M160 92 L160 70 C160 54 192 40 226 16', dash: '' }
-      : { base: 'M138 100 L138 0', bw: 50, ramp: 'M150 92 C152 72 176 56 226 32 L272 8', rw: 30,
-          hi: 'M154 100 L154 90 C156 72 178 56 226 32 L272 8', hw: 22,
-          arrow: 'M154 94 C156 74 180 56 222 34 L252 18', dash: 'M124 100 L124 0' };
-    const flip = j.left ? ' transform="matrix(-1 0 0 1 320 0)"' : '';
-    return '<svg viewBox="0 0 320 100" class="jc"><defs><marker id="jcArrow" markerUnits="userSpaceOnUse" markerWidth="20" markerHeight="20" refX="9" refY="10" orient="auto">' +
-      '<path d="M3 3 L17 10 L3 17 Z" fill="#fff"/></marker></defs><rect class="jc-ground" width="320" height="100"/><g' + flip + ' fill="none" stroke-linejoin="round">' +
-      '<path class="jc-edge" d="' + P.base + '" stroke-width="' + (P.bw + 6) + '"/>' +
-      (P.ramp ? '<path class="jc-edge" d="' + P.ramp + '" stroke-width="' + (P.rw + 6) + '"/>' : '') +
-      '<path class="jc-road" d="' + P.base + '" stroke-width="' + P.bw + '"/>' +
-      (P.ramp ? '<path class="jc-road" d="' + P.ramp + '" stroke-width="' + P.rw + '"/>' : '') +
-      (P.dash ? '<path class="jc-lane" d="' + P.dash + '" stroke-width="2.5" stroke-dasharray="10 9"/>' : '') +
-      '<path class="jc-hi" d="' + P.hi + '" stroke-width="' + P.hw + '"/>' +
-      '<path class="jc-arrow" d="' + P.arrow + '" stroke-width="6" stroke-linecap="round" marker-end="url(#jcArrow)"/></g></svg>';
+    const sx = j.left ? -1 : 1;
+    const mir = (c) => c.map((q) => [q[0] * sx, q[1]]);
+    let roads, lanes, route, end;
+    if (j.kind === 'fork') {
+      // 갈림길: 12m 도로가 앞에서 두 갈래로. 가는 쪽을 파랗게
+      const go = mir(jvCurve([[3, 0], [3, 40], [8, 80], [58, 250]], 48));
+      const other = mir(jvCurve([[-3, 0], [-3, 40], [-8, 80], [-58, 250]], 48));
+      roads = [[go, 6], [other, 6]];
+      lanes = jvDashes(go, 0, 46, 240) + jvDashes(other, 0, 46, 240) + jvDashes(mir(jvCurve([[0, 0], [0, 14], [0, 28], [0, 42]], 8)), 0, 4, 40);
+      route = go; end = 62;
+    } else {
+      // 진출로(·진입로): 본선은 곧게, 오른쪽 차로가 갈라져 나간다. 가는 길(연결로)을 파랗게
+      const main = mir(jvCurve([[0, 0], [0, 200], [0, 450], [0, 700]], 70));
+      const ramp = mir(jvCurve([[7.6, 0], [7.6, 38], [13, 70], [72, 210]], 48));
+      roads = [[main, 11.4], [ramp, 4.6]];
+      lanes = jvDashes(main, -1.9, 4, 700) + jvDashes(main, 1.9, 4, 700);
+      route = ramp; end = 60;
+    }
+    const edge = roads.map(([c, w]) => '<path class="jc-edge" d="' + jvRibbon(c, w + 0.8) + '"/>').join('');
+    const road = roads.map(([c, w]) => '<path class="jc-road" d="' + jvRibbon(c, w) + '"/>').join('');
+    const band = '<path class="jc-hi" d="' + jvRibbon(jvSlice(route, 0, 400), 3.5) + '"/>';
+    const arrow = '<path class="jc-arrow" d="' + jvArrow(route, end) + '"/>';
+    const id = 'jc' + (++jvN); // 그림마다 그라데이션 id 를 따로 (숨은 그림의 id 를 잘못 가리키지 않게)
+    return '<svg viewBox="0 0 ' + JV.W + ' ' + JV.H + '" class="jc jc-' + j.kind + '"><defs>' +
+      '<linearGradient id="' + id + 's" x1="0" y1="0" x2="0" y2="1"><stop class="jc-s1" offset="0"/><stop class="jc-s2" offset="1"/></linearGradient>' +
+      '<linearGradient id="' + id + 'g" x1="0" y1="0" x2="0" y2="1"><stop class="jc-g1" offset="0"/><stop class="jc-g2" offset="1"/></linearGradient></defs>' +
+      '<rect width="' + JV.W + '" height="' + (JV.HZ + 1) + '" fill="url(#' + id + 's)"/>' +
+      '<rect y="' + JV.HZ + '" width="' + JV.W + '" height="' + (JV.H - JV.HZ) + '" fill="url(#' + id + 'g)"/>' +
+      edge + road + '<path class="jc-lane" d="' + lanes + '"/>' + band + arrow + '</svg>';
   }
   function renderJunction() {
     const el = $('#juncCard');
@@ -2969,7 +3051,7 @@
     $('#navDestName').textContent = nav.dest ? nav.dest.name : '';
     $('#navDestVia').textContent = nav.via && nav.via[0] ? '경유 ' + nav.via[0].name : '';
     const g = nav.next;
-    $('#turnIcon').innerHTML = TURN_ICONS[g ? turnKind(g) : 'goal'];
+    $('#turnIcon').innerHTML = ico(g ? turnKind(g) : 'goal');
     $('#turnDist').textContent = fmtDist(nav.dg != null ? nav.dg : nav.total);
     if (g && g.t === 121) {
       // 톨게이트: 다른 내비처럼 통행료를 굵게 앞에 ('800원 하남톨게이트'), 아이콘은 TG 표지 (2026-11-14 요청)
@@ -2989,14 +3071,14 @@
       const gap = Math.max(0, nav.cum[Math.min(g2.i, last)] - nav.cum[Math.min(g.i, last)]);
       const k2 = turnKind(g2);
       const isVia = g2.t === 87 || /경유지/.test(g2.s || '');
-      const isGoal = !isVia && k2 === 'goal';
+      const isGoal = !isVia && (k2 === 'goal' || k2 === 'via');
       nn.classList.toggle('goal', isGoal);
       nn.classList.toggle('via', isVia);
       if (isGoal || isVia) {
-        $('#nextIcon').innerHTML = PIN_ICON;
+        $('#nextIcon').innerHTML = pinIco(isVia);
         $('#nextDist').textContent = fmtDist(gap);
       } else {
-        $('#nextIcon').innerHTML = TURN_ICONS[k2] || TURN_ICONS.s;
+        $('#nextIcon').innerHTML = ico(k2);
         $('#nextDist').textContent = fmtDist(gap);
       }
     }
@@ -4239,7 +4321,7 @@
       planRoute, doSearch, setFollowing, canvasPoint, gesture, glView, glOn, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
       sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
-      saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassNums, hipassLayout, laneNums, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, renderJunction,
+      saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassNums, hipassLayout, laneNums, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },

@@ -1736,7 +1736,7 @@
     softReset();
     await planAndStart(R);
     const snap = () => { const nn = document.getElementById('nextTurn');
-      return { shown: !nn.hidden && nn.getClientRects().length > 0, text: text('#nextDist'), rightIcon: /h14M31 8l8 8-8 8/.test((nn.querySelector('#nextIcon path') || {}).getAttribute?.('d') || ''),
+      return { shown: !nn.hidden && nn.getClientRects().length > 0, text: text('#nextDist'), rightIcon: !!nn.querySelector('#nextIcon svg.ti-r') || /h14M31 8l8 8-8 8/.test((nn.querySelector('#nextIcon path') || {}).getAttribute?.('d') || ''),
         goal: nn.classList.contains('goal'), pin: !!nn.querySelector('svg.pin'), tag: !!nn.querySelector('.arrive-tag') }; };
     const go = (s) => { const a = pointAt(R, s); feed(a.p, 10, a.h); t.renderNav(); };
     go(15);
@@ -1972,7 +1972,7 @@
       P, cum, total, dest: { name: '분기 테스트', addr: '', lat: P[30].lat, lng: P[30].lng },
     };
     const snap = () => { const el = document.getElementById('juncCard');
-      return { shown: visible('#juncCard'), kind: (el.querySelector('#juncSvg path.jc-edge + path.jc-edge') ? 'ramp' : 'fork'), left: el.classList.contains('left'),
+      return { shown: visible('#juncCard'), kind: (el.querySelector('#juncSvg svg.jc-ramp') ? 'ramp' : 'fork'), left: el.classList.contains('left'),
         hwy: el.classList.contains('hwy'), label: text('#juncLabel'), place: text('#juncPlace'), dist: document.getElementById('juncDist') ? text('#juncDist') : '',
         inDrawer: !!el.closest('#camDrawer .cd-in'), open: document.getElementById('camDrawer').classList.contains('open') }; };
     const go = (s) => { const a = pointAt(R, s); feed(a.p, 20, a.h); t.renderNav(); };
@@ -2754,6 +2754,9 @@
 
   // S56 (벡터 GL 지도): 지도 라이브러리가 돌린 지도를 직접 끈다. 끄는 동안 방향(지도 회전)은 그대로, '내 위치로', 5초 뒤 복귀
   async function s56gl() {
+    // GL 지도의 회전·이동·확대는 requestAnimationFrame 으로 움직인다. 창이 가려져 프레임이 멈춰 있으면 확인할 수 없다
+    const rafOk = await new Promise((res) => { let ok = false; requestAnimationFrame(() => { ok = true; res(true); }); setTimeout(() => { if (!ok) res(false); }, 1200); });
+    if (!rafOk) return { status: 'SKIP', detail: 'animation frames are paused (hidden pane): GL rotation/pan cannot be checked; run S56 again with the pane visible' };
     const t = T(), r = { gl: true }, prevHup = t.prefs.headingUp;
     const gm = () => t.getMap().map, mb = () => gm()._mapbox;
     const cv = () => document.querySelector('#map .mapcanvas canvas');

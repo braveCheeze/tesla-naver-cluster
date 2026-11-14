@@ -1005,7 +1005,8 @@
     #app.tesla #speed.over { color: var(--ov-bad); }
     #app.tesla #speed.stale { color: var(--ov-sub); opacity: .7; }
     #app.tesla .speedbox .limit { width: 60px; height: 60px; border-width: 6px; font-size: 24px; text-shadow: none; box-shadow: 0 3px 10px rgba(0, 0, 0, .3); }
-    #app.tesla .speedbox .unit { font-size: 16px; font-weight: 700; color: var(--ov-sub); margin-top: 4px; }
+    /* 단위는 숫자 바로 오른쪽 아래쪽에 ('54 km/h', 2026-11-14 요청: 숫자 밑이 아니라 옆에) */
+    #app.tesla .speedbox .unit { align-self: flex-end; margin: 0 0 6px -8px; font-size: 22px; font-weight: 800; color: var(--ov-fg); }
   }
   /* ================= 주행 기록 글자만 검정 (2026-11-14 요청) =================
      주행 거리·주행 시간·평균 속도·최고 속도만 검정 글자에 얇은 흰 테두리. 밤(어두운 지도)에는 검정이 안 보이므로 흰 글자 그대로 */
@@ -1152,12 +1153,14 @@
   #app.tesla .trip, #app.tesla .heading { transition: opacity .25s ease; }
   #app.tesla.trip-covered .trip, #app.tesla.trip-covered .heading { opacity: 0; }
   .jc-svg svg { display: block; width: 100%; height: auto; }
-  .jc-ground { fill: #e4ebe2; }
-  .jc-edge { stroke: #ffffff; }
-  .jc-road { stroke: #3b4351; }
-  .jc-lane { stroke: rgba(255, 255, 255, .8); }
-  .jc-hi { stroke: #1d8cff; }
-  .jc-arrow { stroke: #ffffff; }
+  /* 원근 그림 (2026-11-14 다시 그림): 하늘·땅 그라데이션, 흰 가장자리·어두운 도로·점선, 가는 차로는 파랗게 + 흰 화살표 */
+  .jc .jc-s1 { stop-color: #8fc3f0; } .jc .jc-s2 { stop-color: #e4f1fb; }
+  .jc .jc-g1 { stop-color: #c9dcbf; } .jc .jc-g2 { stop-color: #e2ecd9; }
+  .jc-edge { fill: #ffffff; }
+  .jc-road { fill: #3d4552; }
+  .jc-lane { fill: rgba(255, 255, 255, .85); }
+  .jc-hi { fill: #1d8cff; opacity: .92; }
+  .jc-arrow { fill: #ffffff; stroke: #0b5ed7; stroke-width: .7; stroke-linejoin: round; }
   .jc-label {
     position: absolute; top: 8px; right: 10px; max-width: 62%; padding: 4px 10px 5px; border-radius: 7px;
     background: #1565c0; color: #fff; font-size: 16px; font-weight: 800; line-height: 1.2; text-shadow: none;
@@ -1174,9 +1177,12 @@
   .jc-head span { font-size: 15px; font-weight: 800; color: #1565c0; }
   .jc-head b:empty { display: none; }
   .junccard.left .jc-head { left: auto; right: 10px; }
-  body:has(#app.tesla):has(#map.night) .jc-ground { fill: #18212c; }
-  body:has(#app.tesla):has(#map.night) .jc-road { stroke: #4a5464; }
-  body:has(#app.tesla):has(#map.night) .jc-edge { stroke: #c9d1db; }
+  body:has(#app.tesla):has(#map.night) .jc .jc-s1 { stop-color: #08111d; }
+  body:has(#app.tesla):has(#map.night) .jc .jc-s2 { stop-color: #1b2738; }
+  body:has(#app.tesla):has(#map.night) .jc .jc-g1 { stop-color: #18211b; }
+  body:has(#app.tesla):has(#map.night) .jc .jc-g2 { stop-color: #111813; }
+  body:has(#app.tesla):has(#map.night) .jc-road { fill: #444d5a; }
+  body:has(#app.tesla):has(#map.night) .jc-edge { fill: #c9d1db; }
   body:has(#app.tesla):has(#map.night) .jc-head { background: rgba(0, 0, 0, .55); color: #fff; }
   body:has(#app.tesla):has(#map.night) .jc-head span { color: #8ab4ff; }
   /* ================= 하이패스·톨게이트 다듬기 (2026-11-14 요청: 다른 내비처럼) =================
@@ -1263,6 +1269,13 @@
   @keyframes bmIn { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
   @keyframes bmCount { to { transform: scaleX(0); } }
 
+  /* ---------- 사용자가 그린 길안내 아이콘 (icons.js, 2026-11-14) ----------
+     화살표는 한 색(currentColor)이라 패널 초록을 따른다. 도로·톨게이트·핀은 그림 색 그대로 */
+  .turnicon svg.ti, .nexticon svg.ti { stroke: none; color: #fff; }
+  #app.tesla .turnicon svg.ti, #app.tesla .nexticon svg.ti { color: var(--nv-green); }
+  /* 밤(어두운 패널): 어두운 도로를 조금 밝게 */
+  body:has(#app.tesla):has(#map.night) svg.ti .rd { fill: #5b6676; }
+
   /* ---------- 벡터(GL) 지도 (2026-11-14) ----------
      캔버스는 돌리지 않고 화면 아래로 길게(가운데 = 차 위치, 화면 70% 높이) 두고, 지도 자체를 돌리고 기울인다.
      글자·카메라·방지턱 표시는 원래 똑바로라 거꾸로 돌릴 필요가 없다 */
@@ -1286,9 +1299,9 @@
     <div class="speedbox">
       <div class="speedrow">
         <div id="speed">0</div>
+        <div class="unit">km/h</div>
         <div id="limitSign" class="limit" hidden><span id="limitVal">60</span></div>
       </div>
-      <div class="unit">km/h</div>
     </div>
     <div id="roadName" class="road"></div>
     <div class="heading">
@@ -1523,6 +1536,7 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-79"></script>
+<script src="icons.js?v=2026.11.14-80"></script>
+<script src="app.js?v=2026.11.14-80"></script>
 </body>
 </html>

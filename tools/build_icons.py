@@ -1,0 +1,388 @@
+"""길안내 아이콘 만들기: 사용자가 AI(Seedream)로 그린 그림(tools/icon-src/*)을 분홍(마젠타) 배경 없이 SVG 로 딴다.
+
+- 배경 빼기(누끼): 마젠타(255,0,255) 섞인 정도를 min(R,B) - G 로 잰다. 흰색·회색·파랑·빨강·주황 모두 이 값이 0 이하라
+  배경과 섞인 가장자리도 정확히 투명도로 바뀐다. 이미 누끼를 딴 그림(알파 있음)도 남은 분홍 테두리를 같은 식으로 지운다.
+- 색 나누기: 남은 화소를 아이콘마다 정해 둔 색(도로 회색·흰색·방패 파랑/빨강 …) 중 가장 가까운 색으로 나눈다.
+- 따기: 색마다 경계선을 마칭 스퀘어(0.5 등고선)로 따서 RDP 로 줄이고, 꺾인 곳(화살촉 끝)은 그대로, 나머지는 곡선으로 잇는다.
+- SVG 의 칠 색은 아래 팔레트에서만 나온다. 분홍에 가까운 색이 하나라도 있으면 멈춘다(분홍이 남지 않게).
+
+출력: icons.js (window.TNC_ICONS = { 키: '<svg …>' }) — app.js 의 TURN_ICONS 를 덮어쓴다.
+쓰는 법: py -X utf8 tools/build_icons.py
+"""
+import json
+import math
+import os
+import sys
+
+import numpy as np
+from PIL import Image
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SRC = os.path.join(ROOT, 'tools', 'icon-src')
+OUT = os.path.join(ROOT, 'icons.js')
+
+# 키 → (파일, 종류). 종류: arrow(흰 화살표 한 색 → currentColor), ramp(나가기/들어가기), toll, pin
+ICONS = {
+    's': ('s.webp', 'arrow'), 'l': ('l.webp', 'arrow'), 'r': ('r.webp', 'arrow'), 'u': ('u.webp', 'arrow'),
+    'sl': ('sl.png', 'arrow'), 'sr': ('sr.webp', 'arrow'), 'rb': ('rb.webp', 'arrow'),
+    'kl': ('kl.webp', 'arrow'), 'kr': ('kr.webp', 'arrow'),
+    'outr': ('outr.webp', 'ramp'), 'outl': ('outl.webp', 'ramp'), 'inr': ('inr.webp', 'ramp'), 'inl': ('inl.webp', 'ramp'),
+    'toll': ('toll.webp', 'toll'), 'goal': ('goal.webp', 'pin'), 'via': ('via.webp', 'pin'),
+}
+# 앱이 찾는 class (테스트·CSS 와 맞춘다)
+CLASSES = {
+    'kl': 'keep kl', 'kr': 'keep kr', 'outr': 'ramp out', 'outl': 'ramp out', 'inr': 'ramp in', 'inl': 'ramp in',
+    'toll': 'toll', 'goal': 'pin goal', 'via': 'pin via',
+}
+PAL = {
+    'ramp': {'dark': (49, 59, 66), 'white': (245, 247, 248), 'blue': (13, 82, 162), 'red': (228, 33, 33)},
+    'toll': {'dark': (44, 52, 62), 'white': (247, 251, 252), 'blue': (2, 104, 233), 'gray': (160, 173, 184)},
+}
+
+
+def load(path):
+    a = np.asarray(Image.open(path).convert('RGBA')).astype(np.float64)
+    R, G, B, A = a[..., 0], a[..., 1], a[..., 2], a[..., 3] / 255.0
+    s = np.clip((np.minimum(R, B) - G) / 255.0, 0, 1)
+    s = np.clip((s - 0.05) / 0.9, 0, 1)            # 마젠타 섞인 정도 (배경 = 1)
+    alpha = A * (1 - s)
+    # 섞인 배경을 빼서 원래 앞쪽 색을 되살린다 (색 나누기용)
+    k = np.clip(1 - s, 0.15, 1)[..., None]
+    M = np.array([255.0, 0, 255.0])
+    fg = np.clip((a[..., :3] - s[..., None] * M) / k, 0, 255)
+    return alpha, fg
+
+
+def box_blur(f, r):
+    if r <= 0:
+        return f
+    p = np.pad(f, r, mode='edge')
+    c = np.cumsum(np.cumsum(p, 0), 1)
+    c = np.pad(c, ((1, 0), (1, 0)))
+    n = 2 * r + 1
+    H, W = f.shape
+    return (c[n:n + H, n:n + W] - c[0:H, n:n + W] - c[n:n + H, 0:W] + c[0:H, 0:W]) / (n * n)
+
+
+def soften(f):
+    return box_blur(box_blur(f, 1), 1)
+
+
+def contours(f, level):
+    """마칭 스퀘어: f 의 level 등고선 → 닫힌 다각형 목록 (x, y 픽셀 좌표)"""
+    f = np.pad(f, 1)
+    H, W = f.shape
+    b = f > level
+    tl, tr, bl, br = b[:-1, :-1], b[:-1, 1:], b[1:, :-1], b[1:, 1:]
+    case = tl * 8 + tr * 4 + br * 2 + bl * 1
+    ii, jj = np.nonzero((case != 0) & (case != 15))
+
+    def hpt(i, j):  # (i,j)-(i,j+1)
+        a, c = f[i, j], f[i, j + 1]
+        t = (level - a) / (c - a)
+        return (j + t - 1, i - 1)
+
+    def vpt(i, j):  # (i,j)-(i+1,j)
+        a, c = f[i, j], f[i + 1, j]
+        t = (level - a) / (c - a)
+        return (j - 1, i + t - 1)
+
+    adj = {}
+    pts = {}
+
+    def key(kind, i, j):
+        k = ((i * W + j) << 1) | kind
+        if k not in pts:
+            pts[k] = hpt(i, j) if kind == 0 else vpt(i, j)
+        return k
+
+    def link(a, c):
+        adj.setdefault(a, []).append(c)
+        adj.setdefault(c, []).append(a)
+
+    for i, j in zip(ii.tolist(), jj.tolist()):
+        cs = int(case[i, j])
+        T, Rr, Bm, L = (0, i, j), (1, i, j + 1), (0, i + 1, j), (1, i, j)
+        crossed = []
+        if tl[i, j] != tr[i, j]: crossed.append(T)
+        if tr[i, j] != br[i, j]: crossed.append(Rr)
+        if bl[i, j] != br[i, j]: crossed.append(Bm)
+        if tl[i, j] != bl[i, j]: crossed.append(L)
+        ks = {e: key(*e) for e in crossed}
+        if len(crossed) == 2:
+            link(ks[crossed[0]], ks[crossed[1]])
+        else:  # 안장점: 가운데 값으로 정한다
+            center = (f[i, j] + f[i, j + 1] + f[i + 1, j] + f[i + 1, j + 1]) / 4 > level
+            if (cs == 5) == center:   # 바깥 모서리(tl·br 또는 tr·bl)를 잘라낸다
+                if cs == 5:
+                    link(ks[T], ks[L]); link(ks[Bm], ks[Rr])
+                else:
+                    link(ks[T], ks[Rr]); link(ks[L], ks[Bm])
+            else:
+                if cs == 5:
+                    link(ks[T], ks[Rr]); link(ks[L], ks[Bm])
+                else:
+                    link(ks[T], ks[L]); link(ks[Bm], ks[Rr])
+    seen = set()
+    out = []
+    for start in adj:
+        if start in seen:
+            continue
+        loop = [start]
+        seen.add(start)
+        prev, cur = None, start
+        while True:
+            nb = adj[cur]
+            nxt = nb[0] if nb[0] != prev else (nb[1] if len(nb) > 1 else nb[0])
+            if nxt == start or nxt in seen:
+                break
+            seen.add(nxt)
+            loop.append(nxt)
+            prev, cur = cur, nxt
+        if len(loop) >= 6:
+            out.append([pts[k] for k in loop])
+    return out
+
+
+def rdp(points, eps):
+    if len(points) < 3:
+        return points
+    P = np.array(points)
+    a, b = P[0], P[-1]
+    ab = b - a
+    n = math.hypot(*ab)
+    if n == 0:
+        d = np.hypot(*(P - a).T)
+    else:
+        q = P - a
+        d = np.abs(ab[0] * q[:, 1] - ab[1] * q[:, 0]) / n
+    i = int(np.argmax(d))
+    if d[i] > eps:
+        return rdp(points[:i + 1], eps)[:-1] + rdp(points[i:], eps)
+    return [points[0], points[-1]]
+
+
+def simplify_closed(loop, eps):
+    P = np.array(loop)
+    i = 0
+    j = int(np.argmax(np.hypot(*(P - P[0]).T)))
+    a = rdp(loop[i:j + 1], eps)
+    b = rdp(loop[j:] + loop[:1], eps)
+    return a[:-1] + b[:-1]
+
+
+def area(loop):
+    P = np.array(loop)
+    x, y = P[:, 0], P[:, 1]
+    return 0.5 * abs(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1)))
+
+
+def path_d(loops, tf, corner_deg=38):
+    """닫힌 다각형들 → SVG path. 꺾인 곳은 직선, 나머지는 2차 곡선으로 매끈하게"""
+    out = []
+    for lp in loops:
+        n = len(lp)
+        if n < 3:
+            continue
+        P = [tf(p) for p in lp]
+
+        def mid(a, b):
+            return ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+
+        def sharp(i):
+            a, b, c = P[i - 1], P[i], P[(i + 1) % n]
+            v1 = (b[0] - a[0], b[1] - a[1])
+            v2 = (c[0] - b[0], c[1] - b[1])
+            n1, n2 = math.hypot(*v1), math.hypot(*v2)
+            if n1 == 0 or n2 == 0:
+                return True
+            cosv = max(-1, min(1, (v1[0] * v2[0] + v1[1] * v2[1]) / (n1 * n2)))
+            return math.degrees(math.acos(cosv)) > corner_deg
+
+        f = lambda v: ('%.2f' % v).rstrip('0').rstrip('.')
+        start = mid(P[-1], P[0])
+        seg = ['M%s %s' % (f(start[0]), f(start[1]))]
+        for i in range(n):
+            m2 = mid(P[i], P[(i + 1) % n])
+            if sharp(i):
+                seg.append('L%s %sL%s %s' % (f(P[i][0]), f(P[i][1]), f(m2[0]), f(m2[1])))
+            else:
+                seg.append('Q%s %s %s %s' % (f(P[i][0]), f(P[i][1]), f(m2[0]), f(m2[1])))
+        out.append(''.join(seg) + 'Z')
+    return ''.join(out)
+
+
+def trace(field, level, eps=0.7, min_area=30):
+    loops = contours(field, level)
+    loops = [simplify_closed(lp, eps) for lp in loops]
+    return [lp for lp in loops if len(lp) >= 3 and area(lp) >= min_area]
+
+
+def hexc(c):
+    c = tuple(int(round(v)) for v in c)
+    if c[0] > 200 and c[1] < 90 and c[2] > 200:
+        raise SystemExit('분홍에 가까운 색이 나왔습니다: %s' % (c,))
+    return '#%02x%02x%02x' % c
+
+
+def frame(mask, pad_ratio=0.04):
+    ys, xs = np.nonzero(mask)
+    x0, x1, y0, y1 = xs.min(), xs.max() + 1, ys.min(), ys.max() + 1
+    side = max(x1 - x0, y1 - y0) * (1 + 2 * pad_ratio)
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    return cx - side / 2, cy - side / 2, side
+
+
+def make_tf(ox, oy, side, size=48.0):
+    k = size / side
+    return lambda p: ((p[0] - ox) * k, (p[1] - oy) * k)
+
+
+def classify(fg, pal):
+    names = list(pal)
+    C = np.array([pal[n] for n in names], dtype=np.float64)
+    d = ((fg[..., None, :] - C[None, None]) ** 2).sum(-1)
+    return d.argmin(-1), names
+
+
+def build_arrow(key, alpha, frm):
+    tf = make_tf(*frm)
+    loops = trace(soften(alpha), 0.5)
+    d = path_d(loops, tf)
+    return '<svg viewBox="0 0 48 48" class="ti ti-%s %s"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="%s"/></svg>' % (
+        key, CLASSES.get(key, ''), d)
+
+
+def largest_blob(mask, cell=4):
+    """가장 큰 덩어리 하나만 (4픽셀 칸으로 줄여서 이웃 칸끼리 묶는다)"""
+    H, W = mask.shape
+    h, w = (H + cell - 1) // cell, (W + cell - 1) // cell
+    pad = np.zeros((h * cell, w * cell), bool)
+    pad[:H, :W] = mask
+    g = pad.reshape(h, cell, w, cell).any(axis=(1, 3))
+    lab = np.zeros((h, w), int)
+    best, best_n, cur = 0, 0, 0
+    for y0, x0 in zip(*np.nonzero(g)):
+        if lab[y0, x0]:
+            continue
+        cur += 1
+        stack, n = [(y0, x0)], 0
+        lab[y0, x0] = cur
+        while stack:
+            y, x = stack.pop()
+            n += 1
+            for yy, xx in ((y + 1, x), (y - 1, x), (y, x + 1), (y, x - 1)):
+                if 0 <= yy < h and 0 <= xx < w and g[yy, xx] and not lab[yy, xx]:
+                    lab[yy, xx] = cur
+                    stack.append((yy, xx))
+        if n > best_n:
+            best, best_n = cur, n
+    keep = np.repeat(np.repeat(lab == best, cell, 0), cell, 1)[:H, :W]
+    return mask & keep
+
+
+def region_box(mask, grow):
+    # 가장자리에 흩어진 몇 화소(색이 섞인 테두리)는 빼고, 빽빽하게 모인 곳(방패·표지판)만 본다
+    dense = box_blur(box_blur(mask.astype(np.float64), 6), 6) > 0.5
+    if dense.any():
+        # 방패의 빨강 띠·파랑 몸통처럼 가까이 붙은 덩어리는 한 덩어리로 (16px 까지 넓혀서 묶는다)
+        near = box_blur(dense.astype(np.float64), 16) > 0.02
+        mask = dense & largest_blob(near)
+    ys, xs = np.nonzero(mask)
+    m = np.zeros_like(mask)
+    m[max(0, ys.min() - grow):ys.max() + grow + 1, max(0, xs.min() - grow):xs.max() + grow + 1] = True
+    return m
+
+
+def build_layers(key, kind, alpha, fg):
+    pal = PAL[kind]
+    lab, names = classify(fg, pal)
+    on = alpha > 0.5
+    idx = {n: i for i, n in enumerate(names)}
+    cls = lambda n: (lab == idx[n]) & on
+    tf = make_tf(*frame(on))
+    w = lambda m: alpha * m        # 가장자리 부드러움은 투명도에서
+    paths = []
+
+    def add(mask, color, level=0.5, extra=''):
+        if not mask.any():
+            return
+        loops = trace(soften(w(mask).astype(np.float64)), level)
+        if loops:
+            paths.append('<path%s fill="%s" stroke="none" fill-rule="evenodd" d="%s"/>' % (extra, hexc(color), path_d(loops, tf)))
+
+    if kind == 'ramp':
+        shield = region_box(cls('red') | cls('blue'), 24)
+        road_white = cls('white') & ~shield
+        road = (cls('dark') | road_white | (cls('red') & ~shield) | (cls('blue') & ~shield))
+        add(road, pal['dark'], 0.45, ' class="rd"')
+        add(road_white, pal['white'])
+        sh = []
+        add(on & shield, pal['white'], 0.45)
+        add(cls('red') & shield, pal['red'])
+        add(cls('blue') & shield, pal['blue'])
+        body = ''.join(paths[:2])
+        sh = ''.join(paths[2:])
+        return '<svg viewBox="0 0 48 48" class="ti ti-%s %s">%s<g class="shield">%s</g></svg>' % (key, CLASSES[key], body, sh)
+    if kind == 'toll':
+        sign = region_box(cls('blue'), 10)
+        posts = cls('gray') & ~sign
+        road_white = cls('white') & ~sign
+        road = (cls('dark') | road_white) & ~sign
+        add(road, pal['dark'], 0.45, ' class="rd"')
+        add(road_white, pal['white'])
+        add(posts, pal['gray'])
+        add(on & sign, pal['white'], 0.45)
+        add(cls('blue') & sign, pal['blue'])
+        return '<svg viewBox="0 0 48 48" class="ti ti-%s %s">%s</svg>' % (key, CLASSES[key], ''.join(paths))
+    raise ValueError(kind)
+
+
+def build_pin(key, alpha, fg):
+    on = alpha > 0.5
+    white = on & (fg.min(-1) > 205) & (np.abs(fg[..., 0] - fg[..., 2]) < 40)
+    body = on & ~white
+    ys, xs = np.nonzero(body)
+    y0, y1 = ys.min(), ys.max()
+    top = body & (np.arange(body.shape[0])[:, None] < y0 + (y1 - y0) * 0.25)
+    bot = body & (np.arange(body.shape[0])[:, None] > y0 + (y1 - y0) * 0.6)
+    c_top, c_bot = fg[top].mean(0), fg[bot].mean(0)
+    tf = make_tf(*frame(on))
+    gid = 'tg-' + key
+    sil = path_d(trace(soften(alpha), 0.5), tf)
+    txt = path_d(trace(soften(alpha * white), 0.5, eps=0.5, min_area=12), tf)
+    _, gy0 = tf((0, y0))
+    _, gy1 = tf((0, y1))
+    return ('<svg viewBox="0 0 48 48" class="ti ti-%s %s"><defs><linearGradient id="%s" x1="0" y1="%.1f" x2="0" y2="%.1f" gradientUnits="userSpaceOnUse">'
+            '<stop offset="0" stop-color="%s"/><stop offset="1" stop-color="%s"/></linearGradient></defs>'
+            '<path fill="url(#%s)" stroke="none" d="%s"/><path fill="#ffffff" stroke="none" fill-rule="evenodd" d="%s"/></svg>') % (
+        key, CLASSES[key], gid, gy0, gy1, hexc(c_top), hexc(c_bot), gid, sil, txt)
+
+
+def main():
+    loaded = {k: load(os.path.join(SRC, f)) for k, (f, kind) in ICONS.items()}
+    # 화살표는 모두 같은 틀(크기 비율)로: 굵기가 아이콘마다 달라지지 않게 전체를 덮는 정사각형 하나를 쓴다
+    arrows = [k for k, (f, kind) in ICONS.items() if kind == 'arrow']
+    union = np.zeros_like(loaded[arrows[0]][0], dtype=bool)
+    for k in arrows:
+        union |= loaded[k][0] > 0.5
+    afrm = frame(union, 0.03)
+    out = {}
+    for k, (f, kind) in ICONS.items():
+        alpha, fg = loaded[k]
+        if kind == 'arrow':
+            out[k] = build_arrow(k, alpha, afrm)
+        elif kind == 'pin':
+            out[k] = build_pin(k, alpha, fg)
+        else:
+            out[k] = build_layers(k, kind, alpha, fg)
+        print('%-5s %6d bytes' % (k, len(out[k])))
+    js = ('// 자동 생성 파일: tools/build_icons.py (사용자가 AI 로 그린 길안내 아이콘을 분홍 배경 없이 SVG 로 딴 것). 직접 고치지 말 것\n'
+          'window.TNC_ICONS = ' + json.dumps(out, ensure_ascii=False, indent=0) + ';\n')
+    with open(OUT, 'w', encoding='utf-8', newline='\n') as fh:
+        fh.write(js)
+    print('icons.js', len(js), 'bytes')
+
+
+if __name__ == '__main__':
+    main()
