@@ -3167,7 +3167,7 @@
     const want = {
       23: 'rb_l', 27: 'rb_l', 21: 'rb_s', 28: 'rb_s', 29: 'rb_r', 33: 'rb_r', 22: 'rb_u', 34: 'rb_u',
       93: 'rb_l', 98: 'rb_s', 101: 'rb_r', 104: 'rb_u', 121: 'toll', 122: 'toll', 123: 'toll',
-      62: 'over_l', 71: 'over_r', 55: 'over_s', 64: 'under_l', 73: 'under_r', 56: 'under_s', 63: 'side_l', 74: 'side_r',
+      62: 'over_l', 71: 'over_r', 55: 'over_s', 64: 'under_l', 73: 'under_r', 56: 'under_s', 63: 'oside_l', 72: 'oside_r', 65: 'side_l', 74: 'side_r',
       47: 'rest', 48: 'ferry', 50: 'ins', 52: 'ins', 75: 'ins', 51: 'outs', 78: 'outs', 11: 'sharp_l', 16: 'sharp_r',
       13: 'sl', 14: 'sr', 12: 'l', 15: 'r', 8: 'l', 1: 's', 2: 'l', 3: 'r', 6: 'u', 87: 'via', 88: 'goal',
       41: 'kl', 42: 'kr', 81: 'kl', 82: 'kr', 57: 'inl', 66: 'inr', 58: 'outl', 67: 'outr',

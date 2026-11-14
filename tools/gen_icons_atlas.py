@@ -16,6 +16,8 @@
   테슬라 앱 차 사진을 tools\icon-src
 ef
 ef_car_app.png 로 저장해 두면 그 느낌을 따라 그린다 (저장소에는 안 올라감)
+- 2026-11-14 다시 그리기(나가기/들어가기·고가·지하차도·옆길 16가지 + 회전교차로 4가지, 디자이너 느낌): --icons redo --per 2  (80장 약 $0.40)
+  도로만: --icons roads   회전교차로만: --icons rb   구도 밑그림 다시 그리기: py -I tools\ref_roads.py
 - 옵션: --models flare,sunburst,gpt15   --per 2   --icons over_r,junc_fork_r   --dry (요청 없이 계획과 예상 비용만)
 """
 import argparse
@@ -71,6 +73,26 @@ SIGN_END = ('. Bold, simple, well-balanced shapes with an even stroke weight tha
             'area with comfortable margins. Exactly three flat colors (red, yellow, black). No text, no letters, no numbers, '
             'no extra symbols, no gradients, no shadows, no 3D.' + BG + ' ')
 SHIELD = ' Small interstate-style shield (red top band, blue body, white border, bold white letters) in an empty corner'
+# 2026-11-14 '자바스크립트로 만든 느낌이 너무 강하다, AI 로 디자이너가 만든 것처럼, 잘 나올 때까지':
+# 도로 모양 안내 아이콘·회전교차로는 tools/ref_roads.py 가 그린 구도 밑그림(ref/road_<칸>.png, 갈라지는·합류하는 곳이
+# 그림 높이 가운데)을 첫 그림으로, 사용자 원본(outr.webp: 가는 선·작은 방패, 사용자가 고른 느낌)을 둘째 그림으로 보낸다
+DESIGN = ('Redraw image 1 as a finished, professional turn-by-turn navigation icon, as if made by a senior icon designer for a '
+          'premium car navigation app (Naver Map / Tmap quality). Image 1 is only a rough layout sketch: keep its layout exactly '
+          '(the same roads, the same place where the roads split or join in the vertical middle of the icon, the same arrow route, '
+          'the same shield corner) but redraw every shape cleanly and beautifully. If a second image is given, match its drawing '
+          'style (thin crisp lines, small neat shield). Style: flat vector, crisp and refined. Dark charcoal asphalt roads '
+          '(#313B42) with thin crisp white edge lines and fine white dashed lane lines; one slim solid white arrow, narrower than '
+          'a lane, following the route, with a neat sharp triangular arrowhead; smooth flowing curves with constant road width, '
+          'natural merge and diverge tapers, precise alignment, balanced spacing. No outline around the whole icon, no drop '
+          'shadow, no gradients, no texture, no 3D, no extra text or symbols.' + BG + ' ')
+RB = ('Redraw image 1 as a finished, professional roundabout turn icon, as if made by a senior icon designer for a premium car '
+      'navigation app (Naver Map quality). Keep the layout of the sketch exactly (enter from the bottom, travel counter-clockwise, '
+      'same exit), but draw it cleanly: a perfectly round light mint-green ring (#C9ECD6) with four short light mint road stubs '
+      '(top, bottom, left, right) and a small light mint center island, and ONE slim solid green arrow (#03C75A) of even width '
+      'with a crisp, sharp triangular arrowhead. Flat vector, elegant and precise, no outlines, no shadows, no gradients, '
+      'no text.' + BG + ' ')
+OUT_SH = ' A small interstate-style shield (red top band, blue body, thin white border, white bold letters "%s") in the %s corner.'
+ROAD_STYLE_REF = 'outr.webp'   # 사용자 원본: 그림 느낌
 # 그림 이름 → (참고 그림: tools/icon-src 기준 경로, 스타일 문장, 내용)
 JOBS = {
     # 고속도로 들어가기·나가기 (지금 앱 그림과 같은 구도: 두툼한 도로, 합류·진출 지점이 가운데)
@@ -180,11 +202,71 @@ JOBS = {
     'sign_danger': ('ref/ref_sign.png', SIGN, 'general danger: one bold black exclamation mark' + SIGN_END),
     'sign_bump': ('ref/ref_sign.png', SIGN, 'speed bump: a thick road line along the bottom with one rounded hump in the middle' + SIGN_END),
 }
+# 2026-11-14 다시 (위 DESIGN·RB): 같은 이름의 예전 항목을 덮어쓴다. 참고 그림은 (구도 밑그림, 원본 그림 느낌)
+
+
+def _mirror(t):
+    for a, b in (('RIGHT', 'LEFT'), ('right', 'left')):
+        t = t.replace(a, '@@').replace(b, a).replace('@@', b)
+    return t
+
+
+_ROADS = {
+    'outr': 'Highway EXIT to the RIGHT: a straight three-lane highway runs vertically; in the vertical middle of the icon a single-lane '
+            'exit ramp splits off its right side and leaves through the right edge, rising gently. The arrow comes up the middle '
+            'lane and curves onto the exit ramp, arrowhead pointing up-right.' + OUT_SH % ('OUT', 'top-left'),
+    'inr': 'Highway ENTRANCE from the RIGHT: a single-lane on-ramp comes in from the lower part of the right edge and merges into '
+           'the right side of a vertical three-lane highway in the vertical middle of the icon. The arrow follows the on-ramp, '
+           'merges and continues straight up the highway, arrowhead pointing up.' + OUT_SH % ('IN', 'top-right'),
+    'outs': 'Highway EXIT STRAIGHT AHEAD: a three-lane highway comes up from the bottom; in the vertical middle of the icon the '
+            'highway itself curves away to the left edge while a single-lane exit road continues straight up. The arrow goes '
+            'straight up the exit road.' + OUT_SH % ('OUT', 'top-right'),
+    'ins': 'Highway ENTRANCE STRAIGHT AHEAD: a single-lane road goes straight up from the bottom; in the vertical middle of the icon '
+           'a three-lane highway coming in from the left edge merges with it and continues straight up. The arrow goes straight '
+           'up.' + OUT_SH % ('IN', 'top-right'),
+    'over_s': 'OVERPASS STRAIGHT AHEAD: a vertical road crosses OVER a horizontal road on a bridge in the middle of the icon. Make '
+              'the bridge obvious: short white bridge parapets with flared ends on both sides of the vertical road where it '
+              'passes over, and a soft shadow on the road below. The arrow goes straight up over the bridge. No shield.',
+    'over_r': 'OVERPASS to the RIGHT: a vertical three-lane road continues straight up; in the vertical middle of the icon a '
+              'single-lane ramp branches off to the right and climbs onto a bridge that passes over a horizontal road in the upper '
+              'right (white bridge parapets with flared ends, soft shadow below). The arrow follows the ramp over the bridge, '
+              'arrowhead pointing up. No shield.',
+    'under_s': 'UNDERPASS STRAIGHT AHEAD: a vertical road goes straight into an underpass opening at the top of the icon (front '
+               'view of a concrete portal: light grey rounded frame around a dark opening). The arrow goes straight up into the '
+               'opening. No shield.',
+    'under_r': 'UNDERPASS to the RIGHT: a vertical three-lane road continues straight up; in the vertical middle of the icon a '
+               'single-lane road branches off to the right and goes up into an underpass opening (light grey rounded concrete '
+               'portal with a dark opening) in the upper right. The arrow follows it into the opening. No shield.',
+    'side_r': 'SIDE ROAD beside an UNDERPASS, keep RIGHT: the middle road goes straight up into an underpass opening (light grey '
+              'rounded concrete portal with a dark opening) at the top; in the vertical middle of the icon a single-lane side road '
+              'branches off to the right and stays at street level beside the portal, continuing straight up. The arrow takes the '
+              'right side road and avoids the underpass. No shield.',
+    'oside_r': 'SIDE ROAD beside an OVERPASS, keep RIGHT: the middle road climbs onto a bridge (white bridge parapets with flared '
+               'ends, soft shadow below) that passes over a horizontal road near the top; in the vertical middle of the icon a '
+               'single-lane side road branches off to the right and stays at street level beside it, crossing the horizontal road. '
+               'The arrow takes the right side road. No shield.',
+}
+for _k in [k for k in _ROADS if k.endswith('_r')]:
+    _ROADS[_k[:-1] + 'l'] = _mirror(_ROADS[_k])
+_ROADS['outl'] = _mirror(_ROADS['outr'])     # 방패도 반대쪽 위 모서리로 (top-left ↔ top-right)
+_ROADS['inl'] = _mirror(_ROADS['inr'])
+for _k, _t in _ROADS.items():
+    JOBS[_k] = (('ref/road_%s.png' % _k, ROAD_STYLE_REF), DESIGN, _t)
+_RB = {
+    'rb_r': 'The arrow enters from the bottom, goes a quarter turn counter-clockwise around the ring and exits to the RIGHT.',
+    'rb_s': 'The arrow enters from the bottom, goes half way around the ring counter-clockwise and exits at the TOP (straight ahead).',
+    'rb_l': 'The arrow enters from the bottom, goes three quarters around the ring counter-clockwise and exits to the LEFT.',
+    'rb_u': 'U-turn: the arrow enters from the bottom slightly right of center, goes all the way around the ring counter-clockwise '
+            'and exits back DOWN at the bottom slightly left of center, arrowhead pointing down; keep the two lines clearly apart.',
+}
+for _k, _t in _RB.items():
+    JOBS[_k] = (('ref/road_%s.png' % _k,), RB, _t)
+ROADS, RBS = list(_ROADS), list(_RB)
 WIDE = {'junc_fork_r', 'junc_exit_r'}
 
 
 def _gpt25(model):
-    return (model, 0.005, lambda p, img, wide=False: {'prompt': p, 'images': [img], 'size': '1536x1024' if wide else '1024x1024',
+    return (model, 0.005, lambda p, imgs, wide=False: {'prompt': p, 'images': imgs, 'size': '1536x1024' if wide else '1024x1024',
                                                        'quality': 'medium', 'background': 'opaque', 'output_format': 'png', 'n': 1})
 
 
@@ -193,22 +275,22 @@ MODELS = {
     'flare': _gpt25('openai/gpt-image-2.5-flare/edit'),          # 기본 (싸고 최신)
     'sunburst': _gpt25('openai/gpt-image-2.5-sunburst/edit'),    # 기본 (싸고 최신)
     'gptdev': ('openai/gpt-image-2-developer/edit', 0.005,
-               lambda p, img, wide=False: {'prompt': p, 'images': [img], 'size': '1536x1024' if wide else '1024x1024',
+               lambda p, imgs, wide=False: {'prompt': p, 'images': imgs, 'size': '1536x1024' if wide else '1024x1024',
                                            'quality': 'high', 'output_format': 'png'}),
     'gpt15': ('openai/gpt-image-1.5/edit', 0.005,
-              lambda p, img, wide=False: {'prompt': p, 'images': [img], 'size': '1536x1024' if wide else '1024x1024',
+              lambda p, imgs, wide=False: {'prompt': p, 'images': imgs, 'size': '1536x1024' if wide else '1024x1024',
                                           'quality': 'high', 'input_fidelity': 'high', 'output_format': 'png'}),
     'gpt': ('openai/gpt-image-2/edit', 0.006,
-            lambda p, img, wide=False: {'prompt': p, 'images': [img], 'size': '1536x1024' if wide else '1024x1024',
+            lambda p, imgs, wide=False: {'prompt': p, 'images': imgs, 'size': '1536x1024' if wide else '1024x1024',
                                         'quality': 'high', 'output_format': 'png'}),
     's55': ('bytedance/seedream-v5.5/edit', 0.016,
-            lambda p, img, wide=False: {'prompt': p, 'reference_images': [img], 'size': '2048*1152' if wide else '1024*1024',
+            lambda p, imgs, wide=False: {'prompt': p, 'reference_images': imgs, 'size': '2048*1152' if wide else '1024*1024',
                                         'output_format': 'png', 'background': 'opaque'}),
     's50p': ('bytedance/seedream-v5.0-pro/edit', 0.036,
-             lambda p, img, wide=False: {'prompt': p, 'images': [img], 'size': '2048*1152' if wide else '1024*1024',
+             lambda p, imgs, wide=False: {'prompt': p, 'images': imgs, 'size': '2048*1152' if wide else '1024*1024',
                                          'output_format': 'png', 'background': 'opaque'}),
     'nb2': ('google/nano-banana-2/edit', 0.08,
-            lambda p, img, wide=False: {'prompt': p, 'images': [img], 'aspect_ratio': '16:9' if wide else '1:1',
+            lambda p, imgs, wide=False: {'prompt': p, 'images': imgs, 'aspect_ratio': '16:9' if wide else '1:1',
                                         'resolution': '1k', 'output_format': 'png'}),
 }
 
@@ -312,7 +394,8 @@ def main():
     is_car = lambda k: k.startswith(('car_', 'cute_'))
     is_sign = lambda k: k.startswith('sign_')
     groups = {'cars': [k for k in JOBS if is_car(k)], 'signs': [k for k in JOBS if is_sign(k)],
-              'guide': [k for k in JOBS if not is_car(k) and not is_sign(k)]}
+              'guide': [k for k in JOBS if not is_car(k) and not is_sign(k)],
+              'roads': ROADS, 'rb': RBS, 'redo': ROADS + RBS}
     want = []
     for i in a.icons.split(','):
         want += groups.get(i, [i])
@@ -334,14 +417,22 @@ def main():
     if not key:
         sys.exit('ATLAS_API_KEY 환경 변수가 없습니다. PowerShell: $env:ATLAS_API_KEY = "<키>" 를 먼저 입력하세요.')
     os.makedirs(OUT, exist_ok=True)
-    refs = {i: ref_input(JOBS[i][0]) for i in icons}
-    print('참고 그림:', ', '.join('%s=%s' % (i, 'URL' if r.startswith('http') else 'base64') for i, r in refs.items()))
+    as_list = lambda r: [r] if isinstance(r, str) else list(r)
+    cache = {}
+    refs = {i: [cache.setdefault(r, ref_input(r)) for r in as_list(JOBS[i][0])] for i in icons}
+    print('참고 그림:', ', '.join('%s=%s' % (i, '+'.join('URL' if r.startswith('http') else 'b64' for r in rs)) for i, rs in refs.items()))
     pending = []
     for i, m, n in jobs:
         mid, price, mk = MODELS[m]
         try:
             ref, style, extra = JOBS[i]
-            pid = submit(key, mid, mk(style + extra, refs[i], i in WIDE))
+            try:
+                pid = submit(key, mid, mk(style + extra, refs[i], i in WIDE))
+            except RuntimeError as e:
+                if len(refs[i]) < 2:
+                    raise
+                print('  (참고 그림 여러 장이 안 돼 밑그림 한 장으로 다시: %s)' % str(e)[:120])
+                pid = submit(key, mid, mk(style + extra, refs[i][:1], i in WIDE))
             pending.append((i, m, n, pid))
             print('  보냄 %-5s %-5s #%d' % (i, m, n))
         except Exception as e:

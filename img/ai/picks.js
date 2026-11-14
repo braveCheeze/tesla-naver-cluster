@@ -4,13 +4,13 @@ window.TNC_PICKS = {
   "sign_animal": "sign_animal__sunburst__2.webp",
   "sign_bump": "sign_bump__flare__1.webp",
   "sign_danger": "sign_danger__flare__1.webp",
-  "sign_down": "sign_down__flare__1.webp",
-  "sign_narrow": "sign_narrow__flare__1.webp",
-  "sign_rail": "sign_rail__flare__1.webp",
-  "sign_rock": "sign_rock__flare__1.webp",
+  "sign_down": "sign_down__sunburst__2.webp",
+  "sign_narrow": "sign_narrow__sunburst__2.webp",
+  "sign_rail": "sign_rail__sunburst__2.webp",
+  "sign_rock": "sign_rock__sunburst__2.webp",
   "sign_rough": "sign_rough__flare__1.webp",
-  "sign_slip": "sign_slip__flare__1.webp",
-  "sign_up": "sign_up__flare__1.webp",
-  "sign_wind": "sign_wind__flare__1.webp",
-  "tunnel": "tunnel__sunburst__1.webp"
+  "sign_slip": "sign_slip__sunburst__2.webp",
+  "sign_up": "sign_up__sunburst__2.webp",
+  "sign_wind": "sign_wind__sunburst__2.webp",
+  "tunnel": "tunnel__sunburst__2.webp"
 };

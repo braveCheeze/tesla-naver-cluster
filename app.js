@@ -51,7 +51,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-101'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-102'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -3140,6 +3140,7 @@
   // 네이버 길찾기 안내 종류(guide.type) → 아이콘. 2026-11-14 네이버 문서의 '분기점 안내 코드' 표 전체로 다시 맞췄다
   // (로터리 21~34·회전교차로 91~104 는 나가는 방향별, 고가·지하차도 진입/옆길은 꺾는 화살표가 아니라 그쪽 길,
   //  하이패스 전용·원톨링 톨게이트도 톨게이트, 휴게소 진입·페리·전방 고속도로 진입/진출도 각각). 코드가 없을 때만 글자로 본다
+  //  v102: 옆길은 고가 옆길(63·72 → oside_)과 지하차도 옆길(65·74 → side_, 예: 염곡사거리에서 꺾을 때)을 따로 (그림을 따로 고를 수 있게)
   function rbKind(n) { // 0 직진, 1 유턴, 2~6 왼쪽 7~11시, 7 12시, 8~12 오른쪽 1~5시, 13 6시
     if (n === 0 || n === 7) return 'rb_s';
     if (n === 1 || n === 13) return 'rb_u';
@@ -3150,8 +3151,8 @@
     11: 'sharp_l', 12: 'l', 13: 'sl', 14: 'sr', 15: 'r', 16: 'sharp_r',
     41: 'kl', 42: 'kr', 47: 'rest', 48: 'ferry', 49: 'ferry',
     50: 'ins', 51: 'outs', 52: 'ins', 53: 'outs', 55: 'over_s', 56: 'under_s',
-    57: 'inl', 58: 'outl', 59: 'inl', 60: 'outl', 62: 'over_l', 63: 'side_l', 64: 'under_l', 65: 'side_l',
-    66: 'inr', 67: 'outr', 68: 'inr', 69: 'outr', 71: 'over_r', 72: 'side_r', 73: 'under_r', 74: 'side_r',
+    57: 'inl', 58: 'outl', 59: 'inl', 60: 'outl', 62: 'over_l', 63: 'oside_l', 64: 'under_l', 65: 'side_l',
+    66: 'inr', 67: 'outr', 68: 'inr', 69: 'outr', 71: 'over_r', 72: 'oside_r', 73: 'under_r', 74: 'side_r',
     75: 'ins', 76: 'inl', 77: 'inr', 78: 'outs', 79: 'outl', 80: 'outr', 81: 'kl', 82: 'kr',
     87: 'via', 88: 'goal', 121: 'toll', 122: 'toll', 123: 'toll',
   };
@@ -3228,7 +3229,7 @@
   // 아직 그림이 없는 종류는 가장 가까운 그림으로 (꺾는 화살표로 잘못 보이지 않게): 순서대로 채운다
   const ICON_FALLBACK = {
     sl: 'l', sr: 'r', rb: 'r', via: 'goal', rb_l: 'rb', rb_s: 's', rb_r: 'r', rb_u: 'u', sharp_l: 'l', sharp_r: 'r',
-    outs: 'outr', ins: 'inr', over_l: 'kl', under_l: 'kl', side_l: 'kl', over_r: 'kr', under_r: 'kr', side_r: 'kr',
+    outs: 'outr', ins: 'inr', over_l: 'kl', under_l: 'kl', side_l: 'kl', oside_l: 'kl', over_r: 'kr', under_r: 'kr', side_r: 'kr', oside_r: 'kr',
     over_s: 's', under_s: 's', rest: 'kr', ferry: 's',
   };
   Object.keys(ICON_FALLBACK).forEach((k) => { if (!TURN_ICONS[k]) TURN_ICONS[k] = TURN_ICONS[ICON_FALLBACK[k]] || TURN_ICONS.s; });
@@ -3253,7 +3254,7 @@
   // 다음 회전 지점 화살표: 회전·비켜 가기·나가기/들어가기·유턴·회전교차로이고 400m 안이면 그 지점 앞뒤 (가까이 보면 35m 앞~25m 뒤,
   // 멀리 볼수록 화면 기준으로 더 길게: 지도 쪽 drawArrow 가 배율에 맞춰 잘라 쓰도록 앞 150m·뒤 100m 를 넘긴다)
   const ARROW_KINDS = new Set(['l', 'r', 'u', 'sl', 'sr', 'sharp_l', 'sharp_r', 'kl', 'kr', 'outl', 'outr', 'outs', 'inl', 'inr', 'ins',
-    'rb', 'rb_l', 'rb_s', 'rb_r', 'rb_u', 'over_l', 'over_r', 'over_s', 'under_l', 'under_r', 'under_s', 'side_l', 'side_r', 'rest']);
+    'rb', 'rb_l', 'rb_s', 'rb_r', 'rb_u', 'over_l', 'over_r', 'over_s', 'under_l', 'under_r', 'under_s', 'side_l', 'side_r', 'oside_l', 'oside_r', 'rest']);
   function renderTurnArrow() {
     if (!mapA || !mapA.setTurnArrow) return;
     const g = nav.active ? nav.next : null;
