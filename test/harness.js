@@ -2047,6 +2047,39 @@
     return { pass: ok, detail: '아산로 시점 ' + JSON.stringify(start) + ' 종점 ' + JSON.stringify(end) + ' | 세종로 시점 ' + JSON.stringify(sj) + (ok ? '✓' : '✗') };
   }
 
+  // S52: 고속도로 위에서 아래·옆 일반도로 카메라 빼기 (2026-11-14 주행: 수도권제1순환고속도로 송파 거여동에서
+  //      바로 밑 문정로 어린이보호구역 30 이 떴다). 실제 경로(route-paldang-hanamic-s)에서 그 구간 이름(sections)을 빼도
+  //      안내의 고속도로 진입(하남IC)~출구(성남IC) 사이라 고속도로로 보고 문정로 30 은 안 뜨고, 고속도로 카메라(100)는 뜬다
+  async function s52() {
+    const t = T(), SCHOOL = { lat: 37.49759, lng: 127.14063 }, HWY = { lat: 37.46302, lng: 127.12536 };
+    const fx0 = await (await realFetch(harnessDir + 'fixtures/route-paldang-hanamic-s.json', { cache: 'no-store' })).json();
+    const run = async (dropName) => {
+      const fx = JSON.parse(JSON.stringify(fx0));
+      if (dropName) fx.sections = fx.sections.filter((x) => !/수도권제1순환/.test(x.name));
+      const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0];
+      for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+      const R = { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '성남', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+      softReset();
+      await planAndStart(R);
+      const hit = { school: false, hwy: false };
+      for (let s = 8000; s <= 19000; s += 15) {
+        const a = pointAt(R, s);
+        feed(a.p, 80 / 3.6, a.h);
+        const tg = t.camState.target;
+        if (tg && sameCam(tg.c, SCHOOL)) hit.school = true;
+        if (tg && sameCam(tg.c, HWY)) hit.hwy = true;
+      }
+      const spans = t.highwaySpans().map((x) => x.map(Math.round));
+      t.endNav();
+      return Object.assign(hit, { spans });
+    };
+    const named = await run(false), unnamed = await run(true);
+    softReset();
+    const ok = !named.school && named.hwy && !unnamed.school && unnamed.hwy;
+    return { pass: ok, detail: 'with section name ' + JSON.stringify(named) + ' | without ' + JSON.stringify(unnamed) + (ok ? '✓' : '✗') };
+  }
+
   // S25: 하이패스 — 경로 안내에 톨게이트(type 121)가 있으면 2km 앞부터 카드(이름·거리·통행료·하이패스 차로 이용)와 음성
   async function s25() {
     const t = T();
@@ -2397,6 +2430,7 @@
     { id: 'S49', name: 'S49 trip distance/time/max speed survive an update reload', fn: s49 },
     { id: 'S50', name: 'S50 traffic colors in five steps (green, yellow, orange, red, dark red) from section speed', fn: s50 },
     { id: 'S51', name: "S51 section cameras found from '구간 시점/종점' place text", fn: s51 },
+    { id: 'S52', name: 'S52 on the expressway (entry→exit guides) street cameras below stay quiet even without a section name', fn: s52 },
   ];
 
   // ---------------------------------------------------------------- runner

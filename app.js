@@ -43,7 +43,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-63'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-64'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -1224,6 +1224,25 @@
     const same = (has(behind, a) && !has(ahead, a)) || (has(ahead, b) && !has(behind, b));
     return opp && !same ? -1 : same && !opp ? 1 : 0;
   }
+  // 길안내 경로에서 고속도로를 달리는 구간 [시작, 끝](경로 거리): 네이버 안내의 고속도로 진입(50·57·66)부터 출구(51·58·67)까지.
+  // 경로 구간 이름(sections)은 긴 주요 도로에만 붙고 경로를 다시 받으면 빠지기도 해서, 이름이 없는 곳에서도 고속도로 위인지 안다
+  // (2026-11-14 주행: 수도권제1순환고속도로 송파 거여동에서 바로 밑 문정로의 어린이보호구역 30 카메라가 떴다).
+  // 경로 시작이 이미 고속도로 위면(진입 없이 출구가 먼저) 처음부터 그 출구까지
+  const HW_IN = new Set([50, 57, 66]), HW_OUT = new Set([51, 58, 67]);
+  function highwaySpans() {
+    if (nav.hwSpansFor === nav.route && nav.hwSpans) return nav.hwSpans;
+    const spans = [], last = nav.cum.length - 1;
+    let start = null, seen = false;
+    for (const g of nav.guides || []) {
+      const s = nav.cum[Math.min(g.i, last)];
+      if (HW_IN.has(g.t)) { if (start === null) start = s; seen = true; }
+      else if (HW_OUT.has(g.t)) { if (start !== null || !seen) spans.push([start === null ? 0 : start, s]); start = null; seen = true; }
+    }
+    if (start !== null) spans.push([start, nav.total]);
+    nav.hwSpans = spans; nav.hwSpansFor = nav.route;
+    return spans;
+  }
+  const onHighwayAt = (at) => highwaySpans().some(([a, b]) => at >= a && at <= b);
   function camAtSeg(c, i) {
     const p = { lat: c[0], lng: c[1] }, a = nav.pts[i], b = nav.pts[i + 1];
     const pr = projectSeg(p, a, b);
@@ -1232,12 +1251,12 @@
     if (pr.dist > 6 && roadsDiffer(rn, cn)) return null;
     // 경로 왼쪽으로 8m 넘게 떨어진 한 방향 카메라는 반대편 차로용
     if (oneDir(c) && pr.dist > OPP_SIDE && sideOfSeg(p, a, b, pr.dist) < 0) return null;
-    // 고속도로 구간이면 옆 일반도로의 저속 카메라(제한 70 이하, 고속국도 아님)는 제외
-    // ('분당수서고속화도로' 같은 고속화도로는 고속도로가 아니므로 이 규칙을 쓰지 않는다)
-    if (/고속도로|고속국도/.test(rn) && c[8] !== 1 && c[2] <= 70) return null;
+    const at = nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]);
+    // 고속도로 구간이면 옆·아래 일반도로의 저속 카메라(제한 70 이하, 고속국도 아님)는 제외. 구간 이름이 고속도로이거나,
+    // 이름이 없어도 안내상 고속도로 진입~출구 사이면 고속도로 ('분당수서고속화도로' 같은 고속화도로는 고속도로가 아니다)
+    if ((/고속도로|고속국도/.test(rn) || onHighwayAt(at)) && c[8] !== 1 && c[2] <= 70) return null;
     const ok = pr.dist < ROUTE_CAM_NEAR || (specificRoad(rn) ? sameRoad(rn, cn) : specificRoad(cn) && sameRoadCamOnRoute(c, i));
     if (!ok) return null;
-    const at = nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]);
     if (oneDir(c) && arrowSays(c, at) < 0) return null;   // 설치장소 방향이 내 길과 반대
     return at;
   }
@@ -1264,7 +1283,10 @@
       if (pr.dist >= ROUTE_CAM_FAR) continue;
       if (nav.cum[j] + pr.t * (nav.cum[j + 1] - nav.cum[j]) < nav.along - 5) continue;
       if (oneDir(c) && pr.dist > OPP_SIDE && sideOfSeg(p, pts[j], pts[j + 1], pr.dist) < 0) return false;
-      if (oneDir(c) && arrowSays(c, nav.cum[j] + pr.t * (nav.cum[j + 1] - nav.cum[j])) < 0) return false;
+      const atj = nav.cum[j] + pr.t * (nav.cum[j + 1] - nav.cum[j]);
+      if (oneDir(c) && arrowSays(c, atj) < 0) return false;
+      // 고속도로 위에서는 지금 도로 이름(역지오코딩)이 아래 일반도로로 잡혀도 일반도로 저속 카메라는 알리지 않는다
+      if ((/고속도로|고속국도/.test(routeRoadAt(j)) || onHighwayAt(atj)) && c[8] !== 1 && c[2] <= 70) return false;
       return true;
     }
     return false;
@@ -3605,7 +3627,7 @@
       planRoute, doSearch, setFollowing, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
       sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
-      saveTripNow, restoreTripNow, trafficColor, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, renderJunction,
+      saveTripNow, restoreTripNow, trafficColor, highwaySpans, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, renderJunction,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
     };
