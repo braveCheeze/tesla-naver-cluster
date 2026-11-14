@@ -820,6 +820,15 @@
   .navtray button:active { transform: scale(.96); }
   .navtray button.on { border-color: var(--accent); color: #c8f5dc; }
   .navtray button.upd { border-color: #2f7dff; color: #cfe0ff; }
+  /* 작은 업데이트 버튼: 오른쪽 위 날씨 밑. 새 버전이 있을 때만, 운전 중에도 늘 보인다 */
+  .updbtn {
+    position: absolute; top: 132px; right: 38px; z-index: 1065; display: inline-flex; align-items: center; gap: 5px;
+    height: 30px; padding: 0 11px 0 9px; border-radius: 15px; border: 0; background: #2f7dff; color: #fff;
+    font: inherit; font-size: 13px; font-weight: 800; box-shadow: 0 4px 12px rgba(0, 0, 0, .3); cursor: pointer;
+  }
+  .updbtn[hidden] { display: none; }
+  .updbtn:active { transform: scale(.96); }
+  .updbtn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
   .nt-ver { position: absolute; right: 2px; top: -26px; font-size: 12px; font-weight: 700; color: #e6e9ee; white-space: nowrap; background: rgba(11, 13, 16, .72); padding: 3px 9px; border-radius: 9px; }
   .nt-ver:empty { display: none; }
   .navtray svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
@@ -894,6 +903,8 @@
   <section id="map" aria-label="지도">
     <button id="searchBtn" class="searchbtn"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg>목적지 검색</button>
     <div id="source" class="badge" hidden></div>
+    <!-- 새 버전이 나와 있을 때만 보이는 작은 업데이트 버튼 (누르면 새 버전으로, 길안내 중이면 이어서 안내) -->
+    <button id="updBtn" class="updbtn" hidden><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg><span>업데이트</span></button>
 
     <div id="routeStrip" class="rstrip" hidden>
       <div class="rs-top"><b id="rsRemain">-</b><span id="rsEta">-</span></div>
@@ -1044,6 +1055,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-41"></script>
+<script src="app.js?v=2026.11.14-42"></script>
 </body>
 </html>

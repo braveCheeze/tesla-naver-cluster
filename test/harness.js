@@ -1623,11 +1623,14 @@
       softReset();
       const R = buildNavRoute();
       feed(R.P[0], 0, null);
-      t.upd.newer = null;
+      t.upd.newer = null; t.renderUpdBtn();
       t.openTray(); await wait(40);
-      r.noButton = !vis('#ntUpdate');
+      r.noButton = !vis('#ntUpdate') && !vis('#updBtn');
       t.closeTray(); await wait(220);
-      t.upd.newer = '2026.11.14-99';
+      t.upd.newer = '2026.11.14-99'; t.renderUpdBtn();
+      // 작은 '업데이트' 버튼은 띠를 안 눌러도 오른쪽 위에 늘 보인다 (운전 중에도)
+      const ub = document.getElementById('updBtn').getBoundingClientRect(), app = document.getElementById('app').getBoundingClientRect();
+      r.smallBtn = vis('#updBtn') && ub.height <= 34 && ub.right > app.right - 80 && ub.top < app.top + 200;
       t.openTray(); await wait(40);
       r.button = vis('#ntUpdate') && /새 버전 11\.14-99/.test(text('#ntVer'));
       t.closeTray(); await wait(220);
@@ -1640,14 +1643,14 @@
       r.resumed = t.nav.active && !t.nav.preview && !vis('#routeCard') && t.nav.dest.name === '이어가기 테스트' &&
         calls.length === 1 && calls[0].query.waypoints === W.lng.toFixed(6) + ',' + W.lat.toFixed(6);
     } finally {
-      t.upd.newer = prevNewer;
+      t.upd.newer = prevNewer; t.renderUpdBtn();
       t.endNav();
       stub.reset();
       t.closeTray();
       softReset();
     }
     const bad = Object.keys(r).filter((k) => !r[k]);
-    return { pass: bad.length === 0 && Object.keys(r).length === 3, detail: Object.keys(r).map((k) => k + (r[k] ? '✓' : '✗')).join(', ') };
+    return { pass: bad.length === 0 && Object.keys(r).length === 4, detail: Object.keys(r).map((k) => k + (r[k] ? '✓' : '✗')).join(', ') };
   }
 
   // S25: 하이패스 — 경로 안내에 톨게이트(type 121)가 있으면 2km 앞부터 카드(이름·거리·통행료·하이패스 차로 이용)와 음성

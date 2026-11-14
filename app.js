@@ -40,7 +40,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-41'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-42'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -2385,13 +2385,15 @@
   const busyDriving = () => nav.active || nav.busy || state.speedKmh >= 3 || !!state.demoTimer;
   // 돌려주는 값: 'reload' 새로고침함 · 'latest' 이미 최신 · 'driving' 운전 중이라 미룸 · 'tried' 이번 창에서 이미 시도함 · 'skip' · 'error'
   // opt.dry: 새로고침 없이 판단만 (테스트용), opt.latest: version.json 대신 쓸 값 (테스트용)
-  // 운전·길안내 중에는 바꾸지 않고, 10분마다 새 버전이 있는지 보기만 한다. 있으면 하단 띠 버튼에 '새 버전'이 생긴다
+  // 운전·길안내 중에는 바꾸지 않고, 2분마다 새 버전이 있는지 보기만 한다(version.json 몇십 바이트).
+  // 있으면 오른쪽 위(날씨 밑)에 작은 '업데이트' 버튼이 늘 보이고, 하단 띠 버튼에도 '새 버전'이 생긴다
+  function renderUpdBtn() { const b = $('#updBtn'); if (b) b.hidden = !upd.newer; }
   async function peekVersion() {
     try {
       const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
       if (!r.ok) return;
       const j = await r.json();
-      if (j && verNewer(j.v, APP_VERSION)) upd.newer = String(j.v);
+      if (j && verNewer(j.v, APP_VERSION)) { upd.newer = String(j.v); renderUpdBtn(); }
     } catch (e) { /* 오프라인 */ }
   }
   // '새 버전' 버튼: 길안내 중이면 목적지·경유지·옵션을 남겨 두고 새 버전으로. 새 버전이 뜨면 같은 목적지로 바로 이어서 안내한다
@@ -2476,7 +2478,7 @@
     // 서 있을 때는 GPS 가 드문드문 와도 북쪽 위 전환이 늦지 않게 시계로도 본다
     if (state.fix && !state.demoTimer) checkStopNorth(state.fix.t + (Date.now() - lastFixWall));
     if (!state.demoTimer && !testPage) idleUpdate(Date.now());
-    if (!testPage && Date.now() - (upd.peekAt || 0) > 10 * 60000) { upd.peekAt = Date.now(); peekVersion(); }
+    if (!testPage && Date.now() - (upd.peekAt || 0) > 2 * 60000) { upd.peekAt = Date.now(); peekVersion(); }
     maybeResume();
     $('#clock').textContent = hhmm(now);
     $('#dateText').textContent = (now.getMonth() + 1) + '월 ' + now.getDate() + '일 (' + '일월화수목금토'[now.getDay()] + ')';
@@ -2506,7 +2508,7 @@
   // 지도 손 조작: 톡 치기는 화면 버튼만 보여 주고, 실제로 끌거나(10px 이상) 두 손가락을 쓰면
   // 주행 화면을 평면(북쪽 위) 지도로 바꿔 조작을 이어간다
   const gesture = { x: 0, y: 0, used: false, pointers: new Set() };
-  const NOT_MAP = '.btn, .searchbtn, .navpanel, .routecard, .toast, #diagBox, .ctrls, .topctrls, .badge, .soundpill, .navtray';
+  const NOT_MAP = '.btn, .searchbtn, .navpanel, .routecard, .toast, #diagBox, .ctrls, .topctrls, .badge, .soundpill, .navtray, .updbtn';
   function userMapGesture() {
     gesture.used = true;
     // 손으로 바꾼 배율은 30초 동안 자동 줌이 덮어쓰지 않게 한다
@@ -2810,6 +2812,7 @@
   };
   $('#ntSearch').onclick = () => { closeTray(); openSearch('dest'); };
   $('#ntUpdate').onclick = () => { closeTray(); goUpdate(); };
+  $('#updBtn').onclick = goUpdate;
   $('#navEnd').onclick = () => { endNav(); say('안내를 종료합니다.', 1); };
 
   function applyTesla() {
@@ -3075,7 +3078,7 @@
       state, camState, nav, cams, prefs, onFix, setRoute, startNav, endNav, startDemo, stopDemo, renderNav,
       planRoute, doSearch, setFollowing, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
-      sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam,
+      sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
     };
