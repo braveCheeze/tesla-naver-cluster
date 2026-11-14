@@ -40,7 +40,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-47'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-48'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
@@ -1966,6 +1966,9 @@
     if (!nav.active) { p.hidden = true; $('#searchBtn').hidden = false; return; }
     p.hidden = false;
     $('#searchBtn').hidden = true;
+    // 맨 위 목적지 줄 (경유지가 있으면 오른쪽에 작게)
+    $('#navDestName').textContent = nav.dest ? nav.dest.name : '';
+    $('#navDestVia').textContent = nav.via && nav.via[0] ? '경유 ' + nav.via[0].name : '';
     const g = nav.next;
     $('#turnIcon').innerHTML = TURN_ICONS[g ? turnKind(g) : 'goal'];
     $('#turnDist').textContent = fmtDist(nav.dg != null ? nav.dg : nav.total);

@@ -1014,6 +1014,20 @@
   }
   #app.tesla:not(:has(#map.night)) .trip .stat .v { color: #1d2126; }
   #app.tesla:not(:has(#map.night)) .trip .stat .k, #app.tesla:not(:has(#map.night)) .trip .stat small { color: #3a4048; }
+  /* ================= 길안내 패널 맨 위 목적지 (2026-11-14 요청) =================
+     왼쪽에 초록 목적지 아이콘, 목적지 이름, 밑에 왼쪽에서 오른쪽으로 옅어지는 초록 밑줄. 그 밑에 몇 km 뒤 어디로 도는지 */
+  .navdest { position: relative; display: flex; align-items: center; gap: 8px; padding: 10px 14px 10px 12px; }
+  .navdest::after {
+    content: ''; position: absolute; left: 12px; right: 12px; bottom: 0; height: 2px; border-radius: 2px;
+    background: linear-gradient(90deg, #03c75a 0%, rgba(3, 199, 90, .45) 45%, rgba(3, 199, 90, 0) 100%);
+  }
+  .nd-icon { flex: none; width: 22px; height: 22px; filter: drop-shadow(0 1px 2px rgba(3, 199, 90, .35)); }
+  .nd-icon svg { width: 22px; height: 22px; display: block; }
+  .nd-name { min-width: 0; font-size: 16px; font-weight: 800; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .nd-via { flex: 0 1 auto; max-width: 40%; margin-left: auto; font-size: 12px; font-weight: 700; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .nd-via:empty { display: none; }
+  #app.tesla .nd-name { color: var(--nv-fg); }
+  #app.tesla .nd-via { color: var(--nv-sub); }
 </style>
 </head>
 <body>
@@ -1099,6 +1113,12 @@
     </div>
 
     <div id="navPanel" class="navpanel" hidden>
+      <!-- 맨 위: 목적지 (아이콘 + 이름, 밑에 초록 밑줄). 그 밑에 몇 km 뒤 어디로 도는지 -->
+      <div class="navdest">
+        <span class="nd-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="12" fill="#03c75a"/><path d="M12 5.6a4.6 4.6 0 0 0-4.6 4.6c0 3.4 4.6 7.9 4.6 7.9s4.6-4.5 4.6-7.9A4.6 4.6 0 0 0 12 5.6z" fill="#fff"/><circle cx="12" cy="10.2" r="1.7" fill="#03c75a"/></svg></span>
+        <span id="navDestName" class="nd-name">-</span>
+        <span id="navDestVia" class="nd-via"></span>
+      </div>
       <div class="turn">
         <div id="turnIcon" class="turnicon"></div>
         <div>
@@ -1106,7 +1126,7 @@
           <div id="turnText" class="turntext"></div>
         </div>
       </div>
-      <div id="nextTurn" class="nextturn" hidden><small>그다음</small><span id="nextIcon" class="nexticon"></span><span id="nextDist"></span></div>
+      <div id="nextTurn" class="nextturn" hidden aria-label="그다음 안내"><span id="nextIcon" class="nexticon"></span><span id="nextDist"></span></div>
       <div class="navmeta">
         <b id="navRemain">-</b><span id="navTime">-</span><span id="navEta">-</span>
         <button id="navEnd">안내 종료</button>
@@ -1237,6 +1257,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-47"></script>
+<script src="app.js?v=2026.11.14-48"></script>
 </body>
 </html>

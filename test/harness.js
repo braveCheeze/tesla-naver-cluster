@@ -1299,6 +1299,9 @@
         rightGap: app.right - clock.right >= 30 && clock.top - app.top >= 16 && app.right - strip.right >= 30,
         alertsUnderNav: alerts.top >= np.bottom && alerts.top - np.bottom < 30 && alerts.left < app.left + 40,
         buttons70: btn.width >= 36 && btn.width <= 42,
+        // 길안내 패널 맨 위에 목적지 줄(아이콘 + 이름 + 밑줄), 그 밑에 회전 안내
+        destRow: (() => { const d = document.querySelector('.navdest').getBoundingClientRect(), tn = document.querySelector('.turn').getBoundingClientRect();
+          return text('#navDestName') === R.dest.name && d.top >= np.top - 1 && d.bottom <= tn.top + 1 && !!document.querySelector('.navdest .nd-icon svg'); })(),
         // 화면이 넓으면(1000px 이상, 테슬라 브라우저를 크게 펼친 1307×747) 왼쪽 나침반 위에 속도계, 보통 크기(804)에서는 숨김
         speedWhenWide: (() => { const sb = document.querySelector('.speedbox'), on = sb.getClientRects().length > 0 && getComputedStyle(sb).display !== 'none';
           if (innerWidth < 1000) return !on;
