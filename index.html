@@ -1255,6 +1255,18 @@
   .navtray.open ~ .backme { bottom: 150px; }
   @keyframes bmIn { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
   @keyframes bmCount { to { transform: scaleX(0); } }
+
+  /* ---------- 벡터(GL) 지도 (2026-11-14) ----------
+     캔버스는 돌리지 않고 화면 아래로 길게(가운데 = 차 위치, 화면 70% 높이) 두고, 지도 자체를 돌리고 기울인다.
+     글자·카메라·방지턱 표시는 원래 똑바로라 거꾸로 돌릴 필요가 없다 */
+  #map.drive.gl .mapcanvas {
+    inset: auto; left: 0 !important; top: 0 !important; width: 100% !important; height: var(--gh) !important;
+    transform: none !important; transition: none !important;
+  }
+  #map.gl .me-arrow { transition: transform .3s linear; }
+  #map.drive.gl .cammk, #map.drive.gl .bumpmk { transform: none; transition: none; }
+  /* 다크 스타일을 못 받았을 때만: 지도 캔버스를 어둡게 (색은 뒤집지 않는다) */
+  #map.gldim .mapcanvas canvas { filter: brightness(.55) contrast(1.1); }
 </style>
 </head>
 <body>
@@ -1468,9 +1480,10 @@
     </select>
     <p class="hint">자동이면 지금 위치의 해 지는 시각에 맞춰 지도를 어둡게 바꿉니다. 지도 위 달·해 버튼으로도 자동 → 항상 어둡게 → 항상 밝게 순서로 바꿀 수 있습니다.</p>
     <label class="check"><input type="checkbox" id="optHup"> 진행 방향이 위로</label>
-    <label class="check"><input type="checkbox" id="optStopNorth"> 멈추면 북쪽이 위로 (가게 이름 글자를 똑바로)</label>
+    <label class="check"><input type="checkbox" id="optGl"> 벡터 지도 (지도를 돌려도 글자가 똑바로 · 밤에는 네이버 다크 지도)</label>
+    <label class="check"><input type="checkbox" id="optStopNorth"> 멈추면 북쪽이 위로 (그림 지도일 때만: 가게 이름 글자를 똑바로)</label>
     <label class="check"><input type="checkbox" id="optTilt"> 3D 기울기</label>
-    <p class="hint">주행 중에는 차가 화면 아래쪽에 오고 앞쪽 길이 더 넓게 보입니다. 지도를 만지면 북쪽이 위인 평면 지도로 바뀌고, 위치 버튼을 누르거나 15초가 지나면 돌아옵니다.</p>
+    <p class="hint">주행 중에는 차가 화면 아래쪽에 오고 앞쪽 길이 더 넓게 보입니다. 지도를 끌면 방향은 그대로 앞길을 보여 주고, 아래 '내 위치로'를 누르거나 5초가 지나면 돌아옵니다. 벡터 지도가 이상하면 끄면 예전 그림 지도로 돌아갑니다.</p>
 
     <hr>
     <label class="lbl" for="optRoute">경로 옵션</label>
@@ -1503,6 +1516,6 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="app.js?v=2026.11.14-73"></script>
+<script src="app.js?v=2026.11.14-74"></script>
 </body>
 </html>

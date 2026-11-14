@@ -1059,8 +1059,11 @@
       set(prevOpt);
       t.prefs.headingUp = prevHup;
     }
-    const ok = r.driving === true && r.after1s === true && r.after4s === false && r.creep === false && r.movingAgain === true && r.offStopped === true;
-    return { pass: ok, detail: 'drive view while driving ' + r.driving + ', stopped 1 s ' + r.after1s + ', stopped 4 s ' + r.after4s + ' (north up), creeping ' + r.creep +
+    // 벡터(GL) 지도는 돌려도 글자가 똑바로라 멈춰도 진행 방향 위 그대로 (설정과 상관없이)
+    const gl = !!(t.glOn && t.glOn());
+    const ok = gl ? (r.driving === true && r.after1s === true && r.after4s === true && r.creep === true && r.movingAgain === true && r.offStopped === true)
+      : (r.driving === true && r.after1s === true && r.after4s === false && r.creep === false && r.movingAgain === true && r.offStopped === true);
+    return { pass: ok, detail: (gl ? '[GL map: stays heading-up when stopped] ' : '') + 'drive view while driving ' + r.driving + ', stopped 1 s ' + r.after1s + ', stopped 4 s ' + r.after4s + ' (north up), creeping ' + r.creep +
       ', moving again ' + r.movingAgain + ', setting off & stopped ' + r.offStopped };
   }
 
@@ -2203,6 +2206,7 @@
   //   - '내 위치로'를 누르거나 손을 떼고 5초 지나면 내 위치로 돌아간다
   //   - 톡 치기(10px 안)는 따라가기를 안 끊고, 두 손가락·휠 확대/축소도 주행 화면·따라가기 그대로
   async function s56() {
+    if (T().glOn && T().glOn()) return s56gl();
     const t = T(), r = {}, prevHup = t.prefs.headingUp, prevStop = t.prefs.stopNorth;
     const lmap = () => t.getMap().map;
     const cv = () => document.querySelector('#map .mapcanvas');
@@ -2724,6 +2728,75 @@
     return { pass: !!ok, detail: 'caught after ' + r.caughtAfter + ' fixes (want ≤3); start ' + r.startAhead + ' m ahead at ' + r.startBrg + '°; ' +
       'stale route retried after ' + r.retryAfter + ' s (want ≤5); next retry after ' + r.thirdAfter + ' s (want ≥15); joined good route ' + r.joined +
       ', extra calls ' + r.extraCalls + (k3 ? '' : '') };
+  }
+
+  // S56 (벡터 GL 지도): 지도 라이브러리가 돌린 지도를 직접 끈다. 끄는 동안 방향(지도 회전)은 그대로, '내 위치로', 5초 뒤 복귀
+  async function s56gl() {
+    const t = T(), r = { gl: true }, prevHup = t.prefs.headingUp;
+    const gm = () => t.getMap().map, mb = () => gm()._mapbox;
+    const cv = () => document.querySelector('#map .mapcanvas canvas');
+    const center = () => t.getMap().getCenter();
+    const under = (x, y) => { const b = cv().getBoundingClientRect(); const ll = mb().unproject([x - b.left, y - b.top]); return { lat: ll.lat, lng: ll.lng }; };
+    const me = (type, x, y, tg) => (tg || cv()).dispatchEvent(new MouseEvent(type, { clientX: x, clientY: y, bubbles: true, cancelable: true, button: 0, buttons: type === 'mouseup' ? 0 : 1, view: window }));
+    const pe = (type, x, y) => cv().dispatchEvent(new PointerEvent(type, { pointerId: 1, clientX: x, clientY: y, bubbles: true, cancelable: true, pointerType: 'mouse', button: 0, buttons: type === 'pointerup' ? 0 : 1 }));
+    const drag = async (x0, y0, dx, dy) => {
+      pe('pointerdown', x0, y0); me('mousedown', x0, y0);
+      for (let k = 1; k <= 6; k++) { const x = x0 + dx * k / 6, y = y0 + dy * k / 6; pe('pointermove', x, y); me('mousemove', x, y, window); me('mousemove', x, y); await sleep(30); }
+    };
+    const up = (x, y) => { pe('pointerup', x, y); me('mouseup', x, y, window); me('mouseup', x, y); };
+    let pos = TRIP_ORIGIN;
+    const drive = (n) => { for (let k = 0; k < n; k++) { pos = dest(pos, 80, 15); feed(pos, 15, 80); } };
+    try {
+      t.prefs.headingUp = true;
+      t.setFollowing(true);
+      drive(8);
+      t.zoomCtl.manualUntil = clock + 1e9;
+      await waitFor(() => Math.abs(gm().getRotation() - 80) < 0.3, 4000);   // 들어올 때 돌아가는 애니메이션이 끝날 때까지
+      r.drive0 = t.view.drive;
+      r.rot0 = Math.round(gm().getRotation());              // 진행 방향 80° 가 위 (지도 회전 = 80)
+      const host = document.getElementById('map').getBoundingClientRect();
+      const sx = host.left + host.width * 0.5, sy = host.top + host.height * 0.42;
+      const c0 = center(), L0 = under(sx, sy);
+      await drag(sx, sy, 70, 110);
+      r.peek = t.state.peek === true && t.state.following === false;
+      r.stillDrive = t.view.drive === true;
+      r.followsFinger = hav(L0, under(sx + 70, sy + 110));   // 손가락 아래 지점이 손가락을 따라왔는지 (m)
+      r.moved = hav(center(), c0);
+      r.pill = visible('#backMe');
+      const c1 = center(); drive(1); await sleep(400);
+      r.stays = hav(c1, center());                          // 새 GPS 가 와도 보던 자리 그대로
+      r.rotKept = Math.abs(gm().getRotation() - 80) < 2;    // 방향은 그대로
+      up(sx + 70, sy + 110);
+      await sleep(100);
+      r.counting = document.getElementById('backMe').classList.contains('count');
+      document.getElementById('backMe').click();
+      r.btnBack = t.state.following === true && t.state.peek === false && !visible('#backMe');
+      const meAt = () => t.motion.cur || t.state.fix;
+      await waitFor(() => hav(center(), meAt()) < 3, 3000);
+      r.btnCenter = hav(center(), meAt());
+      await drag(sx, sy, -80, 60); up(sx - 80, sy + 60);
+      r.peek2 = t.state.peek === true;
+      await sleep(4500);
+      r.notYet = t.state.following === false;
+      await waitFor(() => t.state.following, 2500);
+      r.autoBack = t.state.following === true && !visible('#backMe') && t.view.drive === true;
+      // 휠 확대: 주행 화면·따라가기 그대로
+      await sleep(300);
+      const z0 = gm().getZoom();
+      cv().dispatchEvent(new WheelEvent('wheel', { deltaY: -240, deltaMode: 0, clientX: sx, clientY: sy, bubbles: true, cancelable: true }));
+      await waitFor(() => gm().getZoom() > z0 + 0.1, 2000);
+      r.wheelUp = gm().getZoom() > z0 + 0.1;
+      r.wheelKeeps = t.state.following === true && t.view.drive === true;
+    } finally {
+      up(0, 0);
+      t.prefs.headingUp = prevHup;
+      t.zoomCtl.manualUntil = 0;
+      t.setFollowing(true);
+    }
+    const ok = r.drive0 && r.rot0 === 80 && r.peek && r.stillDrive && r.followsFinger < 6 && r.moved > 20 && r.pill && r.stays < 1 && r.rotKept &&
+      r.counting && r.btnBack && r.btnCenter < 3 && r.peek2 && r.notYet && r.autoBack && r.wheelUp && r.wheelKeeps;
+    const m = (v) => (typeof v === 'number' ? Math.round(v * 10) / 10 : v);
+    return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + m(r[k])).join(', ') };
   }
 
   async function s55() {

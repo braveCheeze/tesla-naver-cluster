@@ -36,6 +36,8 @@
     // 멈추면 북쪽 위로: 진행 방향 위 화면은 지도 그림째 돌려서 가게 글자도 눕는다. 3초 넘게 서 있으면 북쪽 위로 돌려 글자를 바로 세운다
     stopNorth: store.get('stopNorth') !== '0',
     tilt: store.get('tilt') !== '0',
+    // 벡터(GL) 지도: 지도를 돌려도 글자·아이콘은 똑바로, 밤에는 네이버 다크 지도. 끄면 예전 그림(래스터) 지도 (2026-11-14)
+    gl: store.get('gl') !== '0',
     routeOpt: store.get('routeOpt') || 'traoptimal', // 기본은 '추천'(네이버 실시간 최적)
     // 테슬라 모드: 속도는 차 화면에 이미 나오므로 왼쪽 계기판을 없애고 지도를 넓게, 시계·날씨 등은 지도 위 글자로.
     // 테슬라 브라우저는 'X11; Linux x86_64' 로만 보이므로 그때 기본으로 켠다 (설정에서 바꾸면 그 값을 따른다)
@@ -44,7 +46,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-73'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-74'; // 배포 때 index.html 의 app.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   // 브라우저에 저장된 예전 index.html 이 새 app.js 를 불러온 경우(화면 요소가 맞지 않아 버튼 연결에서 멈춘다):
@@ -413,8 +415,10 @@
       const N = naver.maps;
       this.cams = new Map();
       this.route = null;
+      this.gl = glWanted();
+      this.darkReady = false; this.dark = false; this._tilt = 0;
       this.map = new N.Map(el, {
-        center: new N.LatLng(c.lat, c.lng), zoom: 17, minZoom: 7,
+        center: new N.LatLng(c.lat, c.lng), zoom: 17, minZoom: 7, gl: this.gl,
         zoomControl: false, mapTypeControl: false, scaleControl: false,
         // 지도 출처 표시(© NAVER Corp. /국토교통부 /경찰청)는 지우지 않고(이용 약관), 왼쪽 아래 구석 로고 옆으로 (오른쪽 아래는 GPS·업데이트 버튼)
         mapDataControlOptions: { position: N.Position.BOTTOM_LEFT },
@@ -425,12 +429,107 @@
       });
       N.Event.addListener(this.map, 'dragstart', onUserPan);
       this.setTraffic(prefs.traffic);
+      if (this.gl) { this.initDark(this.map); this.watchGl(el, this.map); }
+    },
+    // 차 브라우저에서 WebGL 이 끊기면(context lost) 지도가 하얗게 남는다: 바로 그림(래스터) 지도로 다시 만든다
+    watchGl(el, map) {
+      let n = 0;
+      const hook = () => {
+        if (this.map !== map) return;
+        const cv = el.querySelector('canvas');
+        if (!cv) { if (++n < 20) setTimeout(hook, 250); return; }
+        cv.addEventListener('webglcontextlost', () => {
+          if (this.map !== map) return;
+          glBroken = true;
+          report('warn', { msg: 'webgl context lost: raster map' });
+          setTimeout(() => { if (mapA === this) useMap(NaverAdapter).then(() => { if (mapA && mapA.setDark) mapA.setDark(state.night, true); }); }, 0);
+        }, { once: true });
+      };
+      hook();
+    },
+    // GL 지도 회전(진행 방향, 도)·기울기(도). 글자·아이콘은 똑바로 선 채 지도만 돈다
+    setView(rot, tilt) {
+      if (!this.gl || !this.map) return;
+      this.map.setRotation(rot);
+      if (Math.abs(tilt - this._tilt) > 0.05) { this.map.setTilt(tilt); this._tilt = tilt; }
+    },
+    // 밤: 네이버 GL 스타일 안에 들어 있는 다크 지도(dbasic: 어두운 바탕·글자·POI)를 지도 종류로 등록해 바꿔 끼운다.
+    // 경로선·카메라·내 차 색은 그대로. 스타일을 못 받으면 지도 캔버스만 어둡게(색은 그대로) 한다
+    async initDark(map) {
+      try {
+        let n = null, url = null;
+        for (let k = 0; k < 40 && this.map === map; k++) { // 스타일은 지도를 만든 뒤 따로 받아 온다 (최대 10초)
+          n = map.mapTypes && map.mapTypes.normal;
+          url = performance.getEntriesByType('resource').map((x) => x.name).find((u) => /\/style\/deployed\/.+\.json/.test(u));
+          if (n && n.mapTypeStyle && url) break;
+          await new Promise((res) => setTimeout(res, 250));
+        }
+        if (this.map !== map || !n || !n.mapTypeStyle) throw new Error('no normal style');
+        if (!url) url = 'https://map.pstatic.net/resource/api/v2/style/deployed/fd753228-778c-4242-8b6b-24ca6329458a/PCWeb_Real_conv.json';
+        const full = await (await fetch(url)).json();
+        // 일반 지도 스타일과 같은 방식: 다크 지도 종류의 모든 묶음을 넣고, 바탕·글자·POI·지하철만 켠다.
+        // 나머지(실시간 교통 dctt 등)는 꺼 둔 채로 넣어야 교통 레이어 같은 것이 켤 수 있다
+        const cats = (((full.metadata || {})['map-types'] || {}).dbasic || {}).categories || {};
+        const on = new Set([].concat(cats.default || [], cats.overlay || [], cats.poi || [], cats.transit_subway || []));
+        if (!on.size) throw new Error('no dbasic map type');
+        const all = new Set([].concat(...Object.values(cats)).filter((g) => g[0] !== '!'));
+        const keep = new Set(n.mapTypeStyle.layers.filter((l) => !(l.metadata || {}).group).map((l) => l.id));
+        const layers = full.layers.filter((l) => all.has((l.metadata || {}).group) || keep.has(l.id)).map((l) => {
+          const c = JSON.parse(JSON.stringify(l));
+          if (on.has((l.metadata || {}).group)) c.layout = Object.assign({}, c.layout, { visibility: 'visible' });
+          return c;
+        });
+        const style = Object.assign({}, n.mapTypeStyle, { name: 'dbasic', layers });
+        const dark = new n.constructor(style, Object.assign({}, n._options, {
+          uid: 'naver:dbasic-vt', name: '야간', darktheme: true, tileSize: n.tileSize, minZoom: n.minZoom, maxZoom: n.maxZoom,
+        }));
+        if (this.map !== map) return;
+        map.mapTypes.set('tncdark', dark);
+        this.darkReady = true;
+      } catch (e) {
+        report('warn', { msg: 'gl dark style: ' + String(e.message || e).slice(0, 120) });
+      }
+      if (this.map === map) this.setDark(state.night, true);
+    },
+    setDark(on, force) {
+      if (!this.gl || !this.map || (!force && on === this.dark)) return;
+      this.dark = on;
+      if (this.darkReady) { this.map.setMapTypeId(on ? 'tncdark' : 'normal'); this.reattachTraffic(); }
+      $('#map').classList.toggle('gldim', on && !this.darkReady);
+    },
+    // 지도 종류(낮/밤)를 바꾸면 스타일이 통째로 바뀌어 실시간 교통 선이 빠진다: 다시 붙인다 (스타일이 다 바뀔 때까지 몇 번 확인)
+    // 다크 지도 안의 실시간 교통 선은 네이버가 켜 주지 않아(직접 만든 지도 종류) 앱이 켜고 끈다
+    darkTraffic(on) {
+      try {
+        const mb = this.map && this.map._mapbox;
+        if (!mb) return;
+        mb.getStyle().layers.forEach((l) => {
+          if (/^CTT\/다크\//.test(l.id) && mb.getLayoutProperty(l.id, 'visibility') !== (on ? 'visible' : 'none')) mb.setLayoutProperty(l.id, 'visibility', on ? 'visible' : 'none');
+        });
+      } catch (e) { /* 스타일이 아직 바뀌는 중: 다음 확인 때 */ }
+    },
+    reattachTraffic() {
+      clearTimeout(this._trafficT);
+      let n = 0;
+      const check = () => {
+        if (!this.map || !this.traffic) return;
+        if (this.dark && this.darkReady) this.darkTraffic(prefs.traffic); // 다크 지도: 다크용 교통 선(CTT/다크/*)을 직접 켠다
+        else if (prefs.traffic) {
+          const mb = this.map._mapbox, ids = this.traffic._layerIds || [];
+          let missing = true;
+          try { missing = !ids.length || ids.some((id) => !mb.getLayer(id)); } catch (e) { missing = true; }
+          if (missing) { try { this.traffic.setMap(null); this.traffic.setMap(this.map); } catch (e) { /* 다음 확인 때 */ } }
+        }
+        if (++n < 8) this._trafficT = setTimeout(check, 750);
+      };
+      this._trafficT = setTimeout(check, 500);
     },
     // 네이버 실시간 교통 레이어: 도로를 막힘 정도에 따라 색칠 (5분마다 갱신)
     setTraffic(on) {
       if (!this.map || !naver.maps.TrafficLayer) return;
       if (!this.traffic) this.traffic = new naver.maps.TrafficLayer({ interval: 300000 });
       this.traffic.setMap(on ? this.map : null);
+      if (this.gl && this.dark) this.darkTraffic(on);
     },
     setMe(lat, lng) {
       this.marker.setPosition(new naver.maps.LatLng(lat, lng));
@@ -446,6 +545,7 @@
     // 주행 화면(돌리고 기울인 캔버스)에서는 지도 라이브러리의 손 조작을 끄고 앱이 직접 옮긴다
     // (라이브러리는 화면 좌표를 돌리지 않고 써서 끄는 방향과 지도가 따로 논다)
     setInteract(on) {
+      if (this.gl) return; // GL 지도는 돌린 채로도 손 조작이 맞게 움직인다
       this.map.setOptions({ draggable: on, pinchZoom: on, scrollWheel: on, disableDoubleTapZoom: !on, disableDoubleClickZoom: !on });
     },
     // 지도 가운데를 캔버스 픽셀만큼 옮긴다 (애니메이션 없이)
@@ -668,6 +768,29 @@
   // 네이버 래스터 지도는 회전이 안 되므로 지도 캔버스를 차 위치(회전 중심)를 가운데로 하는
   // 큰 정사각형으로 키우고 CSS transform 으로 돌리고 기울인다. 크기는 어느 각도에서도 화면을 덮도록 계산.
   const VIEW_TILT = 22, VIEW_PERSP = 1400, VIEW_PIVOT = 0.7, VIEW_MARGIN = 32;
+  const GL_TILT = 40; // GL 지도 기울기 (도)
+  // GL 지도 회전·기울기를 매 프레임 조금씩 목표로 (1초에 한 번 오는 방향이 툭툭 끊기지 않게)
+  const glView = { rot: 0, tilt: 0, tRot: 0, tTilt: 0, raf: 0, last: 0 };
+  function glAim(rot, tilt) {
+    glView.tRot = glView.rot + turn(rot - glView.rot);
+    glView.tTilt = tilt;
+    if (!glView.raf) { glView.last = performance.now(); glView.raf = requestAnimationFrame(glStep); }
+  }
+  function glStep(now) {
+    const dt = Math.min(0.1, Math.max(0, (now - glView.last) / 1000));
+    glView.last = now;
+    const k = 1 - Math.exp(-dt / 0.3);
+    glView.rot += (glView.tRot - glView.rot) * k;
+    glView.tilt += (glView.tTilt - glView.tilt) * k;
+    const done = Math.abs(glView.tRot - glView.rot) < 0.05 && Math.abs(glView.tTilt - glView.tilt) < 0.05;
+    if (done) { glView.rot = glView.tRot; glView.tilt = glView.tTilt; }
+    if (mapA && mapA.gl) {
+      mapA.setView(turn(glView.rot), glView.tilt);
+      if (state.heading !== null) rotateMe(state.heading - glView.rot); // 내 차 화살표는 지도가 돈 만큼 덜 돌린다
+    }
+    glView.raf = done ? 0 : requestAnimationFrame(glStep);
+  }
+  const glOn = () => !!(mapA && mapA.gl);
   const view = { drive: false, key: '', rot: 0, w: 0, h: 0, cs: 0, cx: 0, cy: 0, tilt: 0 };
 
   function wantDrive() {
@@ -676,7 +799,7 @@
   // 멈춤 판단: 시속 3km 아래로 3초 넘게 있으면 북쪽 위로, 다시 시속 8km 를 넘으면 진행 방향 위로 (서고 가는 사이 흔들리지 않게 차이를 둔다)
   function checkStopNorth(now) {
     let want = state.stopNorth;
-    if (!prefs.stopNorth || !prefs.headingUp) want = false;
+    if (!prefs.stopNorth || !prefs.headingUp || glOn()) want = false; // GL 지도는 돌려도 글자가 똑바로라 멈춰도 그대로
     else if (state.speedKmh >= 8) { state.stillAt = 0; want = false; }
     else if (state.speedKmh < 3) {
       if (!state.stillAt) state.stillAt = now;
@@ -690,6 +813,7 @@
   }
   function setViewRot() {
     view.rot += turn(-state.heading - view.rot); // 누적 각도: 350°→10° 에서 한 바퀴 돌지 않게
+    if (glOn()) { glAim(-view.rot, view.tilt); return; } // GL: 지도 자체를 돌린다 (글자는 똑바로)
     const s = $('#map').style, r = Math.round(view.rot * 100) / 100;
     s.setProperty('--rot', r + 'deg');
     s.setProperty('--crot', -r + 'deg'); // 카메라 마커 숫자는 똑바로
@@ -698,9 +822,13 @@
   function layoutView(force) {
     const host = $('#map'), canvas = host.querySelector('.mapcanvas');
     if (force || !view.w) measureView();
-    const w = view.w, h = view.h, drive = wantDrive();
+    const w = view.w, h = view.h, drive = wantDrive(), gl = glOn();
     let cs = 0, cy = h / 2, tilt = 0;
-    if (drive) {
+    if (drive && gl) {
+      // GL: 캔버스는 돌리지 않고 아래로 길게(가운데 = 화면 70% 높이, 차 위치) 두고 지도 자체를 돌리고 기울인다
+      cy = Math.round(h * VIEW_PIVOT);
+      tilt = prefs.tilt ? GL_TILT : 0;
+    } else if (drive) {
       cy = Math.round(h * VIEW_PIVOT);
       tilt = prefs.tilt ? VIEW_TILT : 0;
       // 기울였을 때 화면 맨 위에 보이는 지점까지의 거리 yC 와 그 지점에서 필요한 반폭 xC
@@ -714,7 +842,7 @@
       }
       cs = 2 * Math.ceil(Math.hypot(Math.max(xC, w / 2), Math.max(yC, h - cy)) + VIEW_MARGIN);
     }
-    const key = drive ? [w, h, cs, cy, tilt].join() : w + 'x' + h;
+    const key = (drive ? [w, h, cs, cy, tilt].join() : w + 'x' + h) + (gl ? ':gl' : '');
     const wasDrive = view.drive;
     if (!force && drive === wasDrive && key === view.key) {
       if (drive) setViewRot();
@@ -724,7 +852,11 @@
     const snap = drive && wasDrive;
     if (snap) host.classList.add('snap');
     Object.assign(view, { drive, key, cs, cx: w / 2, cy, tilt });
-    if (drive) {
+    if (drive && gl) {
+      host.style.setProperty('--gh', 2 * cy + 'px');
+      if (!wasDrive) view.rot = turn(-state.heading);
+      setViewRot();
+    } else if (drive) {
       const s = host.style;
       s.setProperty('--cl', Math.round(w / 2 - cs / 2) + 'px');
       s.setProperty('--ct', Math.round(cy - cs / 2) + 'px');
@@ -735,13 +867,15 @@
       setViewRot();
     }
     host.classList.toggle('drive', drive);
+    host.classList.toggle('gl', gl);
+    if (gl && !drive) glAim(0, 0); // 평면 지도: 북쪽 위, 기울기 없음
     if (mapA && mapA.setInteract) { try { mapA.setInteract(!drive); } catch (e) { /* 다음 배치 때 다시 */ } }
     let jumped = false;
     if (mapA && mapA.resize && w && h) {
       // 지도 라이브러리가 캔버스에 직접 넣은 크기는 지우고 CSS 크기를 따르게 한다
       const clear = () => { if (canvas) { canvas.style.width = ''; canvas.style.height = ''; } };
       clear();
-      try { mapA.resize(drive ? cs : w, drive ? cs : h); } catch (e) { /* 다음 배치 때 다시 */ }
+      try { mapA.resize(drive ? (gl ? w : cs) : w, drive ? (gl ? 2 * cy : cs) : h); } catch (e) { /* 다음 배치 때 다시 */ }
       clear();
       if (state.fix && !state.peek && (drive || wasDrive || state.following)) { // 앞길을 보는 중이면 보던 자리 그대로
         const p = mePos();
@@ -818,14 +952,37 @@
     return store.get('keyCache') || '';
   }
 
+  // WebGL 을 쓸 수 있는지 (벡터 지도)
+  function webglOk() {
+    try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch (e) { return false; }
+  }
+  // 지금 지도를 GL 로 만들지: 설정이 켜져 있고, GL 서브모듈이 와 있고, WebGL 이 되면
+  let glBroken = false; // 이번 실행 중 WebGL 이 끊긴 적이 있으면 그림(래스터) 지도로
+  function glWanted() {
+    const N = window.naver && naver.maps;
+    if (!prefs.gl || glBroken || !N || !N.jsContentLoaded || !webglOk()) return false;
+    try { return typeof N.glEnabled === 'function' ? !!N.glEnabled() : N.glEnabled !== false; } catch (e) { return false; }
+  }
+  try { performance.setResourceTimingBufferSize(2000); } catch (e) { /* 지원 안 함 */ } // GL 스타일 주소를 찾을 때 쓴다
+
   async function bootMap() {
     // 설정에 직접 넣은 키가 우선. 없으면 길안내 서버에서 받는다 (저장 안 함: 서버에서 바꾸면 바로 반영)
     let key = store.get('key');
     if (!key) key = await fetchMapKey();
     if (!key) { await fallbackMap(null); return; }
     try {
-      await loadScript('https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=' + encodeURIComponent(key));
+      // GL(벡터) 서브모듈도 같이 받는다. 실제로 GL 로 그릴지는 지도를 만들 때 정한다 (설정·WebGL 지원)
+      const wantGl = webglOk();
+      await loadScript('https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=' + encodeURIComponent(key) + (wantGl ? '&submodules=gl' : ''));
       if (!(window.naver && naver.maps && naver.maps.Map)) throw new Error('naver.maps missing');
+      // 서브모듈은 maps.js 뒤에 따로 내려온다. 8초 안에 안 오면 래스터 지도로
+      if (wantGl && !naver.maps.jsContentLoaded) {
+        await new Promise((res) => {
+          const prev = naver.maps.onJSContentLoaded;
+          naver.maps.onJSContentLoaded = () => { try { if (prev) prev(); } catch (e) { /* 무시 */ } res(); };
+          setTimeout(res, 8000);
+        });
+      }
       if (naverFailed) return;
       await useMap(NaverAdapter);
       setSource('네이버 지도', false);
@@ -3178,7 +3335,7 @@
     if (state.heading !== null) {
       $('#headingText').textContent = dirName(state.heading) + ' · ' + Math.round(state.heading) + '°';
       rotateCompass(state.heading);
-      rotateMe(state.heading);
+      rotateMe(state.heading - (glOn() ? glView.rot : 0));
       meEl.classList.remove('nohead');
     } else {
       $('#headingText').textContent = '방향 -';
@@ -3378,7 +3535,7 @@
   function holdRefollow() { clearTimeout(state.refollowTimer); $('#backMe').classList.remove('count'); }
   function renderBackMe() { $('#backMe').hidden = state.following || nav.preview || !state.fix; }
   // 지도 라이브러리가 직접 끌기 시작(북쪽 위 평면 지도): 손가락이 닿아 있는 동안은 기다렸다가 뗄 때부터 시간을 잰다
-  function onUserPan() { setFollowing(false, nav.preview || gesture.pointers.size > 0); }
+  function onUserPan() { setFollowing(false, nav.preview || gesture.pointers.size > 0, !!(view.drive && glOn())); }
   // 지도 손 조작: 톡 치기는 화면 버튼만 보여 준다.
   // 진행 방향 위 주행 화면에서 10px 넘게 끌면 방향·기울기는 그대로 둔 채 지도만 손가락을 따라 옮긴다(앞길 보기).
   // 두 손가락·휠은 가운데(내 차)를 그대로 두고 한 단계씩 확대/축소. 북쪽 위 평면 지도는 지도 라이브러리가 직접 처리한다.
@@ -3418,8 +3575,8 @@
     if (!p) return;
     p.x = e.clientX; p.y = e.clientY;
     if (gesture.pointers.size >= 2) {
-      // 주행 화면: 두 손가락 간격이 1.35배 벌어지거나 줄면 한 단계씩
-      if (view.drive && gesture.pinch && mapA) {
+      // 주행 화면(래스터): 두 손가락 간격이 1.35배 벌어지거나 줄면 한 단계씩 (GL 지도는 지도 라이브러리가 직접)
+      if (view.drive && !glOn() && gesture.pinch && mapA) {
         const d = pinchDist(), r = d / gesture.pinch;
         if (r > 1.35 || r < 0.74) { mapA.zoomBy(r > 1 ? 1 : -1); gesture.pinch = d; }
       }
@@ -3427,7 +3584,7 @@
     }
     if (!gesture.used && Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) > 10) {
       userMapGesture();
-      if (view.drive) {
+      if (view.drive && !glOn()) {
         gesture.panning = true;
         if (mapA && mapA.stop) mapA.stop(); // '내 위치로' 돌아가는 중이었으면 멈추고 손가락을 따른다
         if (!state.peek) setFollowing(false, true, true); // 주행 화면 그대로 앞길 보기 시작
@@ -3448,7 +3605,7 @@
   function onMapWheel(e) {
     if (e.target.closest && e.target.closest(NOT_MAP)) return;
     userMapGesture();
-    if (!view.drive || !mapA || !e.deltaY) return;
+    if (!view.drive || glOn() || !mapA || !e.deltaY) return;
     const now = Date.now();
     if (now - gesture.wheelAt > 250) { gesture.wheelAt = now; mapA.zoomBy(e.deltaY < 0 ? 1 : -1); }
   }
@@ -3774,6 +3931,7 @@
     state.night = isNightAt(new Date());
     const m = nightMode(), b = $('#nightBtn');
     $('#map').classList.toggle('night', state.night);
+    if (mapA && mapA.setDark) mapA.setDark(state.night);
     b.innerHTML = state.night ? ICON_MOON : ICON_SUN;
     b.classList.toggle('auto', m === 'auto');
     b.setAttribute('aria-label', '야간 지도: ' + NIGHT_LABEL[m]);
@@ -3835,6 +3993,8 @@
     $('#optWeather').checked = prefs.weather;
     $('#optHup').checked = prefs.headingUp;
     $('#optStopNorth').checked = prefs.stopNorth;
+    $('#optStopNorth').disabled = glOn();
+    $('#optGl').checked = prefs.gl;
     $('#optNight').value = nightMode();
     $('#optTilt').checked = prefs.tilt;
     $('#optTilt').disabled = !prefs.headingUp;
@@ -3953,6 +4113,16 @@
     prefs.stopNorth = e.target.checked; store.set('stopNorth', prefs.stopNorth ? null : '0');
     if (state.fix) checkStopNorth(state.fix.t);
   };
+  $('#optGl').onchange = async (e) => {
+    prefs.gl = e.target.checked; store.set('gl', prefs.gl ? null : '0');
+    // 지도를 새로 만든다 (경로·카메라는 다시 그린다)
+    if (mapA === NaverAdapter && window.naver && naver.maps && naver.maps.Map) {
+      await useMap(NaverAdapter);
+      if (mapA && mapA.setDark) mapA.setDark(state.night, true);
+      $('#optStopNorth').disabled = glOn();
+      toast(glOn() ? '벡터 지도로 바꿨습니다 (글자가 똑바로)' : (prefs.gl ? '이 화면에서는 벡터 지도를 쓸 수 없어 그림 지도로 둡니다' : '그림 지도로 바꿨습니다'), '', 3000);
+    }
+  };
   $('#optTilt').onchange = (e) => { prefs.tilt = e.target.checked; store.set('tilt', prefs.tilt ? null : '0'); layoutView(); };
   $('#optRoute').onchange = (e) => { prefs.routeOpt = e.target.value; store.set('routeOpt', prefs.routeOpt); };
   $('#proxyInput').onchange = (e) => {
@@ -4024,7 +4194,7 @@
   if (params.has('debug')) {
     window.__tnc = {
       state, camState, nav, cams, prefs, onFix, setRoute, startNav, endNav, startDemo, stopDemo, renderNav,
-      planRoute, doSearch, setFollowing, canvasPoint, gesture, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
+      planRoute, doSearch, setFollowing, canvasPoint, gesture, glView, glOn, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
       sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
       saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassNums, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, renderJunction,
