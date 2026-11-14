@@ -47,7 +47,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-82'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-83'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   // 브라우저에 저장된 예전 index.html 이 새 app.js 를 불러온 경우(화면 요소가 맞지 않아 버튼 연결에서 멈춘다):
@@ -2924,7 +2924,7 @@
     el.hidden = false;
     syncDrawer();
   }
-  const tollState = { g: null, numsKey: '', nums: [], code: '' };
+  const tollState = { g: null, numsKey: '', nums: [], code: '', items: 0 };
   // 하이패스 차로 번호 (2026-11-14 요청: '몇 번으로 가야 하이패스'). 한국도로공사 '영업소별 하이패스차로 운영현황'(data.go.kr 15043760,
   // 전국 영업소·방향별 1~25번 차로 종류)을 data/hipass.json 에 담아 둔다 (tools/build_hipass.py). 키·서버 없이 바로 찾는다.
   // (한국도로공사 실시간 API '영업소 하이패스 차로 개폐 현황'은 자율주행 시범 구간 3곳뿐이라 쓰지 않는다)
@@ -3021,16 +3021,20 @@
       if (lay.code) {
         const st = laneStripHtml(lay.code);
         el.innerHTML = st.html;
-        el.classList.toggle('dense', st.count > 12);
+        tollState.items = st.count;
         el.classList.remove('compact');
         el.setAttribute('aria-label', '하이패스 ' + lay.nums.join(', ') + '번 차로 (전체 ' + lay.code.length + '차로)');
       } else {
         el.innerHTML = lay.nums.map((n) => '<b class="ln hp">' + n + '</b>').join('');
-        el.classList.remove('dense');
+        tollState.items = 0;
         el.classList.add('compact');
         el.setAttribute('aria-label', '하이패스 ' + lay.nums.join(', ') + '번 차로');
       }
     }
+    // 칸이 좁으면(배지 옆 한 줄이면 8칸부터, 따로 한 줄이면 12칸부터) 회색 칸 번호는 숨기고 파란 칸 번호만 (2026-11-14 실제 앱: 동서울 '2122232425' 붙어 보임)
+    const n = tollState.items || 0, beside = g === nav.next;
+    el.classList.toggle('tight', n > (beside ? 7 : 11));
+    el.classList.toggle('dense', n > (beside ? 9 : 14));
     const show = tollState.nums.length > 0;
     el.hidden = !show;
     $('#tollCard').classList.toggle('has-lanes', show);
