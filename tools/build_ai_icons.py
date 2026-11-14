@@ -65,7 +65,11 @@ def main():
             im.thumbnail((480, 320), Image.LANCZOS)
             im.save(path, 'WEBP', quality=86)
         else:
-            rgba = build_cars.key(src)
+            try:
+                rgba = build_cars.key(src)
+            except Exception as e:
+                print('  ✗ 바탕을 못 뺌 %s: %s' % (fn, e))
+                continue
             pink = pink_count(rgba)
             if kind == 'car':
                 im, _ = build_cars.place(rgba)

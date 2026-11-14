@@ -30,8 +30,11 @@ def key(path):
     # 바탕 분홍은 완전한 #FF00FF 가 아니다(예: 248,5,247 → 분홍 정도 약 240): 테두리 띠에서 바탕색과 그 분홍 정도를 잰다
     border = np.concatenate([a[:16].reshape(-1, 3), a[-16:].reshape(-1, 3), a[:, :16].reshape(-1, 3), a[:, -16:].reshape(-1, 3)])
     bm = np.clip(np.minimum(border[:, 0], border[:, 2]) - border[:, 1], 0, 255)
-    M = np.median(border[bm > 150], axis=0).astype(np.float32)
-    hi = float(np.percentile(bm[bm > 150], 2)) - 6       # 이 위는 완전히 바탕
+    bgm = bm > 90    # 2026-11-15: AI 가 진분홍(239,2,119) 바탕으로 줄 때도 있어 150 → 90
+    if not bgm.any():
+        raise ValueError('테두리에 분홍 바탕이 없음')
+    M = np.median(border[bgm], axis=0).astype(np.float32)
+    hi = float(np.percentile(bm[bgm], 2)) - 6       # 이 위는 완전히 바탕
     lo = 24                                                # 이 아래는 차 (아주 옅은 분홍빛 반사는 그대로)
     alpha = 1.0 - np.clip((m - lo) / (hi - lo), 0, 1)
     # 섞인 색 되돌리기: P = a*C + (1-a)*M  →  C = (P - (1-a)*M) / a

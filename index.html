@@ -917,6 +917,13 @@
     animation: gnin .25s ease both;
   }
   #app.tesla .gps.tap { pointer-events: auto; cursor: pointer; }
+  /* 키보드 모의 주행 표시 (?sim 일 때만, PC 시험용) */
+  .simhud { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); z-index: 1200; pointer-events: none;
+    background: rgba(20, 22, 26, .86); color: #fff; border-radius: 12px; padding: 6px 14px 7px; text-align: center;
+    font: 700 14px/1.35 Pretendard, system-ui, sans-serif; box-shadow: 0 4px 14px rgba(0, 0, 0, .3); white-space: nowrap; }
+  .simhud b { color: #ffcc33; margin-right: 6px; }
+  .simhud .sv { font-size: 20px; font-weight: 800; }
+  .simhud small { display: block; font-size: 11px; font-weight: 600; color: #c9ced5; }
   @keyframes gnin { from { opacity: 0; transform: translate(-50%, -46%); } to { opacity: 1; transform: translate(-50%, -50%); } }
   .gpsnotice .gn-head { display: flex; gap: 12px; align-items: flex-start; }
   .gpsnotice .gn-ic { flex: none; width: 40px; height: 40px; border-radius: 50%; background: var(--nv-red, #e5484d);
@@ -1338,7 +1345,9 @@
   }
   .backme.count::after { animation: bmCount var(--bm-ms, 5000ms) linear forwards; }
   .backme:active { transform: translateX(-50%) scale(.96); }
-  .navtray.open ~ .backme { bottom: 150px; }
+  /* 아래 버튼 줄(bottom 84 + 높이 66 = 150)과 그 위 작은 버전 글자(.nt-ver, 약 156~176)가 열려 있으면 그 위로 12px 띄운다
+     (2026-11-15: 150 이라 '목적지 검색'에 딱 붙고 버전 글자를 덮었다) */
+  .navtray.open ~ .backme { bottom: 188px; }
   @keyframes bmIn { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
   @keyframes bmCount { to { transform: scaleX(1); } }
 
@@ -1639,8 +1648,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.14-105"></script>
-<script src="img/ai/picks.js?v=2026.11.14-105"></script>
-<script src="app.js?v=2026.11.14-105"></script>
+<script src="icons.js?v=2026.11.14-106"></script>
+<script src="img/ai/picks.js?v=2026.11.14-106"></script>
+<script src="app.js?v=2026.11.14-106"></script>
 </body>
 </html>

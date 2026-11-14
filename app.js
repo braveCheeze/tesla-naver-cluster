@@ -51,7 +51,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-105'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-106'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -4780,6 +4780,186 @@
     $('#app').classList.remove('demo');
     setGps('warn', 'GPS 신호 찾는 중');
     if (!silent) toast('데모를 멈췄습니다.', '', 2500);
+  }
+
+  // ---------- 키보드 모의 주행 (PC 시험용: 주소에 ?sim 이 있을 때만. 차 주소에는 없으므로 차에는 나오지 않는다) ----------
+  // 2026-11-15 요청 '내가 직접 wasd 키로 운전하면서 해 보고 싶다. w 누르면 속도가 점점 올라가고 s 누르면 브레이크, w 떼면 점점 줄어듦',
+  // 이어서 '모의 주행할 때 도로 벗어나면 안 돼'. 그래서 차는 늘 '길(궤도)' 위로만 간다:
+  //  - 길안내 중이면 안내 경로를 따라간다 (W/S 는 속도만)
+  //  - 아니면 지금 방향으로 1.2km 앞까지 네이버 길찾기 경로를 받아 그 길을 따라가고, 거의 다 가면 다음 앞길을 또 받는다.
+  //    A/D 를 누르면 그쪽(±80°, 250m)으로 가는 길을 받아 다음 갈림길에서 그쪽으로 꺾는다. 길을 받는 동안은 그 자리에 선다
+  // W/↑ 가속(빠를수록 천천히 붙음) · S/↓ 브레이크 · 아무것도 안 누르면 서서히 줄어듦 · Space 급정거 · Esc 끝.
+  // 키는 자판 위치(e.code)로 읽어 한글 입력 상태에서도 된다. 위치는 실제 GPS 처럼 1초에 한 번 onFix 로 넣는다(길안내·단속·재탐색이 그대로 반응).
+  // 데모와 같은 표시(state.demoTimer)를 써서 실제 GPS 는 무시하고, 주행 기록은 보관했다가 끝나면 되돌린다
+  const sim = { on: false, lat: 0, lng: 0, h: 0, v: 0, keys: new Set(), last: 0, loop: 0, timer: 0, track: null, s: 0, fetching: false, gen: 0, failAt: 0, note: '', turnFrom: null, straightAt: 0 };
+  const SIM_KEYS = { KeyW: 'up', ArrowUp: 'up', KeyS: 'down', ArrowDown: 'down', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right', Space: 'stop' };
+  function simTrack(pts, src) {
+    const cum = [0];
+    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + haversine(pts[i - 1], pts[i]));
+    return { pts, cum, total: cum[cum.length - 1], src };
+  }
+  function simLocate(tr, p) {   // p 에 가장 가까운 궤도 위 거리
+    let best = { d: Infinity, s: 0 };
+    for (let i = 0; i < tr.pts.length - 1; i++) {
+      const q = projectSeg(p, tr.pts[i], tr.pts[i + 1]);
+      if (q.dist < best.d) best = { d: q.dist, s: tr.cum[i] + q.t * (tr.cum[i + 1] - tr.cum[i]) };
+    }
+    return best.s;
+  }
+  function simPointAt(tr, s) {
+    s = Math.max(0, Math.min(tr.total, s));
+    let i = 1;
+    while (i < tr.cum.length - 1 && tr.cum[i] < s) i++;
+    const a = tr.pts[i - 1], b = tr.pts[i], seg = tr.cum[i] - tr.cum[i - 1], t = seg > 0 ? (s - tr.cum[i - 1]) / seg : 0;
+    return { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t };
+  }
+  // 궤도의 s0~s1 구간 점들
+  function simSlice(tr, s0, s1) {
+    const out = [simPointAt(tr, s0)];
+    for (let i = 0; i < tr.pts.length; i++) if (tr.cum[i] > s0 && tr.cum[i] < s1) out.push(tr.pts[i]);
+    out.push(simPointAt(tr, s1));
+    return out;
+  }
+  // 앞길 받기: 지금 궤도에서 lead 미터 앞(지금 달리는 길 위)에서 출발해 방향 dir 로 dist 앞 지점까지 가는 네이버 길찾기 경로를 받아
+  // 지금 자리~그 출발점 구간 뒤에 이어 붙인다. 지금 자리에서 바로 물으면 출발점이 옆 큰길에 붙어 차가 그쪽으로 튀었다
+  // 받은 길이 처음 200m 안에서 거꾸로(135° 넘게) 도는지 (유턴)
+  function simUturn(pts, dir) {
+    let d = 0;
+    for (let i = 1; i < pts.length && d < 200; i++) {
+      const seg = haversine(pts[i - 1], pts[i]);
+      if (seg > 3 && angleDiff(bearing(pts[i - 1], pts[i]), dir) > 135) return true;
+      d += seg;
+    }
+    return false;
+  }
+  function simFetchRoad(dir, dist, why, lead, retry) {
+    if (sim.fetching || !sim.on) return;
+    sim.fetching = true; sim.note = why || '앞길을 받는 중…'; renderSimHud();
+    const tr0 = sim.track && sim.track.src === 'road' ? sim.track : null;
+    const startS = tr0 ? Math.min(tr0.total, sim.s + (lead || 0)) : 0;
+    // 출발점은 가는 방향 오른쪽으로 6m: 우측 통행이라 중앙분리대 있는 길에서 반대편 차로에 붙지 않게
+    const base = tr0 ? simPointAt(tr0, startS) : { lat: sim.lat, lng: sim.lng };
+    const from = aheadPt(base, (dir + 90) % 360, 6), to = aheadPt(base, dir, dist);
+    const gen = ++sim.gen;
+    api('/route', { start: from.lng.toFixed(6) + ',' + from.lat.toFixed(6), goal: to.lng.toFixed(6) + ',' + to.lat.toFixed(6), options: 'traoptimal' }, null, 12000)
+      .then((j) => {
+        const r = (j.alternatives || [])[0];
+        if (!r || gen !== sim.gen || !sim.on || (nav.active && nav.pts)) return;
+        const got = r.path.map((q) => ({ lat: q[1], lng: q[0] }));
+        if (got.length < 2) throw new Error('짧은 길');
+        // 곧게 갈 앞길이 처음부터 유턴이면 더 먼 곳(3배)으로 한 번 더 묻는다 (짧은 골목 끝에서 돌아 나오는 길을 피하려고)
+        if (!retry && simUturn(got, why ? sim.h : dir)) { sim.fetching = false; simFetchRoad(dir, dist * (why ? 2 : 3), why, lead, true); return; }
+        if (tr0 && sim.track === tr0 && sim.s <= startS) {
+          sim.track = simTrack(simSlice(tr0, sim.s, startS).concat(got), 'road'); sim.s = 0;   // 이어 붙이기 (차는 제자리에서 그대로)
+        } else {
+          sim.track = simTrack(got, 'road'); sim.s = simLocate(sim.track, { lat: sim.lat, lng: sim.lng });
+        }
+        sim.note = '';
+      })
+      .catch(() => { if (gen === sim.gen) { sim.failAt = Date.now(); sim.note = '길을 못 받았어요 · 잠시 뒤 다시'; } })
+      .finally(() => { if (gen === sim.gen) sim.fetching = false; renderSimHud(); });
+  }
+  function simFix() {
+    onFix({ lat: sim.lat, lng: sim.lng, acc: 5, speed: sim.v, heading: sim.h, t: Date.now() });
+  }
+  function simPhysics() {
+    if (state.demoTimer !== sim.timer) { simStop(true); return; }   // 설정의 데모 버튼 등으로 멈춘 경우
+    const now = performance.now(), dt = Math.min(1, (now - sim.last) / 1000);   // 창이 가려져 타이머가 느려져도 시간은 그대로 흐르게
+    sim.last = now;
+    const k = sim.keys;
+    // 궤도 고르기: 길안내 중이면 안내 경로, 아니면 받은 앞길
+    const navPts = nav.active && nav.pts && nav.pts.length > 1 ? nav.pts : null;
+    if (navPts && (!sim.track || sim.track.pts !== navPts)) {
+      sim.track = simTrack(navPts, 'nav'); sim.s = simLocate(sim.track, { lat: sim.lat, lng: sim.lng }); sim.note = '';
+    } else if (!navPts && sim.track && sim.track.src === 'nav') sim.track = null;   // 안내가 끝나면 앞길을 새로 받는다
+    const tr = sim.track;
+    if (!navPts && !sim.fetching && Date.now() - sim.failAt > 3000 && (!tr || tr.total - sim.s < 150)) {
+      const endDir = tr ? bearing(simPointAt(tr, tr.total - 15), simPointAt(tr, tr.total)) : sim.h;
+      simFetchRoad(endDir, 1200, null, tr ? tr.total - sim.s : 0);
+    }
+    let a;
+    if (k.has('stop')) a = -9;
+    else if (k.has('down')) a = -6;
+    else if (k.has('up')) a = sim.v < 16.7 ? 3 : sim.v < 27.8 ? 2 : 1.1;   // 0→60 약 6초, 60→100 약 5.5초
+    else a = -(0.45 + 0.0008 * sim.v * sim.v);                            // 굴림 + 공기 저항으로 서서히
+    sim.v = Math.max(0, Math.min(50, sim.v + a * dt));                    // 최고 180km/h
+    if (!tr || sim.s >= tr.total - 0.5) {
+      sim.v = 0;    // 길이 없거나 길 끝: 그 자리에 선다 (길 밖으로 나가지 않게)
+      if (tr && tr.src === 'nav') sim.note = '경로 끝';
+    } else {
+      sim.s = Math.min(tr.total, sim.s + sim.v * dt);
+      const p = simPointAt(tr, sim.s), ahead = simPointAt(tr, sim.s + 8);
+      sim.lat = p.lat; sim.lng = p.lng;
+      if (haversine(p, ahead) > 1) sim.h = bearing(p, ahead);
+      // A/D 로 꺾은 뒤: 다 꺾었으면(55° 넘게 돌았으면) 30m 더 가서 그 길로 곧게 앞길을 새로 받는다
+      // (옆 250m 지점까지 가는 길을 끝까지 따르면 일방통행 많은 곳에서 블록을 빙 돌았다)
+      if (sim.turnFrom != null && angleDiff(sim.h, sim.turnFrom) > 55) { sim.turnFrom = null; sim.straightAt = sim.s + 30; }
+      if (sim.straightAt && sim.s >= sim.straightAt && !sim.fetching) { sim.straightAt = 0; simFetchRoad(sim.h, 1200, null, 20); }
+    }
+    renderSimHud();
+  }
+  function simTurn(side) {   // A/D: 다음 갈림길에서 그쪽으로 (길안내 중에는 경로를 따라가므로 쓰지 않는다)
+    if (!sim.on) return;
+    if (nav.active && nav.pts) { sim.note = '길안내 중에는 경로를 따라가요'; renderSimHud(); return; }
+    sim.gen++; sim.fetching = false;   // 받고 있던 앞길은 버린다
+    sim.turnFrom = sim.h; sim.straightAt = 0;
+    simFetchRoad((sim.h + side * 70 + 360) % 360, 400, side < 0 ? '왼쪽 길을 찾는 중…' : '오른쪽 길을 찾는 중…', 15);
+  }
+  function simStart() {
+    if (sim.on) return;
+    if (state.demoTimer) stopDemo(true);
+    const c = state.fix || (mapA && mapA.getCenter && mapA.getCenter()) || { lat: 37.5663, lng: 126.9779 };
+    sim.lat = c.lat; sim.lng = c.lng; sim.h = state.heading != null ? state.heading : 0; sim.v = 0;
+    sim.track = null; sim.s = 0; sim.fetching = false; sim.failAt = 0; sim.note = ''; sim.turnFrom = null; sim.straightAt = 0;
+    demoSaved = { trip: state.trip, driveMs: state.driveMs, odo: state.odo, maxKmh: state.maxKmh };
+    state.trip = 0; state.driveMs = 0; state.maxKmh = 0;
+    $('#gpsNotice').hidden = true;
+    sim.on = true; sim.last = performance.now();
+    sim.timer = state.demoTimer = setInterval(simFix, 1000);
+    sim.loop = setInterval(simPhysics, 50);
+    $('#app').classList.add('demo');
+    simFix();
+    setFollowing(true);
+    renderSimHud();
+  }
+  function simStop(silent) {
+    if (!sim.on) return;
+    sim.on = false; sim.keys.clear(); sim.v = 0; sim.gen++; sim.track = null; sim.fetching = false;
+    clearInterval(sim.loop);
+    if (state.demoTimer === sim.timer) stopDemo(true);
+    sim.timer = 0;
+    renderSimHud();
+    if (!silent) toast('모의 주행을 끝냈어요. 다시 W 를 누르면 지도 가운데에서 시작해요.', '', 3000);
+  }
+  function renderSimHud() {
+    const el = $('#simHud');
+    if (!el) return;
+    const mode = !sim.on ? '' : sim.note ? sim.note : sim.track && sim.track.src === 'nav' ? '안내 경로를 따라감' : '도로를 따라감';
+    const help = nav.active ? 'W 가속 · S 브레이크 · Space 급정거 · Esc 끝' : 'W 가속 · S 브레이크 · A/D 다음 갈림길에서 꺾기 · Space 급정거 · Esc 끝';
+    el.innerHTML = sim.on
+      ? '<b>모의 주행</b> <span class="sv">' + Math.round(sim.v * 3.6) + '</span> km/h · ' + dirName(sim.h) + ' ' + Math.round(sim.h) + '° · ' + esc(mode) +
+        '<small>' + help + '</small>'
+      : '<b>모의 주행</b> W 를 누르면 지도 가운데에서 가까운 도로로 출발<small>' + help + '</small>';
+  }
+  if (params.has('sim')) {
+    const hud = document.createElement('div');
+    hud.id = 'simHud'; hud.className = 'simhud';
+    $('#app').appendChild(hud);
+    renderSimHud();
+    const typing = (e) => /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '') || (e.target && e.target.isContentEditable);
+    window.addEventListener('keydown', (e) => {
+      if (typing(e)) return;
+      if (e.code === 'Escape' && sim.on) { simStop(false); return; }
+      const k = SIM_KEYS[e.code];
+      if (!k) return;
+      e.preventDefault();
+      if (!sim.on && k === 'up') simStart();
+      if (!sim.on) return;
+      if ((k === 'left' || k === 'right') && !e.repeat) simTurn(k === 'left' ? -1 : 1);
+      sim.keys.add(k);
+    });
+    window.addEventListener('keyup', (e) => { const k = SIM_KEYS[e.code]; if (k) sim.keys.delete(k); });
+    window.addEventListener('blur', () => sim.keys.clear());   // 창을 벗어나면 누른 키가 남지 않게
   }
 
   // ---------- 버튼 ----------

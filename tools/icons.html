@@ -89,7 +89,8 @@
   };
   const SRC = { s: 's.webp', l: 'l.webp', r: 'r.webp', u: 'u.webp', sl: 'sl.png', sr: 'sr.webp', rb: 'rb.webp', kl: 'kl.webp', kr: 'kr.webp',
     outl: 'outl.webp', outr: 'outr.webp', inl: 'inl.webp', inr: 'inr.webp', toll: 'toll.webp', goal: 'goal.webp', via: 'via.webp' };
-  const MODEL = { flare: 'Flare', sunburst: 'Sunburst', flare26: 'Flare 2.6', sunburst26: 'Sunburst 2.6', ideo: 'Ideogram', gptdev: 'GPT2 dev', gpt15: 'GPT1.5', gpt: 'GPT2', s55: 'Seedream', s50p: 'Seedream Pro', nb2: 'NanoBanana' };
+  const MODEL = { flare: 'Flare', sunburst: 'Sunburst', flare26: 'Flare 2.6', sunburst26: 'Sunburst 2.6', ideo: 'Ideogram', flare26e: 'Flare 2.6 고침', sunburst26e: 'Sunburst 2.6 고침',
+    flare26b: 'Flare 2.6 굵게', sunburst26b: 'Sunburst 2.6 굵게', flare26g: 'Flare 잔디', sunburst26g: 'Sunburst 잔디', mirror: '오른쪽 뒤집기', gptdev: 'GPT2 dev', gpt15: 'GPT1.5', gpt: 'GPT2', s55: 'Seedream', s50p: 'Seedream Pro', nb2: 'NanoBanana' };
   const esc = (x) => String(x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const toast = (m) => { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 1800); };
   const load = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };

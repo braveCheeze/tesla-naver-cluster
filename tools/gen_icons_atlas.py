@@ -300,6 +300,53 @@ _RB = {
 for _k, _t in _RB.items():
     JOBS[_k] = ((), T2I_RB, _t)
 ROADS, RBS = list(_ROADS), list(_RB)
+T2I_ROAD2 = ('Professional navigation turn icon for the turn-by-turn panel of a premium car navigation app, designed by a senior '
+             'icon designer (Naver Map / Tmap quality). Top-down bird\'s-eye view with no perspective: every road keeps the same '
+             'width end to end and nothing narrows toward the top. Depth comes only from shading and layering: soft shadows under '
+             'raised roads, slightly lighter bridge decks, light concrete retaining walls and darker asphalt where a road goes down. '
+             'Roads: dark charcoal asphalt (#313B42) with thin crisp white edge lines and short white dashed lane lines; a '
+             'three-lane road is about 1/3 of the icon width, a one-lane ramp about 1/6. The ROUTE ARROW is the most important '
+             'element: ONE bold solid white arrow, about 1/9 of the icon width, with a large sharp triangular arrowhead and a thin '
+             'dark outline so it pops, clearly bigger and brighter than any lane marking. Branch roads stay attached to the main '
+             'road and split off gradually along a smooth diagonal, with no gaps and no broken edges. The drawing fills the square '
+             'canvas (about 90%), centered, using the full width. Flat vector, crisp, no text except the letters described.' + BG +
+             ' Layout: ')
+_ROADS3 = {
+    'outs': 'Highway EXIT STRAIGHT AHEAD: a three-lane highway comes up from the bottom edge; in the middle of the icon the highway '
+            'bends away to the LEFT and leaves through the left edge, while a one-lane exit road continues straight up to the top '
+            'edge, splitting off gradually with a small triangular gore. The bold arrow runs straight up the exit road from the '
+            'bottom to near the top.' + OUT_SH % ('OUT', 'top-right'),
+    'ins': 'Highway ENTRANCE STRAIGHT AHEAD: a one-lane road comes straight up from the bottom edge; in the middle of the icon a '
+           'three-lane highway arrives from the LEFT edge, bends upward and joins it into one continuous wide road (one smooth paved '
+           'surface, no seams, no gaps) that continues straight up to the top edge. The bold arrow runs straight up from the bottom '
+           'to near the top.' + OUT_SH % ('IN', 'top-right'),
+    'over_r': 'OVERPASS to the RIGHT: a vertical three-lane road runs straight up the left part of the icon. Its right lane splits '
+              'off gradually along a smooth diagonal (attached, no gap) as a one-lane ramp that rises and crosses OVER a horizontal '
+              'road in the upper right on a bridge: the bridge deck is slightly lighter, has white parapets and casts a soft shadow '
+              'on the road below, so it is clearly raised above it. The bold arrow follows the ramp up onto the bridge, arrowhead '
+              'pointing up. No shield.',
+    'under_s': 'UNDERPASS STRAIGHT AHEAD: a three-lane road runs straight up from the bottom edge and goes DOWN into an underpass: '
+               'light concrete retaining walls along both sides grow wider toward the top, the asphalt gets darker, and at the top a '
+               'LARGE underpass portal (concrete frame with a dark opening, about half the icon width) swallows the road. The bold '
+               'arrow runs straight up into the dark opening. No shield.',
+    'under_r': 'UNDERPASS to the RIGHT: a vertical three-lane road runs straight up the left part of the icon. Its right lane splits '
+               'off gradually along a smooth diagonal (attached, no gap) as a one-lane ramp that goes DOWN between light concrete '
+               'retaining walls into a LARGE underpass portal (concrete frame, dark opening, about 40% of the icon width) in the '
+               'upper right. The bold arrow follows the ramp into the opening. No shield.',
+    'side_r': 'SIDE ROAD beside an UNDERPASS, keep RIGHT: a wide road comes up from the bottom edge. Its middle lanes go DOWN between '
+              'light concrete retaining walls into a LARGE underpass portal (concrete frame, dark opening) at the top, left of '
+              'center. Its right lane splits off gradually along a smooth diagonal (attached, no gap) as a one-lane side road that '
+              'stays at street level beside the underpass and continues up to the top edge on the right. The bold arrow starts in '
+              'the right lane at the bottom, follows the diagonal side road and points up; it never enters the underpass. No shield.',
+    'oside_r': 'SIDE ROAD beside an OVERPASS, keep RIGHT: a wide road comes up from the bottom edge. Its middle lanes rise onto an '
+               'overpass bridge (slightly lighter deck, white parapets, soft shadow on the ground) that crosses OVER a horizontal '
+               'road near the top. Its right lane splits off gradually along a smooth diagonal (attached, no gap) as a one-lane side '
+               'road that stays at ground level beside the bridge, meets the horizontal road at a normal intersection and continues '
+               'up to the top edge on the right. The bold arrow starts in the right lane at the bottom, follows the diagonal side '
+               'road and points up; it never goes onto the bridge. No shield.',
+}
+for _k, _t in _ROADS3.items():
+    JOBS[_k] = ((), T2I_ROAD2, _t)
 EDIT_KEEP = ('Edit this navigation icon. Keep exactly its drawing style, colors, line weights, flat top-down view, proportions, '
              'canvas size and the solid magenta background. ')
 RB_EDIT = (EDIT_KEEP + 'Keep the same roundabout: the same ring road, the same four roads and the same green grass island. Remove '
@@ -325,6 +372,11 @@ JOBS['under_s'] = (('ref/base_side_r.png',), EDIT_KEEP,
                    'main three-lane road, now centered horizontally, running straight up from the bottom edge into the same '
                    'light grey concrete portal with the dark opening at the top, with the same constant width all the way (no '
                    'perspective). Draw one slim solid white arrow straight up the middle lane into the dark opening. No shield.')
+# 회전교차로 잔디: 고른 4장(ref/base_rb_<출구>.png)에서 가운데 섬만 진짜 잔디처럼
+RB_GRASS = (EDIT_KEEP + 'Change ONLY the round center island: make it look like a real grass lawn seen from above, fresh green turf '
+            'with fine grass texture, a few darker green tufts and soft natural shading, surrounded by a thin light grey concrete '
+            'curb. Keep the route arrow, the roads, the ring and everything else exactly as they are.')
+GRASS = {k: (('ref/base_%s.png' % k,), RB_GRASS, '') for k in RBS}   # --icons grass
 WIDE = {'junc_fork_r', 'junc_exit_r'}
 
 
@@ -374,7 +426,9 @@ MODELS = {
 }
 
 
-T2I_MODELS = {'flare26', 'sunburst26', 'ideo'}
+MODELS['flare26b'], MODELS['sunburst26b'] = MODELS['flare26'], MODELS['sunburst26']        # 3판(굵은 화살표)
+MODELS['flare26g'], MODELS['sunburst26g'] = MODELS['flare26e'], MODELS['sunburst26e']      # 회전교차로 잔디
+T2I_MODELS = {'flare26', 'sunburst26', 'ideo', 'flare26b', 'sunburst26b'}
 
 
 def http(method, url, key, body=None, timeout=60):
@@ -472,6 +526,8 @@ def main():
     ap.add_argument('--per', type=int, default=1)
     ap.add_argument('--dry', action='store_true')
     a = ap.parse_args()
+    if 'grass' in a.icons.split(','):
+        JOBS.update(GRASS)   # 회전교차로 4칸을 '잔디' 편집으로
     models = [m for m in (a.models or 'flare,sunburst,flare26,sunburst26').split(',') if m in MODELS]
     # 묶음 이름: cars = 모든 차 아이콘(car_*·cute_*), guide = 차가 아닌 안내 아이콘·분기점 그림 전부
     is_car = lambda k: k.startswith(('car_', 'cute_'))
@@ -479,7 +535,7 @@ def main():
     groups = {'cars': [k for k in JOBS if is_car(k)], 'signs': [k for k in JOBS if is_sign(k)],
               'guide': [k for k in JOBS if not is_car(k) and not is_sign(k)],
               'roads': ROADS, 'rb': RBS, 'redo': ROADS + RBS,
-              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s']}
+              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s'], 'fix3': ['outs', 'ins', 'over_r', 'under_s', 'under_r', 'side_r', 'oside_r'], 'grass': RBS}
     want = []
     for i in a.icons.split(','):
         want += groups.get(i, [i])
