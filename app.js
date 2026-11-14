@@ -49,7 +49,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-90'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.14-91'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
   const testPage = /\/test\//.test(location.pathname);
   // 브라우저에 저장된 예전 index.html 이 새 app.js 를 불러온 경우(화면 요소가 맞지 않아 버튼 연결에서 멈춘다):
@@ -446,6 +446,9 @@
     '<path d="M25 69 H75" stroke="#111" stroke-width="6" stroke-linecap="round"/><path d="M33 69 Q50 42 67 69 Z" fill="#111"/></svg>';
   // ---------- 지도 위 회전 화살표·목적지 핀 (2026-11-14 요청: 휴대폰 내비처럼) ----------
   // 다음 회전 지점의 경로를 따라 흰 화살표(어두운 테두리). 화살촉은 화면에서 같은 크기로 보이게 지금 배율로 계산한다
+  // 2026-11-14 피드백('화살표가 너무 두껍고 투박'): 몸통 15→11px(흰 7px), 화살촉은 좁고 뾰족하게(길이 20·폭 24px),
+  // 테두리는 어디서나 2px 로 고르게(안쪽 화살촉을 빗변에서 2px 안으로), 꺾이는 곳은 각지지 않게 둥글린다
+  const ARROW_PX = { shaft: 11, inner: 7, len: 20, half: 12, rim: 2 };
   function arrowGeom(pts, zoom) {
     const E = pts[pts.length - 1], kx = Math.cos(toRad(E.lat)) * 111320, ky = 110540;
     const loc = (q) => ({ x: (q.lng - E.lng) * kx, y: (q.lat - E.lat) * ky });
@@ -458,14 +461,29 @@
     const mpp = 156543.03392 * Math.cos(toRad(E.lat)) / Math.pow(2, zoom || 17);
     const px = (v) => v * mpp;
     const at = (o, along, side) => ({ x: o.x + d.x * along + nn.x * side, y: o.y + d.y * along + nn.y * side });
-    const T = at({ x: 0, y: 0 }, px(8), 0);
-    const Bo = at(T, -px(24), 0), Ti = at(T, -px(4), 0), Bi = at(Ti, -px(16), 0);
+    const O = { x: 0, y: 0 }, H = ARROW_PX;
+    // 바깥(테두리) 화살촉: 끝점보다 4px 앞이 뾰족한 끝. 안쪽 흰 화살촉은 빗변에서 rim 만큼 안쪽
+    const T = at(O, px(4), 0), Bo = at(T, -px(H.len), 0);
+    const sinA = H.half / Math.hypot(H.half, H.len), tanA = H.half / H.len;
+    const tipIn = H.rim / sinA, lenIn = H.len - H.rim - tipIn;
+    const Ti = at(T, -px(tipIn), 0), Bi = at(Ti, -px(lenIn), 0);
     const tri = (tip, base, w) => [tip, at(base, 0, w), at(base, 0, -w)].map(back);
-    // 몸통은 안쪽 화살촉 밑동 조금 안까지만
-    const cut = px(9);
-    const shaft = pts.slice(0, -1).filter((q) => haversine(q, E) > cut);
-    shaft.push(back(at({ x: 0, y: 0 }, -cut, 0)));
-    return { shaft, headOut: tri(T, Bo, px(16)), headIn: tri(Ti, Bi, px(10.5)) };
+    // 몸통은 안쪽 화살촉 밑동 조금 안까지만 (둥근 끝이 화살촉 밖으로 삐져나오지 않게)
+    const cut = px(H.len - H.rim - 4 - 3);
+    let sh = pts.slice(0, -1).filter((q) => haversine(q, E) > cut).map(loc);
+    sh.push(at(O, -cut, 0));
+    // 꺾이는 곳 둥글리기: 앞뒤 몇 점의 평균 (양 끝은 그대로, 곧은 곳은 그대로 곧다)
+    const k = Math.max(1, Math.min(6, Math.round(px(9) / 2.5)));
+    if (sh.length > 2) {
+      const n = sh.length, src = sh;
+      sh = src.map((q, i) => {
+        if (i === 0 || i === n - 1) return q;
+        let sx = 0, sy = 0, c = 0;
+        for (let t = i - k; t <= i + k; t++) { const r = src[Math.max(0, Math.min(n - 1, t))]; sx += r.x; sy += r.y; c++; }
+        return { x: sx / c, y: sy / c };
+      });
+    }
+    return { shaft: sh.map(back), headOut: tri(T, Bo, px(H.half)), headIn: tri(Ti, Bi, px(lenIn * tanA)) };
   }
   // 목적지 핀 (사용자가 그린 '도착' 핀이 있으면 그것)
   function destPinEl() {
@@ -774,7 +792,8 @@
         strokeLineCap: 'round', strokeLineJoin: 'round', zIndex: z, clickable: false });
       const head = (tri, c, z) => new N.Polygon({ map: this.map, paths: [tri.map(P)], fillColor: c, fillOpacity: 1, strokeColor: c, strokeOpacity: 1,
         strokeWeight: 1, zIndex: z, clickable: false });
-      this._arrowObjs.push(line(15, '#1b1f25', 70), head(g.headOut, '#1b1f25', 70), line(9, '#ffffff', 71), head(g.headIn, '#ffffff', 71));
+      const H = ARROW_PX, RIM = '#1e2a38';
+      this._arrowObjs.push(line(H.shaft, RIM, 70), head(g.headOut, RIM, 70), line(H.inner, '#ffffff', 71), head(g.headIn, '#ffffff', 71));
     },
     setDest(d, end) {
       const N = naver.maps;
@@ -934,7 +953,8 @@
       const g = arrowGeom(pts, this.map.getZoom()), P = (q) => [q.lat, q.lng];
       const line = (w, c) => L.polyline(g.shaft.map(P), { color: c, weight: w, opacity: 1, lineCap: 'round', lineJoin: 'round', interactive: false }).addTo(this.map);
       const head = (tri, c) => L.polygon(tri.map(P), { color: c, weight: 1, fillColor: c, fillOpacity: 1, interactive: false }).addTo(this.map);
-      this._arrowObjs.push(line(15, '#1b1f25'), head(g.headOut, '#1b1f25'), line(9, '#ffffff'), head(g.headIn, '#ffffff'));
+      const H = ARROW_PX, RIM = '#1e2a38';
+      this._arrowObjs.push(line(H.shaft, RIM), head(g.headOut, RIM), line(H.inner, '#ffffff'), head(g.headIn, '#ffffff'));
     },
     setDest(d, end) {
       (this.destMk || []).forEach((m) => m.remove());
