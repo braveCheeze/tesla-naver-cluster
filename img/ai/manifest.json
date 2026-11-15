@@ -2220,6 +2220,54 @@
   {
    "slot": "junc_under_day",
    "kind": "scene",
+   "file": "junc_under_day__flare26u__1.webp",
+   "model": "flare26u",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_day",
+   "kind": "scene",
+   "file": "junc_under_day__flare26u__2.webp",
+   "model": "flare26u",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_day",
+   "kind": "scene",
+   "file": "junc_under_day__flare26u__3.webp",
+   "model": "flare26u",
+   "n": 3,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_day",
+   "kind": "scene",
+   "file": "junc_under_day__flare26w__1.webp",
+   "model": "flare26w",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_day",
+   "kind": "scene",
+   "file": "junc_under_day__flare26w__2.webp",
+   "model": "flare26w",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_day",
+   "kind": "scene",
+   "file": "junc_under_day__flare26w__3.webp",
+   "model": "flare26w",
+   "n": 3,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_day",
+   "kind": "scene",
    "file": "junc_under_day__sunburst26__1.webp",
    "model": "sunburst26",
    "n": 1,
@@ -2286,6 +2334,54 @@
    "kind": "scene",
    "file": "junc_under_day__sunburst26j__3.webp",
    "model": "sunburst26j",
+   "n": 3,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_day",
+   "kind": "scene",
+   "file": "junc_under_day__sunburst26u__1.webp",
+   "model": "sunburst26u",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_day",
+   "kind": "scene",
+   "file": "junc_under_day__sunburst26u__2.webp",
+   "model": "sunburst26u",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_day",
+   "kind": "scene",
+   "file": "junc_under_day__sunburst26u__3.webp",
+   "model": "sunburst26u",
+   "n": 3,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_day",
+   "kind": "scene",
+   "file": "junc_under_day__sunburst26w__1.webp",
+   "model": "sunburst26w",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_day",
+   "kind": "scene",
+   "file": "junc_under_day__sunburst26w__2.webp",
+   "model": "sunburst26w",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_day",
+   "kind": "scene",
+   "file": "junc_under_day__sunburst26w__3.webp",
+   "model": "sunburst26w",
    "n": 3,
    "pink": 0
   },
@@ -2364,6 +2460,54 @@
   {
    "slot": "junc_under_night",
    "kind": "scene",
+   "file": "junc_under_night__flare26u__1.webp",
+   "model": "flare26u",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_night",
+   "kind": "scene",
+   "file": "junc_under_night__flare26u__2.webp",
+   "model": "flare26u",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_night",
+   "kind": "scene",
+   "file": "junc_under_night__flare26u__3.webp",
+   "model": "flare26u",
+   "n": 3,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_night",
+   "kind": "scene",
+   "file": "junc_under_night__flare26w__1.webp",
+   "model": "flare26w",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_night",
+   "kind": "scene",
+   "file": "junc_under_night__flare26w__2.webp",
+   "model": "flare26w",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_night",
+   "kind": "scene",
+   "file": "junc_under_night__flare26w__3.webp",
+   "model": "flare26w",
+   "n": 3,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_night",
+   "kind": "scene",
    "file": "junc_under_night__sunburst26__1.webp",
    "model": "sunburst26",
    "n": 1,
@@ -2430,6 +2574,54 @@
    "kind": "scene",
    "file": "junc_under_night__sunburst26j__3.webp",
    "model": "sunburst26j",
+   "n": 3,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_night",
+   "kind": "scene",
+   "file": "junc_under_night__sunburst26u__1.webp",
+   "model": "sunburst26u",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_night",
+   "kind": "scene",
+   "file": "junc_under_night__sunburst26u__2.webp",
+   "model": "sunburst26u",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_night",
+   "kind": "scene",
+   "file": "junc_under_night__sunburst26u__3.webp",
+   "model": "sunburst26u",
+   "n": 3,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_night",
+   "kind": "scene",
+   "file": "junc_under_night__sunburst26w__1.webp",
+   "model": "sunburst26w",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_night",
+   "kind": "scene",
+   "file": "junc_under_night__sunburst26w__2.webp",
+   "model": "sunburst26w",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_night",
+   "kind": "scene",
+   "file": "junc_under_night__sunburst26w__3.webp",
+   "model": "sunburst26w",
    "n": 3,
    "pink": 0
   },

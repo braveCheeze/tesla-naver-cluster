@@ -552,6 +552,37 @@ FIX5 = {'junc_ramp_day': (('ref/base4_junc_ramp_day.png',), FIX4_KEEP,
                           'line, and then curves off into the exit ramp. Remove the white edge line that separated the wedge from '
                           'the blue lane near the bottom. Keep the dashed lane line, the arrow and everything else.')}
 PANO |= set(FIX5)
+# 지하차도 진입 3차 (2026-11-15 사용자: 후보 7장 중 파란 길 왼쪽의 벽·벽 조각마다 X) → 벽을 아예 없애고 흰 실선 하나로 (--icons fix6)
+FIX6_UNDER = ('Remove every wall, barrier, curb, divider and concrete piece on the LEFT side of the blue lane, from the bottom of '
+              'the image all the way to the tunnel opening: nothing stands between the blue lane and the other lanes. They are '
+              'separated only by one clean solid white line painted flat on the asphalt, and the asphalt continues smoothly at '
+              'the same level right up to the tunnel opening. The tunnel opening, its concrete frame, the right-side retaining '
+              'wall, the blue lane and the big white arrow stay exactly the same.')
+FIX6 = {'junc_under_day': (('ref/base4_junc_under_day.png',), FIX4_KEEP, FIX6_UNDER),
+        'junc_under_night': (('ref/base4_junc_under_night.png',), FIX4_KEEP, FIX6_UNDER)}
+PANO |= set(FIX6)
+# 지하차도 진입 새 구도 (2026-11-15 사용자: '내가 준 레퍼런스 보면 많이 참고될 듯', '그런 구도로 가도 됨' — 카카오·T맵·네이버 분기점 화면처럼
+# 높은 곳에서 내려다보는 3D 구도. 벽은 땅 높이에서 시작해 길이 내려가는 만큼 서서히 높아지는 긴 옹벽 하나) --icons under3d
+JV3D = ('Junction close-up illustration for the guidance screen of a premium Korean car navigation app, in the style of the 3D '
+        'junction views of Kakao Navi, Tmap or Naver Map: a polished, clean 3D-rendered illustration with soft lighting, crisp '
+        'edges and simple shapes, very wide 8:3 panorama. Camera: elevated chase view about 12 meters above and behind the car, '
+        'looking forward and down at about 30 degrees, so the road surface and every lane are clearly visible and recede in '
+        'perspective; the skyline sits near the very top of the image. ')
+JV3D_UNDER = ('Scene: a straight six-lane urban expressway. Ahead, the two right lanes slope gently down into an underpass that '
+              'passes beneath a crossing road bridge, while the other lanes stay level and continue beside it. Along the left '
+              'side of the two descending lanes there is ONE long, continuous concrete retaining wall: it starts flush with the '
+              'road surface near the viewer and rises smoothly and gradually as the lanes go down, its top edge a single clean '
+              'straight line, until it meets the bridge. No other walls, blocks or barrier pieces between the lanes. The two '
+              'descending lanes are the route: highlighted as one vivid blue (#2F7DFF) ribbon that starts at the bottom edge of '
+              'the image and runs down into the tunnel opening, with one big bold white arrow painted on it pointing into the '
+              'underpass. All other lanes are plain dark-grey asphalt with crisp white lane markings.')
+JV3D_DAY = ' Daytime: clear light-blue sky, a few modern buildings and green trees in the distance, light grey concrete.'
+JV3D_NIGHT = (' Night: deep navy sky, soft distant city lights, dark asphalt with bright white lane markings, the blue route '
+              'glowing softly, warm lights inside the underpass.')
+JV3D_END = (' No text, no letters, no road signs, no route numbers, no cars, no people, no logos. Keep the upper-right corner '
+            'calm and simple, because the app places a direction sign there.')
+UNDER3D = {'junc_under_day': ((), JV3D, JV3D_UNDER + JV3D_DAY + JV3D_END),
+           'junc_under_night': ((), JV3D, JV3D_UNDER + JV3D_NIGHT + JV3D_END)}
 
 
 def _gpt25(model):
@@ -611,7 +642,9 @@ MODELS['flare26x'], MODELS['sunburst26x'] = MODELS['flare26e'], MODELS['sunburst
 MODELS['flare26t'], MODELS['sunburst26t'] = MODELS['flare26e'], MODELS['sunburst26e']      # 분기점 그림: 흰 점선 그대로, 옆 틈만 은은하게
 MODELS['flare26f'], MODELS['sunburst26f'] = MODELS['flare26e'], MODELS['sunburst26e']      # 분기점 그림: 사용자 표시한 곳만 고치기 (fix4)
 MODELS['flare26r'], MODELS['sunburst26r'] = MODELS['flare26e'], MODELS['sunburst26e']      # 낮 나가기 2차 (fix5)
-T2I_MODELS = {'flare26', 'sunburst26', 'ideo', 'flare26b', 'sunburst26b', 'flare26j', 'sunburst26j'}
+MODELS['flare26w'], MODELS['sunburst26w'] = MODELS['flare26e'], MODELS['sunburst26e']      # 지하차도 진입 벽 없애기 (fix6)
+MODELS['flare26u'], MODELS['sunburst26u'] = MODELS['flare26'], MODELS['sunburst26']        # 지하차도 진입 새 구도 (under3d, 글로만)
+T2I_MODELS = {'flare26', 'sunburst26', 'ideo', 'flare26b', 'sunburst26b', 'flare26j', 'sunburst26j', 'flare26u', 'sunburst26u'}
 
 
 def http(method, url, key, body=None, timeout=60):
@@ -725,6 +758,10 @@ def main():
         JOBS.update(KLBOLD)   # 비켜 가기(왼쪽) 굵게
     if 'clean' in a.icons.split(','):
         JOBS.update(CLEAN)   # 분기점 그림: 깔끔하게, 화살표 꼬리를 맨 아래까지
+    if 'under3d' in a.icons.split(','):
+        JOBS.update(UNDER3D)   # 지하차도 진입 새 구도
+    if 'fix6' in a.icons.split(','):
+        JOBS.update(FIX6)   # 지하차도 진입 벽 없애기
     if 'fix5' in a.icons.split(','):
         JOBS.update(FIX5)   # 낮 나가기 2차
     if 'fix4' in a.icons.split(','):
@@ -738,7 +775,7 @@ def main():
     groups = {'cars': [k for k in JOBS if is_car(k)], 'signs': [k for k in JOBS if is_sign(k)],
               'guide': [k for k in JOBS if not is_car(k) and not is_sign(k)],
               'roads': ROADS, 'rb': RBS, 'redo': ROADS + RBS,
-              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s'], 'fix3': ['outs', 'ins', 'over_r', 'under_s', 'under_r', 'side_r', 'oside_r'], 'grass': RBS, 'junc': sorted(PANO), 'green': list(GREEN_KIND), 'junc2': JV2, 'soft': list(SOFT), 'rbdepth': list(RBDEPTH), 'junc3': list(JUNC3), 'clean': list(CLEAN), 'klbold': ['kl'], 'sharp': ['sharp_r'], 'slbold': ['sl'], 'fix4': list(FIX4), 'fix5': list(FIX5)}
+              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s'], 'fix3': ['outs', 'ins', 'over_r', 'under_s', 'under_r', 'side_r', 'oside_r'], 'grass': RBS, 'junc': sorted(PANO), 'green': list(GREEN_KIND), 'junc2': JV2, 'soft': list(SOFT), 'rbdepth': list(RBDEPTH), 'junc3': list(JUNC3), 'clean': list(CLEAN), 'klbold': ['kl'], 'sharp': ['sharp_r'], 'slbold': ['sl'], 'fix4': list(FIX4), 'fix5': list(FIX5), 'fix6': list(FIX6), 'under3d': list(UNDER3D)}
     want = []
     for i in a.icons.split(','):
         want += groups.get(i, [i])
