@@ -780,6 +780,30 @@
   {
    "slot": "junc_fork_night",
    "kind": "scene",
+   "file": "junc_fork_night__flare26f__1.webp",
+   "model": "flare26f",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "junc_fork_night",
+   "kind": "scene",
+   "file": "junc_fork_night__flare26f__2.webp",
+   "model": "flare26f",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "junc_fork_night",
+   "kind": "scene",
+   "file": "junc_fork_night__flare26f__3.webp",
+   "model": "flare26f",
+   "n": 3,
+   "pink": 0
+  },
+  {
+   "slot": "junc_fork_night",
+   "kind": "scene",
    "file": "junc_fork_night__flare26j__1.webp",
    "model": "flare26j",
    "n": 1,
@@ -878,6 +902,30 @@
    "kind": "scene",
    "file": "junc_fork_night__sunburst26__3.webp",
    "model": "sunburst26",
+   "n": 3,
+   "pink": 0
+  },
+  {
+   "slot": "junc_fork_night",
+   "kind": "scene",
+   "file": "junc_fork_night__sunburst26f__1.webp",
+   "model": "sunburst26f",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "junc_fork_night",
+   "kind": "scene",
+   "file": "junc_fork_night__sunburst26f__2.webp",
+   "model": "sunburst26f",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "junc_fork_night",
+   "kind": "scene",
+   "file": "junc_fork_night__sunburst26f__3.webp",
+   "model": "sunburst26f",
    "n": 3,
    "pink": 0
   },
@@ -1180,6 +1228,30 @@
   {
    "slot": "junc_over_day",
    "kind": "scene",
+   "file": "junc_over_day__flare26f__1.webp",
+   "model": "flare26f",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "junc_over_day",
+   "kind": "scene",
+   "file": "junc_over_day__flare26f__2.webp",
+   "model": "flare26f",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "junc_over_day",
+   "kind": "scene",
+   "file": "junc_over_day__flare26f__3.webp",
+   "model": "flare26f",
+   "n": 3,
+   "pink": 0
+  },
+  {
+   "slot": "junc_over_day",
+   "kind": "scene",
    "file": "junc_over_day__flare26j__1.webp",
    "model": "flare26j",
    "n": 1,
@@ -1222,6 +1294,30 @@
    "kind": "scene",
    "file": "junc_over_day__sunburst26__3.webp",
    "model": "sunburst26",
+   "n": 3,
+   "pink": 0
+  },
+  {
+   "slot": "junc_over_day",
+   "kind": "scene",
+   "file": "junc_over_day__sunburst26f__1.webp",
+   "model": "sunburst26f",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "junc_over_day",
+   "kind": "scene",
+   "file": "junc_over_day__sunburst26f__2.webp",
+   "model": "sunburst26f",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "junc_over_day",
+   "kind": "scene",
+   "file": "junc_over_day__sunburst26f__3.webp",
+   "model": "sunburst26f",
    "n": 3,
    "pink": 0
   },
@@ -1372,6 +1468,30 @@
   {
    "slot": "junc_ramp_day",
    "kind": "scene",
+   "file": "junc_ramp_day__flare26f__1.webp",
+   "model": "flare26f",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "junc_ramp_day",
+   "kind": "scene",
+   "file": "junc_ramp_day__flare26f__2.webp",
+   "model": "flare26f",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "junc_ramp_day",
+   "kind": "scene",
+   "file": "junc_ramp_day__flare26f__3.webp",
+   "model": "flare26f",
+   "n": 3,
+   "pink": 0
+  },
+  {
+   "slot": "junc_ramp_day",
+   "kind": "scene",
    "file": "junc_ramp_day__flare26j__1.webp",
    "model": "flare26j",
    "n": 1,
@@ -1390,6 +1510,30 @@
    "kind": "scene",
    "file": "junc_ramp_day__flare26j__3.webp",
    "model": "flare26j",
+   "n": 3,
+   "pink": 0
+  },
+  {
+   "slot": "junc_ramp_day",
+   "kind": "scene",
+   "file": "junc_ramp_day__flare26r__1.webp",
+   "model": "flare26r",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "junc_ramp_day",
+   "kind": "scene",
+   "file": "junc_ramp_day__flare26r__2.webp",
+   "model": "flare26r",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "junc_ramp_day",
+   "kind": "scene",
+   "file": "junc_ramp_day__flare26r__3.webp",
+   "model": "flare26r",
    "n": 3,
    "pink": 0
   },
@@ -1452,6 +1596,30 @@
   {
    "slot": "junc_ramp_day",
    "kind": "scene",
+   "file": "junc_ramp_day__sunburst26f__1.webp",
+   "model": "sunburst26f",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "junc_ramp_day",
+   "kind": "scene",
+   "file": "junc_ramp_day__sunburst26f__2.webp",
+   "model": "sunburst26f",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "junc_ramp_day",
+   "kind": "scene",
+   "file": "junc_ramp_day__sunburst26f__3.webp",
+   "model": "sunburst26f",
+   "n": 3,
+   "pink": 0
+  },
+  {
+   "slot": "junc_ramp_day",
+   "kind": "scene",
    "file": "junc_ramp_day__sunburst26j__1.webp",
    "model": "sunburst26j",
    "n": 1,
@@ -1470,6 +1638,30 @@
    "kind": "scene",
    "file": "junc_ramp_day__sunburst26j__3.webp",
    "model": "sunburst26j",
+   "n": 3,
+   "pink": 0
+  },
+  {
+   "slot": "junc_ramp_day",
+   "kind": "scene",
+   "file": "junc_ramp_day__sunburst26r__1.webp",
+   "model": "sunburst26r",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "junc_ramp_day",
+   "kind": "scene",
+   "file": "junc_ramp_day__sunburst26r__2.webp",
+   "model": "sunburst26r",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "junc_ramp_day",
+   "kind": "scene",
+   "file": "junc_ramp_day__sunburst26r__3.webp",
+   "model": "sunburst26r",
    "n": 3,
    "pink": 0
   },
@@ -1526,6 +1718,30 @@
    "kind": "scene",
    "file": "junc_ramp_night__flare26__3.webp",
    "model": "flare26",
+   "n": 3,
+   "pink": 0
+  },
+  {
+   "slot": "junc_ramp_night",
+   "kind": "scene",
+   "file": "junc_ramp_night__flare26f__1.webp",
+   "model": "flare26f",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "junc_ramp_night",
+   "kind": "scene",
+   "file": "junc_ramp_night__flare26f__2.webp",
+   "model": "flare26f",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "junc_ramp_night",
+   "kind": "scene",
+   "file": "junc_ramp_night__flare26f__3.webp",
+   "model": "flare26f",
    "n": 3,
    "pink": 0
   },
@@ -1630,6 +1846,30 @@
    "kind": "scene",
    "file": "junc_ramp_night__sunburst26__3.webp",
    "model": "sunburst26",
+   "n": 3,
+   "pink": 0
+  },
+  {
+   "slot": "junc_ramp_night",
+   "kind": "scene",
+   "file": "junc_ramp_night__sunburst26f__1.webp",
+   "model": "sunburst26f",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "junc_ramp_night",
+   "kind": "scene",
+   "file": "junc_ramp_night__sunburst26f__2.webp",
+   "model": "sunburst26f",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "junc_ramp_night",
+   "kind": "scene",
+   "file": "junc_ramp_night__sunburst26f__3.webp",
+   "model": "sunburst26f",
    "n": 3,
    "pink": 0
   },
@@ -1932,6 +2172,30 @@
   {
    "slot": "junc_under_day",
    "kind": "scene",
+   "file": "junc_under_day__flare26f__1.webp",
+   "model": "flare26f",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_day",
+   "kind": "scene",
+   "file": "junc_under_day__flare26f__2.webp",
+   "model": "flare26f",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_day",
+   "kind": "scene",
+   "file": "junc_under_day__flare26f__3.webp",
+   "model": "flare26f",
+   "n": 3,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_day",
+   "kind": "scene",
    "file": "junc_under_day__flare26j__1.webp",
    "model": "flare26j",
    "n": 1,
@@ -1974,6 +2238,30 @@
    "kind": "scene",
    "file": "junc_under_day__sunburst26__3.webp",
    "model": "sunburst26",
+   "n": 3,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_day",
+   "kind": "scene",
+   "file": "junc_under_day__sunburst26f__1.webp",
+   "model": "sunburst26f",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_day",
+   "kind": "scene",
+   "file": "junc_under_day__sunburst26f__2.webp",
+   "model": "sunburst26f",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_day",
+   "kind": "scene",
+   "file": "junc_under_day__sunburst26f__3.webp",
+   "model": "sunburst26f",
    "n": 3,
    "pink": 0
   },
@@ -2028,6 +2316,30 @@
   {
    "slot": "junc_under_night",
    "kind": "scene",
+   "file": "junc_under_night__flare26f__1.webp",
+   "model": "flare26f",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_night",
+   "kind": "scene",
+   "file": "junc_under_night__flare26f__2.webp",
+   "model": "flare26f",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_night",
+   "kind": "scene",
+   "file": "junc_under_night__flare26f__3.webp",
+   "model": "flare26f",
+   "n": 3,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_night",
+   "kind": "scene",
    "file": "junc_under_night__flare26j__1.webp",
    "model": "flare26j",
    "n": 1,
@@ -2070,6 +2382,30 @@
    "kind": "scene",
    "file": "junc_under_night__sunburst26__3.webp",
    "model": "sunburst26",
+   "n": 3,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_night",
+   "kind": "scene",
+   "file": "junc_under_night__sunburst26f__1.webp",
+   "model": "sunburst26f",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_night",
+   "kind": "scene",
+   "file": "junc_under_night__sunburst26f__2.webp",
+   "model": "sunburst26f",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "junc_under_night",
+   "kind": "scene",
+   "file": "junc_under_night__sunburst26f__3.webp",
+   "model": "sunburst26f",
    "n": 3,
    "pink": 0
   },

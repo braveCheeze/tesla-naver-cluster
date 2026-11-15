@@ -500,6 +500,59 @@ for _k, _t in _JV3.items():
     PANO |= {'junc_%s_day' % _k, 'junc_%s_night' % _k}
 WIDE = {'junc_fork_r', 'junc_exit_r'}
 
+# 2026-11-15 사용자 표시(분기점 그림 표에 빨간 X·동그라미): 고른 그림을 고치기만 한다 (편집, --icons fix4)
+FIX4_KEEP = ('Edit this navigation junction illustration. Keep everything else exactly the same: the composition, camera, sky, '
+             'colors, roads, every other lane marking, the blue route lane and the big white route arrow. No text. ')
+FIX4 = {
+    # 밤 갈림길: 파란 길 왼쪽 가장자리에 빨간 줄 → 낮 그림처럼 흰 실선 가장자리
+    'junc_fork_night': (('ref/base4_junc_fork_night.png',), FIX4_KEEP,
+                        'Add one crisp solid white edge line along the entire left edge of the blue route lane, from the bottom edge '
+                        'of the image up to the point where the two branches split, so the blue lane is cleanly bordered by a white '
+                        'line on its left exactly like the white edge lines of the other branch.'),
+    # 낮 나가기: 본선 점선이 연결로 흰 선 바로 옆에 붙어 X → 점선은 연결로에서 떨어지게, 사이는 흰 실선 하나
+    'junc_ramp_day': (('ref/base4_junc_ramp_day.png',), FIX4_KEEP,
+                      'Clean up where the exit ramp separates from the highway near the bottom right: remove the dashed lane line '
+                      'segments of the main highway that run right next to the exit ramp\'s white edge line, so no dashed line '
+                      'squeezes against or touches the ramp. Between the main highway and the blue exit lane there is only ONE '
+                      'clean solid white line from the bottom edge up to where they split, and the small triangle where they split '
+                      'is neatly filled with white diagonal chevron stripes.'),
+    # 밤 나가기: 맨 아래 점선이 파란 길로 파고듦(보라 낙서) → 점선이 파란 길에 닿지 않게
+    'junc_ramp_night': (('ref/base4_junc_ramp_night.png',), FIX4_KEEP,
+                        'At the bottom of the image, the white dashed lane line of the main highway runs into the blue exit lane: '
+                        'remove the dashed line segments that touch or cross the blue lane. The left side of the blue exit lane is '
+                        'bounded by one clean continuous solid white line from the bottom edge of the image up to the white chevron '
+                        'area where the ramp splits off.'),
+    # 낮 고가: 낮 그림 전체 X, 밤 그림 동그라미(좋음) → 밤 그림을 그대로 낮으로
+    'junc_over_day': (('ref/base4_junc_over_day.png',), FIX4_KEEP,
+                      'Turn this night scene into the very same scene in clear daytime: soft light-blue sky gradient, faint distant '
+                      'blue hills with green trees, fresh green grass beside the road, mid-grey asphalt with crisp white lane '
+                      'markings, light grey concrete barriers, bridge deck and pillars with soft daylight shading. The blue route '
+                      'lane stays the same vivid blue (#2F7DFF) with the same big white arrow climbing onto the overpass.'),
+    # 지하차도 진입 낮·밤: 터널 입구 왼쪽의 비스듬한 벽 조각에 X → 깔끔한 낮은 벽 하나
+    'junc_under_day': (('ref/base4_junc_under_day.png',), FIX4_KEEP,
+                       'Remove the odd angled concrete wall fragment just left of the tunnel opening (the wedge-shaped barrier '
+                       'piece between the ground-level lanes and the blue lane). Instead, the left side of the blue lane is a clean, '
+                       'simple low concrete wall that runs straight and parallel along the blue lane from the middle of the image '
+                       'into the tunnel opening, plus a solid white edge line. The tunnel opening, its frame and the right wall stay '
+                       'the same.'),
+    'junc_under_night': (('ref/base4_junc_under_night.png',), FIX4_KEEP,
+                         'Remove the odd angled concrete wall fragment just left of the tunnel opening (the wedge-shaped barrier '
+                         'piece between the ground-level lanes and the blue lane). Instead, the left side of the blue lane is a clean, '
+                         'simple low concrete wall that runs straight and parallel along the blue lane from the middle of the image '
+                         'into the tunnel opening, plus a solid white edge line. The tunnel opening, its frame and the right wall stay '
+                         'the same.'),
+}
+PANO |= set(FIX4)
+# 낮 나가기 2차: 표시한 곳은 맨 아래 '본선 점선과 파란 연결로 사이에 끼어 뾰족해진 어두운 차로'. 그 칸을 파란 길로 채운다 (--icons fix5)
+FIX5 = {'junc_ramp_day': (('ref/base4_junc_ramp_day.png',), FIX4_KEEP,
+                          'At the bottom of the image, between the long white dashed lane line just right of the center and the '
+                          'white edge line on the left of the blue exit lane, there is a thin dark asphalt wedge: the rightmost '
+                          'highway lane squeezed to a point. Fix it: paint that whole wedge in the same vivid blue as the route, so '
+                          'at the bottom the blue route is the full rightmost lane, bounded on its left by that white dashed lane '
+                          'line, and then curves off into the exit ramp. Remove the white edge line that separated the wedge from '
+                          'the blue lane near the bottom. Keep the dashed lane line, the arrow and everything else.')}
+PANO |= set(FIX5)
+
 
 def _gpt25(model):
     return (model, 0.005, lambda p, imgs, wide=False: {'prompt': p, 'images': imgs, 'size': '1536x1024' if wide else '1024x1024',
@@ -556,6 +609,8 @@ MODELS['flare26j'], MODELS['sunburst26j'] = MODELS['flare26'], MODELS['sunburst2
 MODELS['flare26k'], MODELS['sunburst26k'] = MODELS['flare26e'], MODELS['sunburst26e']      # 비켜 가기 굵게
 MODELS['flare26x'], MODELS['sunburst26x'] = MODELS['flare26e'], MODELS['sunburst26e']      # 분기점 그림: 깔끔하게·긴 화살표
 MODELS['flare26t'], MODELS['sunburst26t'] = MODELS['flare26e'], MODELS['sunburst26e']      # 분기점 그림: 흰 점선 그대로, 옆 틈만 은은하게
+MODELS['flare26f'], MODELS['sunburst26f'] = MODELS['flare26e'], MODELS['sunburst26e']      # 분기점 그림: 사용자 표시한 곳만 고치기 (fix4)
+MODELS['flare26r'], MODELS['sunburst26r'] = MODELS['flare26e'], MODELS['sunburst26e']      # 낮 나가기 2차 (fix5)
 T2I_MODELS = {'flare26', 'sunburst26', 'ideo', 'flare26b', 'sunburst26b', 'flare26j', 'sunburst26j'}
 
 
@@ -670,6 +725,10 @@ def main():
         JOBS.update(KLBOLD)   # 비켜 가기(왼쪽) 굵게
     if 'clean' in a.icons.split(','):
         JOBS.update(CLEAN)   # 분기점 그림: 깔끔하게, 화살표 꼬리를 맨 아래까지
+    if 'fix5' in a.icons.split(','):
+        JOBS.update(FIX5)   # 낮 나가기 2차
+    if 'fix4' in a.icons.split(','):
+        JOBS.update(FIX4)   # 분기점 그림: 사용자가 X·동그라미 친 곳만 고치기
     if 'junc3' in a.icons.split(','):
         JOBS.update(JUNC3)   # 분기점 그림 14장: 길게 이어진 화살표·은은한 파란 빛
     models = [m for m in (a.models or 'flare,sunburst,flare26,sunburst26').split(',') if m in MODELS]
@@ -679,7 +738,7 @@ def main():
     groups = {'cars': [k for k in JOBS if is_car(k)], 'signs': [k for k in JOBS if is_sign(k)],
               'guide': [k for k in JOBS if not is_car(k) and not is_sign(k)],
               'roads': ROADS, 'rb': RBS, 'redo': ROADS + RBS,
-              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s'], 'fix3': ['outs', 'ins', 'over_r', 'under_s', 'under_r', 'side_r', 'oside_r'], 'grass': RBS, 'junc': sorted(PANO), 'green': list(GREEN_KIND), 'junc2': JV2, 'soft': list(SOFT), 'rbdepth': list(RBDEPTH), 'junc3': list(JUNC3), 'clean': list(CLEAN), 'klbold': ['kl'], 'sharp': ['sharp_r'], 'slbold': ['sl']}
+              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s'], 'fix3': ['outs', 'ins', 'over_r', 'under_s', 'under_r', 'side_r', 'oside_r'], 'grass': RBS, 'junc': sorted(PANO), 'green': list(GREEN_KIND), 'junc2': JV2, 'soft': list(SOFT), 'rbdepth': list(RBDEPTH), 'junc3': list(JUNC3), 'clean': list(CLEAN), 'klbold': ['kl'], 'sharp': ['sharp_r'], 'slbold': ['sl'], 'fix4': list(FIX4), 'fix5': list(FIX5)}
     want = []
     for i in a.icons.split(','):
         want += groups.get(i, [i])

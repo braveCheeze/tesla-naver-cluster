@@ -51,7 +51,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.15-114'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.15-115'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -3507,7 +3507,7 @@
     const label = dirNames(q ? q[1] : '').join(' · ');   // 패널 문장과 같은 규칙 (dirNames)
     // 진입(57·59·66·68·76·77)도 '그쪽으로 비켜 나가는' 진출 그림: 안내 지점에서는 연결로로 갈라져 들어가므로 (v110, 합류 그림은 뺌)
     const kind = JUNC_ROAD[g.t] || (JUNC_RAMP.has(g.t) ? 'ramp' : 'fork');
-    return { kind, left, place: m ? m[1] : '', label,
+    return { kind, left, place: m ? m[1] : '', label, names: dirNames(q ? q[1] : ''),
       hwy: /고속|분기점|IC\b|JC\b|IC에서|JC에서/i.test(s) || (g.t >= 57 && g.t <= 69 && !JUNC_ROAD[g.t]) };
   }
   // 앞을 내려다본 원근 그림 (2026-11-14 다시 그림: 다른 내비의 분기점 확대 그림처럼 하늘·지평선·멀어질수록 좁아지는 도로).
@@ -3597,6 +3597,29 @@
       '<rect y="' + JV.HZ + '" width="' + JV.W + '" height="' + (JV.H - JV.HZ) + '" fill="url(#' + id + 'g)"/>' +
       edge + road + '<path class="jc-lane" d="' + lanes + '"/>' + band + arrow + '</svg>';
   }
+  // ---------- 분기점 그림 위 방면 표지판 (v115, 2026-11-15 요청: 카카오·T맵처럼 '이런 식의 안내') ----------
+  // (길 위에 방면 글씨를 원근으로 칠하는 것도 해 봤지만, 서랍 그림이 290×110px 이라 글씨가 8px 남짓으로 읽히지 않아 뺐다)
+  // 표지판: 고속도로는 초록, 일반 도로는 파랑. 흰 테두리, 가는 방향 화살표(↗/↖), 고속도로 이름이면 노선 번호 방패.
+  // 노선 번호는 확실한 것만 (모르면 방패 없이 이름만). '중부내륙'·'제2경인'은 '중부'·'경인'보다 먼저
+  const EXPWAY_NO = [[/^중부내륙/, 45], [/^(중부|통영대전)/, 35], [/^제2경인/, 110], [/^경인/, 120], [/^경부/, 1], [/^남해/, 10],
+    [/^서해안/, 15], [/^호남/, 25], [/^당진영덕/, 30], [/^평택제천/, 40], [/^영동/, 50], [/^중앙/, 55], [/^서울양양/, 60], [/^동해/, 65],
+    [/^(수도권1순환|수도권제1순환|외곽순환|서울외곽)/, 100], [/^인천국제공항/, 130], [/^용인서울/, 171], [/^(수도권2순환|수도권제2순환)/, 400]];
+  function expwayNo(name) {
+    const n = String(name || '').replace(/\s+/g, '');
+    if (!/고속|순환/.test(n)) return 0;
+    const hit = EXPWAY_NO.find(([re]) => re.test(n));
+    return hit ? hit[1] : 0;
+  }
+  const shieldSvg = (no) => '<svg viewBox="0 0 26 28" aria-hidden="true"><path d="M2 2h22v14c0 5.6-5.4 8.6-11 10.4C7.4 24.6 2 21.6 2 16z" fill="#1f4fa8" stroke="#fff" stroke-width="1.8"/>' +
+    '<path d="M3 3h20v5.4H3z" fill="#d93a2f"/><text x="13" y="20.6" text-anchor="middle" font-size="' + (no >= 100 ? 9.6 : 11.5) + '" font-weight="800" fill="#fff" font-family="system-ui, sans-serif">' + no + '</text></svg>';
+  // 표지판 화살표: 곧게 올라가다 오른쪽 위로 꺾임 (왼쪽은 CSS 로 좌우 뒤집기)
+  const SIGN_ARROW = '<svg viewBox="0 0 24 30" aria-hidden="true"><path d="M8 28V15.5L16.5 7" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>' +
+    '<path d="M11.2 3.6 21.6 2.4 20.4 12.8z" fill="#fff" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/></svg>';
+  function juncSignHtml(names) {
+    const one = names.join('').length <= 7;   // 짧으면 한 줄('서울 대전'), 길면 두 줄로 쌓는다 (그림을 덜 가리게)
+    const rows = names.map((n) => { const no = expwayNo(n); return '<span class="sg-row">' + (no ? '<i class="sg-shield">' + shieldSvg(no) + '</i>' : '') + '<b>' + esc(n) + '</b></span>'; });
+    return '<span class="sg-names' + (one ? ' one' : '') + '">' + rows.join('') + '</span><span class="sg-arrow">' + SIGN_ARROW + '</span>';
+  }
   function renderJunction() {
     const el = $('#juncCard');
     const g = nav.active && prefs.junction ? nav.next : null;
@@ -3618,7 +3641,10 @@
       const jd = ICON_PICKS['junc_' + j.kind + '_day'], jn = ICON_PICKS['junc_' + j.kind + '_night'];
       const jimg = (f, c) => '<img class="jv-img ' + c + ' jc-' + j.kind + '" src="' + APP_BASE + 'img/ai/' + f + '?v=' + APP_VERSION + '" alt="" draggable="false">';
       $('#juncSvg').innerHTML = jd && jn ? jimg(jd, 'jv-day') + jimg(jn, 'jv-night') : juncSvg(j.kind === 'entry' ? Object.assign({}, j, { kind: 'ramp' }) : j);
-      $('#juncLabel').textContent = j.label;   // 방면이 없으면 비운다(빈 칸은 CSS 로 숨김). '오른쪽'을 지어 넣지 않는다
+      // 방면 표지판 (v115). 방면이 없으면 비운다(빈 칸은 CSS 로 숨김). '오른쪽'을 지어 넣지 않는다
+      $('#juncLabel').innerHTML = j.names.length ? juncSignHtml(j.names) : '';
+      $('#juncLabel').dataset.names = j.label;
+      $('#juncLabel').setAttribute('aria-label', j.label ? j.label + ' 방면' : '');
       $('#juncPlace').textContent = j.place;
       el.classList.toggle('left', j.left);
       el.classList.toggle('hwy', j.hwy);
@@ -5478,7 +5504,7 @@
       sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
       saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassKey, hipassNums, hipassLayout, laneNums, laneStripHtml, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, icoBase, pickImg, iconPicks: ICON_PICKS, tollParts, arrowSpan, routeStyle: ROUTE_STYLE, trafficPal, roundRoute, setCarIcon, carIcons: CAR_ICONS, parking, parkState, setParkingData, loadParking, evalParking, rest, setRestData, loadRest, ensureRouteRest, renderRest, placeBase, findParking, renderTurnArrow,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, expwayNo,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
     };
   }
