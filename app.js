@@ -51,7 +51,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.15-116'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.15-117'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -4251,6 +4251,67 @@
   window.addEventListener('pagehide', () => { saveCurTrip(); saveTripNow(true); });
 
   let lastFixWall = 0;
+
+  // ---------- 놓친 단속 카메라 스스로 알리기 (v117, 2026-11-15 보정동 가는 길 60km 단속 2번 놓침) ----------
+  // 운영 서버 기록(/event)에는 원래 위치가 없어 어디서 놓쳤는지 알 수 없었다. 자료에 있는 속도 카메라 20m 안을
+  // 경고 없이 지나치면, 그 카메라와 직전 40초 위치·방향 기록을 한 번 올린다 (누를 것 없음, 세션당 5번까지, 7일 보관).
+  // 교차로를 가로질러 지난 옆 도로 카메라·반대편 차로용 한 방향 카메라는 빼고 (내 도로 이름과 다르거나 왼쪽 8m 밖)
+  const fixLog = [];   // 최근 위치 [시각, 위도, 경도, 정확도, 기기 속도, 기기 방향, 쓴 방향]
+  const camMiss = { near: new Map(), sent: 0 };
+  function logFix(f, devH) {
+    fixLog.push([f.t, +f.lat.toFixed(6), +f.lng.toFixed(6), Math.round(f.acc || 0), f.speed == null ? null : +(+f.speed).toFixed(1),
+      devH === null ? null : Math.round(devH), state.heading === null ? null : Math.round(state.heading)]);
+    while (fixLog.length > 60) fixLog.shift();
+  }
+  // 최근 궤적이 가리키는 방향: 25m 넘게 떨어진 가장 가까운 과거 위치(12초 안)에서 지금 위치로.
+  // 위치가 튄 곳(시속 250km 넘게 건너뜀: 터널 뒤·GPS 튐)을 만나면 거기서 끊고, 마지막 한 걸음의 방향과 30° 넘게 어긋나면 믿지 않는다
+  function trackBearing(f) {
+    let cur = { lat: f.lat, lng: f.lng, t: f.t }, last = null;
+    for (let k = fixLog.length - 1; k >= 0; k--) {
+      const e = fixLog[k];
+      if (f.t - e[0] > 12000) return null;
+      const p = { lat: e[1], lng: e[2] }, step = haversine(p, cur);
+      if (step > 70 * Math.max(1, (cur.t - e[0]) / 1000) + 20) return null;
+      if (last === null && step >= 4) last = bearing(p, f);
+      if (haversine(p, f) >= 25) {
+        const tb = bearing(p, f);
+        return last !== null && angleDiff(last, tb) <= 30 ? tb : null;
+      }
+      cur = { lat: p.lat, lng: p.lng, t: e[0] };
+    }
+    return null;
+  }
+  function camMissCheck(f) {
+    if (!cams.loaded || !prefs.cams) return;
+    const tg = camState.target;
+    if (state.speedKmh >= 20) {
+      for (const it of camsNear(f.lat, f.lng, 40)) {
+        if (!isSpeedCam(it.c) || !camWanted(it.c)) continue;
+        let m = camMiss.near.get(it.i);
+        if (!m) { m = { minD: 1e9, side: 0, alerted: false }; camMiss.near.set(it.i, m); }
+        if (it.d < m.minD) { m.minD = it.d; m.side = sideOf(f, it.c, it.d); m.kmh = Math.round(state.speedKmh); }
+        if (tg && tg.i === it.i) m.alerted = true;
+      }
+    }
+    camMiss.near.forEach((m, i) => {
+      const c = cams.rows[i];
+      if (haversine(f, { lat: c[0], lng: c[1] }) < 60) return;
+      camMiss.near.delete(i);
+      if (m.alerted || camState.passed.has(i) || camState.saidById.has(i) || m.minD > 20) return;
+      const cr = camRoad(c);
+      if (specificRoad(cr) && specificRoad(road.name) && !sameRoad(cr, road.name)) return;   // 가로지른 옆 도로
+      if (oneDir(c) && m.side < -OPP_SIDE) return;                                              // 반대편 차로용
+      if (camMiss.sent >= 5) return;
+      camMiss.sent++;
+      const t0 = f.t;
+      report('warn', {
+        msg: 'missed camera ' + i, cam: i, lim: c[2], kind: c[3], dir: c[9], flags: c[10] || 0, camRoad: cr, myRoad: road.name,
+        minD: Math.round(m.minD), side: Math.round(m.side), kmhAt: m.kmh, navOn: !!nav.active,
+        trace: fixLog.slice(-40).map((e) => [Math.round((e[0] - t0) / 100) / 10].concat(e.slice(1))),
+      });
+    });
+  }
+  const hdgFix = { n: 0, bad: 0, sum: 0 };
   function onFix(f) {
     const t0 = performance.now();
     const prev = state.fix;
@@ -4259,6 +4320,7 @@
     $('#speed').classList.remove('stale');
     let v = Number.isFinite(f.speed) && f.speed >= 0 ? f.speed : null; // m/s
     let h = Number.isFinite(f.heading) ? f.heading : null;
+    const devH = h;
 
     if (prev) {
       const dt = (f.t - prev.t) / 1000;
@@ -4277,9 +4339,21 @@
 
     const kmh = (v || 0) * 3.6;
     state.speedKmh = kmh < 2 ? 0 : kmh;
+    // v117: 차 GPS 의 방향 값이 실제 지나온 궤적(최근 25m 이상)과 45° 넘게 다르면 궤적을 믿는다.
+    // 길안내 없이 달릴 때는 이 방향으로 앞의 카메라를 고르므로, 방향 값이 틀리면 단속 경고가 안 뜬다. 처음 20번째에 한 번 알린다
+    const tb = devH !== null && kmh >= 15 ? trackBearing(f) : null;
+    if (tb !== null) {
+      hdgFix.n++;
+      const dd = angleDiff(devH, tb);
+      if (dd > 45) {
+        h = tb; hdgFix.bad++; hdgFix.sum += dd;
+        if (hdgFix.bad === 20) report('warn', { msg: 'gps heading disagrees with track', bad: hdgFix.bad, of: hdgFix.n, avgDiff: Math.round(hdgFix.sum / hdgFix.bad) });
+      }
+    }
     if (state.speedKmh > (state.maxKmh || 0) && state.speedKmh < 250) state.maxKmh = state.speedKmh; // 튀는 값 제외
     if (h !== null && state.speedKmh >= 3) state.heading = h; // 정지 중 GPS 방향은 믿지 않음
     state.fix = f;
+    logFix(f, devH);
     updateCurvature();
     checkStopNorth(f.t);
     if (!prev) applyNight(); // 첫 위치를 알게 되면 그 곳의 해 지는 시각으로 다시 본다
@@ -4292,6 +4366,7 @@
     tripTick(f);         // 주행 기록 (과속 기록은 바로 아래 카메라 판단에서 붙는다)
     saveTripNow();       // 화면의 주행 거리·시간·최고 속도 (새 버전으로 바뀌어도 이어서)
     evalCameras(f);
+    camMissCheck(f);
     refreshCamMarkers(f);
     evalBumps(f);
     evalParking(f);
@@ -5504,7 +5579,7 @@
       sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
       saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassKey, hipassNums, hipassLayout, laneNums, laneStripHtml, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, icoBase, pickImg, iconPicks: ICON_PICKS, tollParts, arrowSpan, routeStyle: ROUTE_STYLE, trafficPal, roundRoute, setCarIcon, carIcons: CAR_ICONS, parking, parkState, setParkingData, loadParking, evalParking, rest, setRestData, loadRest, ensureRouteRest, renderRest, placeBase, findParking, renderTurnArrow,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, expwayNo,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, expwayNo, camMiss, camMissCheck, hdgFix, fixLog,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
     };
   }

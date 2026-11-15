@@ -2755,6 +2755,7 @@
     { id: 'S65', name: 'S65 auto zoom: 17 while driving even before a turn; the close-up 18 only within 300 m of the destination', fn: s65 },
     { id: 'S58', name: "S58 no-parking cameras: '주정차 단속' only ahead in my direction, when slow (no sound); not behind or on a side street; setting off", fn: s58 },
     { id: 'S57', name: 'S57 fast reroute: wrong-way turn caught in 2 fixes, start asked ahead of the car, a new route that starts behind the car is retried at once (only once)', fn: s57 },
+    { id: 'S68', name: 'S68 free drive with a wrong GPS heading still catches the speed camera ahead (track bearing); a camera passed without an alert is counted as missed', fn: s68 },
   ];
 
   // S55: 주의 표지 (전국도로안전표지표준데이터의 주의표지, data/signs.json · tools/build_signs.py, 2026-11-14 요청).
@@ -2941,6 +2942,44 @@
     const ok = r.fastQuiet && r.slowShown && /^(5\d|6\d)m$/.test(r.dist) && r.markers === 1 && r.keep30 && r.gone40 && r.markersFast === 0 && r.offHidden &&
       r.behindHidden && r.sideHidden && r.sideMarkers === 0;
     return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + r[k]).join(', ') };
+  }
+
+
+  // S68: 길안내 없이 달릴 때 차 GPS 방향 값이 틀려도(반대쪽을 가리켜도) 지나온 궤적 방향으로 앞의 단속 카메라를 잡고,
+  //      경고 없이 카메라 20m 안을 지나치면 '놓친 카메라'로 센다 (v117, 2026-11-15 보정동 60km 단속 2번 놓침)
+  async function s68() {
+    const t = T();
+    await resetApp();
+    const CAM = { lat: 37.3066, lng: 127.10576 };   // 용구대로 보정 60km 신호·과속 (data/cameras.json)
+    const A0 = dest(CAM, 180, 600), r = {};
+    let hit = null;
+    for (let s = 0; s <= 720; s += 17) {
+      const p = dest(A0, 0, s);
+      feed(p, 16.7, 180);                     // 기기 방향은 정반대(180°)로 틀리게
+      const tg = t.camState.target;
+      if (!hit && tg && sameCam(tg.c, CAM)) hit = { s, d: r0(tg.d) };
+    }
+    r.hit = hit ? hit.d : 'none';
+    r.heading = r0(t.state.heading);
+    r.badCount = t.hdgFix.bad;
+    // 맞는 방향 값은 그대로 쓴다
+    await resetApp();
+    const bad0 = t.hdgFix.bad;
+    for (let s = 0; s <= 300; s += 17) feed(dest(A0, 0, s), 16.7, 2);
+    r.goodKept = r0(t.state.heading) === 2 && t.hdgFix.bad === bad0;
+    // 놓친 카메라 세기: 경고가 없던 것으로 하고 카메라 옆(5m)을 지나 80m 멀어지면 1번
+    await resetApp();
+    const sent0 = t.camMiss.sent;
+    t.camMiss.near.clear();
+    t.state.speedKmh = 60;
+    t.camState.target = null; t.camState.passed.clear(); t.camState.saidById.clear();
+    const road0 = t.road.name; t.road.name = '';
+    t.camMissCheck({ lat: dest(CAM, 270, 5).lat, lng: dest(CAM, 270, 5).lng, t: Date.now() });
+    t.camMissCheck({ ...dest(CAM, 0, 80), t: Date.now() + 5000 });
+    r.missCounted = t.camMiss.sent >= sent0 + 1;
+    t.road.name = road0;
+    const ok = typeof r.hit === 'number' && r.hit > 60 && Math.min(r.heading, 360 - r.heading) < 20 && r.badCount >= 10 && r.goodKept && r.missCounted;
+    return { pass: ok, detail: JSON.stringify(r) };
   }
 
   // S67: 아이콘 고르기 (2026-11-14 요청: 아이콘 목록을 보고 바꾸고 관리) — 저장소 기본(img/ai/picks.js)이 앱에 쓰이고,
