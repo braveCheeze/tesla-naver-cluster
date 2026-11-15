@@ -51,7 +51,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-124'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-126'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -3401,6 +3401,8 @@
   // 지하차도·고가·옆길(under_*, over_*, side_*, oside_*)은 전용 그림(img/ai, 초록 경로선)을 쓴다 — 예전엔 여기서 직진·비켜 가기 화살표로 바꿔 그렸다
   const PLAIN_ROAD = {
     outr: 'kr', outl: 'kl', inr: 'kr', inl: 'kl', outs: 's', ins: 's',   // v110: inr/inl 이 거꾸로였다(디자인 검토 P0)
+    // v125 (2026-11-15 밤): 휴게소 진입은 흰 그림 대신 초록 비켜 가기(오른쪽), 방향 모를 회전교차로는 초록 회전교차로 그림('rb svg는 필요없지 않아?')
+    rest: 'kr', rb: 'rb_r',
   };
   Object.keys(PLAIN_ROAD).forEach((k) => { TURN_ICONS[k] = TURN_ICONS[PLAIN_ROAD[k]]; });
   // 같은 아이콘을 두 곳에 넣어도 그라데이션 id 가 겹치지 않게 넣을 때마다 번호를 붙인다

@@ -604,6 +604,36 @@ GRADE3 = {
                  'with a large arrowhead pointing up.' + _G3, ''),
 }
 
+# 2026-11-15 밤 '너가 보고 거리감이 없으면 다시 만들어, 깨진것도 포함': 위 정면 그림(over3_s·under3_s)은 납작했고,
+# 왼쪽·오른쪽·옆길 그림(위에서 본 복잡한 그림)은 56px 칸에서 뭉개져 깨진 것처럼 보였다. 운전석 시점의 강한 원근으로 다시
+_G4 = ('Flat vector maneuver icon for the turn-by-turn panel of a premium car navigation app, in the bold, simple style of Naver Map '
+       'maneuver icons. Seen from the driver seat, with STRONG PERSPECTIVE and a clear vanishing point in the upper third: a dark charcoal road '
+       '(#313B42) with thin white edge lines starts wide across the bottom edge and narrows strongly into the distance, so the icon '
+       'has an obvious sense of depth and distance. Exactly one bold vivid green (#1FC24A) route arrow with a large triangular '
+       'arrowhead follows the route described. Concrete structures are light grey with simple flat two-tone shading. Only a few '
+       'large shapes that still read clearly at 48 px: no small details, no texture, no lane dashes except at most one dashed '
+       'center line, no text, no letters, no numbers, no cars, no people, no trees, no sky details.' + CORP + BG + ' Scene: ')
+GRADE4 = {
+    'under4_s': ((), _G4, 'the road runs straight ahead and dips down into a wide dark rectangular underpass opening in the middle distance, '
+                 'under a light grey concrete deck that crosses from left to right above the opening; the green arrow runs up the middle '
+                 'of the road and into the dark opening.'),
+    'over4_s': ((), _G4, 'the road runs straight ahead up a ramp onto an elevated bridge deck with light grey concrete side barriers that '
+                'continues far into the distance; far below the bridge, a lower road crosses from left to right; the green arrow runs up the '
+                'middle of the road and onto the raised bridge.'),
+    'under4_r': ((), _G4, 'the road ahead splits in two: the RIGHT branch curves slightly right and dips down between light grey concrete walls '
+                 'into a dark underpass opening in the distance; the LEFT branch continues straight at ground level; the green arrow follows '
+                 'the right branch down into the opening.'),
+    'over4_r': ((), _G4, 'the road ahead splits in two: the RIGHT branch rises up a ramp onto an elevated bridge with light grey concrete side '
+                'barriers that curves slightly right into the distance; the LEFT branch continues straight at ground level; the green arrow '
+                'follows the right branch up onto the bridge.'),
+    'side4_r': ((), _G4, 'the middle lanes ahead dip down into a dark underpass opening under a light grey concrete deck in the distance, '
+                'while a RIGHT side road stays at ground level and runs beside the underpass on the right; the green arrow follows the right '
+                'side road at ground level past the underpass, not into it.'),
+    'oside4_r': ((), _G4, 'the middle lanes ahead rise up onto an elevated bridge with light grey concrete side barriers, while a RIGHT side '
+                 'road stays at ground level and runs beside and below the bridge on the right; the green arrow follows the right side road '
+                 'at ground level, not up onto the bridge.'),
+}
+
 def _gpt25(model):
     return (model, 0.005, lambda p, imgs, wide=False: {'prompt': p, 'images': imgs, 'size': '1536x1024' if wide else '1024x1024',
                                                        'quality': 'medium', 'background': 'opaque', 'output_format': 'png', 'n': 1})
@@ -781,6 +811,8 @@ def main():
         JOBS.update(UNDER3D)   # 지하차도 진입 새 구도
     if 'grade3' in a.icons.split(','):
         JOBS.update(GRADE3)   # 고가·지하차도 진입 정면 입체 아이콘 (2026-11-15)
+    if 'grade4' in a.icons.split(','):
+        JOBS.update(GRADE4)   # 지하차도·고가·옆길 강한 원근 (2026-11-15)
     if 'fix6' in a.icons.split(','):
         JOBS.update(FIX6)   # 지하차도 진입 벽 없애기
     if 'fix5' in a.icons.split(','):
@@ -796,7 +828,7 @@ def main():
     groups = {'cars': [k for k in JOBS if is_car(k)], 'signs': [k for k in JOBS if is_sign(k)],
               'guide': [k for k in JOBS if not is_car(k) and not is_sign(k)],
               'roads': ROADS, 'rb': RBS, 'redo': ROADS + RBS,
-              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s'], 'fix3': ['outs', 'ins', 'over_r', 'under_s', 'under_r', 'side_r', 'oside_r'], 'grass': RBS, 'junc': sorted(PANO), 'green': list(GREEN_KIND), 'junc2': JV2, 'soft': list(SOFT), 'rbdepth': list(RBDEPTH), 'junc3': list(JUNC3), 'clean': list(CLEAN), 'klbold': ['kl'], 'sharp': ['sharp_r'], 'slbold': ['sl'], 'fix4': list(FIX4), 'fix5': list(FIX5), 'fix6': list(FIX6), 'under3d': list(UNDER3D), 'grade3': list(GRADE3)}
+              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s'], 'fix3': ['outs', 'ins', 'over_r', 'under_s', 'under_r', 'side_r', 'oside_r'], 'grass': RBS, 'junc': sorted(PANO), 'green': list(GREEN_KIND), 'junc2': JV2, 'soft': list(SOFT), 'rbdepth': list(RBDEPTH), 'junc3': list(JUNC3), 'clean': list(CLEAN), 'klbold': ['kl'], 'sharp': ['sharp_r'], 'slbold': ['sl'], 'fix4': list(FIX4), 'fix5': list(FIX5), 'fix6': list(FIX6), 'under3d': list(UNDER3D), 'grade3': list(GRADE3), 'grade4': list(GRADE4)}
     want = []
     for i in a.icons.split(','):
         want += groups.get(i, [i])
