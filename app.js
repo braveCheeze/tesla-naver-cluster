@@ -51,7 +51,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.15-117'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.15-118'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -2067,7 +2067,9 @@
   // 11번째 값(flags): 1 후면 단속, 2 박스형 (둘 다 원본에 없어 직접 확인한 것만)
   const isRear = (c) => ((c[10] | 0) & 1) === 1;
   const isBox = (c) => ((c[10] | 0) & 2) === 2;
-  const camHold = (c) => (isRear(c) ? REAR_HOLD : CAM_HOLD);
+  // 신호(신호 전용·신호·과속) 카메라는 교차로 정지선 근처라 지나간 뒤 5m 만 (v118, 2026-11-15 주행 중 요청 '신호 25m만 더 오차범위 줄이고': 30m → 5m)
+  const SIGNAL_HOLD = 5;
+  const camHold = (c) => (isRear(c) ? REAR_HOLD : (c[3] === 2 || c[3] === 3) ? SIGNAL_HOLD : CAM_HOLD);
   // 카메라 행: [lat, lng, limit, kind, sec, len, zone, road, rtype, dir(, flags)]
   // kind: 1 과속, 2 신호 전용, 3 과속+신호, 9 구간/기타 · rtype: 1 고속국도, 3 일반국도, 4 지방도, 5 시도, 6 기타
   // 8 이동식: 경찰청 공개 데이터는 고정식만 담고 있어 지금은 없다. 이동식 위치 데이터가 생기면 kind 8 로 넣으면 파란색으로 뜬다
@@ -2425,7 +2427,8 @@
     const over = limit > 0 && state.speedKmh > limit + 1;
     if (!tg.said.near && d <= 250) {
       tg.said.near = true;
-      if (over) say('속도를 줄이세요. 제한속도 ' + limit + '.', 3, true);
+      // v118 (2026-11-15 주행 중 요청 '속도초과 라는 나레이션 없애줘'): 과속이면 말 대신 높은 경고음 세 번 (빨간 카드·반복 경고음은 그대로)
+      if (over) { beep(3, 1040); logAlert('beep', '과속 경고음 (카메라 250m 전, 음성 없음)'); }
       else { beep(1, 660); logAlert('beep', '카메라 250m 전 알림음'); }
     } else if (over && (tg.said.near || tg.after) && d <= 300 && f.t - camState.lastOverBeep >= 900) {
       // 과속 중에는 1초에 한 번, 짧게 한 번만 울린다 (GPS 가 1초에 한 번 오므로 900ms 로 둬서 한 번씩 빠지지 않게)
@@ -3910,12 +3913,29 @@
     const g = nav.next;
     renderTurnArrow();
     renderRest();
-    $('#turnIcon').innerHTML = ico(g ? turnKind(g) : 'goal');
-    $('#turnDist').textContent = fmtDist(Math.max(10, nav.dg != null ? nav.dg : nav.total));   // '0m' 대신 최소 10m (음성과 같게)
-    if (g && g.t === 121) {
+    // v118 (2026-11-15 주행 중 요청 '터널을 위로 올려 주고, 직진 그다음 터널이면 그냥 터널까지 몇 km 남았는지'):
+    //   지금 안내가 직진(직진·직진 지하차도·직진 고가)인데 터널 안이거나 그 전에 터널이 있으면, 안내 줄을 터널로
+    //   ('터널 출구까지 680m' + 지나온 만큼 초록 막대 / '남한터널까지 1.2km'). 작은 터널 줄은 숨긴다. 회전·갈림길은 그대로.
+    //   직진 지하차도 진입(56)만 있으면 터널 아이콘 + 'OO지하차도까지'
+    const kind0 = g ? turnKind(g) : 'goal';
+    const straight0 = kind0 === 's' || kind0 === 'under_s' || kind0 === 'over_s';
+    const ta0 = straight0 ? tunnelAhead() : null;
+    const tnMain = !!(ta0 && (ta0.inside || nav.dg == null || ta0.d < nav.dg));
+    const tunnelStep = !tnMain && !!g && g.t === 56;
+    const turnRow = p.querySelector('.turn');
+    turnRow.classList.toggle('tn-main', tnMain);
+    turnRow.style.setProperty('--tnp', tnMain && ta0.inside ? Math.round(Math.max(0, Math.min(1, ta0.p)) * 100) + '%' : '0%');
+    $('#turnIcon').innerHTML = tnMain || tunnelStep ? (pickImg('tunnel', 'ti tn-ai') || TUNNEL_ICON) : ico(kind0);
+    $('#turnDist').textContent = fmtDist(Math.max(10, tnMain ? ta0.d : nav.dg != null ? nav.dg : nav.total));   // '0m' 대신 최소 10m (음성과 같게)
+    if (tnMain) {
+      $('#turnText').textContent = (ta0.t.name || '터널') + (ta0.inside ? ' 출구까지' : '까지');
+    } else if (g && g.t === 121) {
       // 톨게이트: 다른 내비처럼 통행료를 굵게 앞에 ('800원 하남톨게이트'), 아이콘은 TG 표지 (2026-11-14 요청)
       const p = tollParts(g), fee = fareText(p.fare);
       $('#turnText').innerHTML = (fee ? '<b class="tt-fare">' + esc(fee) + '</b>' : '') + esc(p.name);
+    } else if (tunnelStep) {
+      const m = /^(.*?)에서\s/.exec(String(g.s || ''));
+      $('#turnText').textContent = (m ? m[1] : '지하차도') + '까지';
     } else {
       $('#turnText').textContent = g ? guideText(g.s) : nav.dest.name;
     }
@@ -3948,7 +3968,8 @@
     {
       const tr = $('#tunnelRow'), ta = !tr.hidden ? tunnelAhead() : null;
       const chipAt = g2 && nav.dg != null ? nav.dg + Math.max(0, nav.cum[Math.min(g2.i, nav.cum.length - 1)] - nav.cum[Math.min(g.i, nav.cum.length - 1)]) : Infinity;
-      const up = !!(ta && !nn.hidden && ta.d < chipAt);
+      if (tnMain) tr.hidden = true;   // v118: 안내 줄이 터널을 보여 주면 작은 터널 줄은 숨김
+      const up = !!(ta && !tr.hidden && !nn.hidden && ta.d < chipAt);
       if (up && tr.nextElementSibling !== nn) nn.parentNode.insertBefore(tr, nn);
       else if (!up && nn.nextElementSibling && nn.nextElementSibling !== tr && tr.nextElementSibling === nn) nn.parentNode.insertBefore(tr, nn.nextElementSibling);
     }

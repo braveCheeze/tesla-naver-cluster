@@ -1846,9 +1846,17 @@
     ] };
     const prevPref = t.prefs.tunnels;
     t.setTunnelData(data);
-    const row = () => ({ shown: visible('#tunnelRow'), inside: document.getElementById('tunnelRow').classList.contains('inside'),
-      dist: text('#tunnelDist'), text: text('#tunnelText'), bar: document.getElementById('tunnelBar').style.width,
-      icon: !!document.querySelector('#tunnelIcon svg.tunnel, #tunnelIcon img.aiimg') });   // 앱 그림 또는 고른 AI 그림
+    // v118: 지금 안내가 직진이면 터널은 안내 줄(큰 줄)에 나온다 ('테스트터널까지' / '테스트터널 출구까지' + 막대). 아니면 작은 터널 줄
+    const row = () => {
+      const tm = document.querySelector('#navPanel .turn.tn-main');
+      if (tm && visible('#navPanel')) {
+        return { shown: true, main: true, inside: /출구까지$/.test(text('#turnText')), dist: text('#turnDist'), text: text('#turnText'),
+          bar: tm.style.getPropertyValue('--tnp'), icon: !!document.querySelector('#turnIcon svg.tunnel, #turnIcon img.aiimg'), small: visible('#tunnelRow') };
+      }
+      return { shown: visible('#tunnelRow'), inside: document.getElementById('tunnelRow').classList.contains('inside'),
+        dist: text('#tunnelDist'), text: text('#tunnelText'), bar: document.getElementById('tunnelBar').style.width,
+        icon: !!document.querySelector('#tunnelIcon svg.tunnel, #tunnelIcon img.aiimg') };   // 앱 그림 또는 고른 AI 그림
+    };
     const go = (m, v) => { const a = pointAt(R, m); feed(a.p, v == null ? 15 : v, a.h); t.renderNav(); };
     const r = {};
     try {
@@ -1876,7 +1884,7 @@
     }
     const m = (s) => parseInt(s, 10) * (/km/.test(s) ? 1000 : 1);
     const ok = r.found.length === 1 && /^테스트터널:2\d\d-5\d\d$/.test(r.found[0]) &&
-      r.ahead.shown && !r.ahead.inside && r.ahead.icon && /^1[89]0m$/.test(r.ahead.dist) && /^테스트터널 입구까지$/.test(r.ahead.text) /* v110: 1km 안 되면 길이 없이 */ &&
+      r.ahead.shown && !r.ahead.inside && r.ahead.icon && /^1[89]0m$/.test(r.ahead.dist) && /^테스트터널( 입구)?까지$/.test(r.ahead.text) /* v110: 1km 안 되면 길이 없이 · v118: 안내 줄이면 '테스트터널까지' */ && !r.ahead.small &&
       r.inside.shown && r.inside.inside && r.inside.text === '테스트터널 출구까지' && m(r.inside.dist) >= 130 && m(r.inside.dist) <= 170 && parseInt(r.inside.bar, 10) >= 40 &&
       r.dr.inside && m(r.inside.dist) - m(r.dr.dist) >= 30 && !r.after.shown && r.offHidden;
     return { pass: ok, detail: JSON.stringify(r) + (ok ? '✓' : '✗') };
@@ -2755,6 +2763,7 @@
     { id: 'S65', name: 'S65 auto zoom: 17 while driving even before a turn; the close-up 18 only within 300 m of the destination', fn: s65 },
     { id: 'S58', name: "S58 no-parking cameras: '주정차 단속' only ahead in my direction, when slow (no sound); not behind or on a side street; setting off", fn: s58 },
     { id: 'S57', name: 'S57 fast reroute: wrong-way turn caught in 2 fixes, start asked ahead of the car, a new route that starts behind the car is retried at once (only once)', fn: s57 },
+    { id: 'S69', name: 'S69 signal cameras: warning kept only 5 m after passing; no spoken speeding line (beep instead); straight underpass entry shows the tunnel icon and "OO지하차도까지"', fn: s69 },
     { id: 'S68', name: 'S68 free drive with a wrong GPS heading still catches the speed camera ahead (track bearing); a camera passed without an alert is counted as missed', fn: s68 },
   ];
 
@@ -2979,6 +2988,52 @@
     r.missCounted = t.camMiss.sent >= sent0 + 1;
     t.road.name = road0;
     const ok = typeof r.hit === 'number' && r.hit > 60 && Math.min(r.heading, 360 - r.heading) < 20 && r.badCount >= 10 && r.goodKept && r.missCounted;
+    return { pass: ok, detail: JSON.stringify(r) };
+  }
+
+  // S69: (v118, 2026-11-15 주행 중 요청) 신호·과속 카메라는 지나간 뒤 5m 만 경고 유지(예전 30m), 과속이어도 '속도를 줄이세요' 음성 없이
+  //      경고음만, 직진 지하차도 진입(56)은 안내 줄에 터널 아이콘 + 'OO지하차도까지'
+  async function s69() {
+    const t = T(), r = {};
+    await resetApp();
+    const CAM = { lat: 37.3066, lng: 127.10576 };   // 용구대로 보정 신호·과속 60
+    const mark = t.alertLog[t.alertLog.length - 1];
+    let shown = false, clearedAt = null;
+    for (let s = 0; s <= 700; s += 5) {
+      const past = s - 600;
+      feed(dest(CAM, 180, 600 - s), 75 / 3.6, 0, { dt: 250 });
+      const tg = t.camState.target, mine = !!tg && sameCam(tg.c, CAM);
+      if (mine) shown = true;
+      if (past > 0 && shown && !mine && clearedAt === null) clearedAt = past;
+    }
+    const from = mark ? t.alertLog.indexOf(mark) + 1 : 0;
+    const log = t.alertLog.slice(from).map((e) => e.text);
+    r.shown = shown; r.clearedAt = clearedAt;
+    r.voice = log.some((x) => /속도를 줄이세요/.test(x));
+    r.beep = log.some((x) => /과속 경고음/.test(x));
+    // 직진 지하차도 진입 안내
+    const raw = [];
+    for (let k = 0; k <= 30; k++) raw.push(dest(NAV_ORIGIN, 0, 100 * k));
+    const path = raw.map((p) => [round6(p.lng), round6(p.lat)]);
+    const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const total = cum[cum.length - 1];
+    const R = {
+      route: { distance: r0(total), duration: r0(total / 20 * 1000), tollFare: 0, fuelPrice: 300, path,
+        guide: [{ i: 12, t: 56, s: '벌말지하차도에서 지하차도 진입', d: r0(cum[12]), ms: 60000 }, { i: 30, t: 88, s: '목적지', d: r0(total - cum[12]), ms: 50000 }],
+        sections: [{ i: 0, n: 31, name: '테스트로', speed: 60, cong: 1 }] },
+      P, cum, total, dest: { name: '터널 테스트', addr: '', lat: P[30].lat, lng: P[30].lng },
+    };
+    try {
+      softReset();
+      await planAndStart(R);
+      for (let s = 20; s <= 500; s += 20) { const a = pointAt(R, s); feed(a.p, 20, a.h); }
+      t.renderNav();
+      r.turnText = text('#turnText');
+      r.tunnelIcon = !!document.querySelector('#turnIcon img.tn-ai, #turnIcon svg.tunnel');
+    } finally { t.endNav(); softReset(); }
+    const ok = r.shown && r.clearedAt !== null && r.clearedAt <= 20 && !r.voice && r.beep && r.turnText === '벌말지하차도까지' && r.tunnelIcon;
     return { pass: ok, detail: JSON.stringify(r) };
   }
 

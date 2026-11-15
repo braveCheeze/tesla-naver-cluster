@@ -1215,6 +1215,13 @@
   #app.tesla .tunnelrow { border-top: 1px solid var(--nv-line); color: var(--nv-fg); }
   #app.tesla .tunnelrow #tunnelText { color: var(--nv-sub); opacity: 1; }
   #app.tesla .tn-bar i { background: var(--nv-green); }
+  /* v118: 직진 지하차도 진입은 안내 줄에 터널 아이콘 (선 굵기 규칙이 아치에 묻지 않게), 터널 안 직진이면 터널 줄이 맨 위 */
+  .turnicon svg.tunnel { stroke: none; }
+  body:has(#app.tesla):has(#map.night) .turnicon img.tn-ai { filter: none; }
+  /* 안내 줄이 터널일 때(터널 안) 밑에 지나온 만큼 초록 막대 */
+  .turn { position: relative; }
+  .turn.tn-main::after { content: ''; position: absolute; left: 0; bottom: 0; height: 3px; width: var(--tnp, 0%); background: #03c75a; transition: width .9s linear; }
+  #app.tesla .turn.tn-main::after { background: var(--nv-green); }
   body:has(#app.tesla):has(#map.night) .tn-arch { fill: #6b7280; }
   body:has(#app.tesla):has(#map.night) .tn-hole { fill: #111827; }
   /* ================= 하이패스도 단속 서랍 안에 (2026-11-14 요청) =================
@@ -1685,8 +1692,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.15-117"></script>
-<script src="img/ai/picks.js?v=2026.11.15-117"></script>
-<script src="app.js?v=2026.11.15-117"></script>
+<script src="icons.js?v=2026.11.15-118"></script>
+<script src="img/ai/picks.js?v=2026.11.15-118"></script>
+<script src="app.js?v=2026.11.15-118"></script>
 </body>
 </html>
