@@ -51,7 +51,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.14-113'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.15-114'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -505,7 +505,8 @@
   const rotateCompass = makeRotator($('#compassArrow'));
   function camEl(c) {
     const el = document.createElement('div');
-    el.className = 'cammk k' + c[3] + (c[6] ? ' z' + c[6] : ''); // z2 어린이·z1 노인 보호구역은 노란 바탕
+    el.className = 'cammk k' + c[3] + (c[6] ? ' z' + c[6] : '') + (c[3] === 8 || ((c[10] | 0) & 2) ? ' mob' : ''); // z2 어린이·z1 노인 보호구역은 노란 바탕
+    // v114 (2026-11-15 요청 '이동식은 파란색으로, 빨간 테두리 말고'): 이동식·박스형(부스에 이동식 장비를 넣는 곳)은 파란 테두리
     el.textContent = c[2] || '?';
     return el;
   }
@@ -2459,7 +2460,7 @@
       const d = pk.at != null && nav.active ? Math.max(0, pk.at - nav.along)
         : state.fix ? haversine(state.fix, { lat: pk.c[0], lng: pk.c[1] }) : pk.d;
       // 테슬라 모드에서는 '다음 단속' 글자 없이 제한속도 표지 + 거리만 (표지만 봐도 안다). 글자는 화면 읽기용으로 남긴다
-      nxEl.innerHTML = '<span class="mini-sign' + (pk.c[3] === 3 ? ' k3' : '') + '">' + (pk.c[2] || '?') + '</span><span class="nx-label">다음 단속 </span><b>' + fmtDist(d) + '</b>';
+      nxEl.innerHTML = '<span class="mini-sign' + (pk.c[3] === 3 ? ' k3' : '') + (pk.c[3] === 8 || isBox(pk.c) ? ' mob' : '') + '">' + (pk.c[2] || '?') + '</span><span class="nx-label">다음 단속 </span><b>' + fmtDist(d) + '</b>';
       nxEl.setAttribute('aria-label', '다음 단속 ' + fmtDist(d));
     }
     if (!tg || !prefs.cams) {
@@ -2479,8 +2480,8 @@
       $('#camBar').style.width = tg.after ? '100%' : Math.max(0, Math.min(100, (1 - tg.d / span) * 100)) + '%';
       card.classList.toggle('over', speedCam && tg.c[2] > 0 && state.speedKmh > tg.c[2] + 1 && tg.d < 600);
       card.classList.toggle('signal', !speedCam);
-      card.classList.toggle('mobile', tg.c[3] === 8); // 이동식 단속은 파란색
-      card.classList.toggle('box', isBox(tg.c));       // 박스형은 종류 글자를 주황으로
+      card.classList.toggle('mobile', tg.c[3] === 8 || isBox(tg.c)); // 이동식·박스형 단속은 파란색 (v114)
+      card.classList.toggle('box', isBox(tg.c));
       card.classList.toggle('sigspeed', tg.c[3] === 3); // 신호·과속: 표지 위에 작은 신호등
       // 어린이·노인 보호구역: 도로 주의 표지 모양 타일 (삼각 표지 + 빨간 띠에 남은 거리 + '어린이보호' 와 제한속도)
       const zone = tg.c[6] === 2 ? 'kid' : tg.c[6] === 1 ? 'elder' : '';
