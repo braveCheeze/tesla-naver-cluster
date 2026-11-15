@@ -34,6 +34,7 @@
     signs: store.get('signs') !== '0',       // 주의 표지 알림: 미끄러운 도로·낙석·급경사 등 (기본 켬)
     tunnels: store.get('tunnels') !== '0',   // 길안내 중 터널 진입·출구 거리 (기본 켬)
     junction: store.get('junction') !== '0', // 고속도로 진출입·갈림길 그림 (기본 켬)
+    lanes: store.get('lanes') !== '0',       // 회전 차로 안내 (시험판: 정밀도로지도를 받은 곳만, 기본 켬)
     traffic: store.get('traffic') !== '0',
     weather: store.get('weather') !== '0',
     car: ({ my: 'tesla_grey', red: 'tesla_red', white: 'tesla_white' })[store.get('car')] || store.get('car') || 'cute',             // 내 차 아이콘 (설정에서 고름)
@@ -3133,6 +3134,7 @@
     nav.routeBumps = null; bumpState.markerKey = '';
     nav.routeSigns = null; tollState.numsKey = '';
     nav.routeTunnels = null;
+    nav.laneCache = null; laneState.key = '';
     nav.lastTraffic = state.fix ? state.fix.t : Date.now();
     if (!keepAlerts) { nav.said = {}; nav.gap = 10000; }
     nav.remain = nav.total; nav.next = null; nav.dg = null;
@@ -3947,6 +3949,100 @@
     $('#tollFare').textContent = fareText(p.fare); // '800원'만 (한 줄 카드라 짧게). 하이패스 안내 문구는 둘째 줄에 고정
     syncDrawer();
   }
+  // ---------- 차로 안내 (시험판, 2026-11-15 요청 '좌회전·우회전은 몇 번 차로'): 국토지리정보원 정밀도로지도(차로 단위 지도)에서
+  // 교차로 진입부마다 차로별 갈 수 있는 방향(정지선 앞 노면 화살표, 없으면 교차로 안 차로 연결선)을 뽑아 data/lanes.json 에 담는다
+  // (tools/build_lanes.py). 정밀도로지도를 받은 곳만 (처음: 서울 강동구 도로 20구간 · 국도 6호선). 네이버 경로의 회전(좌·우·유턴) 지점
+  // 바로 앞(정지선이 회전 지점 8m 뒤~70m 앞, 옆으로 22m 안, 방향 35° 안)의 진입부를 찾아, 회전 500m 앞부터 안내 줄 밑에 차로 칸을 그리고
+  // 그 방향으로 갈 수 있는 차로를 파랗게. 그 방향 차로가 없는 진입부(따로 갈라지는 우회전 전용 차로 등)는 아무것도 안 보인다
+  const lanesData = { loaded: false, n: 0, lat: null, lng: null, h: null, pat: null, pats: [], grid: new Map(), date: '', areas: [] };
+  const laneState = { key: '', hit: null };
+  const LANE_SHOW = 500;
+  const LANE_MOVE = { l: 'L', sharp_l: 'L', r: 'R', sharp_r: 'R', u: 'U' };
+  function setLaneData(j) {
+    lanesData.loaded = false; lanesData.grid = new Map(); laneState.key = ''; nav.laneCache = null;
+    if (!j || !Array.isArray(j.d) || !Array.isArray(j.pats)) return;
+    const n = j.count, sc = j.scale || 1e5, d = j.d;
+    const lat = new Float64Array(n), lng = new Float64Array(n), h = new Int16Array(n), pat = new Int32Array(n);
+    let a = 0, b = 0;
+    for (let k = 0; k < n; k++) {
+      a += d[4 * k]; b += d[4 * k + 1];
+      lat[k] = a / sc; lng[k] = b / sc; h[k] = d[4 * k + 2]; pat[k] = d[4 * k + 3];
+      const key = Math.floor(lat[k] * 100) + ':' + Math.floor(lng[k] * 100);
+      let cell = lanesData.grid.get(key);
+      if (!cell) lanesData.grid.set(key, cell = []);
+      cell.push(k);
+    }
+    Object.assign(lanesData, { n, lat, lng, h, pat, pats: j.pats.map((p) => String(p).split('|')), date: j.date || '', areas: j.areas || [], loaded: true });
+  }
+  async function loadLanes() {
+    try {
+      const r = await fetch('data/lanes.json?v=' + APP_VERSION);
+      if (r.ok) setLaneData(await r.json());
+    } catch (e) { /* 차로 자료가 없으면 차로 칸 없이 */ }
+  }
+  // 이 회전 안내에서 갈 차로: { lanes: ['LU','L','S','RS'], ok: [0, 1], k } 또는 null. 경로마다 안내별로 한 번만 찾는다
+  function laneGuide(g) {
+    const M = g && LANE_MOVE[turnKind(g)];
+    if (!M || !lanesData.loaded || !nav.pts || nav.pts.length < 2) return null;
+    if (!nav.laneCache) nav.laneCache = new Map();
+    const ck = g.i + ':' + g.t;
+    if (nav.laneCache.has(ck)) return nav.laneCache.get(ck);
+    let res = null;
+    const last = nav.cum.length - 1, s0 = nav.cum[Math.min(g.i, last)], p = nav.pts[Math.min(g.i, last)];
+    const a = routePointAt(s0 - 30), b = routePointAt(s0 - 3);
+    if (a && b && haversine(a, b) > 10) {
+      const hin = bearing(a, b), ux = Math.sin(toRad(hin)), uy = Math.cos(toRad(hin));
+      const kx = Math.cos(toRad(p.lat)) * 111320, ky = 110540;
+      const cy = Math.floor(p.lat * 100), cx = Math.floor(p.lng * 100);
+      const cands = [];
+      for (let y = cy - 1; y <= cy + 1; y++) for (let x = cx - 1; x <= cx + 1; x++) {
+        for (const k of lanesData.grid.get(y + ':' + x) || []) {
+          if (angleDiff(lanesData.h[k], hin) > 35) continue;
+          const vx = (p.lng - lanesData.lng[k]) * kx, vy = (p.lat - lanesData.lat[k]) * ky;
+          const along = vx * ux + vy * uy, side = Math.abs(-vx * uy + vy * ux);   // 정지선 → 회전 지점: 진행 방향으로·옆으로
+          if (along < -8 || along > 70 || side > 22) continue;
+          const lanes = lanesData.pats[lanesData.pat[k]] || [];
+          // 유턴은 노면 유턴 화살표가 있는 차로, 없으면 1차로 (유턴은 1차로에서)
+          const ok = lanes.map((l, i) => (l.indexOf(M) >= 0 ? i : -1)).filter((i) => i >= 0);
+          if (M === 'U' && !ok.length) ok.push(0);
+          cands.push({ k, lanes, ok, along, far: along > 45 ? 1 : 0 });
+        }
+      }
+      // 그 방향으로 갈 수 있는 차로가 있는 진입부 먼저, 다음은 회전 지점에 가까운(45m 안) 것, 다음은 거리
+      cands.sort((u, v) => (v.ok.length > 0) - (u.ok.length > 0) || u.far - v.far || u.along - v.along);
+      const c = cands[0];
+      if (c && c.ok.length && c.ok.length < c.lanes.length) res = { lanes: c.lanes, ok: c.ok, k: c.k };
+    }
+    nav.laneCache.set(ck, res);
+    return res;
+  }
+  // 차로 칸 하나의 화살표 그림 (그 차로에 칠해진 방향들을 한 그림에: 직진 ↑, 좌 ↰, 우 ↱, 유턴 ↶)
+  function laneArrowSvg(m) {
+    let d = 'M12 22.5V13';
+    if (m.indexOf('S') >= 0) d += 'M12 13V3.6M8.4 7.2 12 3.6l3.6 3.6';
+    if (m.indexOf('L') >= 0) d += 'M12 14.5C12 10.4 9.9 8.6 5.4 8.6M8.3 5.5 5.2 8.6l3.1 3.1';
+    if (m.indexOf('R') >= 0) d += 'M12 14.5C12 10.4 14.1 8.6 18.6 8.6M15.7 5.5l3.1 3.1-3.1 3.1';
+    if (m.indexOf('U') >= 0) d += 'M12 14V9.6a3.3 3.3 0 0 0-6.6 0v7.4M3.2 14.6l2.2 2.8 2.2-2.8';
+    if (m === '?' || !/[LSRU]/.test(m)) d = 'M12 22.5V13';
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + d + '"/></svg>';
+  }
+  function renderLanes(g) {
+    const el = $('#laneRow');
+    if (!el) return;
+    const hit = prefs.lanes && g && nav.dg != null && nav.dg <= LANE_SHOW ? laneGuide(g) : null;
+    laneState.hit = hit;
+    el.hidden = !hit;
+    if (!hit) { laneState.key = ''; return; }
+    const key = g.i + ':' + g.t + ':' + hit.k;
+    if (laneState.key === key) return;
+    laneState.key = key;
+    // 화살표: AI 그림(img/ai/lane_s·lane_ls … 흰 화살표, 갈 수 없는 차로는 CSS 로 회색)을 골라 두었으면 그것, 아니면 그려 둔 SVG
+    el.innerHTML = hit.lanes.map((m, i) => '<b class="lg' + (hit.ok.indexOf(i) >= 0 ? ' go' : '') + '">' +
+      (pickImg('lane_' + m.toLowerCase(), 'lg-ai') || laneArrowSvg(m)) + '</b>').join('');
+    el.dataset.lanes = hit.lanes.join('|');
+    el.dataset.go = hit.ok.map((i) => i + 1).join(',');
+    el.setAttribute('aria-label', hit.lanes.length + '차로 중 ' + hit.ok.map((i) => i + 1).join('·') + '차로');
+  }
   // 테슬라 모드에서 단속 경고 묶음을 길안내 패널(없으면 검색 버튼) 바로 밑에 붙이고,
   // 위쪽 버튼(야간·전체화면·설정)은 그 패널(또는 검색 버튼) 바로 오른쪽에 붙인다
   function placeAlerts() {
@@ -4068,6 +4164,7 @@
     } else {
       $('#turnText').textContent = g ? guideText(g.s) : nav.dest.name;
     }
+    renderLanes(tnMain ? null : g);   // 회전 500m 앞부터 차로 칸 (정밀도로지도가 있는 곳만)
     // 그다음 칸: 이번 회전을 하고 나서 무엇이 얼마 뒤에 오는지 (거리는 이번 안내 지점 → 그다음 안내 지점).
     //   그다음이 회전이면 네이버 지도처럼 그 회전 아이콘 + 거리만 '↰ 1.2km' (2026-11-14: '직진 … 좌회전'처럼 풀어 쓰지 않음)
     //   그다음이 목적지면 연한 빨강 바탕에 빨간 핀 + '20m', 경유지면 주황 (2026-11-14: '도착' 글자는 빼고 핀·바탕색으로만 구분)
@@ -5534,6 +5631,7 @@
     $('#optSigns').checked = prefs.signs;
     $('#optTunnels').checked = prefs.tunnels;
     $('#optJunction').checked = prefs.junction;
+    $('#optLanes').checked = prefs.lanes;
     $('#optTraffic').checked = prefs.traffic;
     $('#optWeather').checked = prefs.weather;
     $('#optHup').checked = prefs.headingUp;
@@ -5642,6 +5740,10 @@
     prefs.signs = e.target.checked; store.set('signs', prefs.signs ? null : '0');
     if (state.fix) evalSigns(state.fix);
   };
+  $('#optLanes').onchange = (e) => {
+    prefs.lanes = e.target.checked; store.set('lanes', prefs.lanes ? null : '0');
+    if (nav.active) renderNavPanel();
+  };
   $('#optSigCams').onchange = (e) => {
     prefs.signalCams = e.target.checked; store.set('sigcam', prefs.signalCams ? '1' : null);
     camState.markerAt = null;
@@ -5745,6 +5847,7 @@
   loadParking();
   loadRest();
   loadSigns();
+  loadLanes();
   loadHipass();
   loadTunnels();
   startGps();
@@ -5772,6 +5875,7 @@
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
       sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
       saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassKey, hipassNums, hipassLayout, laneNums, laneStripHtml, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, icoBase, pickImg, iconPicks: ICON_PICKS, tollParts, arrowSpan, routeStyle: ROUTE_STYLE, trafficPal, roundRoute, setCarIcon, carIcons: CAR_ICONS, parking, parkState, setParkingData, loadParking, evalParking, rest, setRestData, loadRest, ensureRouteRest, renderRest, placeBase, findParking, renderTurnArrow,
+      lanesData, laneState, setLaneData, loadLanes, laneGuide,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, expwayNo, camMiss, camMissCheck, hdgFix, fixLog,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },

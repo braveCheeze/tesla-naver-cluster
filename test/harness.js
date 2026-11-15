@@ -2784,6 +2784,7 @@
     { id: 'S65', name: 'S65 auto zoom: 17 while driving even before a turn; the close-up 18 only within 300 m of the destination', fn: s65 },
     { id: 'S58', name: "S58 no-parking cameras: '주정차 단속' only ahead in my direction, when slow (no sound); not behind or on a side street; setting off", fn: s58 },
     { id: 'S57', name: 'S57 fast reroute: wrong-way turn caught in 2 fixes, start asked ahead of the car, a new route that starts behind the car is retried at once (only once)', fn: s57 },
+    { id: 'S76', name: "S76 turn lane guidance (trial, NGII HD map → data/lanes.json): lane boxes under the turn row 500 m ahead, lanes for this turn blue; skips approaches without that turn; setting off", fn: s76 },
     { id: 'S75', name: 'S75 (info) cameras alerted on every saved real route, for comparing versions', fn: s75 },
     { id: 'S74', name: 'S74 camera score on 2026-11-15 real cases (13): false alerts / misses / wrong type, with and without navigation', fn: s74 },
     { id: 'S73', name: 'S73 no spoken overspeed words (과속/초과): limit beeps and the red card only', fn: s73 },
@@ -3702,6 +3703,88 @@
       r.at500.shown && r.at500.label === '미끄러운 도로' && r.at500.dist === '주의' &&
       r.at610.shown && r.at610.label === '낙석 주의' && /^\d+m$/.test(r.at610.dist) && r.at610.type === 'rock' &&
       !r.off.shown && !r.free150.shown && r.free300.shown && r.free300.type === 'slip' &&
+      r.real.loaded && r.real.n > 100;
+    return { pass: ok, detail: JSON.stringify(r) + (ok ? ' ✓' : ' ✗') };
+  }
+
+  // S76: 회전 차로 안내 (시험판, 정밀도로지도 → data/lanes.json · tools/build_lanes.py, 2026-11-15 요청 '좌회전·우회전 몇 번 차로').
+  //      시험 경로(북쪽 600m → 우회전 → 동쪽)에 진입부를 직접 넣어
+  //      (a) 회전 500m 밖에서는 안 보임  (b) 500m 안: 회전 지점 40m 앞 북쪽 방향 진입부 'LU|L|S|SR' → 4칸, 4차로만 파랑,
+  //          길안내 패널 바로 밑에 붙은 따로 된 줄 (2026-11-15 사용자 표시)
+  //          (12m 앞 'S|S' 진입부는 회전 차로가 없어 건너뜀 — 따로 갈라지는 회전 전용 차로 같은 곳; 남쪽 방향 진입부는 방향이 달라 무시)
+  //      (c) 설정을 끄면 숨김  (d) 회전을 지나면(다음 안내 = 목적지) 숨김  (e) 같은 곳이 좌회전 안내면 1·2차로
+  //      (f) 진입부가 없는 회전(자료 밖)은 아무것도 안 보임  (g) 실제 data/lanes.json 이 읽힌다
+  async function s76() {
+    const t = T(), R = buildNavRoute();
+    // 240m 의 '직진' 안내를 빼서 출발부터 다음 안내가 우회전(600m)이게
+    R.route = JSON.parse(JSON.stringify(R.route));
+    R.route.guide = R.route.guide.filter((g) => g.t !== 1);
+    const turn = R.P[5];
+    const aps = [
+      [dest(turn, 180, 40), 0, 'LU|L|S|SR'],
+      [dest(turn, 180, 12), 0, 'S|S'],
+      [dest(dest(turn, 0, 25), 90, 8), 180, 'R|S|L'],
+    ];
+    const pats = [], d = [];
+    let pa = 0, pb = 0;
+    aps.forEach(([p, h, pat]) => {
+      if (pats.indexOf(pat) < 0) pats.push(pat);
+      const a = Math.round(p.lat * 1e5), b = Math.round(p.lng * 1e5);
+      d.push(a - pa, b - pb, h, pats.indexOf(pat)); pa = a; pb = b;
+    });
+    const row = () => ({ shown: visible('#laneRow'), n: document.querySelectorAll('#laneRow .lg').length,
+      go: (document.getElementById('laneRow').dataset.go || ''), lanes: document.getElementById('laneRow').dataset.lanes || '',
+      blue: document.querySelectorAll('#laneRow .lg.go').length, arrows: document.querySelectorAll('#laneRow .lg svg path, #laneRow .lg img').length,
+      underPanel: (() => { const a = document.getElementById('laneRow').getBoundingClientRect(), p = document.getElementById('navPanel').getBoundingClientRect();
+        return visible('#laneRow') ? Math.abs(a.top - p.bottom) <= 2 && a.left >= p.left - 2 && a.right <= p.right + 2 : null; })() });
+    const go = (m, v) => { const a = pointAt(R, m); feed(a.p, v == null ? 15 : v, a.h); };
+    const prevPref = t.prefs.lanes;
+    const r = {};
+    try {
+      t.setLaneData({ v: 1, scale: 1e5, date: '2025-09', areas: ['시험'], count: aps.length, pats, d });
+      softReset();
+      await planAndStart(R);
+      go(15); go(60);
+      r.far = row();                                   // 회전까지 540m: 안 보임
+      for (let m = 80; m <= 200; m += 20) go(m);
+      r.near = row();                                  // 400m: 4칸, 4차로 파랑
+      t.prefs.lanes = false; go(215);
+      r.off = row();
+      t.prefs.lanes = true; go(230);
+      r.on = row();
+      r.text = text('#turnText');
+      for (let m = 250; m <= 700; m += 25) go(m);
+      r.after = row();                                 // 우회전 뒤: 다음 안내는 목적지 → 안 보임
+      t.endNav();
+      // 같은 곳이 좌회전 안내라면 1·2차로
+      const RL = buildNavRoute();
+      RL.route = JSON.parse(JSON.stringify(R.route));
+      RL.route.guide[0].t = 2; RL.route.guide[0].s = "'시험로' 방면으로 좌회전";
+      softReset();
+      await planAndStart(RL);
+      for (let m = 15; m <= 300; m += 25) { const a = pointAt(RL, m); feed(a.p, 15, a.h); }
+      r.left = row();
+      t.endNav();
+      // 진입부가 없는 곳
+      t.setLaneData({ v: 1, scale: 1e5, date: '2025-09', areas: ['시험'], count: 1, pats: ['L|S|R'], d: [Math.round(dest(turn, 0, 3000).lat * 1e5), Math.round(turn.lng * 1e5), 0, 0] });
+      softReset();
+      await planAndStart(R);
+      for (let m = 15; m <= 300; m += 25) go(m);
+      r.none = row();
+      t.endNav();
+    } finally {
+      t.prefs.lanes = prevPref;
+      t.setLaneData(null);
+      await t.loadLanes();
+      softReset();
+    }
+    r.real = { loaded: t.lanesData.loaded, n: t.lanesData.n, date: t.lanesData.date, areas: (t.lanesData.areas || []).join(',') };
+    const ok = !r.far.shown &&
+      r.near.shown && r.near.n === 4 && r.near.go === '4' && r.near.blue === 1 && r.near.lanes === 'LU|L|S|SR' && r.near.arrows === 4 &&
+      r.near.underPanel === true &&
+      !r.off.shown && r.on.shown && !r.after.shown &&
+      r.left.shown && r.left.go === '1,2' && r.left.blue === 2 &&
+      !r.none.shown &&
       r.real.loaded && r.real.n > 100;
     return { pass: ok, detail: JSON.stringify(r) + (ok ? ' ✓' : ' ✗') };
   }

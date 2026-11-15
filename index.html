@@ -1230,6 +1230,25 @@
   .turn { position: relative; }
   .turn.tn-main::after { content: ''; position: absolute; left: 0; bottom: 0; height: 3px; width: var(--tnp, 0%); background: #03c75a; transition: width .9s linear; }
   #app.tesla .turn.tn-main::after { background: var(--nv-green); }
+  /* ================= 차로 안내 (시험판, 2026-11-15 요청 '좌회전·우회전 몇 번 차로') =================
+     길안내 패널 바로 밑에 붙는 따로 된 줄(2026-11-15 사용자 표시: 패널 안보다 밑이 낫다). 차로 칸(왼쪽 1차로부터)마다 그 차로에
+     칠해진 화살표, 이번 회전으로 갈 수 있는 차로는 파랑 (하이패스 칸과 같은 파랑). 화살표는 AI 그림(img/ai/lane_*), 없으면 그려 둔 SVG */
+  .lanerow { display: flex; justify-content: center; gap: 6px; padding: 9px 12px 11px; margin: 0 6px; }
+  #app.tesla .lanerow {
+    background-color: var(--nv-glass); background-image: var(--nv-sheen);
+    -webkit-backdrop-filter: var(--nv-blur); backdrop-filter: var(--nv-blur);
+    border-radius: 0 0 14px 14px; box-shadow: inset 0 1px 0 var(--nv-line); text-shadow: none;
+  }
+  #app.tesla:has(#laneRow:not([hidden])) .navpanel { border-bottom-left-radius: 6px; border-bottom-right-radius: 6px; }
+  .lanerow .lg {
+    flex: 0 1 42px; min-width: 26px; height: 46px; border-radius: 8px; display: flex; align-items: center; justify-content: center;
+    background: rgba(128, 138, 158, .24);
+  }
+  .lanerow .lg svg { width: 30px; height: 30px; fill: none; stroke: #8a94a6; stroke-width: 2.3; stroke-linecap: round; stroke-linejoin: round; }
+  .lanerow .lg img { width: 34px; height: 34px; object-fit: contain; filter: brightness(0) invert(.56); }
+  .lanerow .lg.go { background: #1565c0; }
+  .lanerow .lg.go svg { stroke: #fff; }
+  .lanerow .lg.go img { filter: none; }
   body:has(#app.tesla):has(#map.night) .tn-arch { fill: #6b7280; }
   body:has(#app.tesla):has(#map.night) .tn-hole { fill: #111827; }
   /* ================= 하이패스도 단속 서랍 안에 (2026-11-14 요청) =================
@@ -1447,6 +1466,8 @@
     </div>
     <!-- 경고 묶음: 일반 화면에서는 그대로 풀어 놓고(display: contents), 테슬라 모드에서는 길안내 패널 바로 밑에 세로로 쌓는다 -->
     <div class="alerts">
+    <!-- 차로 안내 (시험판): 회전 500m 앞부터 길안내 패널 바로 밑에 붙는 줄. 차로 칸(1차로부터, 칠해진 화살표), 이번 회전으로 갈 차로는 파랗게 -->
+    <div id="laneRow" class="lanerow" hidden></div>
     <!-- 단속 서랍: 테슬라 모드에서는 길안내 패널 밑에서 스르륵 내려온다 (일반 화면에서는 그대로 풀어 놓음) -->
     <div id="camDrawer" class="camdrawer"><div class="cd-clip"><div class="cd-in">
           <!-- 분기점 그림: 고속도로 진출입·갈림길 800m 앞부터 (가야 할 쪽 파랗게, 위에 방면, 밑에 안내 지점·남은 거리) -->
@@ -1650,6 +1671,7 @@
     <label class="check"><input type="checkbox" id="optRest"> 고속도로 휴게소 (길안내 중 다음 휴게소 · 내 방향 쪽만)</label>
     <label class="check"><input type="checkbox" id="optSigns"> 주의 표지 알림: 미끄러운 도로·낙석·급경사 등 (출처: 공공데이터포털 전국도로안전표지표준데이터, 자료를 낸 지자체만)</label>
     <label class="check"><input type="checkbox" id="optJunction"> 분기점 그림 (고속도로 진출입·갈림길 800m 앞부터)</label>
+    <label class="check"><input type="checkbox" id="optLanes"> 회전 차로 안내 — 시험판 (출처: 국토지리정보원 정밀도로지도, 받은 지역만: 서울 강동구 일부·국도 6호선)</label>
     <label class="check"><input type="checkbox" id="optTunnels"> 길안내 중 터널 진입·출구 거리 (터널 위치 © OpenStreetMap 기여자, ODbL)</label>
     <label class="check"><input type="checkbox" id="optTraffic"> 실시간 교통 (도로를 막힘 정도로 색칠)</label>
     <label class="check"><input type="checkbox" id="optWeather"> 날씨 표시 (위치는 약 10km 단위로만 보냄)</label>
