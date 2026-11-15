@@ -51,7 +51,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.15-120'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.15-121'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -2067,9 +2067,14 @@
   // 11번째 값(flags): 1 후면 단속, 2 박스형 (둘 다 원본에 없어 직접 확인한 것만)
   const isRear = (c) => ((c[10] | 0) & 1) === 1;
   const isBox = (c) => ((c[10] | 0) & 2) === 2;
-  // 신호(신호 전용·신호·과속) 카메라는 교차로 정지선 근처라 지나간 뒤 5m 만 (v118, 2026-11-15 주행 중 요청 '신호 25m만 더 오차범위 줄이고': 30m → 5m)
-  const SIGNAL_HOLD = 5;
-  const camHold = (c) => (isRear(c) ? REAR_HOLD : (c[3] === 2 || c[3] === 3) ? SIGNAL_HOLD : CAM_HOLD);
+  // 신호(신호 전용·신호·과속) 카메라는 교차로 정지선 근처라 옆을 지나는 순간(2m 지나면) 바로 경고를 내린다.
+  // v118 (요청 '신호 25m만 더 오차범위 줄이고')은 지나간 뒤 유지 거리만 30m → 5m 로 줄였는데, '지나갔다'는 판정이
+  // '가장 가까웠던 거리보다 10m 더 멀어지고 카메라가 뒤에 있을 때'라 1초마다 오는 위치로는 시속 60km 에서
+  // 여전히 카메라를 20~30m 지나서야 꺼졌다 (2026-11-15 요청 '오차 25 미터를 늘리지 말고 줄여 줘야 해').
+  // v121: 경로 위 거리(길안내 중) 또는 진행 방향으로 잰 앞뒤 거리로 판정하고, 다음 위치가 오기 전에 지나갈 거리면 그 시각에 끈다
+  const SIGNAL_PAST = 2;
+  const isSignalCam = (c) => (c[3] === 2 || c[3] === 3) && !isRear(c);
+  const camHold = (c) => (isRear(c) ? REAR_HOLD : isSignalCam(c) ? 0 : CAM_HOLD);
   // 카메라 행: [lat, lng, limit, kind, sec, len, zone, road, rtype, dir(, flags)]
   // kind: 1 과속, 2 신호 전용, 3 과속+신호, 9 구간/기타 · rtype: 1 고속국도, 3 일반국도, 4 지방도, 5 시도, 6 기타
   // 8 이동식: 경찰청 공개 데이터는 고정식만 담고 있어 지금은 없다. 이동식 위치 데이터가 생기면 kind 8 로 넣으면 파란색으로 뜬다
@@ -2307,6 +2312,45 @@
     return !!arr && arr.some((at) => at > nav.along - 5 && at < nav.along + CAM_SCAN + 300);
   }
 
+  // 카메라를 지나갔다: 같은 자리의 반대 방향 카메라(구간 시점·종점 쌍 등)도 함께 지나간 것으로 처리
+  function passCam(tg, f, now) {
+    clearTimeout(camState.sigT); camState.sigT = null;
+    const twins = camsNear(tg.c[0], tg.c[1], 60);
+    twins.forEach((x) => camState.passed.set(x.i, now));
+    camState.passed.set(tg.i, now);
+    if (camState.section && (tg.c[4] === 2 || twins.some((x) => x.c[4] === 2))) endSection();
+    else if (tg.c[4] === 1) startSection(tg.c, f);
+    tg.after = true; // 카메라 좌표 오차를 감안해 지나간 뒤 CAM_HOLD m (후면 단속은 REAR_HOLD m, 신호는 0) 까지 경고를 유지한다
+  }
+  function passedChime() { chime(); logAlert('beep', '단속 통과 띠링'); }
+  // 신호 카메라를 지난 거리(m, 아직 앞이면 음수). 길안내 중 경로 위면 경로를 따라 잰 거리, 아니면 진행 방향으로 잰 앞뒤 거리
+  function camPast(f, tg, d) {
+    if (nav.active && nav.onRoute && nav.routeCams) {
+      const arr = nav.routeCams.get(tg.c);
+      let at = null;
+      if (arr) for (const x of arr) if (at === null || Math.abs(x - nav.along) < Math.abs(at - nav.along)) at = x;
+      if (at !== null && Math.abs(at - nav.along) < 200) return nav.along - at;
+    }
+    if (state.heading === null) return null;
+    return -d * Math.cos(toRad(angleDiff(bearing(f, { lat: tg.c[0], lng: tg.c[1] }), state.heading)));
+  }
+  // 위치는 1초에 한 번 오므로(시속 60km 면 17m), 다음 위치가 오기 전에 신호 카메라를 2m 지날 거리면 그 시각에 경고를 내린다
+  function sigPassSoon(tg, past) {
+    clearTimeout(camState.sigT); camState.sigT = null;
+    const v = state.speedKmh / 3.6;
+    if (state.speedKmh < 20 || tg.c[4]) return;   // 천천히 다가가며 정지선에 설 수 있는 속도, 구간단속 카메라는 위치로만
+    const ms = (SIGNAL_PAST - past) / v * 1000;
+    if (!(ms > 0 && ms <= 1100)) return;
+    camState.sigT = setTimeout(() => {
+      camState.sigT = null;
+      if (camState.target !== tg || tg.after || state.speedKmh < 20 || !prefs.cams) return;
+      passCam(tg, state.fix, state.fix ? state.fix.t + ms : Date.now());
+      camState.target = null;
+      passedChime();
+      renderCam();
+    }, ms);
+  }
+
   function evalCameras(f) {
     const now = f.t;
     camState.passed.forEach((t, i) => { if (now - t > 120000) camState.passed.delete(i); });
@@ -2322,20 +2366,15 @@
       if (d < tg.minD) tg.minD = d;
       // 정지 중 GPS 흔들림을 '지나감'으로 오인하지 않도록, 움직이는 중이고 카메라가 뒤쪽에 있을 때만 인정
       const behind = state.heading === null || angleDiff(bearing(f, cp), state.heading) > 90;
-      if (!tg.after && tg.minD < 80 && d > tg.minD + 10 && moving && behind) {   // 카메라를 지나감
-        // 같은 자리의 반대 방향 카메라(구간 시점·종점 쌍 등)도 함께 지나간 것으로 처리
-        const twins = camsNear(tg.c[0], tg.c[1], 60);
-        twins.forEach((x) => camState.passed.set(x.i, now));
-        camState.passed.set(tg.i, now);
-        if (camState.section && (tg.c[4] === 2 || twins.some((x) => x.c[4] === 2))) endSection();
-        else if (tg.c[4] === 1) startSection(tg.c, f);
-        tg.after = true; // 카메라 좌표 오차를 감안해 지나간 뒤 CAM_HOLD m (후면 단속은 REAR_HOLD m) 까지 경고를 유지한다
+      const past = !tg.after && isSignalCam(tg.c) ? camPast(f, tg, d) : null;   // 신호 카메라를 지난 거리 (앞이면 음수)
+      const sigPass = past !== null && past >= SIGNAL_PAST && tg.minD < 80;
+      if (!tg.after && moving && (sigPass || (tg.minD < 80 && d > tg.minD + 10 && behind))) {   // 카메라를 지나감
+        passCam(tg, f, now);
       }
       if (tg.after) {
         if (d >= camHold(tg.c)) { // 단속 지점을 다 지났다: 경고를 내리고 '띠링' 한 번
           camState.target = tg = null;
-          chime();
-          logAlert('beep', '단속 통과 띠링');
+          passedChime();
         }
       } else if (d > alertRange(tg.c) + 300) {
         camState.target = tg = null;
@@ -2349,6 +2388,7 @@
         if (tg.miss >= 2) camState.target = tg = null;
       } else {
         tg.miss = 0;
+        if (past !== null && moving) sigPassSoon(tg, past);   // 다음 위치가 오기 전에 지나갈 거리면 그 시각에 끈다
       }
     }
 

@@ -2763,6 +2763,7 @@
     { id: 'S65', name: 'S65 auto zoom: 17 while driving even before a turn; the close-up 18 only within 300 m of the destination', fn: s65 },
     { id: 'S58', name: "S58 no-parking cameras: '주정차 단속' only ahead in my direction, when slow (no sound); not behind or on a side street; setting off", fn: s58 },
     { id: 'S57', name: 'S57 fast reroute: wrong-way turn caught in 2 fixes, start asked ahead of the car, a new route that starts behind the car is retried at once (only once)', fn: s57 },
+    { id: 'S71', name: 'S71 signal camera alert clears as the car passes it (2 m past), even with fixes 17 m apart, on route too', fn: s71 },
     { id: 'S70', name: 'S70 a reroute refused by the route server (429, 4 per minute) retries quietly after the given time, no failure message', fn: s70 },
     { id: 'S69', name: 'S69 signal cameras: warning kept only 5 m after passing; no spoken speeding line (beep instead); straight underpass entry shows the tunnel icon and "OO지하차도까지"', fn: s69 },
     { id: 'S68', name: 'S68 free drive with a wrong GPS heading still catches the speed camera ahead (track bearing); a camera passed without an alert is counted as missed', fn: s68 },
@@ -3035,6 +3036,65 @@
       r.tunnelIcon = !!document.querySelector('#turnIcon img.tn-ai, #turnIcon svg.tunnel');
     } finally { t.endNav(); softReset(); }
     const ok = r.shown && r.clearedAt !== null && r.clearedAt <= 20 && !r.voice && r.beep && r.turnText === '벌말지하차도까지' && r.tunnelIcon;
+    return { pass: ok, detail: JSON.stringify(r) };
+  }
+
+  // S71: (v121) 신호·과속 카메라 경고는 옆을 지나는 순간 꺼진다. 위치가 1초에 한 번(시속 60km 면 17m 간격) 와도
+  //      (a) 카메라를 3m 지난 위치에서 바로 꺼지고 (전에는 다음 위치, 약 20m 지나서), (b) 카메라 6m 앞 위치 다음에는
+  //      새 위치를 기다리지 않고 지나갈 시각에 꺼지며, (c) 길안내 중에도 경로 거리로 같다 (2026-11-15 요청 '오차 25 미터를 줄여')
+  async function s71() {
+    const t = T(), r = {};
+    const CAM = { lat: 37.3066, lng: 127.10576 };   // 용구대로 보정 신호·과속 60
+    const V = 60 / 3.6, STEP = V;                    // 1초에 16.7m
+    const mine = () => !!t.camState.target && sameCam(t.camState.target.c, CAM);
+    // a0 m 앞에서 시작해 1초마다 17m 씩 북쪽으로: 카메라를 지난 뒤 처음 꺼진 위치(지난 거리)
+    const run = (a0, upto, at) => {
+      let shown = false, cleared = null;
+      for (let k = 0; ; k++) {
+        const a = a0 - STEP * k;
+        if (-a > upto) break;
+        feed(at ? at(a) : dest(CAM, 180, a), V, 0);
+        if (mine()) shown = true;
+        if (a < 0 && shown && !mine() && cleared === null) cleared = Math.round(-a * 10) / 10;
+      }
+      return { shown, cleared };
+    };
+    await resetApp();
+    r.a = run(STEP * 36 - 3, 40);                    // 36번째 위치가 카메라 3m 지나
+    await resetApp();
+    // (b) 마지막 위치가 카메라 6m 앞: 0.48초 뒤에 꺼져야 한다
+    let shownB = false;
+    for (let k = 0; k <= 36; k++) { feed(dest(CAM, 180, 6 + STEP * (36 - k)), V, 0); if (mine()) shownB = true; }
+    r.bShown = shownB; r.bBefore = mine();
+    const mark = t.alertLog[t.alertLog.length - 1];
+    await new Promise((res) => setTimeout(res, 800));
+    r.bAfter = mine();
+    r.bChime = t.alertLog.slice(mark ? t.alertLog.indexOf(mark) + 1 : 0).filter((e) => /단속 통과 띠링/.test(e.text)).length;
+    feed(dest(CAM, 0, STEP - 6), V, 0);              // 다음 위치(10.7m 지나): 다시 뜨지 않는다
+    r.bAgain = mine();
+    // (c) 길안내: 카메라를 지나는 곧은 경로
+    const raw = [];
+    for (let k = 0; k <= 12; k++) raw.push(dest(CAM, 180, 800 - 100 * k));
+    const path = raw.map((p) => [round6(p.lng), round6(p.lat)]);
+    const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const total = cum[cum.length - 1];
+    const R = {
+      route: { distance: r0(total), duration: r0(total / 15 * 1000), tollFare: 0, fuelPrice: 300, path,
+        guide: [{ i: 12, t: 88, s: '목적지', d: r0(total), ms: 80000 }],
+        sections: [{ i: 0, n: 13, name: '용구대로', speed: 60, cong: 1 }] },
+      P, cum, total, dest: { name: '신호 카메라 시험', addr: '', lat: P[12].lat, lng: P[12].lng },
+    };
+    try {
+      await resetApp();
+      softReset();
+      await planAndStart(R);
+      r.c = run(STEP * 36 - 3, 40, (a) => (a >= 0 ? dest(CAM, 180, a) : dest(CAM, 0, -a)));
+    } finally { t.endNav(); softReset(); }
+    const ok = r.a.shown && r.a.cleared !== null && r.a.cleared <= 5 &&
+      r.bShown && r.bBefore && !r.bAfter && r.bChime === 1 && !r.bAgain &&
+      r.c.shown && r.c.cleared !== null && r.c.cleared <= 5;
     return { pass: ok, detail: JSON.stringify(r) };
   }
 
