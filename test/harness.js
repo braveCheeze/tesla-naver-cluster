@@ -3564,6 +3564,13 @@
       r.found = (t.ensureRouteRest() || []).map((x) => x.name).join(',');
       r.card1 = visible('#restCard') ? text('#restName') + ' ' + text('#restDist') + ' / ' + text('#restNext') : 'hidden';
       r.markers = (t.getMap().restMk || []).length;
+      // v132: 안내 카드 안, 터널 줄 밑 '안내 종료' 줄 바로 위 파란 줄. 그다음 휴게소 이름이 길어도 거리는 카드 안에 보인다
+      { const el = document.getElementById('restCard'), nx = document.getElementById('restNext');
+        r.place = el.parentElement.id === 'navPanel' && el.previousElementSibling.id === 'tunnelRow' && el.nextElementSibling.classList.contains('navmeta');
+        r.blue = getComputedStyle(el).backgroundColor === 'rgb(29, 79, 184)';
+        const sp = nx.querySelector('span'); const keep = sp.textContent; sp.textContent = '다음 서울하이패스센터쉼터아주아주긴이름';
+        const pr = document.getElementById('navPanel').getBoundingClientRect(), db = nx.querySelector('b').getBoundingClientRect(), nb = document.getElementById('restDist').getBoundingClientRect();
+        r.fits = db.width > 0 && db.right <= pr.right - 4 && nb.right <= pr.right - 4; sp.textContent = keep; }
       a = pointAt(R, 330); feed(a.p, 25, a.h); t.renderNav();
       r.card2 = visible('#restCard') ? text('#restName') + ' ' + text('#restDist') : 'hidden';
       t.endNav(); softReset();
@@ -3578,7 +3585,7 @@
       t.endNav(); softReset();
       try { const j = await (await realFetch(new URL('../data/rest.json', location.href).href)).json(); t.setRestData(j); } catch (e) { /* 다음 실행 때 */ }
     }
-    const ok = r.found === '양방향휴게소,오른쪽휴게소' && /^양방향휴게소 50m \/ 다음 오른쪽 7\d0m$/.test(r.card1) && r.markers === 2 &&
+    const ok = r.found === '양방향휴게소,오른쪽휴게소' && /^양방향휴게소 50m \/ 다음 오른쪽 7\d0m$/.test(r.card1) && r.markers === 2 && r.place && r.blue && r.fits &&
       /^오른쪽휴게소 4\d0m$/.test(r.card2) && r.endHidden && r.localNone;
     return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + r[k]).join(', ') };
   }

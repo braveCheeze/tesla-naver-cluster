@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-131'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-132'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -1611,7 +1611,12 @@
       $('#restName').textContent = next.name.replace(/쉼터휴게소$/, '쉼터');   // '서울하이패스센터쉼터휴게소' → '…쉼터'
       $('#restDist').textContent = fmtDist(next.at - nav.along);
       const n2 = ahead[1];
-      $('#restNext').textContent = n2 && n2.at - nav.along <= 100000 ? '다음 ' + n2.name.replace(/(쉼터)?휴게소$/, '$1') + ' ' + fmtDist(n2.at - nav.along) : '';
+      const nx = $('#restNext');
+      if (n2 && n2.at - nav.along <= 100000) {
+        const nm = document.createElement('span'), d = document.createElement('b');
+        nm.textContent = '다음 ' + n2.name.replace(/(쉼터)?휴게소$/, '$1'); d.textContent = fmtDist(n2.at - nav.along);
+        nx.replaceChildren(nm, ' ', d);   // 이름이 길면 이름만 줄이고 거리는 늘 보이게
+      } else nx.replaceChildren();
     }
     if (mapA && mapA.setRests) {
       const marks = ahead.filter((r) => r.at - nav.along <= REST_MAP);
@@ -4282,7 +4287,7 @@
     if (!app.classList.contains('tesla')) { app.classList.remove('trip-covered'); return; }
     const dr = $('#camDrawer'), tops = [$('.trip'), $('.heading')].filter(Boolean).map((e) => e.getBoundingClientRect().top).filter((v) => v > 0);
     // 서랍 밑에 붙는 다음 단속·과속방지턱·주의 표지 칸도 본다 (2026-11-14: 하이패스 차로 줄로 서랍이 길어지자 '100 14km'가 나침반에 겹침)
-    const lows = [dr.classList.contains('open') ? dr : null, $('#camNext'), $('#bumpCard'), $('#signCard'), $('#parkCard'), $('#restCard')]
+    const lows = [dr.classList.contains('open') ? dr : null, $('#camNext'), $('#bumpCard'), $('#signCard'), $('#parkCard')]
       .filter((e) => e && !e.hidden && e.offsetParent !== null).map((e) => e.getBoundingClientRect().bottom);
     const covered = tops.length > 0 && lows.length > 0 && Math.max(...lows) > Math.min(...tops) - 6;
     app.classList.toggle('trip-covered', covered);
