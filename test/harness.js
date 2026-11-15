@@ -3734,9 +3734,14 @@
     });
     const row = () => ({ shown: visible('#laneRow'), n: document.querySelectorAll('#laneRow .lg').length,
       go: (document.getElementById('laneRow').dataset.go || ''), lanes: document.getElementById('laneRow').dataset.lanes || '',
-      blue: document.querySelectorAll('#laneRow .lg.go').length, arrows: document.querySelectorAll('#laneRow .lg svg path, #laneRow .lg img').length,
+      blue: document.querySelectorAll('#laneRow .lg.go').length, arrows: document.querySelectorAll('#laneRow .lg svg').length,
+      // 갈 차로 안에서 파란 조각(줄기·이번 방향 가지)과 회색으로 남는 다른 가지 수
+      onParts: document.querySelectorAll('#laneRow .lg.go .pt.on').length, offInGo: document.querySelectorAll('#laneRow .lg.go .pt:not(.on)').length,
+      onOutside: document.querySelectorAll('#laneRow .lg:not(.go) .pt.on').length,
       underPanel: (() => { const a = document.getElementById('laneRow').getBoundingClientRect(), p = document.getElementById('navPanel').getBoundingClientRect();
-        return visible('#laneRow') ? Math.abs(a.top - p.bottom) <= 2 && a.left >= p.left - 2 && a.right <= p.right + 2 : null; })() });
+        return visible('#laneRow') ? a.top - p.bottom >= -2 && a.top - p.bottom <= 10 && a.left >= p.left - 2 && a.right <= p.right + 2 : null; })(),
+      blueColor: (() => { const g = document.querySelector('#laneRow .lg.go .pt.on'), o = document.querySelector('#laneRow .lg:not(.go) .pt');
+        return g && o ? getComputedStyle(g).color !== getComputedStyle(o).color : null; })() });
     const go = (m, v) => { const a = pointAt(R, m); feed(a.p, v == null ? 15 : v, a.h); };
     const prevPref = t.prefs.lanes;
     const r = {};
@@ -3765,6 +3770,15 @@
       for (let m = 15; m <= 300; m += 25) { const a = pointAt(RL, m); feed(a.p, 15, a.h); }
       r.left = row();
       t.endNav();
+      // 같은 곳이 유턴 안내라면 좌+유턴 1차로, 그 칸의 유턴 가지만 파랑
+      const RU = buildNavRoute();
+      RU.route = JSON.parse(JSON.stringify(R.route));
+      RU.route.guide[0].t = 6; RU.route.guide[0].s = '유턴';
+      softReset();
+      await planAndStart(RU);
+      for (let m = 15; m <= 300; m += 25) { const a = pointAt(RU, m); feed(a.p, 15, a.h); }
+      r.uturn = row();
+      t.endNav();
       // 진입부가 없는 곳
       t.setLaneData({ v: 1, scale: 1e5, date: '2025-09', areas: ['시험'], count: 1, pats: ['L|S|R'], d: [Math.round(dest(turn, 0, 3000).lat * 1e5), Math.round(turn.lng * 1e5), 0, 0] });
       softReset();
@@ -3781,9 +3795,12 @@
     r.real = { loaded: t.lanesData.loaded, n: t.lanesData.n, date: t.lanesData.date, areas: (t.lanesData.areas || []).join(',') };
     const ok = !r.far.shown &&
       r.near.shown && r.near.n === 4 && r.near.go === '4' && r.near.blue === 1 && r.near.lanes === 'LU|L|S|SR' && r.near.arrows === 4 &&
-      r.near.underPanel === true &&
+      r.near.underPanel === true && r.near.blueColor === true &&
+      r.near.onParts === 2 && r.near.offInGo === 1 && r.near.onOutside === 0 &&     // 직우 칸: 줄기·우 가지만 파랑, 직진 가지는 회색
       !r.off.shown && r.on.shown && !r.after.shown &&
       r.left.shown && r.left.go === '1,2' && r.left.blue === 2 &&
+      r.left.onParts === 4 && r.left.offInGo === 1 &&                                 // 좌+유턴 칸의 유턴 가지는 회색
+      r.uturn.shown && r.uturn.go === '1' && r.uturn.onParts === 2 && r.uturn.offInGo === 1 &&   // 유턴이면 1차로 유턴 가지가 파랑, 좌회전 가지는 회색
       !r.none.shown &&
       r.real.loaded && r.real.n > 100;
     return { pass: ok, detail: JSON.stringify(r) + (ok ? ' ✓' : ' ✗') };

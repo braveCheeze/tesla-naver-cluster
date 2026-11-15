@@ -4004,27 +4004,63 @@
           const lanes = lanesData.pats[lanesData.pat[k]] || [];
           // 유턴은 노면 유턴 화살표가 있는 차로, 없으면 1차로 (유턴은 1차로에서)
           const ok = lanes.map((l, i) => (l.indexOf(M) >= 0 ? i : -1)).filter((i) => i >= 0);
+          const painted = ok.length > 0;   // 그 방향 화살표가 실제로 칠해진 차로가 있음
           if (M === 'U' && !ok.length) ok.push(0);
-          cands.push({ k, lanes, ok, along, far: along > 45 ? 1 : 0 });
+          cands.push({ k, lanes, ok, painted, along, far: along > 45 ? 1 : 0 });
         }
       }
-      // 그 방향으로 갈 수 있는 차로가 있는 진입부 먼저, 다음은 회전 지점에 가까운(45m 안) 것, 다음은 거리
-      cands.sort((u, v) => (v.ok.length > 0) - (u.ok.length > 0) || u.far - v.far || u.along - v.along);
+      // 그 방향 화살표가 칠해진 진입부 먼저(유턴의 '1차로' 대신 규칙보다), 다음은 회전 지점에 가까운(45m 안) 것, 다음은 거리
+      cands.sort((u, v) => (v.painted - u.painted) || (v.ok.length > 0) - (u.ok.length > 0) || u.far - v.far || u.along - v.along);
       const c = cands[0];
-      if (c && c.ok.length && c.ok.length < c.lanes.length) res = { lanes: c.lanes, ok: c.ok, k: c.k };
+      if (c && c.ok.length && c.ok.length < c.lanes.length) res = { lanes: c.lanes, ok: c.ok, k: c.k, M };
     }
     nav.laneCache.set(ck, res);
     return res;
   }
-  // 차로 칸 하나의 화살표 그림 (그 차로에 칠해진 방향들을 한 그림에: 직진 ↑, 좌 ↰, 우 ↱, 유턴 ↶)
-  function laneArrowSvg(m) {
-    let d = 'M12 22.5V13';
-    if (m.indexOf('S') >= 0) d += 'M12 13V3.6M8.4 7.2 12 3.6l3.6 3.6';
-    if (m.indexOf('L') >= 0) d += 'M12 14.5C12 10.4 9.9 8.6 5.4 8.6M8.3 5.5 5.2 8.6l3.1 3.1';
-    if (m.indexOf('R') >= 0) d += 'M12 14.5C12 10.4 14.1 8.6 18.6 8.6M15.7 5.5l3.1 3.1-3.1 3.1';
-    if (m.indexOf('U') >= 0) d += 'M12 14V9.6a3.3 3.3 0 0 0-6.6 0v7.4M3.2 14.6l2.2 2.8 2.2-2.8';
-    if (m === '?' || !/[LSRU]/.test(m)) d = 'M12 22.5V13';
-    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + d + '"/></svg>';
+  // 차로 칸 하나의 화살표 (2026-11-15 사용자: '네이버 지도처럼', '좌+유턴 칸에서 우리가 가는 방향이 아닌 유턴은 회색, 유턴하면 유턴을 파랗게').
+  // 그 차로에 칠해진 방향들(직진·좌·우·유턴)을 줄기 + 방향별 가지로 나눠 그려, 갈 차로면 줄기와 이번 회전 방향의 가지만 파랗게(.on),
+  // 다른 가지와 갈 수 없는 차로는 회색. 모양은 Atlas(GPT Image 2.6)로 받아 본 네이버풍 화살표(가는 줄기, 작고 날카로운 삼각 촉,
+  // 둥근 꺾임, 길쭉한 비율)를 본떴다 (AI 그림 한 장으로는 가지별로 칠할 수 없어 벡터로). viewBox 26×32, 줄기는 x=13, 맨 아래에서
+  const LANE_HEAD = {
+    up: (x, y) => x + ',' + y + ' ' + (x - 4.4) + ',' + (y + 7) + ' ' + (x + 4.4) + ',' + (y + 7),
+    left: (x, y) => x + ',' + y + ' ' + (x + 6.6) + ',' + (y - 4.4) + ' ' + (x + 6.6) + ',' + (y + 4.4),
+    right: (x, y) => x + ',' + y + ' ' + (x - 6.6) + ',' + (y - 4.4) + ' ' + (x - 6.6) + ',' + (y + 4.4),
+    down: (x, y) => x + ',' + y + ' ' + (x - 4.2) + ',' + (y - 6.6) + ' ' + (x + 4.2) + ',' + (y - 6.6),
+  };
+  // m 의 가지들: [[방향, 선, 촉], …]과 줄기 끝 높이
+  function laneParts(m) {
+    const S = m.indexOf('S') >= 0, L = m.indexOf('L') >= 0, R = m.indexOf('R') >= 0, U = m.indexOf('U') >= 0;
+    const parts = [];
+    if (!S && !L && !R && !U) return { parts, top: 14 };
+    const jy = S ? 19 : 15;          // 좌·우 가지가 갈라지는 높이 (직진과 함께면 줄기 가운데서)
+    let top = 32;
+    if (S) { parts.push(['S', 'M13 ' + jy + 'V8.4', LANE_HEAD.up(13, 1.5)]); top = jy; }
+    if (L || R) {
+      const y = jy - 4.4;
+      if (L) parts.push(['L', 'M13 ' + jy + 'Q13 ' + y + ' 8.6 ' + y, LANE_HEAD.left(2.2, y)]);
+      if (R) parts.push(['R', 'M13 ' + jy + 'Q13 ' + y + ' 17.4 ' + y, LANE_HEAD.right(23.8, y)]);
+      top = jy;
+    }
+    if (U) {
+      if (S || L || R) {   // 다른 방향과 함께면 줄기 아래쪽에서 왼쪽으로 돌아 내려오는 고리
+        parts.push(['U', 'M13 24C13 18 6 18 6 22.5V23.8', LANE_HEAD.down(6, 30.4)]);
+      } else {             // 유턴만: 줄기 끝에서 왼쪽으로 돌아 내려온다
+        parts.push(['U', 'M13 10A3.6 3.6 0 0 0 5.8 10V23.6', LANE_HEAD.down(5.8, 30.2)]);
+        top = 10;
+      }
+    }
+    return { parts, top };
+  }
+  function laneArrowSvg(m, go, M) {
+    const { parts, top } = laneParts(m);
+    // 갈 차로인데 이번 방향 가지가 없으면(유턴 화살표가 없는 1차로 등) 전부 파랗게
+    const lit = (dir) => go && (dir === M || !parts.some((p) => p[0] === M));
+    const g = (on, inner) => '<g class="pt' + (on ? ' on' : '') + '">' + inner + '</g>';
+    const draw = (p) => g(lit(p[0]), '<path d="' + p[1] + '"/><polygon points="' + p[2] + '"/>');
+    const stem = g(go, '<path d="M13 32V' + top + '"/>');
+    // 회색 가지 먼저, 파란 줄기·가지를 위에 (겹친 곳이 파랗게)
+    return '<svg viewBox="0 0 26 32" aria-hidden="true">' + parts.filter((p) => !lit(p[0])).map(draw).join('') +
+      stem + parts.filter((p) => lit(p[0])).map(draw).join('') + '</svg>';
   }
   function renderLanes(g) {
     const el = $('#laneRow');
@@ -4036,9 +4072,10 @@
     const key = g.i + ':' + g.t + ':' + hit.k;
     if (laneState.key === key) return;
     laneState.key = key;
-    // 화살표: AI 그림(img/ai/lane_s·lane_ls … 흰 화살표, 갈 수 없는 차로는 CSS 로 회색)을 골라 두었으면 그것, 아니면 그려 둔 SVG
-    el.innerHTML = hit.lanes.map((m, i) => '<b class="lg' + (hit.ok.indexOf(i) >= 0 ? ' go' : '') + '">' +
-      (pickImg('lane_' + m.toLowerCase(), 'lg-ai') || laneArrowSvg(m)) + '</b>').join('');
+    el.innerHTML = hit.lanes.map((m, i) => {
+      const go = hit.ok.indexOf(i) >= 0;
+      return '<b class="lg' + (go ? ' go' : '') + '">' + laneArrowSvg(m, go, hit.M) + '</b>';
+    }).join('');
     el.dataset.lanes = hit.lanes.join('|');
     el.dataset.go = hit.ok.map((i) => i + 1).join(',');
     el.setAttribute('aria-label', hit.lanes.length + '차로 중 ' + hit.ok.map((i) => i + 1).join('·') + '차로');
@@ -5875,7 +5912,7 @@
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
       sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
       saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassKey, hipassNums, hipassLayout, laneNums, laneStripHtml, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, icoBase, pickImg, iconPicks: ICON_PICKS, tollParts, arrowSpan, routeStyle: ROUTE_STYLE, trafficPal, roundRoute, setCarIcon, carIcons: CAR_ICONS, parking, parkState, setParkingData, loadParking, evalParking, rest, setRestData, loadRest, ensureRouteRest, renderRest, placeBase, findParking, renderTurnArrow,
-      lanesData, laneState, setLaneData, loadLanes, laneGuide,
+      lanesData, laneState, setLaneData, loadLanes, laneGuide, laneArrowSvg,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, expwayNo, camMiss, camMissCheck, hdgFix, fixLog,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },

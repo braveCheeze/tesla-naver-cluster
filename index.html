@@ -1232,23 +1232,20 @@
   #app.tesla .turn.tn-main::after { background: var(--nv-green); }
   /* ================= 차로 안내 (시험판, 2026-11-15 요청 '좌회전·우회전 몇 번 차로') =================
      길안내 패널 바로 밑에 붙는 따로 된 줄(2026-11-15 사용자 표시: 패널 안보다 밑이 낫다). 차로 칸(왼쪽 1차로부터)마다 그 차로에
-     칠해진 화살표, 이번 회전으로 갈 수 있는 차로는 파랑 (하이패스 칸과 같은 파랑). 화살표는 AI 그림(img/ai/lane_*), 없으면 그려 둔 SVG */
-  .lanerow { display: flex; justify-content: center; gap: 6px; padding: 9px 12px 11px; margin: 0 6px; }
-  #app.tesla .lanerow {
-    background-color: var(--nv-glass); background-image: var(--nv-sheen);
-    -webkit-backdrop-filter: var(--nv-blur); backdrop-filter: var(--nv-blur);
-    border-radius: 0 0 14px 14px; box-shadow: inset 0 1px 0 var(--nv-line); text-shadow: none;
+     칠해진 화살표(app.js laneArrowSvg: 줄기 + 방향별 가지) */
+  /* 2026-11-15 사용자 '네이버 지도랑 비슷하게': 검은 둥근 띠에 차로마다 화살표만, 차로 사이 옅은 점선.
+     갈 차로는 줄기와 이번 회전 방향 가지만 파랑(.pt.on), 같은 칸의 다른 가지(예: 좌회전할 때 좌+유턴 칸의 유턴)와 갈 수 없는 차로는 회색 */
+  .lanerow {
+    display: flex; justify-content: center; padding: 6px 10px; margin: 6px 6px 0; border-radius: 12px;
+    background: rgba(14, 16, 20, .92); box-shadow: 0 4px 14px rgba(0, 0, 0, .28); text-shadow: none;
   }
-  #app.tesla:has(#laneRow:not([hidden])) .navpanel { border-bottom-left-radius: 6px; border-bottom-right-radius: 6px; }
-  .lanerow .lg {
-    flex: 0 1 42px; min-width: 26px; height: 46px; border-radius: 8px; display: flex; align-items: center; justify-content: center;
-    background: rgba(128, 138, 158, .24);
-  }
-  .lanerow .lg svg { width: 30px; height: 30px; fill: none; stroke: #8a94a6; stroke-width: 2.3; stroke-linecap: round; stroke-linejoin: round; }
-  .lanerow .lg img { width: 34px; height: 34px; object-fit: contain; filter: brightness(0) invert(.56); }
-  .lanerow .lg.go { background: #1565c0; }
-  .lanerow .lg.go svg { stroke: #fff; }
-  .lanerow .lg.go img { filter: none; }
+  .lanerow .lg { flex: 0 1 42px; min-width: 26px; height: 40px; display: flex; align-items: center; justify-content: center; }
+  .lanerow .lg + .lg { border-left: 1.5px dashed rgba(255, 255, 255, .2); }
+  .lanerow .lg svg { width: 25px; height: 31px; overflow: visible; }
+  .lanerow .pt { color: #5d636c; }
+  .lanerow .pt.on { color: #35a2ff; }
+  .lanerow .pt path { fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: butt; stroke-linejoin: round; }
+  .lanerow .pt polygon { fill: currentColor; stroke: currentColor; stroke-width: .6; stroke-linejoin: round; }
   body:has(#app.tesla):has(#map.night) .tn-arch { fill: #6b7280; }
   body:has(#app.tesla):has(#map.night) .tn-hole { fill: #111827; }
   /* ================= 하이패스도 단속 서랍 안에 (2026-11-14 요청) =================
