@@ -952,7 +952,7 @@
         if (hav(p, C) <= 240) { inRange++; tSim += dtMs; }
       }
       const from = mark ? t.alertLog.indexOf(mark) + 1 : 0;
-      const reps = t.alertLog.slice(from).filter((e) => /과속 반복/.test(e.text)).length;
+      const reps = t.alertLog.slice(from).filter((e) => /제한 넘음 반복/.test(e.text)).length;
       return { reps, secs: tSim / 1000, inRange };
     };
     const a = run(1000), b = run(250);
@@ -1265,7 +1265,7 @@
       const log = t.alertLog.slice(from).map((e) => e.text);
       o.voiceStart = log.some((x) => /구간단속 시작/.test(x));
       o.voiceEnd = log.some((x) => /구간단속이 끝났습니다/.test(x));
-      o.voiceOver = log.filter((x) => /구간 평균 속도가 제한을 넘었습니다/.test(x)).length;
+      o.voiceOver = log.filter((x) => /구간 평균 제한 넘음 알림음/.test(x)).length;   // v122: 말 없이 알림음 한 번
       if (withNav) t.endNav();
       return o;
     };
@@ -1493,8 +1493,10 @@
 
   // S37: 가평 → 청평 → 신청평대교 실제 경로 (2026-11-14 주행 제보 "가는 길 단속 10개 중 2개만 떴다").
   //      test/fixtures/route-gapyeong-cheongpyeong.json: 가평읍 가화로(계량교 북쪽) → 경춘로 → 팔각정삼거리 좌회전 → 북한강로.
-  //      원본 '신호'인 교차로 카메라가 신호·과속으로, 반대 방향 등록이 없는 교차로 카메라(수리재·청평검문소·소돌마을)는
-  //      양방향으로 잡혀야 한다. 반대 방향 전용(진동마을 과속, 포회촌·벚꽃길의 서울→춘천 쪽)은 잡히면 안 된다
+  //      원본 '신호'인 교차로 카메라가 신호·과속으로 잡혀야 한다. 반대 방향 전용(진동마을 과속, 포회촌·벚꽃길의 서울→춘천 쪽)은 잡히면 안 된다.
+  //      v122: 처음엔 반대 방향 등록이 없는 교차로 카메라(수리재·소돌마을)도 양방향으로 잡아야 한다고 봤는데, 이 길에서 방향이 적힌
+  //      카메라 쌍은 우리 쪽이 경로 오른쪽 6~12m, 반대쪽이 왼쪽 11~17m 이고 수리재(왼쪽 12m)·소돌마을(왼쪽 16m)이 반대쪽과 같은 자리다
+  //      (2026-11-15 사용자 '왼쪽은 반대편 차선인 경우가 많았음'). 그래서 이제 잡히면 안 된다. 청평검문소(왼쪽 10m)는 경계라 따지지 않는다
   async function s37() {
     const t = T();
     const fx = await (await realFetch(harnessDir + 'fixtures/route-gapyeong-cheongpyeong.json', { cache: 'no-store' })).json();
@@ -1516,10 +1518,10 @@
     softReset();
     const must = {
       '승안삼거리': ['37.84072,127.50646'], '계량교': ['37.83903,127.5067'], '가평초교(어린이)': ['37.8298,127.51091', '37.82939,127.51094'],
-      '포회촌(후면)': ['37.79681,127.48014'], '초옥동': ['37.77894,127.46407'], '수리재': ['37.76907,127.4477'],
-      '청평검문소': ['37.74711,127.42867'], '청평중학교': ['37.74205,127.42369'], '소돌마을': ['37.72456,127.40855'],
+      '포회촌(후면)': ['37.79681,127.48014'], '초옥동': ['37.77894,127.46407'], '청평중학교': ['37.74205,127.42369'],
     };
-    const mustNot = { '진동마을(서울→춘천 과속)': '37.81049,127.49785', '포회촌(서울→춘천)': '37.79657,127.4802', '벚꽃길(서울→춘천)': '37.7791,127.46435' };
+    const mustNot = { '진동마을(서울→춘천 과속)': '37.81049,127.49785', '포회촌(서울→춘천)': '37.79657,127.4802', '벚꽃길(서울→춘천)': '37.7791,127.46435',
+      '수리재(왼쪽 12m)': '37.76907,127.4477', '소돌마을(왼쪽 16m)': '37.72456,127.40855' };
     const missing = Object.keys(must).filter((k) => !must[k].some((x) => seen.has(x)));
     const wrong = Object.keys(mustNot).filter((k) => seen.has(mustNot[k]));
     const list = [...seen.entries()].map(([k, v]) => k + ' ' + v.limit + ' ' + v.type);
@@ -1532,8 +1534,10 @@
 
   // S38: 넓은 도로는 카메라가 경로선에서 20~40m 떨어져 있기도 하다 (2026-11-14 전국 16개 경로 점검). 실제 대전 경로
   //      (test/fixtures/route-daejeon-yuseong.json, 대전역 → 유성)로:
-  //      (a) 한밭대로 카메라는 경로선 왼쪽 34m 지만 경로 구간 이름이 '한밭대로'라 잡혀야 한다
-  //      (b) 대전로 카메라는 왼쪽 30m 이고 그 구간 이름을 모른다: 지금 달리는 도로(역지오코딩)가 '대전로'면 잡고, 다른 도로면 안 잡는다
+  //      (a) 계룡로 카메라(12431)는 경로선 오른쪽 26m 이고 그 구간 이름을 모르지만, 800m 안 경로 바로 위에 같은 계룡로 카메라가 있어 잡혀야 한다
+  //      (b) v122: 한밭대로(왼쪽 34m)·대전로(왼쪽 30m) 카메라는 넓은 길 건너편, 반대 방향 차로 쪽이라 잡히면 안 된다
+  //          (처음엔 도로 이름이 같으면 잡았는데, 2026-11-15 실제 경로 점검에서 넓은 길 왼쪽 20~37m 카메라는 반대 방향용이었다).
+  //          지금 달리는 도로(역지오코딩)가 '대전로'여도 마찬가지
   async function s38() {
     const t = T();
     const fx = await (await realFetch(harnessDir + 'fixtures/route-daejeon-yuseong.json', { cache: 'no-store' })).json();
@@ -1541,20 +1545,21 @@
     const cum = [0];
     for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
     const R = { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '유성', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
-    const DJ = { lat: 36.33832, lng: 127.42962 }, HB = { lat: 36.35745, lng: 127.40847 };
+    const DJ = { lat: 36.33832, lng: 127.42962 }, HB = { lat: 36.35745, lng: 127.40847 }, GR = { lat: 36.35387, lng: 127.34196 };
     const run = async (roadName) => {
       softReset();
       stub.canned['/reverse'] = { road: roadName, area: '대전광역시' };
       await planAndStart(R);
-      const o = { daejeonro: false, hanbat: false };
+      const o = { daejeonro: false, hanbat: false, gyeryong: false };
       let k = 0;
-      for (let s = 0; s <= 4700; s += 15) {
+      for (let s = 0; s <= Math.min(R.total - 30, 12800); s += 15) {
         const a = pointAt(R, s);
         feed(a.p, 50 / 3.6, a.h);
         if (++k % 6 === 0) await new Promise((r) => setTimeout(r, 0));   // 역지오코딩 응답이 들어오게
         const tg = t.camState.target;
         if (tg && sameCam(tg.c, DJ)) o.daejeonro = true;
         if (tg && sameCam(tg.c, HB)) o.hanbat = true;
+        if (tg && sameCam(tg.c, GR)) o.gyeryong = true;
       }
       t.endNav();
       return o;
@@ -1567,7 +1572,7 @@
       stub.reset();
       softReset();
     }
-    const ok = a.daejeonro && a.hanbat && !b.daejeonro && b.hanbat;
+    const ok = !a.daejeonro && !a.hanbat && a.gyeryong && !b.daejeonro && !b.hanbat && b.gyeryong;
     return {
       pass: ok,
       detail: 'driving on 대전로: ' + JSON.stringify(a) + ' | on another road: ' + JSON.stringify(b) + (ok ? '✓' : '✗'),
@@ -2732,8 +2737,8 @@
     { id: 'S34', name: 'S34 Tesla mode: camera → my speed → small zone sign, red when over', fn: s34 },
     { id: 'S35', name: 'S35 Gapyeong 계량교 30 camera (data fix): 신호·과속, alerts when over', fn: s35 },
     { id: 'S36', name: 'S36 rear-enforcement camera (가평 포회촌, added): held 60 m past the pole, one direction only', fn: s36 },
-    { id: 'S37', name: 'S37 가평→청평 real route: every camera in our direction alerts (signal→신호·과속, lone intersection cams both ways)', fn: s37 },
-    { id: 'S38', name: 'S38 wide roads: cameras 20–40 m off the route line (same section name / current road name)', fn: s38 },
+    { id: 'S37', name: 'S37 가평→청평 real route: every camera in our direction alerts (signal→신호·과속); cameras on the opposite side (left 11-17 m) do not', fn: s37 },
+    { id: 'S38', name: 'S38 wide roads: a camera 26 m right of the route line is caught by its road; cameras 30-34 m left (opposite carriageway) are not', fn: s38 },
     { id: 'S39', name: 'S39 bottom location bar → 경로 비교 · 재추천 · 경유지', fn: s39 },
     { id: 'S40', name: 'S40 new version while driving: tray button, resume the same guidance after updating', fn: s40 },
     { id: 'S41', name: 'S41 speed bumps (national data): route bumps 200 m ahead + map signs, also without nav', fn: s41 },
@@ -2763,6 +2768,8 @@
     { id: 'S65', name: 'S65 auto zoom: 17 while driving even before a turn; the close-up 18 only within 300 m of the destination', fn: s65 },
     { id: 'S58', name: "S58 no-parking cameras: '주정차 단속' only ahead in my direction, when slow (no sound); not behind or on a side street; setting off", fn: s58 },
     { id: 'S57', name: 'S57 fast reroute: wrong-way turn caught in 2 fixes, start asked ahead of the car, a new route that starts behind the car is retried at once (only once)', fn: s57 },
+    { id: 'S73', name: 'S73 no spoken overspeed words (과속/초과): limit beeps and the red card only', fn: s73 },
+    { id: 'S72', name: 'S72 opposite-lane cameras: two-way cameras more than 10 m left of the route are skipped (Munjeong, Bokjeong, Geumgok IC regressions)', fn: s72 },
     { id: 'S71', name: 'S71 signal camera alert clears as the car passes it (2 m past), even with fixes 17 m apart, on route too', fn: s71 },
     { id: 'S70', name: 'S70 a reroute refused by the route server (429, 4 per minute) retries quietly after the given time, no failure message', fn: s70 },
     { id: 'S69', name: 'S69 signal cameras: warning kept only 5 m after passing; no spoken speeding line (beep instead); straight underpass entry shows the tunnel icon and "OO지하차도까지"', fn: s69 },
@@ -3012,7 +3019,7 @@
     const log = t.alertLog.slice(from).map((e) => e.text);
     r.shown = shown; r.clearedAt = clearedAt;
     r.voice = log.some((x) => /속도를 줄이세요/.test(x));
-    r.beep = log.some((x) => /과속 경고음/.test(x));
+    r.beep = log.some((x) => /제한 넘음 경고음/.test(x));
     // 직진 지하차도 진입 안내
     const raw = [];
     for (let k = 0; k <= 30; k++) raw.push(dest(NAV_ORIGIN, 0, 100 * k));
@@ -3036,6 +3043,102 @@
       r.tunnelIcon = !!document.querySelector('#turnIcon img.tn-ai, #turnIcon svg.tunnel');
     } finally { t.endNav(); softReset(); }
     const ok = r.shown && r.clearedAt !== null && r.clearedAt <= 20 && !r.voice && r.beep && r.turnText === '벌말지하차도까지' && r.tunnelIcon;
+    return { pass: ok, detail: JSON.stringify(r) };
+  }
+
+  // S72: (v122) 반대편 차로 카메라 (2026-11-15 밤 주행 제보 두 건, 사용자 '왼쪽은 반대편 차선인 경우가 많았음').
+  //      데이터에 '양방향'(3)으로 적힌 카메라도 경로 왼쪽으로 10m 넘게 떨어져 있으면 반대편 차로용이라 알리지 않는다.
+  //      실제 네이버 경로(2026-11-15, 출발·도착 근처는 잘라 냄):
+  //      (a) 송파대로·성남대로 남행(route-songpa-seongnam-s): 복정동 성남대로 60(22595, 왼쪽 27m: 사진 제보)·송파대로 50(23401, 왼쪽 32m)은
+  //          안 뜨고, 송파대로 50(23221, 오른쪽 36m: 문정동 사진에서 맞게 뜬 것)·성남대로 60 한 방향(22644 '서울→성남시청', 오른쪽 8m)은 뜬다.
+  //      (b) 송파대로 북행(route-songpa-n): 반대로 23221(왼쪽 36m)은 안 뜨고 23401(오른쪽 32m)은 뜬다.
+  //      (c) 성남대로 북행(route-bokjeong-n): 22595(오른쪽 5m)는 뜨고, 22644(한 방향 남행, 왼쪽 28m)는 안 뜬다.
+  //      (d) v120 금곡IC: 분당수서로 북행(route-bundang-suseo-n)에 3km 전 ''성남, 용인시청' 방면' 안내를 넣어도
+  //          '용인→분당경찰서' 80(20929)은 뜨고, 분당수서로 60 양방향 중 왼쪽 30m(21198)는 안 뜬다
+  //          (오른쪽 16m 의 21189 는 옆 지상 도로 '분당수서로' 카메라라 고속화도로를 달리는 이 경로에서는 원래 안 뜬다: 기록만).
+  //      (e) 길안내 없이 (a)의 길을 달려도 22595 는 안 뜨고 22644 는 뜬다, (c)의 길이면 22595 가 뜬다
+  async function s72() {
+    const t = T(), r = {};
+    const C = {
+      c23221: { lat: 37.48219, lng: 127.12397 }, c23401: { lat: 37.48625, lng: 127.1227 },
+      c22595: { lat: 37.46002, lng: 127.12606 }, c22644: { lat: 37.46216, lng: 127.12578 }, c22450: { lat: 37.45073, lng: 127.1269 },
+      c20929: { lat: 37.35405, lng: 127.10454 }, c21189: { lat: 37.35996, lng: 127.10697 }, c21198: { lat: 37.35996, lng: 127.10697 },
+    };
+    // 21189·21198 좌표는 데이터에서 바로 읽는다 (같은 교차로의 두 카메라)
+    const rows = t.cams.rows;
+    for (const k of ['21189', '21198']) C['c' + k] = { lat: rows[+k][0], lng: rows[+k][1] };
+    const load = async (file, edit) => {
+      const fx = await (await realFetch(harnessDir + 'fixtures/' + file, { cache: 'no-store' })).json();
+      if (edit) edit(fx);
+      const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0];
+      for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+      const total = cum[cum.length - 1];
+      return { route: fx, P, cum, total, dest: { name: '시험', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    };
+    const drive = (R, keys) => {
+      const hit = {};
+      for (const k of keys) hit[k] = false;
+      for (let s = 0; s <= R.total - 30; s += 12) {
+        const a = pointAt(R, s);
+        feed(a.p, 60 / 3.6, a.h, { dt: 720 });
+        const tg = t.camState.target;
+        if (tg) for (const k of keys) if (sameCam(tg.c, C[k])) hit[k] = true;
+      }
+      return hit;
+    };
+    const navRun = async (file, keys, edit) => {
+      await resetApp();
+      softReset();
+      const R = await load(file, edit);
+      await planAndStart(R);
+      try { return drive(R, keys); } finally { t.endNav(); }
+    };
+    const freeRun = async (file, keys) => {
+      await resetApp();
+      softReset();
+      return drive(await load(file), keys);
+    };
+    try {
+      r.a = await navRun('route-songpa-seongnam-s.json', ['c23221', 'c23401', 'c22595', 'c22644', 'c22450']);
+      r.b = await navRun('route-songpa-n.json', ['c23221', 'c23401']);
+      r.c = await navRun('route-bokjeong-n.json', ['c22595', 'c22644']);
+      r.d = await navRun('route-bundang-suseo-n.json', ['c20929', 'c21189', 'c21198'], (fx) => {
+        // 보정교차로삼거리(40)와 '성남' 방면 고가차도 진입(95) 사이에 '용인시청' 방면 안내를 넣는다 (v120 이 고친 경우)
+        fx.guide.splice(1, 0, { i: 70, t: 2, s: "금곡교차로에서 '성남, 용인시청' 방면으로 좌회전", d: 0, ms: 0 });
+      });
+      r.e1 = await freeRun('route-songpa-seongnam-s.json', ['c22595', 'c22644']);
+      r.e2 = await freeRun('route-bokjeong-n.json', ['c22595']);
+    } finally { await resetApp(); softReset(); }
+    const ok = r.a.c23221 && !r.a.c23401 && !r.a.c22595 && r.a.c22644 && !r.a.c22450 &&
+      !r.b.c23221 && r.b.c23401 &&
+      r.c.c22595 && !r.c.c22644 &&
+      r.d.c20929 && !r.d.c21198 &&
+      !r.e1.c22595 && r.e1.c22644 && r.e2.c22595;
+    return { pass: ok, detail: JSON.stringify(r) };
+  }
+
+  // S73: (v122) 음성에 '과속'·'초과'가 없다 (2026-11-15 밤 '속도 초과라는 말 없애줘 놀란다 자꾸'). 제한을 넘어 신호·과속 카메라와
+  //      과속 카메라에 다가가도 안내 음성은 'N미터 앞, 신호 단속 카메라. 제한속도 60입니다.' 처럼 말하고, 넘었다는 건 소리·빨간 카드로만
+  async function s73() {
+    const t = T(), r = {};
+    await resetApp();
+    const mark = t.alertLog[t.alertLog.length - 1];
+    const CAM = { lat: 37.3066, lng: 127.10576 };   // 용구대로 보정 신호·과속 60
+    for (let a = 600; a >= -80; a -= 20) feed(dest(CAM, 180, a), 80 / 3.6, 0);
+    r.overCard = null;
+    await resetApp();
+    for (let a = 800; a >= -80; a -= 20) {
+      feed(dest(CAM_ISO_B, 180, a), 75 / 3.6, 0);
+      if (a === 200) r.overCard = hasCls('#camCard', 'over');
+    }
+    const from = mark ? t.alertLog.indexOf(mark) + 1 : 0;
+    const log = t.alertLog.slice(from).map((e) => e.text);
+    r.spoken = log.filter((x) => /앞, /.test(x));
+    r.bad = log.filter((x) => /초과|과속|속도를 줄이세요/.test(x));
+    r.overBeep = log.some((x) => /제한 넘음 경고음/.test(x));
+    await resetApp();
+    const ok = r.spoken.length >= 2 && r.bad.length === 0 && r.overBeep && r.overCard === true;
     return { pass: ok, detail: JSON.stringify(r) };
   }
 

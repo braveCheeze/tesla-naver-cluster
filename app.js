@@ -51,7 +51,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.15-121'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.15-122'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -2083,6 +2083,15 @@
   const isSpeedCam = (c) => c[3] !== 2 || c[6] === 2;
   // 경고할 카메라인지: 신호 전용은 설정에서 켰을 때만
   const camWanted = (c) => isSpeedCam(c) || prefs.signalCams;
+  // 음성으로 읽는 이름: '과속'이라는 말은 빼고 '단속 카메라'로 (v122, 2026-11-15 밤 '속도 초과라는 말 없애줘 놀란다 자꾸').
+  // 화면 글자(camLabel)는 그대로
+  function camSpoken(c) {
+    if (c[4] === 1) return '구간단속 시작';
+    if (c[4] === 2) return '구간단속 끝';
+    const zone = c[6] === 2 ? '어린이보호구역 ' : c[6] === 1 ? '노인보호구역 ' : '';
+    const what = c[3] === 2 || c[3] === 3 ? '신호 단속 카메라' : c[3] === 8 ? '이동식 단속' : c[3] === 9 ? '구간단속' : '단속 카메라';
+    return zone + (isRear(c) ? '후면 ' : '') + what;
+  }
   function camLabel(c) {
     let s = c[4] === 1 ? '구간단속 시작' : c[4] === 2 ? '구간단속 끝' : (KIND_NAME[c[3]] || '단속 카메라');
     if (c[6] === 2) s = '어린이보호구역 ' + (c[3] === 2 ? '단속' : s);
@@ -2120,9 +2129,17 @@
 
   // 반대편 차로 카메라 거르기: 한국은 우측통행이라 내 방향을 찍는 카메라는 오른쪽 길가(또는 머리 위)에 선다.
   // 한 방향만 찍는 카메라(데이터의 도로노선방향 상행/하행)가 내 진행 방향 왼쪽으로 이만큼 넘게 떨어져 있으면
-  // 반대편 차로용으로 본다. 양방향 카메라와 방향을 모르는 카메라는 절대 거르지 않는다.
+  // 반대편 차로용으로 본다.
   const OPP_SIDE = 8;
   const oneDir = (c) => c[9] === 1 || c[9] === 2;
+  // v122 (2026-11-15 밤 주행 제보 두 건: 복정동 성남대로 남행에서 왼쪽 27m 의 60 신호·과속, 문정동 송파대로에서 왼쪽 50 신호·과속.
+  //  사용자 '왼쪽은 반대편 차선인 경우가 많았음'): 데이터에 '양방향'(3)으로 적힌 카메라(신호·과속 12,979대 등 절반)도
+  //  실제로는 대부분 한쪽 방향만 찍는다. 실제 네이버 경로 11개 방향으로 재 보니 같은 카메라가 방향을 바꾸면 좌우가 뒤집히고
+  //  (용구대로 -12/+12, 분당수서로 -30/+21), 방향이 적힌 카메라 쌍도 오른쪽(+4~+22)이 내 방향, 왼쪽(-10~-20)이 반대 방향이었다.
+  //  그래서 양방향 카메라도 경로(또는 진행 방향) 왼쪽으로 10m 넘게 떨어져 있으면 반대편 차로용으로 본다.
+  //  10m 안(좁은 길 가운데 기둥·중앙분리대)은 그대로 알린다. 방향 값이 없는(직접 넣은) 카메라는 거르지 않는다
+  const OPP_SIDE_BOTH = 10;
+  const oppSide = (c) => (oneDir(c) ? OPP_SIDE : c[9] === 3 ? OPP_SIDE_BOTH : Infinity);
   // 굽은 길: 최근 주행 궤적이 휜 정도(곡률 k, 1m 당 라디안, + 는 오른쪽으로 굽음)로 앞길을 원호로 보고,
   // 거리 d 앞 지점이 놓일 방향(현 방향 + 원호의 현이 꺾인 각)을 구한다. 곧은 길이면 지금 방향 그대로
   const curv = { hist: [], k: 0 };
@@ -2166,10 +2183,11 @@
     if (lateral > limit) return false;
     // 반대편 차로 카메라. 멀리서는 방향 오차·굽은 길 때문에 좌우를 믿기 어려우므로,
     // 왼쪽으로 보이는 한 방향 카메라는 300m 안으로 들어올 때까지 미뤘다가 그때 판단한다 (멀리서 잠깐 떴다 사라지는 일 방지)
-    if (oneDir(c)) {
+    const lim = oppSide(c);
+    if (lim < Infinity) {
       const sd = sideOf(f, c, d);
-      if (keep) { if (sd < -(OPP_SIDE + d * 0.02)) return false; }
-      else if (sd < -OPP_SIDE && (d > 300 || sd < -(OPP_SIDE + d * 0.01))) return false;
+      if (keep) { if (sd < -(lim + d * 0.02)) return false; }
+      else if (sd < -lim && (d > 300 || sd < -(lim + d * 0.01))) return false;
     }
     return true;
   }
@@ -2239,8 +2257,8 @@
     if (pr.dist >= ROUTE_CAM_FAR) return null;
     const rn = routeRoadAt(i), cn = camRoad(c);
     if (pr.dist > 6 && roadsDiffer(rn, cn)) return null;
-    // 경로 왼쪽으로 8m 넘게 떨어진 한 방향 카메라는 반대편 차로용
-    if (oneDir(c) && pr.dist > OPP_SIDE && sideOfSeg(p, a, b, pr.dist) < 0) return null;
+    // 경로 왼쪽으로 8m(양방향 카메라는 10m) 넘게 떨어진 카메라는 반대편 차로용
+    if (pr.dist > oppSide(c) && sideOfSeg(p, a, b, pr.dist) < 0) return null;
     const at = nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]);
     // 고속도로 구간이면 옆·아래 일반도로의 저속 카메라(제한 70 이하, 고속국도 아님)는 제외. 구간 이름이 고속도로이거나,
     // 이름이 없어도 안내상 고속도로 진입~출구 사이면 고속도로 ('분당수서고속화도로' 같은 고속화도로는 고속도로가 아니다)
@@ -2272,7 +2290,7 @@
       const pr = projectSeg(p, pts[j], pts[j + 1]);
       if (pr.dist >= ROUTE_CAM_FAR) continue;
       if (nav.cum[j] + pr.t * (nav.cum[j + 1] - nav.cum[j]) < nav.along - 5) continue;
-      if (oneDir(c) && pr.dist > OPP_SIDE && sideOfSeg(p, pts[j], pts[j + 1], pr.dist) < 0) return false;
+      if (pr.dist > oppSide(c) && sideOfSeg(p, pts[j], pts[j + 1], pr.dist) < 0) return false;
       const atj = nav.cum[j] + pr.t * (nav.cum[j + 1] - nav.cum[j]);
       if (oneDir(c) && arrowSays(c, atj) < 0) return false;
       // 고속도로 위에서는 지금 도로 이름(역지오코딩)이 아래 일반도로로 잡혀도 일반도로 저속 카메라는 알리지 않는다
@@ -2381,8 +2399,8 @@
       } else if (moving && d > 150 && !isAhead(f, tg.c, d, true)) {
         tg.miss = (tg.miss || 0) + 1;                   // 방향을 틀어 벗어남
         if (tg.miss >= 3) camState.target = tg = null;
-      } else if (moving && d > 25 && d <= 150 && oneDir(tg.c) && !nav.active &&
-                 sideOf(f, tg.c, d) < -(OPP_SIDE + 2)) {
+      } else if (moving && d > 25 && d <= 150 && oppSide(tg.c) < Infinity && !nav.active &&
+                 sideOf(f, tg.c, d) < -(oppSide(tg.c) + 2)) {
         // 가까이 와서 보니 왼쪽(반대편 차로) 카메라였다: 길안내 없이 멀리서 방향만 보고 잡은 경우
         tg.miss = (tg.miss || 0) + 1;
         if (tg.miss >= 2) camState.target = tg = null;
@@ -2467,19 +2485,19 @@
     if (!tg.said.far && d <= far + 30) {
       tg.said.far = true;
       const dd = d >= 950 ? Math.round(d / 1000) + '킬로미터' : Math.max(100, Math.round(d / 100) * 100) + '미터';
-      say(dd + ' 앞, ' + camLabel(c).replace('·', ' ') + (limit > 0 ? '. 제한속도 ' + limit + '입니다.' : '입니다.'), 2);
+      say(dd + ' 앞, ' + camSpoken(c) + (limit > 0 ? '. 제한속도 ' + limit + '입니다.' : '입니다.'), 2);
     }
     const over = limit > 0 && state.speedKmh > limit + 1;
     if (!tg.said.near && d <= 250) {
       tg.said.near = true;
       // v118 (2026-11-15 주행 중 요청 '속도초과 라는 나레이션 없애줘'): 과속이면 말 대신 높은 경고음 세 번 (빨간 카드·반복 경고음은 그대로)
-      if (over) { beep(3, 1040); logAlert('beep', '과속 경고음 (카메라 250m 전, 음성 없음)'); }
+      if (over) { beep(3, 1040); logAlert('beep', '제한 넘음 경고음 (카메라 250m 전, 음성 없음)'); }
       else { beep(1, 660); logAlert('beep', '카메라 250m 전 알림음'); }
     } else if (over && (tg.said.near || tg.after) && d <= 300 && f.t - camState.lastOverBeep >= 900) {
       // 과속 중에는 1초에 한 번, 짧게 한 번만 울린다 (GPS 가 1초에 한 번 오므로 900ms 로 둬서 한 번씩 빠지지 않게)
       camState.lastOverBeep = f.t;
       beep(1, 1040);
-      logAlert('beep', '과속 반복 경고음 (' + Math.round(d) + 'm)');
+      logAlert('beep', '제한 넘음 반복 경고음 (' + Math.round(d) + 'm)');
     }
   }
 
@@ -2618,7 +2636,8 @@
     if (st.need !== null) {
       if (st.need >= 20) {
         line += ' · ' + Math.floor(st.need) + ' km/h 이하로';
-        if (!s.warned) { s.warned = true; say('구간 평균 속도가 제한을 넘었습니다. 남은 구간은 ' + Math.floor(st.need) + ' 이하로 달리세요.', 2); }
+        // v122 (2026-11-15 밤 '속도 초과라는 말 없애줘 놀란다 자꾸'): 말 없이 구간마다 한 번 알림음만 (카드의 '평균 초과'·남은 구간 속도는 그대로)
+        if (!s.warned) { s.warned = true; beep(2, 880); logAlert('beep', '구간 평균 제한 넘음 알림음 (음성 없음)'); }
       } else {
         line += ' · 평균 초과';
       }
@@ -4386,6 +4405,13 @@
     }
     return null;
   }
+  // 경로 거리 at 앞뒤(300m 뒤 ~ 400m 앞)에 지하차도·고가차도 진입 안내가 있는지
+  const GRADE_SEP = new Set([55, 56, 62, 64, 71, 73]);
+  function gradeSepNear(at) {
+    const last = nav.cum ? nav.cum.length - 1 : -1;
+    if (last < 0) return false;
+    return (nav.guides || []).some((g) => GRADE_SEP.has(g.t) && nav.cum[Math.min(g.i, last)] > at - 300 && nav.cum[Math.min(g.i, last)] < at + 400);
+  }
   function camMissCheck(f) {
     if (!cams.loaded || !prefs.cams) return;
     const tg = camState.target;
@@ -4402,10 +4428,24 @@
       const c = cams.rows[i];
       if (haversine(f, { lat: c[0], lng: c[1] }) < 60) return;
       camMiss.near.delete(i);
+      // v122: 알린 카메라가 지나갈 때 내 궤적 왼쪽으로 12m 넘게 떨어져 있었으면(반대편 차로용을 알린 것으로 보임) 궤적을 올린다
+      if (m.alerted && m.side < -12 && (camMiss.leftSent || 0) < 5) {
+        camMiss.leftSent = (camMiss.leftSent || 0) + 1;
+        const t1 = f.t;
+        report('warn', {
+          msg: 'left camera alerted ' + i, cam: i, lim: c[2], kind: c[3], dir: c[9], flags: c[10] || 0, camRoad: camRoad(c), myRoad: road.name,
+          minD: Math.round(m.minD), side: Math.round(m.side), kmhAt: m.kmh, navOn: !!nav.active,
+          trace: fixLog.slice(-40).map((e) => [Math.round((e[0] - t1) / 100) / 10].concat(e.slice(1))),
+        });
+        return;
+      }
       if (m.alerted || camState.passed.has(i) || camState.saidById.has(i) || m.minD > 20) return;
+      // v122: 길안내가 카메라 앞뒤에서 지하차도·고가차도로 들어가면(교차로를 아래·위로 지나감) 그 교차로 신호 카메라는 놓친 게 아니다
+      // (2026-11-15 21:46 분당수서로 남행 정자지하차도 앞, 오른쪽 20m 의 60 신호·과속 21198: 지상 교차로로 가는 차로용)
+      if (nav.active && isSignalCam(c) && gradeSepNear(nav.along - 60)) return;
       const cr = camRoad(c);
       if (specificRoad(cr) && specificRoad(road.name) && !sameRoad(cr, road.name)) return;   // 가로지른 옆 도로
-      if (oneDir(c) && m.side < -OPP_SIDE) return;                                              // 반대편 차로용
+      if (m.side < -oppSide(c)) return;                                                         // 반대편 차로용
       if (camMiss.sent >= 5) return;
       camMiss.sent++;
       const t0 = f.t;
@@ -5601,7 +5641,7 @@
   $('#proxyTest').onclick = checkProxy;
   $('#soundTest').onclick = () => {
     unlockAudio();
-    if (!speak('음성 안내 테스트입니다. 500미터 앞, 과속 단속. 제한속도 60입니다.', true)) {
+    if (!speak('음성 안내 테스트입니다. 500미터 앞, 단속 카메라. 제한속도 60입니다.', true)) {
       beep(2);
       toast(hasTTS ? '이 기기에는 한국어 음성이 없어 경고음으로 안내합니다.' : '이 브라우저는 음성 안내를 지원하지 않아 경고음으로 안내합니다.', '', 5000);
     }
