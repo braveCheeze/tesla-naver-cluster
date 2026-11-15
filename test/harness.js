@@ -2785,7 +2785,7 @@
     { id: 'S58', name: "S58 no-parking cameras: '주정차 단속' only ahead in my direction, when slow (no sound); not behind or on a side street; setting off", fn: s58 },
     { id: 'S57', name: 'S57 fast reroute: wrong-way turn caught in 2 fixes, start asked ahead of the car, a new route that starts behind the car is retried at once (only once)', fn: s57 },
     { id: 'S76', name: "S76 turn lane guidance (trial, NGII HD map → data/lanes.json): lane boxes under the turn row 500 m ahead, lanes for this turn blue; skips approaches without that turn; setting off", fn: s76 },
-    { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored", fn: s77 },
+    { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored; 7-10 lanes fit the drawer as square tiles", fn: s77 },
     { id: 'S75', name: 'S75 (info) cameras alerted on every saved real route, for comparing versions', fn: s75 },
     { id: 'S74', name: 'S74 camera score on 2026-11-15 real cases (13): false alerts / misses / wrong type, with and without navigation', fn: s74 },
     { id: 'S73', name: 'S73 no spoken overspeed words (과속/초과): limit beeps and the red card only', fn: s73 },
@@ -3803,7 +3803,8 @@
       !r.off.shown && r.on.shown && !r.after.shown &&
       r.left.shown && r.left.go === '1,2' && r.left.blue === 2 &&
       r.left.onParts === 4 && r.left.offInGo === 1 &&                                 // 좌+유턴 칸의 유턴 가지는 회색
-      r.uturn.shown && r.uturn.go === '1' && r.uturn.onParts === 2 && r.uturn.offInGo === 1 &&   // 유턴이면 1차로 유턴 가지가 파랑, 좌회전 가지는 회색
+      // 유턴이면 1차로 유턴 가지와 그 아래 줄기만 파랑, 좌회전 가지와 그쪽으로 이어진 줄기 윗부분은 회색 (2026-11-16 사용자 표시)
+      r.uturn.shown && r.uturn.go === '1' && r.uturn.onParts === 2 && r.uturn.offInGo === 2 &&
       !r.none.shown &&
       r.real.loaded && r.real.n > 100;
     return { pass: ok, detail: JSON.stringify(r) + (ok ? ' ✓' : ' ✗') };
@@ -3814,7 +3815,7 @@
   //          2·3차로 파랑(직진 가지), 1·4차로 회색, 칸 오른쪽에 남은 거리 — 우회전 500m 안이어도 더 가까운 직진 교차로가 먼저
   //      (b) 그 교차로를 지나면 우회전 진입부(40m 앞 'LU|L|S|SR')의 4차로  (c) 반대 방향(남쪽)·옆길(30m 옆) 진입부는 무시
   //      (d) 경로에 회전 안내 없이 '직진' 안내만 있어도 그 너머 직진 교차로를 보여 줌  (e) 설정을 끄면 숨김
-  //      (f) 6차로 넘으면 서랍 대신 아래 가운데, '내 위치로'가 같이 뜨면 그 위 (2026-11-16 요청)
+  //      (f) 7·10차로도 서랍 안에 모든 차로가 한 줄(정사각형 칸, '⋯' 없음), 좌·우회전 화살표는 칸 가운데 (2026-11-16 요청)
   async function s77() {
     const t = T(), R = buildNavRoute();   // 240m '직진' 안내는 그대로 둔다 (d)
     const north = (m) => dest(NAV_ORIGIN, 0, m), turn = R.P[5];
@@ -3855,23 +3856,30 @@
       r.turn = row();                                  // 직진 교차로를 지나 우회전 130m: 우회전 진입부 4차로
       t.endNav();
       r.ended = row();
-      // (f) 7차로 진입부: 서랍 대신 아래 가운데(#laneWide), '내 위치로'가 뜨면 그 위로
-      const wp = dest(turn, 180, 40);
-      t.setLaneData({ v: 1, scale: 1e5, date: '2025-09', areas: ['시험'], count: 1, pats: ['L|L|S|S|S|S|R'],
-        d: [Math.round(wp.lat * 1e5), Math.round(wp.lng * 1e5), 0, 0] });
-      softReset();
-      await planAndStart(R);
-      for (let m = 15; m <= 470; m += 25) go(m);
-      const W = document.getElementById('laneWide'), bm = document.getElementById('backMe');
-      r.wide = { shown: visible('#laneWide'), drawerRow: visible('#laneRow'), go: W.dataset.go || '', tiles: W.querySelectorAll('.lg').length };
-      const b0 = W.getBoundingClientRect().bottom;
-      const prevBm = bm.hidden;
-      bm.hidden = false;
-      const wr = W.getBoundingClientRect(), br = bm.getBoundingClientRect();
-      r.wide.aboveBackMe = wr.bottom <= br.top + 1 && wr.bottom < b0;
-      bm.hidden = prevBm;
-      t.endNav();
-      r.wideEnded = visible('#laneWide');
+      // (f) 7·10차로 진입부도 서랍 안에 '⋯' 없이 모든 차로가 한 줄로, 칸은 정사각형이고 서랍 밖으로 안 나간다 (2026-11-16 사용자:
+      //     아래 가운데 띠는 '운전자를 가리는 느낌', '⋯으로 맞추는 건 안 돼', '많아 봐야 10차선'). 좌·우회전 화살표는 칸 가운데
+      const many = async (pat) => {
+        const wp = dest(turn, 180, 40);
+        t.setLaneData({ v: 1, scale: 1e5, date: '2025-09', areas: ['시험'], count: 1, pats: [pat], d: [Math.round(wp.lat * 1e5), Math.round(wp.lng * 1e5), 0, 0] });
+        softReset();
+        await planAndStart(R);
+        for (let m = 15; m <= 470; m += 25) go(m);
+        const box = document.getElementById('laneRow'), cd = document.querySelector('#camDrawer .cd-in').getBoundingClientRect();
+        const tiles = Array.from(box.querySelectorAll('.lg')).map((x) => x.getBoundingClientRect());
+        // 화살표 모양(가지·촉) 전체의 가운데가 칸 가운데에 오는지 (첫 칸 좌회전, 끝 칸 우회전)
+        const centred = [0, tiles.length - 1].every((k) => {
+          const tile = box.querySelectorAll('.lg')[k], gb = tile.querySelector('svg > g').getBoundingClientRect(), tb = tiles[k];
+          return Math.abs((gb.left + gb.right) / 2 - (tb.left + tb.right) / 2) <= 2.5;
+        });
+        const res = { shown: visible('#laneRow'), tiles: tiles.length, gaps: box.querySelectorAll('.lgap').length, go: box.dataset.go,
+          oneLine: tiles.every((b) => Math.abs(b.top - tiles[0].top) < 1), square: tiles.every((b) => Math.abs(b.width - b.height) < 1.5),
+          inside: tiles[0].left >= cd.left - 1 && tiles[tiles.length - 1].right <= cd.right + 1, w: Math.round(tiles[0].width), centred,
+          wideGone: !document.getElementById('laneWide') };
+        t.endNav();
+        return res;
+      };
+      r.seven = await many('L|L|S|S|S|S|R');
+      r.ten = await many('L|L|S|S|S|S|S|S|S|R');
     } finally {
       t.prefs.lanes = prevPref;
       t.setLaneData(null);
@@ -3884,7 +3892,8 @@
       /^L\|S\|S\|R@(449|450|451)$/.test(r.list) && !r.off.shown &&
       r.turn.shown && r.turn.lanes === 'LU|L|S|SR' && r.turn.go === '4' && r.turn.move === 'R' && r.turn.dist === '' &&
       !r.ended.shown &&
-      r.wide.shown && !r.wide.drawerRow && r.wide.go === '7' && r.wide.tiles === 7 && r.wide.aboveBackMe && !r.wideEnded;
+      [r.seven, r.ten].every((x) => x.shown && x.gaps === 0 && x.oneLine && x.square && x.inside && x.centred && x.wideGone) &&
+      r.seven.tiles === 7 && r.seven.go === '7' && r.ten.tiles === 10 && r.ten.go === '10' && r.ten.w >= 20;
     return { pass: ok, detail: JSON.stringify(r) + (ok ? ' ✓' : ' ✗') };
   }
 

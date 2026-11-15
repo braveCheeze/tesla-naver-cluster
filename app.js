@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-129'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-130'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -4035,37 +4035,53 @@
   function laneParts(m) {
     const S = m.indexOf('S') >= 0, L = m.indexOf('L') >= 0, R = m.indexOf('R') >= 0, U = m.indexOf('U') >= 0;
     const parts = [];
-    if (!S && !L && !R && !U) return { parts, top: 12 };
-    const r = S ? 5.5 : 6, jy = S ? 21.5 : 15;   // 좌·우 꺾임 반지름과 시작 높이 (직진과 함께면 줄기 아래쪽에서, 직진 촉과 안 닿게)
+    if (!S && !L && !R && !U) return { parts, top: 12, sx: 14 };
+    // 유턴이 다른 방향과 함께면(좌+유턴 등) 줄기를 오른쪽(x=19.5)으로 옮겨 왼쪽에 자리를 내고, 좌회전 꺾임은 위·유턴 고리는 아래로
+    // 넉넉히 띄운다 (2026-11-16 사용자: 유턴할 때 좌+유턴 칸이 '뭔가 좀 아쉽다' — 작은 고리가 꺾임에 붙어 무슨 모양인지 안 보였다)
+    const withU = U && (S || L || R);
+    const sx = withU ? 19.5 : 14;
+    const r = withU ? 5 : S ? 5.5 : 6, jy = withU ? 12 : S ? 21.5 : 15;   // 좌·우 꺾임 반지름과 시작 높이
     let top = 27;
-    if (S) { parts.push(['S', 'M14 ' + jy + 'V8.8', LANE_HEAD.up(14, 1.2)]); top = jy; }
+    // 가지마다 [방향, 선, 촉, 줄기에서 갈라지는 높이] — 줄기는 이번 방향 가지가 갈라지는 높이까지만 파랗게 (아래 laneArrowSvg)
+    if (S) { parts.push(['S', 'M' + sx + ' ' + jy + 'V8.8', LANE_HEAD.up(sx, 1.2), jy]); top = jy; }
     if (L || R) {
       const y = jy - r;
-      if (L) parts.push(['L', 'M14 ' + jy + 'A' + r + ' ' + r + ' 0 0 0 ' + (14 - r) + ' ' + y + 'H' + (14 - r - 0.2), LANE_HEAD.left(14 - r - 6.8, y)]);
-      if (R) parts.push(['R', 'M14 ' + jy + 'A' + r + ' ' + r + ' 0 0 1 ' + (14 + r) + ' ' + y + 'H' + (14 + r + 0.2), LANE_HEAD.right(14 + r + 6.8, y)]);
+      if (L) parts.push(['L', 'M' + sx + ' ' + jy + 'A' + r + ' ' + r + ' 0 0 0 ' + (sx - r) + ' ' + y + 'H' + (sx - r - 0.2), LANE_HEAD.left(sx - r - 6.8, y), jy]);
+      if (R) parts.push(['R', 'M' + sx + ' ' + jy + 'A' + r + ' ' + r + ' 0 0 1 ' + (sx + r) + ' ' + y + 'H' + (sx + r + 0.2), LANE_HEAD.right(sx + r + 6.8, y), jy]);
       top = jy;
     }
     if (U) {
-      if (S || L || R) {   // 다른 방향과 함께면 줄기 아래쪽에서 왼쪽으로 돌아 내려오는 고리
-        parts.push(['U', 'M14 21C14 15.5 6 15.5 6 19.5V19.8', LANE_HEAD.down(6, 26.6)]);
-        top = Math.min(top, 21);
+      if (withU) {         // 줄기 아래쪽에서 높이 솟았다가 왼쪽으로 내려오는 아치(∩) — 유턴으로 읽히게, 위 꺾임 촉과는 2 넘게 띄움
+        const ux = sx - 10.5;
+        parts.push(['U', 'M' + sx + ' 24.5C' + sx + ' 13 ' + ux + ' 13 ' + ux + ' 19.5V21', LANE_HEAD.down(ux, 27.8), 24.5]);
       } else {             // 유턴만: 줄기 끝에서 왼쪽으로 돌아 내려온다
-        parts.push(['U', 'M14 10A4.2 4.2 0 0 0 5.6 10V19.4', LANE_HEAD.down(5.6, 26.2)]);
+        parts.push(['U', 'M14 10A4.2 4.2 0 0 0 5.6 10V19.4', LANE_HEAD.down(5.6, 26.2), 10]);
         top = 10;
       }
     }
-    return { parts, top };
+    return { parts, top, sx };
   }
   function laneArrowSvg(m, go, M) {
-    const { parts, top } = laneParts(m);
+    const { parts, top, sx } = laneParts(m);
     // 갈 차로인데 이번 방향 가지가 없으면(유턴 화살표가 없는 1차로 등) 전부 파랗게
     const lit = (dir) => go && (dir === M || !parts.some((p) => p[0] === M));
     const g = (on, inner) => '<g class="pt' + (on ? ' on' : '') + '">' + inner + '</g>';
     const draw = (p) => g(lit(p[0]), '<path d="' + p[1] + '"/><polygon points="' + p[2] + '"/>');
-    const stem = g(go, '<path d="M14 27V' + top + '"/>');
+    // 줄기: 갈 차로면 이번 방향 가지가 갈라지는 높이까지만 파랗고 그 위(다른 가지로만 이어지는 부분)는 회색
+    // (2026-11-16 사용자: 좌+유턴 칸에서 유턴할 때 좌회전 쪽으로 이어진 줄기 윗부분까지 파랬다)
+    const litTops = parts.filter((p) => lit(p[0])).map((p) => p[3]);
+    const blueTop = go ? (litTops.length ? Math.min(...litTops) : top) : 27;
+    const stem = (blueTop > top ? g(false, '<path d="M' + sx + ' ' + blueTop + 'V' + top + '"/>') : '') +
+      (go ? g(true, '<path d="M' + sx + ' 27V' + blueTop + '"/>') : '');
+    const stemGrey = go ? '' : g(false, '<path d="M' + sx + ' 27V' + top + '"/>');
+    // 칸 가운데에 모양 전체(줄기·가지·촉)가 오게 옮긴다 (2026-11-16 사용자: 좌·우회전 칸이 줄기만 가운데라 한쪽으로 쏠려 보임).
+    // 너비 = 촉 꼭짓점들과 줄기(굵기 3.8)의 왼쪽·오른쪽 끝
+    let x0 = sx - 1.9, x1 = sx + 1.9;
+    for (const p of parts) for (const xy of p[2].split(' ')) { const x = +xy.split(',')[0]; if (x < x0) x0 = x; if (x > x1) x1 = x; }
+    const dx = Math.round((14 - (x0 + x1) / 2) * 10) / 10;
     // 회색 가지 먼저, 파란 줄기·가지를 위에 (겹친 곳이 파랗게)
-    return '<svg viewBox="0 0 28 28" aria-hidden="true">' + parts.filter((p) => !lit(p[0])).map(draw).join('') +
-      stem + parts.filter((p) => lit(p[0])).map(draw).join('') + '</svg>';
+    return '<svg viewBox="0 0 28 28" aria-hidden="true"><g' + (dx ? ' transform="translate(' + dx + ' 0)"' : '') + '>' +
+      stemGrey + parts.filter((p) => !lit(p[0])).map(draw).join('') + stem + parts.filter((p) => lit(p[0])).map(draw).join('') + '</g></svg>';
   }
   // ---------- 직진 차로 (2026-11-16 요청 '직진 차로도 안내') ----------
   // 경로가 곧게 지나가는(회전 안내가 없는) 교차로 진입부 중 일부 차로가 좌·우회전 전용인 곳: 직진할 수 있는 차로를 파랗게.
@@ -4073,7 +4089,8 @@
   // 그 지점 10m 뒤~100m 앞도 아닌 진입부 (실제 경로: 강일3·6단지 좌회전 진입부가 정지선→회전 지점 72m 라 직진으로 먼저 나왔다).
   // 경로마다 한 번 찾아 경로 거리순으로 둔다
   const LANE_STRAIGHT_SHOW = 300;
-  const LANE_DRAWER_MAX = 6;   // 서랍에 넣는 차로 수 (그보다 많으면 아래 가운데). 남은 거리를 칸 위로 올려 6칸까지 들어간다
+  // 차로 칸은 늘 서랍 안에 모두 (2026-11-16 사용자: 7차로를 아래 가운데에 띄웠더니 '운전자를 가리는 느낌이 강하다',
+  // '차선을 ⋯으로 맞추는 건 안 돼', '보통 8차선, 많아 봐야 10차선'). 칸은 정사각형이고 차로가 많으면 칸·틈이 함께 작아진다
   function ensureRouteLanes() {
     if (nav.laneStraight) return nav.laneStraight;
     const out = [];
@@ -4146,26 +4163,23 @@
       if (!hit) hit = g && nav.dg != null && nav.dg <= LANE_SHOW ? laneGuide(g) : null;
     }
     laneState.hit = hit;
-    // 6차로 이상은 서랍(폭 300px)에 안 들어가 아래 가운데 '내 위치로' 자리에 (#laneWide)
-    const wide = !!hit && hit.lanes.length > LANE_DRAWER_MAX;
-    const wel = $('#laneWide');
-    laneState.rowHit = hit && !wide ? hit : null;
-    if (!laneState.rowHit) {
+    laneState.rowHit = hit;
+    if (!hit) {
+      laneState.key = '';
       if (!el.hidden && drawerAnimated() && !drawerKeeps('#laneRow')) startDrawerClose();
       else if (!drawer.closing) el.hidden = true;
-    } else {
-      cancelDrawerClose();
-      el.hidden = false;
+      syncDrawer();
+      return;
     }
-    if (wel) wel.hidden = !wide;
-    if (!hit) { laneState.key = ''; syncDrawer(); return; }
-    const box = wide ? wel : el;
-    const key = (wide ? 'w:' : '') + (hit.M === 'S' ? 's:' : g.i + ':' + g.t + ':') + hit.k;
+    cancelDrawerClose();
+    el.hidden = false;
+    const box = el;
+    const key = (hit.M === 'S' ? 's:' : g.i + ':' + g.t + ':') + hit.k;
     if (laneState.key !== key) {
       laneState.key = key;
-      // 직진 교차로: 칸 위 머리줄 (왼쪽 '다음 교차로 · 직진', 오른쪽 끝 남은 거리)
+      // 직진 교차로: 칸 위 머리줄 (왼쪽 '다음 교차로 · 직진', 오른쪽 끝 남은 거리). 칸은 정사각형, 8차로 넘으면 틈을 좁힘
       box.innerHTML = (hit.M === 'S' ? '<div class="lh"><span>다음 교차로 · 직진</span><b class="ld"></b></div>' : '') +
-        '<div class="lt">' + hit.lanes.map((m, i) => {
+        '<div class="lt' + (hit.lanes.length >= 8 ? ' many' : '') + '">' + hit.lanes.map((m, i) => {
           const go = hit.ok.indexOf(i) >= 0;
           return '<b class="lg' + (go ? ' go' : '') + '">' + laneArrowSvg(m, go, hit.M) + '</b>';
         }).join('') + '</div>';
@@ -4459,7 +4473,7 @@
     const key = name + '|' + area;
     if (el.dataset.k === key) return;
     el.dataset.k = key;
-    if (!name && !area) { el.innerHTML = ''; return; }
+    if (!name && !area) { el.innerHTML = ''; if (!$('#backMe').hidden) placeBackMe(); return; }
     el.innerHTML = '<span class="rn-clip"><span class="rn-in">' + esc(name) + (area ? '<small>' + esc(area) + '</small>' : '') + '</span></span>';
     const clip = el.firstChild, inner = clip.firstChild;
     const over = inner.offsetWidth - clip.clientWidth;
@@ -4468,6 +4482,7 @@
       inner.style.setProperty('--rn-shift', -over + 'px');
       inner.style.animationDuration = Math.round(7 + over / 25) + 's';   // 넘친 만큼 느긋하게 (한 번에 25px/초 정도)
     }
+    if (!$('#backMe').hidden) placeBackMe();   // 띠 폭이 바뀌면 그 왼쪽 '내 위치로'도 따라간다
   }
   function setGps(kind, text) {
     $('#gpsDot').className = 'dot ' + (kind || '');
@@ -5054,7 +5069,22 @@
     b.classList.add('count');
   }
   function holdRefollow() { clearTimeout(state.refollowTimer); $('#backMe').classList.remove('count'); }
-  function renderBackMe() { $('#backMe').hidden = state.following || nav.preview || !state.fix; }
+  function renderBackMe() { $('#backMe').hidden = state.following || nav.preview || !state.fix; placeBackMe(); }
+  // 테슬라 모드: '내 위치로'는 맨 아래 줄, 지금 위치 띠(도로 이름) 바로 왼쪽에 같은 높이로 (2026-11-16 사용자 표시: 가운데 위에 뜨면
+  // 차 앞길을 가렸다). 왼쪽 아래 주행 기록과 겹치면 버튼이 떠 있는 동안(손 떼고 5초)만 주행 기록을 숨긴다
+  function placeBackMe() {
+    const b = $('#backMe'), app = $('#app'), road = $('#roadName');
+    const side = !b.hidden && app.classList.contains('tesla') && !!road && road.offsetWidth > 0;
+    b.classList.toggle('side', side);
+    if (!side) { app.classList.remove('bm-trip'); return; }
+    const mr = $('#map').getBoundingClientRect(), rr = road.getBoundingClientRect();
+    const left = Math.max(8, Math.round(rr.left - mr.left - 10 - b.offsetWidth));
+    const bottom = Math.round(mr.bottom - (rr.top + rr.bottom) / 2 - b.offsetHeight / 2);
+    b.style.setProperty('--bm-left', left + 'px');
+    b.style.setProperty('--bm-bottom', bottom + 'px');
+    const tr = $('.trip') ? $('.trip').getBoundingClientRect() : null;
+    app.classList.toggle('bm-trip', !!tr && tr.width > 0 && mr.left + left < tr.right + 6 && mr.bottom - bottom - b.offsetHeight < tr.bottom);
+  }
   // 지도 라이브러리가 직접 끌기 시작(북쪽 위 평면 지도): 손가락이 닿아 있는 동안은 기다렸다가 뗄 때부터 시간을 잰다
   function onUserPan() { setFollowing(false, nav.preview || gesture.pointers.size > 0, !!(view.drive && glOn())); }
   // 지도 손 조작: 톡 치기는 화면 버튼만 보여 준다.
