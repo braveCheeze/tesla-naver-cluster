@@ -51,7 +51,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-123'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-124'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -106,6 +106,8 @@
   });
   window.addEventListener('unhandledrejection', (e) => {
     const r = e.reason || {};
+    // 길찾기 서버 요청의 시간 초과(api() 의 abort)는 통신이 느린 것뿐이라 오류로 올리지 않는다 (2026-11-15 23:34 PC 모의 주행)
+    if (r && r.name === 'AbortError') { e.preventDefault(); return; }
     report('error', { msg: 'unhandled: ' + String(r.message || r).slice(0, 300), stack: r.stack ? String(r.stack).slice(0, 900) : '' });
   });
 
@@ -3395,10 +3397,10 @@
     over_s: 's', under_s: 's', rest: 'kr', ferry: 's',
   };
   Object.keys(ICON_FALLBACK).forEach((k) => { if (!TURN_ICONS[k]) TURN_ICONS[k] = TURN_ICONS[ICON_FALLBACK[k]] || TURN_ICONS.s; });
+  // 진출입로는 단순한 길 화살표로. v124 (2026-11-15 요청 '터널 고가 안내 같은건 아이콘 만들어서 적용해 줘'):
+  // 지하차도·고가·옆길(under_*, over_*, side_*, oside_*)은 전용 그림(img/ai, 초록 경로선)을 쓴다 — 예전엔 여기서 직진·비켜 가기 화살표로 바꿔 그렸다
   const PLAIN_ROAD = {
     outr: 'kr', outl: 'kl', inr: 'kr', inl: 'kl', outs: 's', ins: 's',   // v110: inr/inl 이 거꾸로였다(디자인 검토 P0)
-    over_l: 'kl', over_r: 'kr', over_s: 's', under_l: 'kl', under_r: 'kr', under_s: 's',
-    side_l: 'kl', side_r: 'kr', oside_l: 'kl', oside_r: 'kr',
   };
   Object.keys(PLAIN_ROAD).forEach((k) => { TURN_ICONS[k] = TURN_ICONS[PLAIN_ROAD[k]]; });
   // 같은 아이콘을 두 곳에 넣어도 그라데이션 id 가 겹치지 않게 넣을 때마다 번호를 붙인다
@@ -4042,10 +4044,15 @@
     const ta0 = straight0 ? tunnelAhead() : null;
     const tnMain = !!(ta0 && (ta0.inside || nav.dg == null || ta0.d < nav.dg));
     const tunnelStep = !tnMain && !!g && g.t === 56;
+    // v124: 직진 고가차도 진입(55)도 지하차도처럼 고가 그림 + 'OO고가차도까지' (네이버 지도 '고가도로로 진입')
+    const overStep = !tnMain && !!g && g.t === 55;
+    const underName = (n) => /지하차도|지하도로|언더패스|지하도/.test(n || '');
     const turnRow = p.querySelector('.turn');
     turnRow.classList.toggle('tn-main', tnMain);
     turnRow.style.setProperty('--tnp', tnMain && ta0.inside ? Math.round(Math.max(0, Math.min(1, ta0.p)) * 100) + '%' : '0%');
-    $('#turnIcon').innerHTML = tnMain || tunnelStep ? (pickImg('tunnel', 'ti tn-ai') || TUNNEL_ICON) : ico(kind0);
+    // 산 터널은 터널 그림, 지하차도는 지하차도 입구 그림(초록 경로선), 고가는 고가 그림
+    $('#turnIcon').innerHTML = tunnelStep || (tnMain && underName(ta0.t.name)) ? (pickImg('under_s', 'ti') || pickImg('tunnel', 'ti tn-ai') || TUNNEL_ICON)
+      : tnMain ? (pickImg('tunnel', 'ti tn-ai') || TUNNEL_ICON) : overStep ? ico('over_s') : ico(kind0);
     $('#turnDist').textContent = fmtDist(Math.max(10, tnMain ? ta0.d : nav.dg != null ? nav.dg : nav.total));   // '0m' 대신 최소 10m (음성과 같게)
     if (tnMain) {
       $('#turnText').textContent = (ta0.t.name || '터널') + (ta0.inside ? ' 출구까지' : '까지');
@@ -4053,9 +4060,9 @@
       // 톨게이트: 다른 내비처럼 통행료를 굵게 앞에 ('800원 하남톨게이트'), 아이콘은 TG 표지 (2026-11-14 요청)
       const p = tollParts(g), fee = fareText(p.fare);
       $('#turnText').innerHTML = (fee ? '<b class="tt-fare">' + esc(fee) + '</b>' : '') + esc(p.name);
-    } else if (tunnelStep) {
+    } else if (tunnelStep || overStep) {
       const m = /^(.*?)에서\s/.exec(String(g.s || ''));
-      $('#turnText').textContent = (m ? m[1] : '지하차도') + '까지';
+      $('#turnText').textContent = (m ? m[1] : tunnelStep ? '지하차도' : '고가차도') + '까지';
     } else {
       $('#turnText').textContent = g ? guideText(g.s) : nav.dest.name;
     }

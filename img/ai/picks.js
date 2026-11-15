@@ -1,6 +1,16 @@
 /* 기본으로 쓸 AI 아이콘 (칸 → img/ai/ 파일). 내부 관리 페이지 tools/icons.html 에서 고른 것을 여기에 올린다.
    칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>. 비우면 앱에 그려 둔 기본 그림 */
 window.TNC_PICKS = {
+  "oside_l": "oside_l__mirror__2.webp",
+  "oside_r": "oside_r__sunburst26v__2.webp",
+  "over_l": "over_l__mirror__2.webp",
+  "over_r": "over_r__sunburst26v__2.webp",
+  "over_s": "over3_s__flare__1.webp",
+  "side_l": "side_l__mirror__2.webp",
+  "side_r": "side_r__sunburst26v__2.webp",
+  "under_l": "under_l__mirror__2.webp",
+  "under_r": "under_r__sunburst26v__2.webp",
+  "under_s": "under3_s__sunburst__1.webp",
   "junc_entry_day": "junc_entry_day__sunburst26j__2.webp",
   "junc_entry_night": "junc_entry_night__sunburst26j__2.webp",
   "junc_fork_day": "junc_fork_day__flare26x__2.webp",

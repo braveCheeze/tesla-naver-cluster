@@ -3049,7 +3049,8 @@
     const total = cum[cum.length - 1];
     const R = {
       route: { distance: r0(total), duration: r0(total / 20 * 1000), tollFare: 0, fuelPrice: 300, path,
-        guide: [{ i: 12, t: 56, s: '벌말지하차도에서 지하차도 진입', d: r0(cum[12]), ms: 60000 }, { i: 30, t: 88, s: '목적지', d: r0(total - cum[12]), ms: 50000 }],
+        guide: [{ i: 12, t: 56, s: '벌말지하차도에서 지하차도 진입', d: r0(cum[12]), ms: 60000 }, { i: 20, t: 55, s: '금곡고가차도에서 고가차도 진입', d: r0(cum[20] - cum[12]), ms: 40000 },
+          { i: 30, t: 88, s: '목적지', d: r0(total - cum[20]), ms: 50000 }],
         sections: [{ i: 0, n: 31, name: '테스트로', speed: 60, cong: 1 }] },
       P, cum, total, dest: { name: '터널 테스트', addr: '', lat: P[30].lat, lng: P[30].lng },
     };
@@ -3059,9 +3060,16 @@
       for (let s = 20; s <= 500; s += 20) { const a = pointAt(R, s); feed(a.p, 20, a.h); }
       t.renderNav();
       r.turnText = text('#turnText');
-      r.tunnelIcon = !!document.querySelector('#turnIcon img.tn-ai, #turnIcon svg.tunnel');
+      r.tunnelIcon = !!document.querySelector('#turnIcon img[src*="under"], #turnIcon img.tn-ai, #turnIcon svg.tunnel');
+      // v124: 그다음 칸의 고가차도 진입(55)은 고가 그림, 지하차도를 지나면 큰 줄이 'OO고가차도까지' + 고가 그림
+      r.nextOver = !!document.querySelector('#nextIcon img[src*="over"]');
+      for (let s = 520; s <= 1500; s += 20) { const a = pointAt(R, s); feed(a.p, 20, a.h); }
+      t.renderNav();
+      r.overText = text('#turnText');
+      r.overIcon = !!document.querySelector('#turnIcon img[src*="over"]');
     } finally { t.endNav(); softReset(); }
-    const ok = r.shown && r.clearedAt !== null && r.clearedAt <= 20 && !r.voice && r.beep && r.turnText === '벌말지하차도까지' && r.tunnelIcon;
+    const ok = r.shown && r.clearedAt !== null && r.clearedAt <= 20 && !r.voice && r.beep && r.turnText === '벌말지하차도까지' && r.tunnelIcon &&
+      r.nextOver && r.overText === '금곡고가차도까지' && r.overIcon;
     return { pass: ok, detail: JSON.stringify(r) };
   }
 

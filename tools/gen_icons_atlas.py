@@ -585,6 +585,25 @@ UNDER3D = {'junc_under_day': ((), JV3D, JV3D_UNDER + JV3D_DAY + JV3D_END),
            'junc_under_night': ((), JV3D, JV3D_UNDER + JV3D_NIGHT + JV3D_END)}
 
 
+# 2026-11-15 밤 요청 '터널 고가 안내 같은건 아이콘 만들어서 적용해 줘' (네이버 지도처럼 정면에서 본 입체 그림):
+# 안내 줄의 '고가차도 진입'·'지하차도 진입' 직진 아이콘. 위에서 본 십자 모양(over_s)·좁은 입구(under_s)는 작은 칸에서 잘 안 읽혔다
+_G3 = (' Bold simple shapes that read well at 26 px, crisp edges, no text, no letters, no numbers, no cars, no people, '
+       'no shadows on the background.' + CORP + BG + ' ')
+GRADE3 = {
+    'over3_s': ('s.webp', 'Flat vector navigation icon for ENTERING AN OVERPASS (an elevated road), front view in gentle perspective, '
+                'in the clean style of Naver Map turn-by-turn icons: a dark charcoal road with thin white edge lines starts wide at the '
+                'bottom of the icon and runs straight ahead, climbing a short ramp up onto a raised bridge deck that has light grey '
+                'concrete side barriers and two slim grey pillars underneath; below the bridge a lower dark road crosses from left to '
+                'right. One bold vivid green (#1FC24A) arrow runs up the middle of the road and onto the bridge deck, with a large '
+                'arrowhead pointing up. The bridge clearly sits higher than the crossing road.' + _G3, ''),
+    'under3_s': ('s.webp', 'Flat vector navigation icon for ENTERING AN UNDERPASS, front view in gentle perspective, in the clean style '
+                 'of Naver Map turn-by-turn icons: a dark charcoal road with thin white edge lines starts wide at the bottom of the '
+                 'icon and runs straight ahead, dipping down between two light grey concrete retaining walls into a WIDE rectangular '
+                 'dark opening under a crossing road; across the top of the opening is a light grey concrete deck that spans almost '
+                 'the full width of the icon. One bold vivid green (#1FC24A) arrow runs up the middle of the road into the opening, '
+                 'with a large arrowhead pointing up.' + _G3, ''),
+}
+
 def _gpt25(model):
     return (model, 0.005, lambda p, imgs, wide=False: {'prompt': p, 'images': imgs, 'size': '1536x1024' if wide else '1024x1024',
                                                        'quality': 'medium', 'background': 'opaque', 'output_format': 'png', 'n': 1})
@@ -760,6 +779,8 @@ def main():
         JOBS.update(CLEAN)   # 분기점 그림: 깔끔하게, 화살표 꼬리를 맨 아래까지
     if 'under3d' in a.icons.split(','):
         JOBS.update(UNDER3D)   # 지하차도 진입 새 구도
+    if 'grade3' in a.icons.split(','):
+        JOBS.update(GRADE3)   # 고가·지하차도 진입 정면 입체 아이콘 (2026-11-15)
     if 'fix6' in a.icons.split(','):
         JOBS.update(FIX6)   # 지하차도 진입 벽 없애기
     if 'fix5' in a.icons.split(','):
@@ -775,7 +796,7 @@ def main():
     groups = {'cars': [k for k in JOBS if is_car(k)], 'signs': [k for k in JOBS if is_sign(k)],
               'guide': [k for k in JOBS if not is_car(k) and not is_sign(k)],
               'roads': ROADS, 'rb': RBS, 'redo': ROADS + RBS,
-              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s'], 'fix3': ['outs', 'ins', 'over_r', 'under_s', 'under_r', 'side_r', 'oside_r'], 'grass': RBS, 'junc': sorted(PANO), 'green': list(GREEN_KIND), 'junc2': JV2, 'soft': list(SOFT), 'rbdepth': list(RBDEPTH), 'junc3': list(JUNC3), 'clean': list(CLEAN), 'klbold': ['kl'], 'sharp': ['sharp_r'], 'slbold': ['sl'], 'fix4': list(FIX4), 'fix5': list(FIX5), 'fix6': list(FIX6), 'under3d': list(UNDER3D)}
+              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s'], 'fix3': ['outs', 'ins', 'over_r', 'under_s', 'under_r', 'side_r', 'oside_r'], 'grass': RBS, 'junc': sorted(PANO), 'green': list(GREEN_KIND), 'junc2': JV2, 'soft': list(SOFT), 'rbdepth': list(RBDEPTH), 'junc3': list(JUNC3), 'clean': list(CLEAN), 'klbold': ['kl'], 'sharp': ['sharp_r'], 'slbold': ['sl'], 'fix4': list(FIX4), 'fix5': list(FIX5), 'fix6': list(FIX6), 'under3d': list(UNDER3D), 'grade3': list(GRADE3)}
     want = []
     for i in a.icons.split(','):
         want += groups.get(i, [i])

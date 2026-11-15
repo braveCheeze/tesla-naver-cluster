@@ -125,9 +125,11 @@
   .camnext { display: flex; align-items: center; gap: 10px; font-size: 16px; color: var(--muted); }
   /* v123: 한 번 눌러 신고하는 '틀림'(경고 카드 오른쪽)·'놓침'(다음 단속 아래) 버튼. 정차 중에도 누르기 쉽게 44px */
   .cam-report { margin-left: auto; align-self: center; flex: none; min-width: 58px; min-height: 44px; padding: 0 12px; border-radius: 12px;
-    border: 1.5px solid rgba(255,255,255,.45); background: rgba(0,0,0,.28); color: #fff; font: 700 16px/1 inherit; cursor: pointer; }
+    border: 1.5px solid rgba(255,255,255,.45); background: rgba(0,0,0,.28); color: #fff; font: 700 16px/1 inherit; cursor: pointer;
+    pointer-events: auto; text-shadow: none; }   /* 경고 묶음(.alerts)은 터치를 지도로 넘기므로 버튼만 받는다 */
   .cam-report:active { background: rgba(255,255,255,.25); }
-  .cam-miss { display: block; margin: 6px 0 0 auto; min-height: 40px; font-size: 15px; background: rgba(20,24,30,.55); }
+  /* '놓침'은 다음 단속(80 · 4.4km) 바로 밑 왼쪽 (2026-11-15 요청 '여기다가 해주라': 지도 가운데 말고) */
+  .cam-miss { display: block; align-self: flex-start; margin: 0; min-height: 40px; font-size: 15px; background: rgba(20,24,30,.62); }
   .cam-miss[hidden] { display: none; }
   .camnext b { color: var(--text); font-variant-numeric: tabular-nums; }
   .mini-sign {
@@ -1702,8 +1704,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-123"></script>
-<script src="img/ai/picks.js?v=2026.11.16-123"></script>
-<script src="app.js?v=2026.11.16-123"></script>
+<script src="icons.js?v=2026.11.16-124"></script>
+<script src="img/ai/picks.js?v=2026.11.16-124"></script>
+<script src="app.js?v=2026.11.16-124"></script>
 </body>
 </html>
