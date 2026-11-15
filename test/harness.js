@@ -2763,6 +2763,7 @@
     { id: 'S65', name: 'S65 auto zoom: 17 while driving even before a turn; the close-up 18 only within 300 m of the destination', fn: s65 },
     { id: 'S58', name: "S58 no-parking cameras: '주정차 단속' only ahead in my direction, when slow (no sound); not behind or on a side street; setting off", fn: s58 },
     { id: 'S57', name: 'S57 fast reroute: wrong-way turn caught in 2 fixes, start asked ahead of the car, a new route that starts behind the car is retried at once (only once)', fn: s57 },
+    { id: 'S70', name: 'S70 a reroute refused by the route server (429, 4 per minute) retries quietly after the given time, no failure message', fn: s70 },
     { id: 'S69', name: 'S69 signal cameras: warning kept only 5 m after passing; no spoken speeding line (beep instead); straight underpass entry shows the tunnel icon and "OO지하차도까지"', fn: s69 },
     { id: 'S68', name: 'S68 free drive with a wrong GPS heading still catches the speed camera ahead (track bearing); a camera passed without an alert is counted as missed', fn: s68 },
   ];
@@ -3034,6 +3035,31 @@
       r.tunnelIcon = !!document.querySelector('#turnIcon img.tn-ai, #turnIcon svg.tunnel');
     } finally { t.endNav(); softReset(); }
     const ok = r.shown && r.clearedAt !== null && r.clearedAt <= 20 && !r.voice && r.beep && r.turnText === '벌말지하차도까지' && r.tunnelIcon;
+    return { pass: ok, detail: JSON.stringify(r) };
+  }
+
+  // S70: (v119) 재탐색이 길찾기 서버의 '잠시 후 다시'(429, 60초에 4번)에 막히면 실패 안내 없이 알려 준 시간 뒤 조용히 다시 찾고,
+  //      교통 갱신은 그냥 넘긴다 (2026-11-15 12:18 차에서 재탐색 실패)
+  async function s70() {
+    const t = T(), R = buildNavRoute(), r = {};
+    try {
+      softReset();
+      await planAndStart(R);
+      const okRoute = R.route;
+      let n = 0;
+      stub.canned['/route'] = () => (++n === 1 ? { __status: 429, body: { error: 'rate limited', message: '잠시 후 다시 시도합니다', retryAfter: 1 } } : okRoute);
+      feed(dest(NAV_ORIGIN, 90, 400), 15, 0);   // 경로에서 400m 옆: 벗어남
+      const c0 = stub.count('/route');
+      await t.planRoute(t.nav.dest, true);
+      r.toast = text('#toast');
+      r.failToast = /찾지 못했어요/.test(r.toast);
+      r.callsNow = stub.count('/route') - c0;
+      await new Promise((res) => setTimeout(res, 1700));
+      await waitFor(() => !t.nav.busy, 3000);
+      r.callsLater = stub.count('/route') - c0;
+      t.endNav();
+    } finally { softReset(); }
+    const ok = !r.failToast && /다시 찾습니다/.test(r.toast) && r.callsNow === 1 && r.callsLater === 2;
     return { pass: ok, detail: JSON.stringify(r) };
   }
 

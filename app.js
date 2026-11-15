@@ -51,7 +51,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.15-118'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.15-119'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -2887,6 +2887,25 @@
     planRoute(dest, false);
   }
 
+  // 길찾기 서버(Worker)는 한 가지 옵션 길찾기(재탐색·교통 갱신)를 주소마다 60초에 4번까지 받는다 (ROUTE_LIMIT).
+  // 2026-11-15 12:18 차에서 재탐색이 '잠시 후 다시 시도합니다'(429)로 막혔다: 재탐색 + 시간 초과 재시도 + 바로 한 번 더 + 교통 갱신이 겹침.
+  // 앱도 같이 세어 넘기지 않는다: 교통 갱신은 2번 넘게 남았을 때만, 재탐색은 남은 게 없으면 자리가 나는 때 조용히 다시
+  const routeReqs = [];
+  const routeNow = () => (state.fix ? state.fix.t : Date.now());
+  function routeBudget() {
+    const now = routeNow();
+    while (routeReqs.length && (now - routeReqs[0] > 60000 || routeReqs[0] > now)) routeReqs.shift();
+    return 4 - routeReqs.length;
+  }
+  const routeWaitMs = () => (routeReqs.length ? Math.max(500, 60000 - (routeNow() - routeReqs[0]) + 300) : 500);
+  function retryRouteLater(dest, reroute, ms) {
+    clearTimeout(nav.retryT);
+    const g0 = nav.gen;
+    nav.retryT = setTimeout(() => {
+      nav.retryT = null;
+      if (nav.active && nav.gen === g0 && !nav.onRoute && !nav.busy) planRoute(dest, reroute);
+    }, Math.min(ms, 61000));
+  }
   async function planRoute(dest, reroute) {
     if (!state.fix) { toast('현재 위치를 아직 모릅니다. GPS 신호를 기다려 주세요.', 'bad', 5000); return; }
     if (reroute && nav.busy) return;
@@ -2914,11 +2933,20 @@
       // 차량 LTE 가 느릴 수 있어 20초까지 기다리고, 시간 초과면 한 번 더 시도한다.
       // 경로 이탈 재탐색은 늦게 온 답이 이미 쓸모없으므로(차가 그만큼 더 갔다) 9초에 끊고, 지금 자리에서 다시 묻는다
       const waitMs = reroute === true ? 9000 : 20000, t0 = Date.now();
+      if (q.option) {   // 한 가지 옵션 길찾기는 60초에 4번 (위 routeReqs)
+        const left = routeBudget();
+        if (left <= 0 || (reroute === 'traffic' && left < 2)) {
+          if (reroute && reroute !== 'traffic') retryRouteLater(dest, reroute, routeWaitMs());
+          return;
+        }
+        routeReqs.push(routeNow());
+      }
       let res;
       try { res = await api('/route', q, null, waitMs); } catch (e1) {
         if (e1.name !== 'AbortError' && !/abort/i.test(e1.message)) throw e1;
         if (gen !== nav.gen) return;
         if (ahead) q.start = startOf();
+        if (q.option) { if (routeBudget() <= 0) throw e1; routeReqs.push(routeNow()); }
         res = await api('/route', q, null, waitMs);
       }
       const took = Date.now() - t0; // 다음 재탐색 출발점을 얼마나 앞에 둘지 정하는 데 쓴다
@@ -2982,6 +3010,16 @@
     } catch (e) {
       if (gen !== nav.gen) return;
       const d = e.detail || {};
+      // 서버가 '잠시 후 다시'(429)로 막으면: 교통 갱신은 그냥 넘기고, 재탐색은 알려 준 시간 뒤 조용히 다시 (실패 안내 없이)
+      if (e.status === 429) {
+        report('info', { msg: 'route rate limited', reroute: String(reroute || '') });
+        if (reroute === 'traffic') return;
+        if (reroute) {
+          retryRouteLater(dest, reroute, Math.min(61, Math.max(1, Number(d.retryAfter) || 15)) * 1000 + 300);
+          toast('잠시 후 경로를 다시 찾습니다…', '', 3000);
+          return;
+        }
+      }
       report('warn', { msg: 'route failed: ' + String(d.message || d.error || e.message).slice(0, 200), reroute: String(reroute || ''), keys: d.keys || '' });
       if (reroute === 'traffic') return; // 교통 갱신 실패는 지금 경로로 계속 안내 (화면에 띄우지 않음)
       const slow = e.name === 'AbortError' || /abort/i.test(e.message || '');
@@ -3161,6 +3199,7 @@
   }
   function endNav() {
     nav.gen++; nav.busy = false; nav.byDemo = false;
+    clearTimeout(nav.retryT); nav.retryT = null;
     nav.active = false; nav.preview = false;
     nav.route = null; nav.pts = null; nav.cum = null; nav.dest = null; nav.guides = [];
     nav.routeCams = null; nav.routeCamList = []; camState.markerAt = null; camState.peekAt = 0;
