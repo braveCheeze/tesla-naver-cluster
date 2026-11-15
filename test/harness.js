@@ -2785,6 +2785,7 @@
     { id: 'S58', name: "S58 no-parking cameras: '주정차 단속' only ahead in my direction, when slow (no sound); not behind or on a side street; setting off", fn: s58 },
     { id: 'S57', name: 'S57 fast reroute: wrong-way turn caught in 2 fixes, start asked ahead of the car, a new route that starts behind the car is retried at once (only once)', fn: s57 },
     { id: 'S76', name: "S76 turn lane guidance (trial, NGII HD map → data/lanes.json): lane boxes under the turn row 500 m ahead, lanes for this turn blue; skips approaches without that turn; setting off", fn: s76 },
+    { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored", fn: s77 },
     { id: 'S75', name: 'S75 (info) cameras alerted on every saved real route, for comparing versions', fn: s75 },
     { id: 'S74', name: 'S74 camera score on 2026-11-15 real cases (13): false alerts / misses / wrong type, with and without navigation', fn: s74 },
     { id: 'S73', name: 'S73 no spoken overspeed words (과속/초과): limit beeps and the red card only', fn: s73 },
@@ -3710,7 +3711,7 @@
   // S76: 회전 차로 안내 (시험판, 정밀도로지도 → data/lanes.json · tools/build_lanes.py, 2026-11-15 요청 '좌회전·우회전 몇 번 차로').
   //      시험 경로(북쪽 600m → 우회전 → 동쪽)에 진입부를 직접 넣어
   //      (a) 회전 500m 밖에서는 안 보임  (b) 500m 안: 회전 지점 40m 앞 북쪽 방향 진입부 'LU|L|S|SR' → 4칸, 4차로만 파랑,
-  //          길안내 패널 바로 밑에 붙은 따로 된 줄 (2026-11-15 사용자 표시)
+  //          길안내 패널 바로 밑 단속 서랍 맨 위 (2026-11-16 사용자: 서랍처럼 내려오게, 네모 칸)
   //          (12m 앞 'S|S' 진입부는 회전 차로가 없어 건너뜀 — 따로 갈라지는 회전 전용 차로 같은 곳; 남쪽 방향 진입부는 방향이 달라 무시)
   //      (c) 설정을 끄면 숨김  (d) 회전을 지나면(다음 안내 = 목적지) 숨김  (e) 같은 곳이 좌회전 안내면 1·2차로
   //      (f) 진입부가 없는 회전(자료 밖)은 아무것도 안 보임  (g) 실제 data/lanes.json 이 읽힌다
@@ -3738,8 +3739,10 @@
       // 갈 차로 안에서 파란 조각(줄기·이번 방향 가지)과 회색으로 남는 다른 가지 수
       onParts: document.querySelectorAll('#laneRow .lg.go .pt.on').length, offInGo: document.querySelectorAll('#laneRow .lg.go .pt:not(.on)').length,
       onOutside: document.querySelectorAll('#laneRow .lg:not(.go) .pt.on').length,
-      underPanel: (() => { const a = document.getElementById('laneRow').getBoundingClientRect(), p = document.getElementById('navPanel').getBoundingClientRect();
-        return visible('#laneRow') ? a.top - p.bottom >= -2 && a.top - p.bottom <= 10 && a.left >= p.left - 2 && a.right <= p.right + 2 : null; })(),
+      // 서랍(맨 위 칸)이 패널 바로 밑에 열림 (서랍 안은 내려오는 움직임 중이라 서랍 자체 위치로 본다, S45 와 같게)
+      underPanel: (() => { const dr = document.getElementById('camDrawer'), a = dr.getBoundingClientRect(), p = document.getElementById('navPanel').getBoundingClientRect();
+        return visible('#laneRow') ? !!document.getElementById('laneRow').closest('#camDrawer.open') && Math.abs(a.top - p.bottom) <= 2 &&
+          !document.getElementById('laneRow').previousElementSibling : null; })(),
       blueColor: (() => { const g = document.querySelector('#laneRow .lg.go .pt.on'), o = document.querySelector('#laneRow .lg:not(.go) .pt');
         return g && o ? getComputedStyle(g).color !== getComputedStyle(o).color : null; })() });
     const go = (m, v) => { const a = pointAt(R, m); feed(a.p, v == null ? 15 : v, a.h); };
@@ -3803,6 +3806,85 @@
       r.uturn.shown && r.uturn.go === '1' && r.uturn.onParts === 2 && r.uturn.offInGo === 1 &&   // 유턴이면 1차로 유턴 가지가 파랑, 좌회전 가지는 회색
       !r.none.shown &&
       r.real.loaded && r.real.n > 100;
+    return { pass: ok, detail: JSON.stringify(r) + (ok ? ' ✓' : ' ✗') };
+  }
+
+  // S77: 직진 차로 안내 (2026-11-16 요청 '직진 차로도 안내'). 시험 경로(북쪽 600m → 우회전)에 진입부를 넣어
+  //      (a) 450m 의 북쪽 방향 직진 교차로 'L|S|S|R'(1차로 좌회전 전용·4차로 우회전 전용): 300m 밖이면 안 보이고, 300m 안이면
+  //          2·3차로 파랑(직진 가지), 1·4차로 회색, 칸 오른쪽에 남은 거리 — 우회전 500m 안이어도 더 가까운 직진 교차로가 먼저
+  //      (b) 그 교차로를 지나면 우회전 진입부(40m 앞 'LU|L|S|SR')의 4차로  (c) 반대 방향(남쪽)·옆길(30m 옆) 진입부는 무시
+  //      (d) 경로에 회전 안내 없이 '직진' 안내만 있어도 그 너머 직진 교차로를 보여 줌  (e) 설정을 끄면 숨김
+  //      (f) 6차로 넘으면 서랍 대신 아래 가운데, '내 위치로'가 같이 뜨면 그 위 (2026-11-16 요청)
+  async function s77() {
+    const t = T(), R = buildNavRoute();   // 240m '직진' 안내는 그대로 둔다 (d)
+    const north = (m) => dest(NAV_ORIGIN, 0, m), turn = R.P[5];
+    const aps = [
+      [dest(north(450), 90, 6), 0, 'L|S|S|R'],
+      [dest(north(350), 270, 6), 180, 'R|S|L'],
+      [dest(north(300), 90, 30), 0, 'L|S'],
+      [dest(turn, 180, 40), 0, 'LU|L|S|SR'],
+    ];
+    const pats = [], d = [];
+    let pa = 0, pb = 0;
+    aps.forEach(([p, h, pat]) => {
+      if (pats.indexOf(pat) < 0) pats.push(pat);
+      const a = Math.round(p.lat * 1e5), b = Math.round(p.lng * 1e5);
+      d.push(a - pa, b - pb, h, pats.indexOf(pat)); pa = a; pb = b;
+    });
+    const el = () => document.getElementById('laneRow');
+    const row = () => ({ shown: visible('#laneRow'), lanes: el().dataset.lanes || '', go: el().dataset.go || '', move: el().dataset.move || '',
+      dist: (el().querySelector('.ld') || {}).textContent || '', onParts: document.querySelectorAll('#laneRow .lg.go .pt.on').length,
+      onOutside: document.querySelectorAll('#laneRow .lg:not(.go) .pt.on').length, tiles: document.querySelectorAll('#laneRow .lg').length,
+      inDrawer: !!el().closest('#camDrawer.open') });
+    const go = (m) => { const a = pointAt(R, m); feed(a.p, 15, a.h); };
+    const prevPref = t.prefs.lanes;
+    const r = {};
+    try {
+      t.setLaneData({ v: 1, scale: 1e5, date: '2025-09', areas: ['시험'], count: aps.length, pats, d });
+      softReset();
+      await planAndStart(R);
+      go(15); go(60); go(90);
+      r.far = row();                                   // 직진 교차로 360m · 우회전 510m: 안 보임
+      for (let m = 110; m <= 200; m += 15) go(m);
+      r.straight = row();                              // 직진 교차로 250m: 2·3차로
+      r.list = (t.nav.laneStraight || []).map((x) => x.lanes.join('|') + '@' + Math.round(x.at)).join(',');
+      t.prefs.lanes = false; go(215);
+      r.off = row();
+      t.prefs.lanes = true;
+      for (let m = 230; m <= 470; m += 20) go(m);
+      r.turn = row();                                  // 직진 교차로를 지나 우회전 130m: 우회전 진입부 4차로
+      t.endNav();
+      r.ended = row();
+      // (f) 7차로 진입부: 서랍 대신 아래 가운데(#laneWide), '내 위치로'가 뜨면 그 위로
+      const wp = dest(turn, 180, 40);
+      t.setLaneData({ v: 1, scale: 1e5, date: '2025-09', areas: ['시험'], count: 1, pats: ['L|L|S|S|S|S|R'],
+        d: [Math.round(wp.lat * 1e5), Math.round(wp.lng * 1e5), 0, 0] });
+      softReset();
+      await planAndStart(R);
+      for (let m = 15; m <= 470; m += 25) go(m);
+      const W = document.getElementById('laneWide'), bm = document.getElementById('backMe');
+      r.wide = { shown: visible('#laneWide'), drawerRow: visible('#laneRow'), go: W.dataset.go || '', tiles: W.querySelectorAll('.lg').length };
+      const b0 = W.getBoundingClientRect().bottom;
+      const prevBm = bm.hidden;
+      bm.hidden = false;
+      const wr = W.getBoundingClientRect(), br = bm.getBoundingClientRect();
+      r.wide.aboveBackMe = wr.bottom <= br.top + 1 && wr.bottom < b0;
+      bm.hidden = prevBm;
+      t.endNav();
+      r.wideEnded = visible('#laneWide');
+    } finally {
+      t.prefs.lanes = prevPref;
+      t.setLaneData(null);
+      await t.loadLanes();
+      softReset();
+    }
+    const ok = !r.far.shown &&
+      r.straight.shown && r.straight.lanes === 'L|S|S|R' && r.straight.go === '2,3' && r.straight.move === 'S' && r.straight.dist === '250m' &&
+      r.straight.onParts === 4 && r.straight.onOutside === 0 && r.straight.tiles === 4 && r.straight.inDrawer &&
+      /^L\|S\|S\|R@(449|450|451)$/.test(r.list) && !r.off.shown &&
+      r.turn.shown && r.turn.lanes === 'LU|L|S|SR' && r.turn.go === '4' && r.turn.move === 'R' && r.turn.dist === '' &&
+      !r.ended.shown &&
+      r.wide.shown && !r.wide.drawerRow && r.wide.go === '7' && r.wide.tiles === 7 && r.wide.aboveBackMe && !r.wideEnded;
     return { pass: ok, detail: JSON.stringify(r) + (ok ? ' ✓' : ' ✗') };
   }
 

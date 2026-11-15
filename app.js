@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-127'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-128'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -2598,10 +2598,10 @@
   // ---------- 단속 서랍 (테슬라 모드: 길안내 패널 밑에서 스르륵) ----------
   // 안의 것(단속 카드·내 속도·보호구역 표지·구간단속 카드·하이패스) 중 하나라도 보이면 열고, 다 숨으면 접는다
   const drawer = { t: 0, hideT: 0, closing: false };
-  const DRAWER_ITEMS = ['#juncCard', '#camCard', '#mySpeed', '#zoneBadge', '#secCard', '#tollCard'];
+  const DRAWER_ITEMS = ['#laneRow', '#juncCard', '#camCard', '#mySpeed', '#zoneBadge', '#secCard', '#tollCard'];
   const drawerAnimated = () => !testPage && $('#app').classList.contains('tesla') && $('#camDrawer').classList.contains('open');
   // q 를 빼도 서랍에 남는 것이 있는지 (내 속도·보호구역 표지는 단속 카드에 딸려 함께 빠진다)
-  const drawerKeeps = (q) => ['#juncCard', '#secCard', '#tollCard'].some((x) => x !== q && !$(x).hidden) ||
+  const drawerKeeps = (q) => ['#laneRow', '#juncCard', '#secCard', '#tollCard'].some((x) => x !== q && !$(x).hidden) ||
     (q !== '#camCard' && !$('#camCard').hidden);
   function syncDrawer() {
     const dr = $('#camDrawer');
@@ -2622,6 +2622,7 @@
       if (!camState.target) $('#camCard').hidden = true;
       if (!tollState.g) $('#tollCard').hidden = true;
       if (!juncState.g) $('#juncCard').hidden = true;
+      if (!laneState.rowHit) $('#laneRow').hidden = true;
       syncDrawer();
     }, 360);
   }
@@ -3134,7 +3135,7 @@
     nav.routeBumps = null; bumpState.markerKey = '';
     nav.routeSigns = null; tollState.numsKey = '';
     nav.routeTunnels = null;
-    nav.laneCache = null; laneState.key = '';
+    nav.laneCache = null; nav.laneStraight = null; laneState.key = '';
     nav.lastTraffic = state.fix ? state.fix.t : Date.now();
     if (!keepAlerts) { nav.said = {}; nav.gap = 10000; }
     nav.remain = nav.total; nav.next = null; nav.dg = null;
@@ -3955,11 +3956,11 @@
   // 바로 앞(정지선이 회전 지점 8m 뒤~70m 앞, 옆으로 22m 안, 방향 35° 안)의 진입부를 찾아, 회전 500m 앞부터 안내 줄 밑에 차로 칸을 그리고
   // 그 방향으로 갈 수 있는 차로를 파랗게. 그 방향 차로가 없는 진입부(따로 갈라지는 우회전 전용 차로 등)는 아무것도 안 보인다
   const lanesData = { loaded: false, n: 0, lat: null, lng: null, h: null, pat: null, pats: [], grid: new Map(), date: '', areas: [] };
-  const laneState = { key: '', hit: null };
+  const laneState = { key: '', hit: null, rowHit: null };
   const LANE_SHOW = 500;
   const LANE_MOVE = { l: 'L', sharp_l: 'L', r: 'R', sharp_r: 'R', u: 'U' };
   function setLaneData(j) {
-    lanesData.loaded = false; lanesData.grid = new Map(); laneState.key = ''; nav.laneCache = null;
+    lanesData.loaded = false; lanesData.grid = new Map(); laneState.key = ''; nav.laneCache = null; nav.laneStraight = null;
     if (!j || !Array.isArray(j.d) || !Array.isArray(j.pats)) return;
     const n = j.count, sc = j.scale || 1e5, d = j.d;
     const lat = new Float64Array(n), lng = new Float64Array(n), h = new Int16Array(n), pat = new Int32Array(n);
@@ -4000,7 +4001,7 @@
           if (angleDiff(lanesData.h[k], hin) > 35) continue;
           const vx = (p.lng - lanesData.lng[k]) * kx, vy = (p.lat - lanesData.lat[k]) * ky;
           const along = vx * ux + vy * uy, side = Math.abs(-vx * uy + vy * ux);   // 정지선 → 회전 지점: 진행 방향으로·옆으로
-          if (along < -8 || along > 70 || side > 22) continue;
+          if (along < -8 || along > 90 || side > 22) continue;   // 큰 교차로는 정지선 → 네이버 회전 지점이 70m 넘기도 (강일3·6단지 72m)
           const lanes = lanesData.pats[lanesData.pat[k]] || [];
           // 유턴은 노면 유턴 화살표가 있는 차로, 없으면 1차로 (유턴은 1차로에서)
           const ok = lanes.map((l, i) => (l.indexOf(M) >= 0 ? i : -1)).filter((i) => i >= 0);
@@ -4063,23 +4064,114 @@
     return '<svg viewBox="0 0 26 32" aria-hidden="true">' + parts.filter((p) => !lit(p[0])).map(draw).join('') +
       stem + parts.filter((p) => lit(p[0])).map(draw).join('') + '</svg>';
   }
+  // ---------- 직진 차로 (2026-11-16 요청 '직진 차로도 안내') ----------
+  // 경로가 곧게 지나가는(회전 안내가 없는) 교차로 진입부 중 일부 차로가 좌·우회전 전용인 곳: 직진할 수 있는 차로를 파랗게.
+  // 경로 선에서 옆으로 15m 안, 방향 25° 안, 정지선 20m 뒤 경로가 35° 넘게 꺾이지 않고, 회전 안내(좌·우·유턴)에 쓰인 진입부가 아니고
+  // 그 지점 10m 뒤~100m 앞도 아닌 진입부 (실제 경로: 강일3·6단지 좌회전 진입부가 정지선→회전 지점 72m 라 직진으로 먼저 나왔다).
+  // 경로마다 한 번 찾아 경로 거리순으로 둔다
+  const LANE_STRAIGHT_SHOW = 300;
+  const LANE_DRAWER_MAX = 5;   // 서랍에 넣는 차로 수 (그보다 많으면 아래 가운데)
+  function ensureRouteLanes() {
+    if (nav.laneStraight) return nav.laneStraight;
+    const out = [];
+    if (!lanesData.loaded || !nav.pts || nav.pts.length < 2) return out;
+    const pts = nav.pts, cum = nav.cum, last = cum.length - 1;
+    const turnGuides = (nav.guides || []).filter((x) => LANE_MOVE[turnKind(x)]);
+    const turns = turnGuides.map((x) => cum[Math.min(x.i, last)]);
+    const turnK = new Set(turnGuides.map((x) => laneGuide(x)).filter(Boolean).map((h) => h.k));   // 회전 안내에 쓰인 진입부
+    const best = new Map();   // 진입부 → { at, side }
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1], len = cum[i + 1] - cum[i];
+      if (len <= 0) continue;
+      const kx = Math.cos(toRad(a.lat)) * 111320, ky = 110540;
+      const bx = (b.lng - a.lng) * kx, by = (b.lat - a.lat) * ky, brg = bearing(a, b);
+      const cells = new Set();
+      const steps = Math.max(1, Math.ceil(len / 400));
+      for (let s = 0; s <= steps; s++) {
+        const la = a.lat + (b.lat - a.lat) * s / steps, ln = a.lng + (b.lng - a.lng) * s / steps;
+        for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) cells.add((Math.floor(la * 100) + y) + ':' + (Math.floor(ln * 100) + x));
+      }
+      for (const c of cells) for (const k of lanesData.grid.get(c) || []) {
+        if (angleDiff(lanesData.h[k], brg) > 25) continue;
+        const px = (lanesData.lng[k] - a.lng) * kx, py = (lanesData.lat[k] - a.lat) * ky;
+        const t = (px * bx + py * by) / (len * len);
+        if (t < -0.02 || t > 1.02) continue;
+        const side = Math.abs(bx * py - by * px) / len;
+        if (side > 15) continue;
+        const at = cum[i] + Math.max(0, Math.min(1, t)) * len;
+        const o = best.get(k);
+        if (!o || side < o.side) best.set(k, { at, side });
+      }
+    }
+    for (const [k, o] of best) {
+      if (turnK.has(k) || turns.some((s) => s - o.at >= -10 && s - o.at <= 100)) continue;   // 회전 안내의 진입부 (회전 쪽에서 보여 줌)
+      if (o.at < 20 || o.at > nav.total - 30) continue;
+      if (routeTurnAt(o.at + 20) > 35) continue;                            // 경로가 그 교차로에서 꺾임
+      const lanes = lanesData.pats[lanesData.pat[k]] || [];
+      const ok = lanes.map((l, i) => (l.indexOf('S') >= 0 ? i : -1)).filter((i) => i >= 0);
+      if (!ok.length || ok.length === lanes.length) continue;               // 직진 차로가 없거나 다 직진이면 알려 줄 것이 없음
+      out.push({ at: o.at, k, lanes, ok, M: 'S' });
+    }
+    out.sort((u, v) => u.at - v.at);
+    nav.laneStraight = out;
+    return out;
+  }
+  // 앞쪽 300m 안의 다음 직진 진입부 (다음 회전·갈림 안내 지점보다 앞인 것만. '직진' 안내는 넘어간다).
+  // 회전 500m 앞이라도 그보다 가까운 직진 교차로가 있으면 그 교차로부터 (가까운 교차로부터 차례로)
+  function nextStraightLane() {
+    const list = ensureRouteLanes();
+    if (!list.length) return null;
+    let limit = Infinity;
+    for (let j = nav.gi; j < (nav.guides || []).length; j++) {
+      if (turnKind(nav.guides[j]) !== 's') { limit = nav.cum[Math.min(nav.guides[j].i, nav.cum.length - 1)]; break; }
+    }
+    for (const x of list) {
+      const d = x.at - nav.along;
+      if (d < -5) continue;
+      return d <= LANE_STRAIGHT_SHOW && x.at < limit ? Object.assign({ d }, x) : null;
+    }
+    return null;
+  }
+  // 차로 칸은 단속 서랍 맨 위에 (2026-11-16 사용자: '그 섹션 안에서처럼 쭈욱 내려오는 느낌', '네모로 하나하나', '네이버 지도처럼').
+  // 회전 500m 앞이면 그 회전의 차로, 아니면 300m 안의 직진 교차로 차로(남은 거리도 칸 오른쪽에)
   function renderLanes(g) {
     const el = $('#laneRow');
     if (!el) return;
-    const hit = prefs.lanes && g && nav.dg != null && nav.dg <= LANE_SHOW ? laneGuide(g) : null;
+    let hit = null;
+    if (prefs.lanes && nav.active) {
+      hit = nextStraightLane();   // 가까운 직진 교차로가 먼저
+      if (!hit) hit = g && nav.dg != null && nav.dg <= LANE_SHOW ? laneGuide(g) : null;
+    }
     laneState.hit = hit;
-    el.hidden = !hit;
-    if (!hit) { laneState.key = ''; return; }
-    const key = g.i + ':' + g.t + ':' + hit.k;
-    if (laneState.key === key) return;
-    laneState.key = key;
-    el.innerHTML = hit.lanes.map((m, i) => {
-      const go = hit.ok.indexOf(i) >= 0;
-      return '<b class="lg' + (go ? ' go' : '') + '">' + laneArrowSvg(m, go, hit.M) + '</b>';
-    }).join('');
-    el.dataset.lanes = hit.lanes.join('|');
-    el.dataset.go = hit.ok.map((i) => i + 1).join(',');
-    el.setAttribute('aria-label', hit.lanes.length + '차로 중 ' + hit.ok.map((i) => i + 1).join('·') + '차로');
+    // 6차로 이상은 서랍(폭 300px)에 안 들어가 아래 가운데 '내 위치로' 자리에 (#laneWide)
+    const wide = !!hit && hit.lanes.length > LANE_DRAWER_MAX;
+    const wel = $('#laneWide');
+    laneState.rowHit = hit && !wide ? hit : null;
+    if (!laneState.rowHit) {
+      if (!el.hidden && drawerAnimated() && !drawerKeeps('#laneRow')) startDrawerClose();
+      else if (!drawer.closing) el.hidden = true;
+    } else {
+      cancelDrawerClose();
+      el.hidden = false;
+    }
+    if (wel) wel.hidden = !wide;
+    if (!hit) { laneState.key = ''; syncDrawer(); return; }
+    const box = wide ? wel : el;
+    const key = (wide ? 'w:' : '') + (hit.M === 'S' ? 's:' : g.i + ':' + g.t + ':') + hit.k;
+    if (laneState.key !== key) {
+      laneState.key = key;
+      box.innerHTML = hit.lanes.map((m, i) => {
+        const go = hit.ok.indexOf(i) >= 0;
+        return '<b class="lg' + (go ? ' go' : '') + '">' + laneArrowSvg(m, go, hit.M) + '</b>';
+      }).join('') + (hit.M === 'S' ? '<span class="ld"></span>' : '');
+      box.classList.toggle('straight', hit.M === 'S');
+      box.dataset.lanes = hit.lanes.join('|');
+      box.dataset.go = hit.ok.map((i) => i + 1).join(',');
+      box.dataset.move = hit.M;
+      box.setAttribute('aria-label', (hit.M === 'S' ? '직진 ' : '') + hit.lanes.length + '차로 중 ' + hit.ok.map((i) => i + 1).join('·') + '차로');
+    }
+    if (hit.M === 'S') box.querySelector('.ld').textContent = fmtDist(Math.max(0, hit.d));
+    syncDrawer();
   }
   // 테슬라 모드에서 단속 경고 묶음을 길안내 패널(없으면 검색 버튼) 바로 밑에 붙이고,
   // 위쪽 버튼(야간·전체화면·설정)은 그 패널(또는 검색 버튼) 바로 오른쪽에 붙인다
@@ -4162,7 +4254,7 @@
   function renderNavPanel() {
     const p = $('#navPanel');
     renderStrip();
-    if (!nav.active) { p.hidden = true; $('#searchBtn').hidden = false; return; }
+    if (!nav.active) { p.hidden = true; $('#searchBtn').hidden = false; renderLanes(null); return; }
     p.hidden = false;
     $('#searchBtn').hidden = true;
     // 맨 위 목적지 줄 (경유지가 있으면 오른쪽에 작게)

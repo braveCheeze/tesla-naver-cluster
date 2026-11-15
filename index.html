@@ -1230,18 +1230,31 @@
   .turn { position: relative; }
   .turn.tn-main::after { content: ''; position: absolute; left: 0; bottom: 0; height: 3px; width: var(--tnp, 0%); background: #03c75a; transition: width .9s linear; }
   #app.tesla .turn.tn-main::after { background: var(--nv-green); }
-  /* ================= 차로 안내 (시험판, 2026-11-15 요청 '좌회전·우회전 몇 번 차로') =================
-     길안내 패널 바로 밑에 붙는 따로 된 줄(2026-11-15 사용자 표시: 패널 안보다 밑이 낫다). 차로 칸(왼쪽 1차로부터)마다 그 차로에
-     칠해진 화살표(app.js laneArrowSvg: 줄기 + 방향별 가지) */
-  /* 2026-11-15 사용자 '네이버 지도랑 비슷하게': 검은 둥근 띠에 차로마다 화살표만, 차로 사이 옅은 점선.
-     갈 차로는 줄기와 이번 회전 방향 가지만 파랑(.pt.on), 같은 칸의 다른 가지(예: 좌회전할 때 좌+유턴 칸의 유턴)와 갈 수 없는 차로는 회색 */
-  .lanerow {
-    display: flex; justify-content: center; padding: 6px 10px; margin: 6px 6px 0; border-radius: 12px;
-    background: rgba(14, 16, 20, .92); box-shadow: 0 4px 14px rgba(0, 0, 0, .28); text-shadow: none;
+  /* ================= 차로 안내 (시험판, 2026-11-15 요청 '좌회전·우회전 몇 번 차로', 11-16 '직진 차로도') =================
+     단속 서랍 맨 위(2026-11-16 사용자: '그 섹션 안에서처럼 쭈욱 내려오는 느낌', '네모로 하나하나', '네이버 지도처럼'):
+     차로마다 검은 네모 칸 하나, 그 차로에 칠해진 화살표(app.js laneArrowSvg: 줄기 + 방향별 가지).
+     갈 차로는 줄기와 이번 방향 가지만 파랑(.pt.on), 같은 칸의 다른 가지(예: 좌회전할 때 좌+유턴 칸의 유턴)와 갈 수 없는 차로는 회색.
+     직진 교차로면 칸 오른쪽에 남은 거리 */
+  .lanerow { display: flex; justify-content: center; align-items: center; gap: 5px; text-shadow: none; }
+  .lanerow .lg {
+    flex: 0 1 44px; min-width: 28px; height: 46px; display: flex; align-items: center; justify-content: center;
+    border-radius: 8px; background: #16191e; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06);
   }
-  .lanerow .lg { flex: 0 1 42px; min-width: 26px; height: 40px; display: flex; align-items: center; justify-content: center; }
-  .lanerow .lg + .lg { border-left: 1.5px dashed rgba(255, 255, 255, .2); }
-  .lanerow .lg svg { width: 25px; height: 31px; overflow: visible; }
+  .lanerow .lg svg { width: 26px; height: 32px; overflow: visible; }
+  .lanerow .ld { flex: none; margin-left: 6px; font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--nv-fg, #fff); }
+  /* 차로가 많을 때(6차로 이상, 서랍 폭에 안 들어감): 아래 가운데 '내 위치로' 자리에 검은 띠. '내 위치로'가 뜨면 그 위로,
+     아래 버튼 줄(.navtray.open)이 열려 있으면 그 위로 (2026-11-16 요청 '차선이 많을 때는 내 위치로 쪽에, 같이 뜨면 위에') */
+  .lanewide {
+    position: absolute; left: 50%; bottom: 84px; z-index: 1064; transform: translateX(-50%);
+    padding: 7px 9px; border-radius: 12px; background: rgba(14, 16, 20, .94); box-shadow: 0 8px 22px rgba(0, 0, 0, .3);
+    max-width: calc(100% - 140px); pointer-events: none;
+  }
+  .lanewide[hidden] { display: none; }
+  .lanewide .lg { flex: 0 1 40px; min-width: 24px; }
+  .lanewide .ld { color: #fff; }
+  .backme:not([hidden]) ~ .lanewide { bottom: 146px; }
+  .navtray.open ~ .lanewide { bottom: 188px; }
+  .navtray.open ~ .backme:not([hidden]) ~ .lanewide { bottom: 250px; }
   .lanerow .pt { color: #5d636c; }
   .lanerow .pt.on { color: #35a2ff; }
   .lanerow .pt path { fill: none; stroke: currentColor; stroke-width: 3.2; stroke-linecap: butt; stroke-linejoin: round; }
@@ -1463,10 +1476,11 @@
     </div>
     <!-- 경고 묶음: 일반 화면에서는 그대로 풀어 놓고(display: contents), 테슬라 모드에서는 길안내 패널 바로 밑에 세로로 쌓는다 -->
     <div class="alerts">
-    <!-- 차로 안내 (시험판): 회전 500m 앞부터 길안내 패널 바로 밑에 붙는 줄. 차로 칸(1차로부터, 칠해진 화살표), 이번 회전으로 갈 차로는 파랗게 -->
-    <div id="laneRow" class="lanerow" hidden></div>
     <!-- 단속 서랍: 테슬라 모드에서는 길안내 패널 밑에서 스르륵 내려온다 (일반 화면에서는 그대로 풀어 놓음) -->
     <div id="camDrawer" class="camdrawer"><div class="cd-clip"><div class="cd-in">
+          <!-- 차로 안내 (시험판): 서랍 맨 위. 회전 500m 앞이면 그 회전, 아니면 300m 안 직진 교차로의 차로 칸(1차로부터 네모 칸, 칠해진 화살표),
+               갈 차로는 줄기와 이번 방향 가지가 파랗게. 직진이면 오른쪽에 남은 거리 -->
+          <div id="laneRow" class="lanerow" hidden></div>
           <!-- 분기점 그림: 고속도로 진출입·갈림길 800m 앞부터 (가야 할 쪽 파랗게, 위에 방면, 밑에 안내 지점·남은 거리) -->
           <div id="juncCard" class="junccard" hidden><div id="juncSvg" class="jc-svg"></div><div id="juncLabel" class="jc-label"></div><div class="jc-head"><b id="juncPlace"></b></div></div>
           <div id="camCard" class="camcard" hidden>
@@ -1593,6 +1607,8 @@
 
     <!-- 지도를 끌어 앞길을 보는 동안만: 누르면(또는 손 떼고 5초 뒤) 내 위치로 -->
     <button id="backMe" class="backme" hidden><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.4" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg><span>내 위치로</span></button>
+    <!-- 차로가 많을 때(6차로 이상) 차로 칸: 서랍 대신 아래 가운데 '내 위치로' 자리, '내 위치로'가 같이 뜨면 그 위 (2026-11-16 요청) -->
+    <div id="laneWide" class="lanerow lanewide" hidden></div>
 
     <!-- 야간 그림 지도(GPU 없는 PC 등): 뒤집은 뒤 흰 길만 회색으로 (위 #map.night 필터) -->
     <svg width="0" height="0" style="position:absolute" aria-hidden="true"><filter id="nightRoads" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="-1 0 0 0 1  0 -1 0 0 1  0 0 -1 0 1  0 0 0 1 0"/><feComponentTransfer><feFuncR type="table" tableValues="0.24 0.24 0.16 0.06 0.05 0.055 0.06 0.065 0.069 0.074 0.079 0.084 0.089 0.094 0.098 0.103 0.108 0.113 0.118 0.123 0.128 0.132 0.137 0.142 0.147 0.152 0.157 0.161 0.166 0.171 0.176 0.181 0.186 0.191 0.195 0.2 0.205 0.21 0.215 0.22 0.224 0.229 0.234 0.239 0.244 0.249 0.254 0.258 0.263 0.268 0.273 0.278 0.283 0.288 0.292 0.297 0.302 0.307 0.312 0.317 0.321 0.326 0.331 0.336 0.341 0.346 0.351 0.355 0.36 0.365 0.37 0.375 0.38 0.384 0.389 0.394 0.399 0.404 0.409 0.414 0.418 0.423 0.428 0.433 0.438 0.443 0.447 0.452 0.457 0.462 0.467 0.472 0.477 0.481 0.486 0.491 0.496 0.501 0.506 0.51 0.515 0.52 0.525 0.53 0.535 0.54 0.544 0.549 0.554 0.559 0.564 0.569 0.573 0.578 0.583 0.588 0.593 0.598 0.603 0.607 0.612 0.617 0.622 0.627 0.632 0.636 0.641 0.646 0.651 0.656 0.661 0.666 0.67 0.675 0.68 0.685 0.69 0.695 0.699 0.704 0.709 0.714 0.719 0.724 0.729 0.733 0.738 0.743 0.748 0.753 0.758 0.762 0.767 0.772 0.777 0.782 0.787 0.792 0.796 0.801 0.806 0.811 0.816 0.821 0.826 0.83 0.835 0.84 0.845 0.85 0.855 0.859 0.864 0.869 0.874 0.879 0.884 0.889 0.893 0.898 0.903 0.908 0.913 0.918 0.922 0.927 0.932 0.937 0.942 0.947 0.952 0.956 0.961 0.966 0.971 0.976 0.981 0.985 0.99 0.995 1"/><feFuncG type="table" tableValues="0.24 0.24 0.16 0.06 0.05 0.055 0.06 0.065 0.069 0.074 0.079 0.084 0.089 0.094 0.098 0.103 0.108 0.113 0.118 0.123 0.128 0.132 0.137 0.142 0.147 0.152 0.157 0.161 0.166 0.171 0.176 0.181 0.186 0.191 0.195 0.2 0.205 0.21 0.215 0.22 0.224 0.229 0.234 0.239 0.244 0.249 0.254 0.258 0.263 0.268 0.273 0.278 0.283 0.288 0.292 0.297 0.302 0.307 0.312 0.317 0.321 0.326 0.331 0.336 0.341 0.346 0.351 0.355 0.36 0.365 0.37 0.375 0.38 0.384 0.389 0.394 0.399 0.404 0.409 0.414 0.418 0.423 0.428 0.433 0.438 0.443 0.447 0.452 0.457 0.462 0.467 0.472 0.477 0.481 0.486 0.491 0.496 0.501 0.506 0.51 0.515 0.52 0.525 0.53 0.535 0.54 0.544 0.549 0.554 0.559 0.564 0.569 0.573 0.578 0.583 0.588 0.593 0.598 0.603 0.607 0.612 0.617 0.622 0.627 0.632 0.636 0.641 0.646 0.651 0.656 0.661 0.666 0.67 0.675 0.68 0.685 0.69 0.695 0.699 0.704 0.709 0.714 0.719 0.724 0.729 0.733 0.738 0.743 0.748 0.753 0.758 0.762 0.767 0.772 0.777 0.782 0.787 0.792 0.796 0.801 0.806 0.811 0.816 0.821 0.826 0.83 0.835 0.84 0.845 0.85 0.855 0.859 0.864 0.869 0.874 0.879 0.884 0.889 0.893 0.898 0.903 0.908 0.913 0.918 0.922 0.927 0.932 0.937 0.942 0.947 0.952 0.956 0.961 0.966 0.971 0.976 0.981 0.985 0.99 0.995 1"/><feFuncB type="table" tableValues="0.24 0.24 0.16 0.06 0.05 0.055 0.06 0.065 0.069 0.074 0.079 0.084 0.089 0.094 0.098 0.103 0.108 0.113 0.118 0.123 0.128 0.132 0.137 0.142 0.147 0.152 0.157 0.161 0.166 0.171 0.176 0.181 0.186 0.191 0.195 0.2 0.205 0.21 0.215 0.22 0.224 0.229 0.234 0.239 0.244 0.249 0.254 0.258 0.263 0.268 0.273 0.278 0.283 0.288 0.292 0.297 0.302 0.307 0.312 0.317 0.321 0.326 0.331 0.336 0.341 0.346 0.351 0.355 0.36 0.365 0.37 0.375 0.38 0.384 0.389 0.394 0.399 0.404 0.409 0.414 0.418 0.423 0.428 0.433 0.438 0.443 0.447 0.452 0.457 0.462 0.467 0.472 0.477 0.481 0.486 0.491 0.496 0.501 0.506 0.51 0.515 0.52 0.525 0.53 0.535 0.54 0.544 0.549 0.554 0.559 0.564 0.569 0.573 0.578 0.583 0.588 0.593 0.598 0.603 0.607 0.612 0.617 0.622 0.627 0.632 0.636 0.641 0.646 0.651 0.656 0.661 0.666 0.67 0.675 0.68 0.685 0.69 0.695 0.699 0.704 0.709 0.714 0.719 0.724 0.729 0.733 0.738 0.743 0.748 0.753 0.758 0.762 0.767 0.772 0.777 0.782 0.787 0.792 0.796 0.801 0.806 0.811 0.816 0.821 0.826 0.83 0.835 0.84 0.845 0.85 0.855 0.859 0.864 0.869 0.874 0.879 0.884 0.889 0.893 0.898 0.903 0.908 0.913 0.918 0.922 0.927 0.932 0.937 0.942 0.947 0.952 0.956 0.961 0.966 0.971 0.976 0.981 0.985 0.99 0.995 1"/></feComponentTransfer></filter></svg>
@@ -1668,7 +1684,7 @@
     <label class="check"><input type="checkbox" id="optRest"> 고속도로 휴게소 (길안내 중 다음 휴게소 · 내 방향 쪽만)</label>
     <label class="check"><input type="checkbox" id="optSigns"> 주의 표지 알림: 미끄러운 도로·낙석·급경사 등 (출처: 공공데이터포털 전국도로안전표지표준데이터, 자료를 낸 지자체만)</label>
     <label class="check"><input type="checkbox" id="optJunction"> 분기점 그림 (고속도로 진출입·갈림길 800m 앞부터)</label>
-    <label class="check"><input type="checkbox" id="optLanes"> 회전 차로 안내 — 시험판 (출처: 국토지리정보원 정밀도로지도, 받은 지역만: 서울 강동구 일부·국도 6호선)</label>
+    <label class="check"><input type="checkbox" id="optLanes"> 차로 안내(회전·직진) — 시험판 (출처: 국토지리정보원 정밀도로지도, 받은 지역만: 서울 강동구 일부·국도 6호선)</label>
     <label class="check"><input type="checkbox" id="optTunnels"> 길안내 중 터널 진입·출구 거리 (터널 위치 © OpenStreetMap 기여자, ODbL)</label>
     <label class="check"><input type="checkbox" id="optTraffic"> 실시간 교통 (도로를 막힘 정도로 색칠)</label>
     <label class="check"><input type="checkbox" id="optWeather"> 날씨 표시 (위치는 약 10km 단위로만 보냄)</label>
@@ -1723,8 +1739,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-127"></script>
-<script src="img/ai/picks.js?v=2026.11.16-127"></script>
-<script src="app.js?v=2026.11.16-127"></script>
+<script src="icons.js?v=2026.11.16-128"></script>
+<script src="img/ai/picks.js?v=2026.11.16-128"></script>
+<script src="app.js?v=2026.11.16-128"></script>
 </body>
 </html>
