@@ -561,6 +561,17 @@ FIX6_UNDER = ('Remove every wall, barrier, curb, divider and concrete piece on t
 FIX6 = {'junc_under_day': (('ref/base4_junc_under_day.png',), FIX4_KEEP, FIX6_UNDER),
         'junc_under_night': (('ref/base4_junc_under_night.png',), FIX4_KEEP, FIX6_UNDER)}
 PANO |= set(FIX6)
+# v133 (2026-11-16 주행 중 사용자: 신갈분기점 서울 방향은 '구조상 직진이고 오른쪽이 약간 오른쪽으로 헤어지는' 곳이라 직진 그림이 필요):
+# 본선을 그대로 가고 옆으로 연결로가 갈라지는 분기점 = 지금 고른 나가기 그림에서 파란 길만 본선 직진으로 옮긴다 (--icons mainline)
+MAINLINE_EDIT = ('Change ONLY which road is the route. The exit ramp on the right is NOT the route any more: repaint the whole exit '
+                 'ramp as plain asphalt exactly like the other roads, with its normal white edge lines and no blue and no arrow. '
+                 'The route now continues STRAIGHT AHEAD on the main highway: highlight the main highway lanes left of the ramp in '
+                 'the same vivid blue (#2F7DFF) with the same soft glow, from the bottom edge of the image straight up toward the '
+                 'horizon, and paint one big bold white arrow on them pointing straight ahead (tail low near the viewer, large '
+                 'arrowhead pointing up the road). Keep the camera, sky, grass, every white lane marking and the ramp geometry exactly.')
+MAINLINE = {'junc_main_day': (('ref/base5_junc_ramp_day.png',), FIX4_KEEP.replace(', the blue route lane and the big white route arrow', ''), MAINLINE_EDIT),
+            'junc_main_night': (('ref/base5_junc_ramp_night.png',), FIX4_KEEP.replace(', the blue route lane and the big white route arrow', ''), MAINLINE_EDIT)}
+PANO |= set(MAINLINE)
 # 지하차도 진입 새 구도 (2026-11-15 사용자: '내가 준 레퍼런스 보면 많이 참고될 듯', '그런 구도로 가도 됨' — 카카오·T맵·네이버 분기점 화면처럼
 # 높은 곳에서 내려다보는 3D 구도. 벽은 땅 높이에서 시작해 길이 내려가는 만큼 서서히 높아지는 긴 옹벽 하나) --icons under3d
 JV3D = ('Junction close-up illustration for the guidance screen of a premium Korean car navigation app, in the style of the 3D '
@@ -813,6 +824,8 @@ def main():
         JOBS.update(GRADE3)   # 고가·지하차도 진입 정면 입체 아이콘 (2026-11-15)
     if 'grade4' in a.icons.split(','):
         JOBS.update(GRADE4)   # 지하차도·고가·옆길 강한 원근 (2026-11-15)
+    if 'mainline' in a.icons.split(','):
+        JOBS.update(MAINLINE)   # 본선 직진 분기점 (v133)
     if 'fix6' in a.icons.split(','):
         JOBS.update(FIX6)   # 지하차도 진입 벽 없애기
     if 'fix5' in a.icons.split(','):
@@ -828,7 +841,7 @@ def main():
     groups = {'cars': [k for k in JOBS if is_car(k)], 'signs': [k for k in JOBS if is_sign(k)],
               'guide': [k for k in JOBS if not is_car(k) and not is_sign(k)],
               'roads': ROADS, 'rb': RBS, 'redo': ROADS + RBS,
-              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s'], 'fix3': ['outs', 'ins', 'over_r', 'under_s', 'under_r', 'side_r', 'oside_r'], 'grass': RBS, 'junc': sorted(PANO), 'green': list(GREEN_KIND), 'junc2': JV2, 'soft': list(SOFT), 'rbdepth': list(RBDEPTH), 'junc3': list(JUNC3), 'clean': list(CLEAN), 'klbold': ['kl'], 'sharp': ['sharp_r'], 'slbold': ['sl'], 'fix4': list(FIX4), 'fix5': list(FIX5), 'fix6': list(FIX6), 'under3d': list(UNDER3D), 'grade3': list(GRADE3), 'grade4': list(GRADE4)}
+              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s'], 'fix3': ['outs', 'ins', 'over_r', 'under_s', 'under_r', 'side_r', 'oside_r'], 'grass': RBS, 'junc': sorted(PANO), 'green': list(GREEN_KIND), 'junc2': JV2, 'soft': list(SOFT), 'rbdepth': list(RBDEPTH), 'junc3': list(JUNC3), 'clean': list(CLEAN), 'klbold': ['kl'], 'sharp': ['sharp_r'], 'slbold': ['sl'], 'fix4': list(FIX4), 'fix5': list(FIX5), 'fix6': list(FIX6), 'under3d': list(UNDER3D), 'grade3': list(GRADE3), 'grade4': list(GRADE4), 'mainline': list(MAINLINE)}
     want = []
     for i in a.icons.split(','):
         want += groups.get(i, [i])

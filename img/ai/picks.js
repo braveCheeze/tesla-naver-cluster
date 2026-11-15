@@ -14,6 +14,8 @@ window.TNC_PICKS = {
   "junc_entry_day": "junc_entry_day__sunburst26j__2.webp",
   "junc_entry_night": "junc_entry_night__sunburst26j__2.webp",
   "junc_fork_day": "junc_fork_day__flare26x__2.webp",
+  "junc_main_day": "junc_main_day__sunburst__1.webp",
+  "junc_main_night": "junc_main_night__flare__1.webp",
   "junc_fork_night": "junc_fork_night__sunburst26f__1.webp",
   "junc_oside_day": "junc_oside_day__sunburst26j__3.webp",
   "junc_oside_night": "junc_oside_night__sunburst26j__1.webp",

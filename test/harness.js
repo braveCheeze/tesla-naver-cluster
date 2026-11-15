@@ -2036,7 +2036,7 @@
         guide: [{ i: 12, t: 66, s: "하남IC에서 '서울, 대전' 방면으로 오른쪽 고속도로 진입", d: r0(cum[12]), ms: 60000 },
                 { i: 20, t: 4, s: "하남분기점에서 '중부고속도로, 대전, 호법' 방면으로 왼쪽 방향", d: r0(cum[20] - cum[12]), ms: 40000 },
                 { i: 30, t: 88, s: '목적지', d: r0(total - cum[20]), ms: 50000 }],
-        sections: [{ i: 0, n: 31, name: '테스트로', speed: 60, cong: 1 }] },
+        sections: [{ i: 0, n: 21, name: '수도권제1순환고속도로', speed: 60, cong: 1 }, { i: 20, n: 11, name: '중부고속도로', speed: 60, cong: 1 }] },
       P, cum, total, dest: { name: '분기 테스트', addr: '', lat: P[30].lat, lng: P[30].lng },
     };
     const snap = () => { const el = document.getElementById('juncCard');
@@ -2786,6 +2786,8 @@
     { id: 'S57', name: 'S57 fast reroute: wrong-way turn caught in 2 fixes, start asked ahead of the car, a new route that starts behind the car is retried at once (only once)', fn: s57 },
     { id: 'S76', name: "S76 turn lane guidance (trial, NGII HD map → data/lanes.json): lane boxes under the turn row 500 m ahead, lanes for this turn blue; skips approaches without that turn; setting off", fn: s76 },
     { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored; 7-10 lanes fit the drawer as square tiles", fn: s77 },
+    { id: 'S78', name: "S78 mainline junction (v133): keep-left/right where the route stays on the same expressway section and goes straight is shown as straight ('신갈분기점에서 직진 · 서울 방면', main-straight junction scene, straight sign); a fork onto another expressway stays a fork", fn: s78 },
+    { id: 'S79', name: 'S79 rest areas (v133): distance to where the entry ramp leaves the mainline (OSM), not the rest-area centre; within 3 km and no turn within 1 km the top row becomes the rest area (blue), next row = the guidance after it', fn: s79 },
     { id: 'S75', name: 'S75 (info) cameras alerted on every saved real route, for comparing versions', fn: s75 },
     { id: 'S74', name: 'S74 camera score on 2026-11-15 real cases (13): false alerts / misses / wrong type, with and without navigation', fn: s74 },
     { id: 'S73', name: 'S73 no spoken overspeed words (과속/초과): limit beeps and the red card only', fn: s73 },
@@ -3543,6 +3545,101 @@
     const ok = r.pin && r.dots >= 3 && /^base\+dots\+glow\+shine/.test(r.kinds) && r.farNone && r.near === 4 && r.corner >= 2 && r.corner <= 4 && Math.abs(r.arrowCorner - r.corner) < 0.3 && r.span >= 25 && r.span <= 100 && r.endFromTurn >= 0 && r.endFromTurn <= 3 &&
       r.zoomOutHidden && r.zoomBack === 4 && r.after === 0 && r.cleared;
     return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + r[k]).join(', ') };
+  }
+
+  // S78: 본선 그대로 가는 분기점은 직진 (v133, 2026-11-16 주행 중 신갈분기점 '서울' 방면). 북쪽으로 곧은 3km 고속도로:
+  //      1.5km 신갈분기점 '왼쪽 도로 주행'(경부고속도로 구간이 앞뒤로 이어짐) → 직진, 2.5km 판교분기점 '오른쪽 방향'(구간이 바뀜) → 비켜 가기
+  async function s78() {
+    const t = T(), r = {};
+    const raw = [];
+    for (let k = 0; k <= 30; k++) raw.push(dest(NAV_ORIGIN, 0, 100 * k));
+    const path = raw.map((p) => [round6(p.lng), round6(p.lat)]);
+    const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const total = cum[cum.length - 1];
+    const R = {
+      route: { distance: r0(total), duration: r0(total / 25 * 1000), tollFare: 0, fuelPrice: 300, path,
+        guide: [{ i: 3, t: 66, s: "오산IC에서 '서울' 방면으로 오른쪽 고속도로 진입", d: r0(cum[3]), ms: 10000 },
+                { i: 15, t: 41, s: "신갈분기점에서 '서울' 방면으로 왼쪽 도로 주행", d: r0(cum[15] - cum[3]), ms: 40000 },
+                { i: 25, t: 5, s: "판교분기점에서 '일산, 구리' 방면으로 오른쪽 방향", d: r0(cum[25] - cum[15]), ms: 40000 },
+                { i: 30, t: 88, s: '목적지', d: r0(total - cum[25]), ms: 20000 }],
+        sections: [{ i: 3, n: 23, name: '경부고속도로', speed: 80, cong: 1 }, { i: 25, n: 6, name: '수도권제1순환고속도로', speed: 80, cong: 1 }] },
+      P, cum, total, dest: { name: '본선 테스트', addr: '', lat: P[30].lat, lng: P[30].lng },
+    };
+    const go = (s) => { const a = pointAt(R, s); feed(a.p, 25, a.h); t.renderNav(); };
+    const snap = () => {
+      const el = document.getElementById('juncCard'), img = el.querySelector('#juncSvg img.jv-day');
+      return { text: text('#turnText'), kind: t.turnKind(t.nav.next), junc: visible('#juncCard'), main: el.classList.contains('main'), left: el.classList.contains('left'),
+        img: img ? img.getAttribute('src').replace(/^.*\/img\/ai\//, '').replace(/\?.*$/, '') : '', flip: img ? getComputedStyle(img).transform : '',
+        straightSign: !!el.querySelector('#juncLabel .sg-arrow path[d^="M12 28V10"]'), sign: text('#juncLabel') };
+    };
+    try {
+      softReset();
+      await planAndStart(R);
+      for (let s = 20; s <= 900; s += 20) go(s);
+      r.singal = snap();                     // 신갈분기점 600m 앞
+      for (let s = 920; s <= 2000; s += 20) go(s);
+      r.pangyo = snap();                     // 판교분기점 500m 앞
+    } finally {
+      t.endNav(); softReset();
+    }
+    const a = r.singal, b = r.pangyo;
+    const ok = !!a && !!b && a.kind === 's' && a.text === '신갈분기점에서 직진 · 서울 방면' && a.junc && a.main && a.left && /^junc_main_day/.test(a.img) && a.flip === 'none' && a.straightSign && a.sign === '서울' &&
+      b.kind === 'kr' && /오른쪽 방향/.test(b.text) && b.junc && !b.main && !b.straightSign;
+    return { pass: ok, detail: JSON.stringify(r) };
+  }
+
+  // S79: 휴게소 진입로 갈림점 + 위로 올리기 (v133, 2026-11-16 주행 중 '200m 정도 차이', '네이버처럼 위로').
+  //      북쪽으로 곧은 12km 고속도로. 휴게소 가운데는 5km 지점 오른쪽 150m, 진입로 갈림점은 4.75km 지점(본선 위, 진행 방향 0°).
+  //      톨게이트 5.3km. 1km: 밑 파란 줄 3.8km(3,750m). 2km: 위 줄이 휴게소 2.8km(2,750m), 그다음 칸은 톨게이트 550m(휴게소 → 톨게이트).
+  //      4.4km: 톨게이트 900m(1km 안)라 위 줄은 톨게이트, 휴게소는 밑 파란 줄 350m. 4.8km(갈림점 지남): 휴게소 없음
+  async function s79() {
+    const t = T(), r = {};
+    const raw = [];
+    for (let k = 0; k <= 120; k++) raw.push(dest(NAV_ORIGIN, 0, 100 * k));
+    const path = raw.map((p) => [round6(p.lng), round6(p.lat)]);
+    const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const total = cum[cum.length - 1];
+    const R = {
+      route: { distance: r0(total), duration: r0(total / 25 * 1000), tollFare: 0, fuelPrice: 300, path,
+        guide: [{ i: 3, t: 66, s: "기흥IC에서 '서울' 방면으로 오른쪽 고속도로 진입", d: r0(cum[3]), ms: 10000 },
+                { i: 53, t: 121, s: '서울톨게이트 (통행료 2,600원)', d: r0(cum[53] - cum[3]), ms: 200000 },
+                { i: 120, t: 88, s: '목적지', d: r0(total - cum[53]), ms: 300000 }],
+        sections: [{ i: 3, n: 118, name: '경부고속도로', speed: 90, cong: 1 }] },
+      P, cum, total, dest: { name: '휴게소 테스트', addr: '', lat: P[120].lat, lng: P[120].lng },
+    };
+    const C = dest(pointAt(R, 5000).p, 90, 150), E = pointAt(R, 4750).p;
+    const go = (s) => { const a = pointAt(R, s); feed(a.p, 25, a.h); t.renderNav(); };
+    const snap = () => ({ top: document.querySelector('#navPanel .turn').classList.contains('rest-main'), dist: text('#turnDist'), text: text('#turnText'),
+      next: visible('#nextTurn') ? text('#nextDist') : '', nextToll: !!document.querySelector('#nextIcon .toll, #nextIcon img[src*="toll"]'),
+      row: visible('#restCard') ? text('#restName') + ' ' + text('#restDist') : '' });
+    try {
+      t.setRestData({ count: 1, items: [[C.lat, C.lng, '테스트휴게소', '서울', '경부선']], entries: [[[round6(E.lat), round6(E.lng), 0]]] });
+      softReset();
+      await planAndStart(R);
+      const list = t.ensureRouteRest() || [];
+      r.at = list[0] ? Math.round(list[0].at) : null; r.mid = list[0] ? Math.round(list[0].mid) : null;
+      for (let s = 20; s <= 1000; s += 20) go(s);
+      r.km1 = snap();
+      for (let s = 1020; s <= 2000; s += 20) go(s);
+      r.km2 = snap();
+      for (let s = 2020; s <= 4400; s += 20) go(s);
+      r.km44 = snap();
+      for (let s = 4420; s <= 4800; s += 20) go(s);
+      r.km48 = snap();
+    } finally {
+      t.endNav(); softReset();
+      try { const j = await (await realFetch(new URL('../data/rest.json', location.href).href)).json(); t.setRestData(j); } catch (e) { /* 다음 실행 때 */ }
+    }
+    const ok = r.at != null && Math.abs(r.at - 4750) <= 3 && Math.abs(r.mid - 5000) <= 3 &&
+      !r.km1.top && r.km1.row === '테스트휴게소 3.8km' &&
+      r.km2.top && r.km2.dist === '2.8km' && r.km2.text === '테스트휴게소' && r.km2.next === '550m' && r.km2.nextToll && r.km2.row === '' &&
+      !r.km44.top && r.km44.dist === '900m' && /서울톨게이트/.test(r.km44.text) && r.km44.row === '테스트휴게소 350m' &&
+      !r.km48.top && r.km48.row === '';
+    return { pass: ok, detail: JSON.stringify(r) };
   }
 
   // S61: 고속도로 휴게소 (2026-11-14 요청). 북쪽→동쪽으로 가는 경로 옆: 오른쪽 휴게소·양방향 휴게소만, 왼쪽(반대 방향)·먼 것은 빼고,

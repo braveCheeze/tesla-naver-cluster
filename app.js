@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-132'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-133'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -1562,7 +1562,8 @@
     } catch (e) { /* 데이터가 없어도 나머지는 그대로 */ }
   }
   function setRestData(j) {
-    rest.items = ((j && j.items) || []).map((x) => ({ lat: x[0], lng: x[1], name: x[2], dir: x[3] || '', route: x[4] || '' }));
+    const ent = (j && j.entries) || [];
+    rest.items = ((j && j.items) || []).map((x, k) => ({ lat: x[0], lng: x[1], name: x[2], dir: x[3] || '', route: x[4] || '', ent: ent[k] || [] }));
     rest.loaded = true;
     nav.routeRest = null;
   }
@@ -1583,9 +1584,24 @@
       if (!best || best.dist > REST_NEAR) continue;
       const both = !r.dir || /양방향/.test(r.dir);
       if (!both && sideOfSeg(r, pts[best.i], pts[best.i + 1], best.dist) < 0) continue; // 경로 왼쪽 = 반대 방향 휴게소
-      const at = cum[best.i] + best.t * (cum[best.i + 1] - cum[best.i]);
-      if (!(onHighwayAt(at) || /고속도로|고속국도/.test(routeRoadAt(best.i)))) continue; // 옆 일반도로를 지날 때는 아님
-      out.push({ name: r.name, dir: r.dir, at, lat: r.lat, lng: r.lng });
+      const mid = cum[best.i] + best.t * (cum[best.i + 1] - cum[best.i]);
+      if (!(onHighwayAt(mid) || /고속도로|고속국도/.test(routeRoadAt(best.i)))) continue; // 옆 일반도로를 지날 때는 아님
+      // v133 (2026-11-16 사용자: 네이버 3km 일 때 우리 3.1~3.2km, '200m 정도 차이'): 휴게소 좌표는 건물·주차장 가운데라
+      // 경로에 내리면 진입로가 갈라지는 곳보다 수백 m 뒤다(죽전휴게소 245m). 네이버처럼 본선에서 진입로가 갈라지는 점(OSM, tools/osm_rest.py)
+      // 까지 잰다: 경로 15m 안·본선 진행 방향 40° 안·휴게소 가운데보다 1.5km 안 앞의 갈림점. 없으면 예전처럼 가운데
+      let at = mid;
+      for (const e of r.ent) {
+        const p = { lat: e[0], lng: e[1] };
+        for (let i = 0; i < pts.length - 1; i++) {
+          if (cum[i + 1] < mid - 1500 || cum[i] > mid + 50) continue;
+          const pr = projectSeg(p, pts[i], pts[i + 1]);
+          if (pr.dist > 15) continue;
+          if (e[2] >= 0 && angleDiff(e[2], bearing(pts[i], pts[i + 1])) > 40) continue;
+          const ea = cum[i] + pr.t * (cum[i + 1] - cum[i]);
+          if (ea <= mid + 50 && ea >= mid - 1500 && (at === mid || ea > at)) at = Math.min(ea, mid);
+        }
+      }
+      out.push({ name: r.name, dir: r.dir, at, mid, lat: r.lat, lng: r.lng });
     }
     out.sort((x, y) => x.at - y.at);
     // 같은 자리에 두 이름으로 올라 있는 곳(예: '기흥복합휴게소'와 '기흥휴게소(부산)')은 하나로: 방향이 적힌 쪽을 남긴다
@@ -1599,7 +1615,14 @@
     nav.routeRest = merged; nav.routeRestFor = nav.route;
     return merged;
   }
-  const restState = { key: '' };
+  const restState = { key: '', next: null };
+  // v133 (2026-11-16 주행 중 사용자: '파란색 배경으로 밑에 있다가 키로미터에 따라서 이렇게 네이버처럼 위로 올려 줘야'):
+  // 다음 휴게소가 이 안이면 맨 위 안내 줄을 휴게소로 (네이버 지도는 3km 에서 위 큰 칸이 휴게소, 그 밑 작은 칸이 휴게소 다음 안내)
+  const REST_TOP = 3000;
+  // 휴게소 표지 (안내 줄용): 파란 바탕 위 흰 테두리 네모 + 흰 포크·나이프
+  const REST_SIGN = '<svg viewBox="0 0 40 40" class="rest-sign" aria-hidden="true"><rect x="2" y="2" width="36" height="36" rx="8" fill="none" stroke="#fff" stroke-width="3"/>' +
+    '<path d="M13 9v9.5c0 1.6 1.2 2.8 2.6 3.1V31c0 1.1.8 1.9 1.7 1.9s1.7-.8 1.7-1.9v-9.4c1.4-.3 2.6-1.5 2.6-3.1V9M15.5 9v7.5M18.5 9v7.5" fill="none" stroke="#fff" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>' +
+    '<path d="M27.6 9c-2.6 1.2-4.1 4.4-4.1 8.6 0 2 .9 3.3 2.4 3.8V31c0 1.1.8 1.9 1.7 1.9s1.7-.8 1.7-1.9V9z" fill="#fff" stroke="none"/></svg>';
   function renderRest() {
     const el = $('#restCard');
     const list = nav.active && prefs.rest ? ensureRouteRest() : [];
@@ -1607,6 +1630,7 @@
     const next = ahead[0];
     const show = !!next && next.at - nav.along <= REST_SHOW;
     el.hidden = !show;
+    restState.next = show ? { name: next.name.replace(/쉼터휴게소$/, '쉼터'), d: next.at - nav.along } : null;   // 가까우면 안내 줄로 (renderNavPanel)
     if (show) {
       $('#restName').textContent = next.name.replace(/쉼터휴게소$/, '쉼터');   // '서울하이패스센터쉼터휴게소' → '…쉼터'
       $('#restDist').textContent = fmtDist(next.at - nav.along);
@@ -3328,7 +3352,35 @@
     75: 'ins', 76: 'inl', 77: 'inr', 78: 'outs', 79: 'outl', 80: 'outr', 81: 'kl', 82: 'kr',
     87: 'via', 88: 'goal', 121: 'toll', 122: 'toll', 123: 'toll',
   };
+  // v133 (2026-11-16 주행 중 사용자: 신갈분기점 '서울' 방면은 '구조상 서울 직진이고 오른쪽이 약간 오른쪽으로 헤어지는' 곳이라 직진 그림이 필요):
+  //   갈림길 안내(왼쪽/오른쪽 방향·도로 주행·전방 분기)인데 경로가 고속도로·도시고속도로 본선을 그대로 가면 비켜 가기가 아니라 직진으로
+  //   보여 준다(안내 화살표·문구 '신갈분기점에서 직진 · 서울 방면'·분기점 그림 = 본선 직진 + 옆으로 갈라지는 연결로).
+  //   본선 = 길찾기 응답의 도로 구간(경부고속도로 등)이 안내 지점 앞 200m·뒤 300m 넘게 이어지고, 그 앞뒤 방향이 12° 안.
+  //   실제 경로(오산IC → 경부 상행, 2026-11-16): 신갈분기점 '서울' 0° → 직진. 판교분기점 '일산, 구리'(구간이 수도권제1순환으로 바뀜) → 그대로
+  //   음성은 네이버 문장 그대로('왼쪽 도로 주행': 오른쪽 차로가 연결로로 빠지니 차로를 지키라는 뜻이 있다)
+  const MAIN_KEEP_T = new Set([4, 5, 41, 42, 54, 81, 82]);
+  function mainKeep(g) {
+    if (!g || !MAIN_KEEP_T.has(g.t) || !nav.route || !nav.cum || !nav.cum.length || g.i == null) return false;
+    if (g._mkFor === nav.route) return g._mk;
+    let ok = false;
+    const last = nav.cum.length - 1, i = Math.min(g.i, last), at = nav.cum[i];
+    const sec = (nav.route.sections || []).find((s) => i >= s.i && i <= s.i + Math.max(1, s.n) - 1);
+    const fast = onHighwayRoute(at) || fastRoadSpans().some(([a, b]) => at >= a && at <= b);
+    if (sec && sec.name && fast) {
+      const a = nav.cum[Math.min(sec.i, last)], b = nav.cum[Math.min(sec.i + Math.max(1, sec.n) - 1, last)];
+      if (at - a >= 200 && b - at >= 300) {
+        const b1 = routeBearingAt(at - 200, at), b2 = routeBearingAt(at, at + 300);
+        ok = b1 != null && b2 != null && angleDiff(b1, b2) <= 12;
+      }
+    }
+    g._mk = ok; g._mkFor = nav.route;
+    return ok;
+  }
   function turnKind(g) {
+    const k = turnKind0(g);
+    return (k === 'kl' || k === 'kr') && mainKeep(g) ? 's' : k;
+  }
+  function turnKind0(g) {
     const s = g.s || '', t = g.t;
     if (t >= 21 && t <= 34) return rbKind(t - 21);   // 로터리
     if (t >= 91 && t <= 104) return rbKind(t - 91);  // 회전교차로
@@ -3577,10 +3629,10 @@
   }
   // 패널 안내 문장: '복정교차로에서 '남한산성, 송파·복정·위례, 잠실역' 방면으로 오른쪽 도시고속도로 출구'
   //   → '복정교차로에서 오른쪽 출구 · 남한산성, 잠실역 방면' (잘려도 동작이 남게). 음성은 원문 그대로
-  function guideText(s) {
+  function guideText(s, straight) {
     const m = String(s || '').match(/^(?:(.+?)에서\s+)?(?:'([^']+)'\s*방면으로\s+)?(.+)$/);
     if (!m) return s;
-    let place = m[1] || '', act = m[3];
+    let place = m[1] || '', act = straight ? '직진' : m[3];   // v133: 본선 그대로(mainKeep)면 '왼쪽 방향' 대신 '직진'
     act = act.replace(/(왼쪽|오른쪽)\s+(?:도시)?고속도로\s+(출구|진입)$/, '$1 $2')
       .replace(/(왼쪽|오른쪽)\s+도로\s+주행$/, '$1 방향')
       .replace(/^지하차도\s+(왼쪽|오른쪽)\s+옆길$/, '$1 옆길');
@@ -3641,7 +3693,8 @@
     const q = s.match(/'([^']+)'/);
     const label = dirNames(q ? q[1] : '').join(' · ');   // 패널 문장과 같은 규칙 (dirNames)
     // 진입(57·59·66·68·76·77)도 '그쪽으로 비켜 나가는' 진출 그림: 안내 지점에서는 연결로로 갈라져 들어가므로 (v110, 합류 그림은 뺌)
-    const kind = JUNC_ROAD[g.t] || (JUNC_RAMP.has(g.t) ? 'ramp' : 'fork');
+    // v133: 본선을 그대로 가는 갈림길(mainKeep)은 '본선 직진 + 옆으로 갈라지는 연결로' 그림 (left = 본선이 연결로의 왼쪽)
+    const kind = mainKeep(g) ? 'main' : JUNC_ROAD[g.t] || (JUNC_RAMP.has(g.t) ? 'ramp' : 'fork');
     return { kind, left, place: m ? m[1] : '', label, names: dirNames(q ? q[1] : ''),
       hwy: /고속|분기점|IC\b|JC\b|IC에서|JC에서/i.test(s) || (g.t >= 57 && g.t <= 69 && !JUNC_ROAD[g.t]) };
   }
@@ -3712,6 +3765,14 @@
       roads = [[go, 6], [other, 6]];
       lanes = jvDashes(go, 0, 46, 240) + jvDashes(other, 0, 46, 240) + jvDashes(mir(jvCurve([[0, 0], [0, 14], [0, 28], [0, 42]], 8)), 0, 4, 40);
       route = go; end = 62;
+    } else if (j.kind === 'main') {
+      // v133 본선 직진: 본선은 곧게(파랗게 + 곧은 화살표), 연결로가 오른쪽(본선이 왼쪽이면 j.left)으로 갈라진다. 그림은 연결로가 오른쪽인 모양
+      const flip = (c) => (j.left ? c : c.map((q) => [-q[0], q[1]]));
+      const main = flip(jvCurve([[0, 0], [0, 200], [0, 450], [0, 700]], 70));
+      const ramp = flip(jvCurve([[7.6, 0], [7.6, 38], [13, 70], [72, 210]], 48));
+      roads = [[main, 11.4], [ramp, 4.6]];
+      lanes = jvDashes(main, -1.9, 4, 700) + jvDashes(main, 1.9, 4, 700);
+      route = main; end = 70;
     } else {
       // 진출로(·진입로): 본선은 곧게, 오른쪽 차로가 갈라져 나간다. 가는 길(연결로)을 파랗게
       const main = mir(jvCurve([[0, 0], [0, 200], [0, 450], [0, 700]], 70));
@@ -3750,10 +3811,13 @@
   // 표지판 화살표: 곧게 올라가다 오른쪽 위로 꺾임 (왼쪽은 CSS 로 좌우 뒤집기)
   const SIGN_ARROW = '<svg viewBox="0 0 24 30" aria-hidden="true"><path d="M8 28V15.5L16.5 7" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>' +
     '<path d="M11.2 3.6 21.6 2.4 20.4 12.8z" fill="#fff" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/></svg>';
-  function juncSignHtml(names) {
+  // v133 본선 직진 표지: 곧게 위로 ('↑ 서울')
+  const SIGN_ARROW_S = '<svg viewBox="0 0 24 30" aria-hidden="true"><path d="M12 28V10" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round"/>' +
+    '<path d="M12 2.5 19 12H5z" fill="#fff" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/></svg>';
+  function juncSignHtml(names, straight) {
     const one = names.join('').length <= 7;   // 짧으면 한 줄('서울 대전'), 길면 두 줄로 쌓는다 (그림을 덜 가리게)
     const rows = names.map((n) => { const no = expwayNo(n); return '<span class="sg-row">' + (no ? '<i class="sg-shield">' + shieldSvg(no) + '</i>' : '') + '<b>' + esc(n) + '</b></span>'; });
-    return '<span class="sg-names' + (one ? ' one' : '') + '">' + rows.join('') + '</span><span class="sg-arrow">' + SIGN_ARROW + '</span>';
+    return '<span class="sg-names' + (one ? ' one' : '') + '">' + rows.join('') + '</span><span class="sg-arrow">' + (straight ? SIGN_ARROW_S : SIGN_ARROW) + '</span>';
   }
   function renderJunction() {
     const el = $('#juncCard');
@@ -3777,11 +3841,12 @@
       const jimg = (f, c) => '<img class="jv-img ' + c + ' jc-' + j.kind + '" src="' + APP_BASE + 'img/ai/' + f + '?v=' + APP_VERSION + '" alt="" draggable="false">';
       $('#juncSvg').innerHTML = jd && jn ? jimg(jd, 'jv-day') + jimg(jn, 'jv-night') : juncSvg(j.kind === 'entry' ? Object.assign({}, j, { kind: 'ramp' }) : j);
       // 방면 표지판 (v115). 방면이 없으면 비운다(빈 칸은 CSS 로 숨김). '오른쪽'을 지어 넣지 않는다
-      $('#juncLabel').innerHTML = j.names.length ? juncSignHtml(j.names) : '';
+      $('#juncLabel').innerHTML = j.names.length ? juncSignHtml(j.names, j.kind === 'main') : '';
       $('#juncLabel').dataset.names = j.label;
       $('#juncLabel').setAttribute('aria-label', j.label ? j.label + ' 방면' : '');
       $('#juncPlace').textContent = j.place;
       el.classList.toggle('left', j.left);
+      el.classList.toggle('main', j.kind === 'main');
       el.classList.toggle('hwy', j.hwy);
     }
     // 남은 거리는 위 길안내 패널에 크게 나오므로 그림에는 지점 이름만 (2026-11-14: 같은 거리를 또 보여 줄 필요 없음)
@@ -4311,19 +4376,29 @@
     const kind0 = g ? turnKind(g) : 'goal';
     const straight0 = kind0 === 's' || kind0 === 'under_s' || kind0 === 'over_s';
     const ta0 = straight0 ? tunnelAhead() : null;
-    const tnMain = !!(ta0 && (ta0.inside || nav.dg == null || ta0.d < nav.dg));
-    const tunnelStep = !tnMain && !!g && g.t === 56;
+    const tnMain0 = !!(ta0 && (ta0.inside || nav.dg == null || ta0.d < nav.dg));
+    // v133 휴게소를 위로: 다음 휴게소가 3km 안이고 지금 안내 지점보다 가깝고, 그 안내가 1km 넘게 남았을 때만(회전이 급하면 회전이 위).
+    // 터널 줄 올리기와 같은 규칙: 더 가까운 것이 위 (터널 안이거나 터널이 더 가까우면 터널)
+    const rs = restState.next;
+    const restMain = !!(rs && rs.d <= REST_TOP && nav.dg != null && rs.d < nav.dg && nav.dg > 1000 &&
+      !(tnMain0 && (ta0.inside || ta0.d <= rs.d)));
+    const tnMain = tnMain0 && !restMain;
+    const tunnelStep = !tnMain && !restMain && !!g && g.t === 56;
     // v124: 직진 고가차도 진입(55)도 지하차도처럼 고가 그림 + 'OO고가차도까지' (네이버 지도 '고가도로로 진입')
-    const overStep = !tnMain && !!g && g.t === 55;
+    const overStep = !tnMain && !restMain && !!g && g.t === 55;
     const underName = (n) => /지하차도|지하도로|언더패스|지하도/.test(n || '');
     const turnRow = p.querySelector('.turn');
     turnRow.classList.toggle('tn-main', tnMain);
+    turnRow.classList.toggle('rest-main', restMain);
+    if (restMain) $('#restCard').hidden = true;   // 위 안내 줄이 휴게소면 밑 파란 줄은 숨김
     turnRow.style.setProperty('--tnp', tnMain && ta0.inside ? Math.round(Math.max(0, Math.min(1, ta0.p)) * 100) + '%' : '0%');
     // 산 터널은 터널 그림, 지하차도는 지하차도 입구 그림(초록 경로선), 고가는 고가 그림
-    $('#turnIcon').innerHTML = tunnelStep || (tnMain && underName(ta0.t.name)) ? (pickImg('under_s', 'ti') || pickImg('tunnel', 'ti tn-ai') || TUNNEL_ICON)
+    $('#turnIcon').innerHTML = restMain ? REST_SIGN : tunnelStep || (tnMain && underName(ta0.t.name)) ? (pickImg('under_s', 'ti') || pickImg('tunnel', 'ti tn-ai') || TUNNEL_ICON)
       : tnMain ? (pickImg('tunnel', 'ti tn-ai') || TUNNEL_ICON) : overStep ? ico('over_s') : ico(kind0);
-    $('#turnDist').textContent = fmtDist(Math.max(10, tnMain ? ta0.d : nav.dg != null ? nav.dg : nav.total));   // '0m' 대신 최소 10m (음성과 같게)
-    if (tnMain) {
+    $('#turnDist').textContent = fmtDist(Math.max(10, restMain ? rs.d : tnMain ? ta0.d : nav.dg != null ? nav.dg : nav.total));   // '0m' 대신 최소 10m (음성과 같게)
+    if (restMain) {
+      $('#turnText').textContent = rs.name;
+    } else if (tnMain) {
       $('#turnText').textContent = (ta0.t.name || '터널') + (ta0.inside ? ' 출구까지' : '까지');
     } else if (g && g.t === 121) {
       // 톨게이트: 다른 내비처럼 통행료를 굵게 앞에 ('800원 하남톨게이트'), 아이콘은 TG 표지 (2026-11-14 요청)
@@ -4333,18 +4408,19 @@
       const m = /^(.*?)에서\s/.exec(String(g.s || ''));
       $('#turnText').textContent = (m ? m[1] : tunnelStep ? '지하차도' : '고가차도') + '까지';
     } else {
-      $('#turnText').textContent = g ? guideText(g.s) : nav.dest.name;
+      $('#turnText').textContent = g ? guideText(g.s, mainKeep(g)) : nav.dest.name;
     }
     renderLanes(tnMain ? null : g);   // 회전 500m 앞부터 차로 칸 (정밀도로지도가 있는 곳만)
     // 그다음 칸: 이번 회전을 하고 나서 무엇이 얼마 뒤에 오는지 (거리는 이번 안내 지점 → 그다음 안내 지점).
     //   그다음이 회전이면 네이버 지도처럼 그 회전 아이콘 + 거리만 '↰ 1.2km' (2026-11-14: '직진 … 좌회전'처럼 풀어 쓰지 않음)
     //   그다음이 목적지면 연한 빨강 바탕에 빨간 핀 + '20m', 경유지면 주황 (2026-11-14: '도착' 글자는 빼고 핀·바탕색으로만 구분)
-    const g2 = g ? nav.guides[nav.gi + 1] : null;
+    // v133: 위 줄이 휴게소면 그다음 칸은 지금 안내 (거리 = 휴게소 진입로 → 그 안내 지점, 네이버 '휴게소 3km' 밑 'TG 3.9km' 처럼)
+    const g2 = restMain ? g : g ? nav.guides[nav.gi + 1] : null;
     const nn = $('#nextTurn');
     nn.hidden = !g2;
     if (g2) {
       const last = nav.cum.length - 1;
-      const gap = Math.max(0, nav.cum[Math.min(g2.i, last)] - nav.cum[Math.min(g.i, last)]);
+      const gap = restMain ? Math.max(0, nav.dg - rs.d) : Math.max(0, nav.cum[Math.min(g2.i, last)] - nav.cum[Math.min(g.i, last)]);
       const k2 = turnKind(g2);
       const isVia = g2.t === 87 || /경유지/.test(g2.s || '');
       const isGoal = !isVia && (k2 === 'goal' || k2 === 'via');
@@ -4364,7 +4440,7 @@
     // 가까운 것이 위로: 터널(진입·출구까지)이 그다음 칸(지금 안내 지점 + 그 뒤 거리)보다 가까우면 터널 줄을 그다음 칸 위로
     {
       const tr = $('#tunnelRow'), ta = !tr.hidden ? tunnelAhead() : null;
-      const chipAt = g2 && nav.dg != null ? nav.dg + Math.max(0, nav.cum[Math.min(g2.i, nav.cum.length - 1)] - nav.cum[Math.min(g.i, nav.cum.length - 1)]) : Infinity;
+      const chipAt = restMain ? nav.dg : g2 && nav.dg != null ? nav.dg + Math.max(0, nav.cum[Math.min(g2.i, nav.cum.length - 1)] - nav.cum[Math.min(g.i, nav.cum.length - 1)]) : Infinity;
       if (tnMain) tr.hidden = true;   // v118: 안내 줄이 터널을 보여 주면 작은 터널 줄은 숨김
       const up = !!(ta && !tr.hidden && !nn.hidden && ta.d < chipAt);
       if (up && tr.nextElementSibling !== nn) nn.parentNode.insertBefore(tr, nn);
@@ -5911,7 +5987,7 @@
   $('#optRest').onchange = (e) => {
     prefs.rest = e.target.checked; store.set('rest', prefs.rest ? null : '0');
     restState.key = '';
-    renderRest();
+    if (nav.active) renderNav(); else renderRest();
   };
   $('#optParking').onchange = (e) => {
     prefs.parking = e.target.checked; store.set('parking', prefs.parking ? null : '0');

@@ -1238,6 +1238,11 @@
   .turn { position: relative; }
   .turn.tn-main::after { content: ''; position: absolute; left: 0; bottom: 0; height: 3px; width: var(--tnp, 0%); background: #03c75a; transition: width .9s linear; }
   #app.tesla .turn.tn-main::after { background: var(--nv-green); }
+  /* v133 (2026-11-16 사용자 '네이버처럼 위로'): 휴게소가 3km 안이고 회전이 급하지 않으면 안내 줄을 휴게소로 — 파란 칸에 흰 표지·거리·이름 */
+  .turn.rest-main, #app.tesla .turn.rest-main { background: #1d4fb8; }
+  .turnicon svg.rest-sign, #app.tesla .turnicon svg.rest-sign { stroke: none; }   /* 표지 안 선·칠은 흰색 그대로 (초록 안내 화살표 색이 번지지 않게) */
+  .turn.rest-main .turndist, #app.tesla .turn.rest-main .turndist { color: #fff; text-shadow: none; }
+  .turn.rest-main .turntext, #app.tesla .turn.rest-main .turntext { color: #fff; font-size: 16px; font-weight: 800; }
   /* ================= 차로 안내 (시험판, 2026-11-15 요청 '좌회전·우회전 몇 번 차로', 11-16 '직진 차로도') =================
      단속 서랍 맨 위(2026-11-16 사용자: '그 섹션 안에서처럼 쭈욱 내려오는 느낌', '네모로 하나하나', '네이버 지도처럼'):
      차로마다 검은 네모 칸 하나, 그 차로에 칠해진 화살표(app.js laneArrowSvg: 줄기 + 방향별 가지).
@@ -1298,6 +1303,9 @@
   body:has(#map.night) .jc-svg .jv-day { display: none; }
   body:has(#map.night) .jc-svg .jv-night { display: block; }
   .junccard.left .jv-img { transform: scaleX(-1); }
+  /* v133 본선 직진 그림(junc_main)은 연결로가 오른쪽: 본선이 오른쪽(연결로가 왼쪽)일 때만 뒤집는다. 표지는 본선 쪽 위, 지점 이름은 연결로 쪽 아래 (.left 와 같은 자리) */
+  .junccard.main .jv-img { transform: scaleX(-1); }
+  .junccard.main.left .jv-img { transform: none; }
   /* 원근 그림 (2026-11-14 다시 그림): 하늘·땅 그라데이션, 흰 가장자리·어두운 도로·점선, 가는 차로는 파랗게 + 흰 화살표 */
   .jc .jc-s1 { stop-color: #8fc3f0; } .jc .jc-s2 { stop-color: #e4f1fb; }
   .jc .jc-g1 { stop-color: #c9dcbf; } .jc .jc-g2 { stop-color: #e2ecd9; }
@@ -1751,8 +1759,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-132"></script>
-<script src="img/ai/picks.js?v=2026.11.16-132"></script>
-<script src="app.js?v=2026.11.16-132"></script>
+<script src="icons.js?v=2026.11.16-133"></script>
+<script src="img/ai/picks.js?v=2026.11.16-133"></script>
+<script src="app.js?v=2026.11.16-133"></script>
 </body>
 </html>
