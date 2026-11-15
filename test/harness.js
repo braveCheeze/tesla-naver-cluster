@@ -3816,6 +3816,7 @@
   //      (b) 그 교차로를 지나면 우회전 진입부(40m 앞 'LU|L|S|SR')의 4차로  (c) 반대 방향(남쪽)·옆길(30m 옆) 진입부는 무시
   //      (d) 경로에 회전 안내 없이 '직진' 안내만 있어도 그 너머 직진 교차로를 보여 줌  (e) 설정을 끄면 숨김
   //      (f) 7·10차로도 서랍 안에 모든 차로가 한 줄(정사각형 칸, '⋯' 없음), 좌·우회전 화살표는 칸 가운데 (2026-11-16 요청)
+  //      (g) 고속·도시고속도로 진입~출구 안내 사이의 진입부(고가 아래·옆 일반도로)는 직진 차로로 찾지 않음 (v131)
   async function s77() {
     const t = T(), R = buildNavRoute();   // 240m '직진' 안내는 그대로 둔다 (d)
     const north = (m) => dest(NAV_ORIGIN, 0, m), turn = R.P[5];
@@ -3880,6 +3881,16 @@
       };
       r.seven = await many('L|L|S|S|S|S|R');
       r.ten = await many('L|L|S|S|S|S|S|S|S|R');
+      // (g) 도시고속도로 진입(120m)~출구(480m) 사이의 450m 직진 교차로는 고가 아래·옆 일반도로 것이라 찾지 않는다 (v131: 서울 전체 자료)
+      t.setLaneData({ v: 1, scale: 1e5, date: '2025-09', areas: ['시험'], count: aps.length, pats, d });
+      const H = JSON.parse(JSON.stringify(R)), g0 = R.route.guide;
+      H.route.guide = [{ i: 1, t: 52, s: '도시고속도로 진입', d: r0(R.cum[1]), ms: 10000 }, g0[0],
+        { i: 4, t: 53, s: '도시고속도로 출구', d: r0(R.cum[4] - R.cum[2]), ms: 20000 }, g0[1], g0[2]];
+      softReset();
+      await planAndStart(H);
+      go(15); go(60);
+      r.fast = { computed: Array.isArray(t.nav.laneStraight), list: (t.nav.laneStraight || []).map((x) => x.lanes.join('|') + '@' + Math.round(x.at)).join(',') };
+      t.endNav();
     } finally {
       t.prefs.lanes = prevPref;
       t.setLaneData(null);
@@ -3893,7 +3904,8 @@
       r.turn.shown && r.turn.lanes === 'LU|L|S|SR' && r.turn.go === '4' && r.turn.move === 'R' && r.turn.dist === '' &&
       !r.ended.shown &&
       [r.seven, r.ten].every((x) => x.shown && x.gaps === 0 && x.oneLine && x.square && x.inside && x.centred && x.wideGone) &&
-      r.seven.tiles === 7 && r.seven.go === '7' && r.ten.tiles === 10 && r.ten.go === '10' && r.ten.w >= 20;
+      r.seven.tiles === 7 && r.seven.go === '7' && r.ten.tiles === 10 && r.ten.go === '10' && r.ten.w >= 20 &&
+      r.fast.computed && r.fast.list === '';
     return { pass: ok, detail: JSON.stringify(r) + (ok ? ' ✓' : ' ✗') };
   }
 

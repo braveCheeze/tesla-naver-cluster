@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-130'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-131'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -4089,6 +4089,21 @@
   // 그 지점 10m 뒤~100m 앞도 아닌 진입부 (실제 경로: 강일3·6단지 좌회전 진입부가 정지선→회전 지점 72m 라 직진으로 먼저 나왔다).
   // 경로마다 한 번 찾아 경로 거리순으로 둔다
   const LANE_STRAIGHT_SHOW = 300;
+  // 고속도로·도시고속도로(강변북로·올림픽대로·내부순환로 …) 진입~출구 안내 사이에는 신호 교차로가 없다: 거기서 잡히는 진입부는
+  // 고가 아래·옆 일반도로의 것 (v131, 서울 전체 자료로 넓히며). 진입·출구 = 안내 종류 ins/inl/inr · outs/outl/outr
+  const FAST_IN = new Set(Object.keys(KIND_BY_CODE).filter((c) => /^in[slr]$/.test(KIND_BY_CODE[c])).map(Number));
+  const FAST_OUT = new Set(Object.keys(KIND_BY_CODE).filter((c) => /^out[slr]$/.test(KIND_BY_CODE[c])).map(Number));
+  function fastRoadSpans() {
+    const spans = [], last = nav.cum.length - 1;
+    let start = null, seen = false;
+    for (const g of nav.guides || []) {
+      const s = nav.cum[Math.min(g.i, last)];
+      if (FAST_IN.has(g.t)) { if (start === null) start = s; seen = true; }
+      else if (FAST_OUT.has(g.t)) { if (start !== null || !seen) spans.push([start === null ? 0 : start, s]); start = null; seen = true; }
+    }
+    if (start !== null) spans.push([start, nav.total]);
+    return spans;
+  }
   // 차로 칸은 늘 서랍 안에 모두 (2026-11-16 사용자: 7차로를 아래 가운데에 띄웠더니 '운전자를 가리는 느낌이 강하다',
   // '차선을 ⋯으로 맞추는 건 안 돼', '보통 8차선, 많아 봐야 10차선'). 칸은 정사각형이고 차로가 많으면 칸·틈이 함께 작아진다
   function ensureRouteLanes() {
@@ -4099,6 +4114,7 @@
     const turnGuides = (nav.guides || []).filter((x) => LANE_MOVE[turnKind(x)]);
     const turns = turnGuides.map((x) => cum[Math.min(x.i, last)]);
     const turnK = new Set(turnGuides.map((x) => laneGuide(x)).filter(Boolean).map((h) => h.k));   // 회전 안내에 쓰인 진입부
+    const fast = fastRoadSpans();
     const best = new Map();   // 진입부 → { at, side }
     for (let i = 0; i < pts.length - 1; i++) {
       const a = pts[i], b = pts[i + 1], len = cum[i + 1] - cum[i];
@@ -4126,6 +4142,7 @@
     for (const [k, o] of best) {
       if (turnK.has(k) || turns.some((s) => s - o.at >= -10 && s - o.at <= 100)) continue;   // 회전 안내의 진입부 (회전 쪽에서 보여 줌)
       if (o.at < 20 || o.at > nav.total - 30) continue;
+      if (fast.some(([s, e]) => o.at >= s && o.at <= e)) continue;          // 고속·도시고속도로 위 (아래·옆 일반도로 교차로)
       if (routeTurnAt(o.at + 20) > 35) continue;                            // 경로가 그 교차로에서 꺾임
       const lanes = lanesData.pats[lanesData.pat[k]] || [];
       const ok = lanes.map((l, i) => (l.indexOf('S') >= 0 ? i : -1)).filter((i) => i >= 0);

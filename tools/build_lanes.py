@@ -12,10 +12,13 @@
   차로가 하나뿐이거나 모든 차로가 같은 진입부(알려 줄 것이 없음)는 뺀다.
 출력: {"v":1,"scale":100000,"date","areas":[…],"count","pats":["LU|L|S|RS",…],"d":[dLat,dLng,heading,pat,…]}
   pats 는 차로 줄(왼쪽 1차로부터 '|'로 구분, 한 차로는 L 좌·S 직·R 우·U 유턴 글자들, 모르면 '?'). 위도 순으로 정렬해 차이로 담는다.
-사용법: py -I tools/build_lanes.py data/lanes.json [<정밀도로지도 zip 또는 푼 폴더> ...]
+사용법: py -I tools/build_lanes.py data/lanes.json [--keep <폴더>] [<정밀도로지도 zip 또는 푼 폴더> ...]
   zip 하나를 처리할 때마다 그 지역에서 뽑은 진입부를 tools/lanes-src/<지역>.json(수십 KB)에 남기고, data/lanes.json 은 그 폴더의
   모든 지역 파일을 합쳐 만든다. 그래서 원본 zip(지역당 수 GB, 대부분 GNSS 주행 궤적)은 처리한 뒤 지워도 되고, 디스크가 모자라면
   몇 개씩 나눠 받아 처리하면 된다 (2026-11-16: 서울·경기를 다 받으면 수백 GB). zip 없이 실행하면 남긴 지역 파일만으로 다시 만든다.
+  --keep <폴더>: 원본을 지운 뒤에도 다른 레이어(버스전용차로 B2, 보호구역 A3, 표지 B1, 신호등 C1 …)를 다시 쓸 수 있게 zip 마다
+  HDMap_UTM52N_타원체고 폴더들만 <폴더>/<지역>.zip 으로 남긴다 (구 하나에 수 MB). 이 작은 zip 도 그대로 입력으로 쓸 수 있다.
+  덜 받은 zip(크기 0, 끝이 잘림, CRC 오류)은 건너뛰고 끝에 목록을 보여 준다.
 """
 import collections
 import io
@@ -26,6 +29,7 @@ import re
 import struct
 import sys
 import zipfile
+import zlib
 
 LAYER_DIR = 'HDMap_UTM52N_타원체고'
 LAYERS = ('A1_NODE', 'A2_LINK', 'B3_SURFACEMARK')
@@ -92,33 +96,47 @@ def layer(files, name):
     return [(g, r) for g, r in zip(read_shp(shp), read_dbf(dbf, enc)) if g and r]
 
 
-def sections(src):
-    """(section name, {file: bytes}) for each section folder in a zip or an extracted folder"""
+def sections(src, kz=None):
+    """{section name: {file: bytes}} for each section folder in a zip or an extracted folder.
+    kz: an open ZipFile that gets a copy of every file in the vector layer folders (all layers, not only LAYERS)"""
+    groups = collections.defaultdict(dict)
     if os.path.isdir(src):
         for root, dirs, fs in os.walk(src):
-            if os.path.basename(root) == LAYER_DIR:
-                files = {}
-                for f in fs:
-                    if f.rsplit('.', 1)[0].upper() in LAYERS:
-                        with open(os.path.join(root, f), 'rb') as fh:
-                            files[f.lower()] = fh.read()
-                yield os.path.relpath(root, src), files
-        return
-    z = zipfile.ZipFile(src)
-    groups = collections.defaultdict(dict)
-    for i in z.infolist():
-        n = i.filename
-        if not (i.flag_bits & 0x800):
-            try:
-                n = n.encode('cp437').decode('cp949')
-            except (UnicodeEncodeError, UnicodeDecodeError):
-                pass
-        parts = n.replace('\\', '/').split('/')
-        if len(parts) < 2 or parts[-2] != LAYER_DIR or parts[-1].rsplit('.', 1)[0].upper() not in LAYERS:
-            continue
-        groups['/'.join(parts[:-2])][parts[-1].lower()] = z.read(i)
-    for k in sorted(groups):
-        yield k, groups[k]
+            if os.path.basename(root) != LAYER_DIR:
+                continue
+            sec = os.path.relpath(os.path.dirname(root), src).replace('\\', '/')
+            groups[sec]   # noqa: B018  (레이어 파일이 없어도 구간으로 센다)
+            for f in fs:
+                want = f.rsplit('.', 1)[0].upper() in LAYERS
+                if not (want or kz):
+                    continue
+                with open(os.path.join(root, f), 'rb') as fh:
+                    data = fh.read()
+                if kz:
+                    kz.writestr(sec + '/' + LAYER_DIR + '/' + f, data)
+                if want:
+                    groups[sec][f.lower()] = data
+        return dict(groups)
+    with zipfile.ZipFile(src) as z:
+        for i in z.infolist():
+            n = i.filename
+            if not (i.flag_bits & 0x800):
+                try:
+                    n = n.encode('cp437').decode('cp949')
+                except (UnicodeEncodeError, UnicodeDecodeError):
+                    pass
+            parts = n.replace('\\', '/').split('/')
+            if len(parts) < 2 or parts[-2] != LAYER_DIR or not parts[-1]:
+                continue
+            want = parts[-1].rsplit('.', 1)[0].upper() in LAYERS
+            if not (want or kz):
+                continue
+            data = z.read(i)   # CRC 도 여기서 확인된다 (끝이 잘린 zip 이면 오류)
+            if kz:
+                kz.writestr('/'.join(parts), data)
+            if want:
+                groups['/'.join(parts[:-2])][parts[-1].lower()] = data
+    return dict(groups)
 
 
 # ---------------------------------------------------------------- 좌표
@@ -248,12 +266,27 @@ def approaches(links, marks):
 CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lanes-src')
 
 
-def extract(src):
-    """zip(또는 푼 폴더) 하나 → tools/lanes-src/<지역>.json"""
+def extract(src, keepdir=None):
+    """zip(또는 푼 폴더) 하나 → tools/lanes-src/<지역>.json (+ keepdir/<지역>.zip). 지역 파일을 만들었으면 True"""
     name = re.sub(r'^\(B110\)정밀도로지도_', '', os.path.basename(src.rstrip('/\\'))).replace('.zip', '')
-    links, marks, n, dates = {}, [], 0, set()
-    for sec, files in sections(src):
-        n += 1
+    kz = kpath = None
+    if keepdir and os.path.dirname(os.path.abspath(src)) != os.path.abspath(keepdir):   # 남긴 zip 을 다시 처리할 때는 그대로
+        os.makedirs(keepdir, exist_ok=True)
+        kpath = os.path.join(keepdir, name + '.zip')
+        kz = zipfile.ZipFile(kpath + '.part', 'w', zipfile.ZIP_DEFLATED)
+    try:
+        secs = sections(src, kz)
+    finally:
+        if kz:
+            kz.close()
+    if kz:
+        if secs:
+            os.replace(kpath + '.part', kpath)
+        else:
+            os.remove(kpath + '.part')
+    links, marks, n, dates = {}, [], len(secs), set()
+    for sec in sorted(secs):
+        files = secs[sec]
         for g, r in layer(files, 'A2_LINK'):
             r['g'] = g
             links[r['ID']] = r
@@ -266,17 +299,28 @@ def extract(src):
     print('%s: %d sections, %d lane links, %d marks -> %d approaches' % (name, n, len(links), len(marks), len(ap)))
     if not n:
         print('  (구간이 없음: 덜 받은 zip 이거나 정밀도로지도 zip 이 아님 — 지역 파일을 만들지 않음)')
-        return
+        return False
     os.makedirs(CACHE, exist_ok=True)
     doc = {'area': name, 'date': max(dates) if dates else '', 'sections': n,
            'ap': [[round(a[0], 6), round(a[1], 6), a[2], a[3]] for a in ap]}
     with io.open(os.path.join(CACHE, name + '.json'), 'w', encoding='utf-8', newline='\n') as f:
         json.dump(doc, f, ensure_ascii=False, separators=(',', ':'))
+    return True
 
 
-def main(out, srcs):
+def main(out, srcs, keepdir=None):
+    done, bad = [], []
     for src in srcs:
-        extract(src)
+        try:
+            ok = extract(src, keepdir)
+        except (zipfile.BadZipFile, zlib.error, EOFError, OSError) as e:
+            print('%s: 건너뜀 (%s: %s)' % (os.path.basename(src), type(e).__name__, e))
+            ok = False
+        (done if ok else bad).append(src)
+    if srcs:
+        print('처리함 %d: %s' % (len(done), ', '.join(os.path.basename(s) for s in done)))
+        if bad:
+            print('못 함 %d (다시 받기): %s' % (len(bad), ', '.join(os.path.basename(s) for s in bad)))
     allap, areas, dates = [], [], set()
     for fn in sorted(os.listdir(CACHE)) if os.path.isdir(CACHE) else []:
         if not fn.endswith('.json'):
@@ -311,6 +355,11 @@ def main(out, srcs):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) < 2:
+    args, keep = sys.argv[1:], None
+    if '--keep' in args:
+        i = args.index('--keep')
+        keep = args[i + 1]
+        del args[i:i + 2]
+    if not args:
         sys.exit(__doc__)
-    main(sys.argv[1], sys.argv[2:])
+    main(args[0], args[1:], keep)
