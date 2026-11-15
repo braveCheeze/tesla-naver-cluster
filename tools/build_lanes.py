@@ -12,7 +12,10 @@
   차로가 하나뿐이거나 모든 차로가 같은 진입부(알려 줄 것이 없음)는 뺀다.
 출력: {"v":1,"scale":100000,"date","areas":[…],"count","pats":["LU|L|S|RS",…],"d":[dLat,dLng,heading,pat,…]}
   pats 는 차로 줄(왼쪽 1차로부터 '|'로 구분, 한 차로는 L 좌·S 직·R 우·U 유턴 글자들, 모르면 '?'). 위도 순으로 정렬해 차이로 담는다.
-사용법: py -I tools/build_lanes.py data/lanes.json <정밀도로지도 zip 또는 푼 폴더> [...]
+사용법: py -I tools/build_lanes.py data/lanes.json [<정밀도로지도 zip 또는 푼 폴더> ...]
+  zip 하나를 처리할 때마다 그 지역에서 뽑은 진입부를 tools/lanes-src/<지역>.json(수십 KB)에 남기고, data/lanes.json 은 그 폴더의
+  모든 지역 파일을 합쳐 만든다. 그래서 원본 zip(지역당 수 GB, 대부분 GNSS 주행 궤적)은 처리한 뒤 지워도 되고, 디스크가 모자라면
+  몇 개씩 나눠 받아 처리하면 된다 (2026-11-16: 서울·경기를 다 받으면 수백 GB). zip 없이 실행하면 남긴 지역 파일만으로 다시 만든다.
 """
 import collections
 import io
@@ -242,25 +245,47 @@ def approaches(links, marks):
     return out
 
 
+CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lanes-src')
+
+
+def extract(src):
+    """zip(또는 푼 폴더) 하나 → tools/lanes-src/<지역>.json"""
+    name = re.sub(r'^\(B110\)정밀도로지도_', '', os.path.basename(src.rstrip('/\\'))).replace('.zip', '')
+    links, marks, n, dates = {}, [], 0, set()
+    for sec, files in sections(src):
+        n += 1
+        for g, r in layer(files, 'A2_LINK'):
+            r['g'] = g
+            links[r['ID']] = r
+            if r.get('UpdateDate'):
+                dates.add(str(r['UpdateDate'])[:6])
+        for g, r in layer(files, 'B3_SURFACEMARK'):
+            r['c'] = (sum(p[0] for p in g) / len(g), sum(p[1] for p in g) / len(g))
+            marks.append(r)
+    ap = approaches(links, marks)
+    print('%s: %d sections, %d lane links, %d marks -> %d approaches' % (name, n, len(links), len(marks), len(ap)))
+    if not n:
+        print('  (구간이 없음: 덜 받은 zip 이거나 정밀도로지도 zip 이 아님 — 지역 파일을 만들지 않음)')
+        return
+    os.makedirs(CACHE, exist_ok=True)
+    doc = {'area': name, 'date': max(dates) if dates else '', 'sections': n,
+           'ap': [[round(a[0], 6), round(a[1], 6), a[2], a[3]] for a in ap]}
+    with io.open(os.path.join(CACHE, name + '.json'), 'w', encoding='utf-8', newline='\n') as f:
+        json.dump(doc, f, ensure_ascii=False, separators=(',', ':'))
+
+
 def main(out, srcs):
-    allap, areas, dates = [], [], set()
     for src in srcs:
-        name = re.sub(r'^\(B110\)정밀도로지도_', '', os.path.basename(src.rstrip('/\\'))).replace('.zip', '')
-        links, marks, n = {}, [], 0
-        for sec, files in sections(src):
-            n += 1
-            for g, r in layer(files, 'A2_LINK'):
-                r['g'] = g
-                links[r['ID']] = r
-                if r.get('UpdateDate'):
-                    dates.add(str(r['UpdateDate'])[:6])
-            for g, r in layer(files, 'B3_SURFACEMARK'):
-                r['c'] = (sum(p[0] for p in g) / len(g), sum(p[1] for p in g) / len(g))
-                marks.append(r)
-        ap = approaches(links, marks)
-        print('%s: %d sections, %d lane links, %d marks -> %d approaches' % (name, n, len(links), len(marks), len(ap)))
-        areas.append(name)
-        allap.extend(ap)
+        extract(src)
+    allap, areas, dates = [], [], set()
+    for fn in sorted(os.listdir(CACHE)) if os.path.isdir(CACHE) else []:
+        if not fn.endswith('.json'):
+            continue
+        doc = json.load(io.open(os.path.join(CACHE, fn), encoding='utf-8'))
+        areas.append(doc['area'])
+        if doc.get('date'):
+            dates.add(doc['date'])
+        allap.extend(tuple(a) for a in doc['ap'])
     # 겹치는 자료(시군구와 노선이 같은 교차로를 담은 경우): 3m 안·같은 방향이면 하나만
     allap.sort()
     keep = []
@@ -286,6 +311,6 @@ def main(out, srcs):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) < 3:
+    if len(sys.argv) < 2:
         sys.exit(__doc__)
     main(sys.argv[1], sys.argv[2:])
