@@ -51,7 +51,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.15-122'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-123'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -2021,9 +2021,19 @@
           const add = [];
           for (let k = 0; k + 2 < ma.length; k += 3) add.push(ma[k] + base, ma[k + 1] + nb, ma[k + 2] + nb);
           j.arrows = (j.arrows || []).concat(add);
+          const jd = j.dirs || [];
+          jd.length = base;
+          j.dirs = jd.concat(m.dirs || []);
           cams.mobile = m.rows.length;
         }
       } catch (e) { /* 박스형 목록 없이 */ }
+      // v123: 카메라가 찍는 진행 방향·층·그 차로 위 점 (tools/osm_cams.py)
+      const dirs = j.dirs || [];
+      j.rows.forEach((c, i) => {
+        const d = dirs[i];
+        c.eb = d ? d[0] : -1; c.e2 = d ? d[1] : 0; c.lv = d ? d[4] : 0;
+        c.sl = d ? c[0] + d[2] / 1e5 : c[0]; c.sg = d ? c[1] + d[3] / 1e5 : c[1];
+      });
       const g = new Map();
       j.rows.forEach((c, i) => {
         const k = Math.floor(c[0] / CELL) + ':' + Math.floor(c[1] / CELL);
@@ -2132,14 +2142,34 @@
   // 반대편 차로용으로 본다.
   const OPP_SIDE = 8;
   const oneDir = (c) => c[9] === 1 || c[9] === 2;
-  // v122 (2026-11-15 밤 주행 제보 두 건: 복정동 성남대로 남행에서 왼쪽 27m 의 60 신호·과속, 문정동 송파대로에서 왼쪽 50 신호·과속.
-  //  사용자 '왼쪽은 반대편 차선인 경우가 많았음'): 데이터에 '양방향'(3)으로 적힌 카메라(신호·과속 12,979대 등 절반)도
-  //  실제로는 대부분 한쪽 방향만 찍는다. 실제 네이버 경로 11개 방향으로 재 보니 같은 카메라가 방향을 바꾸면 좌우가 뒤집히고
-  //  (용구대로 -12/+12, 분당수서로 -30/+21), 방향이 적힌 카메라 쌍도 오른쪽(+4~+22)이 내 방향, 왼쪽(-10~-20)이 반대 방향이었다.
-  //  그래서 양방향 카메라도 경로(또는 진행 방향) 왼쪽으로 10m 넘게 떨어져 있으면 반대편 차로용으로 본다.
-  //  10m 안(좁은 길 가운데 기둥·중앙분리대)은 그대로 알린다. 방향 값이 없는(직접 넣은) 카메라는 거르지 않는다
-  const OPP_SIDE_BOTH = 10;
-  const oppSide = (c) => (oneDir(c) ? OPP_SIDE : c[9] === 3 ? OPP_SIDE_BOTH : Infinity);
+  // ---- v123 단속 카메라 판정 (2026-11-15 밤 '하나하나 보지말고 전체적 개편이 필요해') ----
+  // 카메라마다 찍는 진행 방향(c.eb, 0~359°, 모르면 -1. c.e2 = 1 이면 양방향)과 그 차로 위 점(c.sl, c.sg)을
+  // tools/osm_cams.py 가 OSM 도로망에 붙여 정해 둔다 (우측통행이라 카메라는 자기가 찍는 차로의 오른쪽 길가에 선다.
+  // 원본 설치장소 'A→B' 와 확인: 미키주유소앞(장애인복지관→서부경찰서) 남행, 장애인복지관 앞(서부경찰서→풍덕천) 북행 등).
+  // 그래서 판정은 한 규칙:
+  //   그 차로 위 점이 내 경로선(길안내) 또는 예측한 앞길(길안내 없음) 옆 CAM_TOL 안이고, 찍는 방향이 그 자리 내 진행 방향과
+  //   CAM_DIR_TOL 안이면 내 카메라. 지하차도·고가로 교차로를 넘어가는 곳의 지상 카메라는 뺀다(camLevelOk).
+  // 없앤 것: 한 방향 8m·양방향 10m 왼쪽 규칙, 넓은 길 40m·같은 이름 45m 허용, 11-14 '교차로는 양방향' 변환.
+  // 허용 거리 40m → 15m (요청 '신호 25m만 더 오차범위 줄이고'. 경로선과 카메라 차로 위 점 사이 거리)
+  const CAM_TOL = 15, CAM_DIR_TOL = 50;
+  const camPt = (c) => ({ lat: c.sl != null ? c.sl : c[0], lng: c.sg != null ? c.sg : c[1] });
+  const camHasDir = (c) => c.eb != null && c.eb >= 0 && !c.e2;
+  const camDirOk = (c, brg) => !camHasDir(c) || brg == null || angleDiff(c.eb, brg) <= CAM_DIR_TOL;
+  // 층(c.lv): 1 지하차도 안, 2 고가 위, 4 지상 카메라 옆을 지하차도가 지나감, 8 고가가 지나감, 16 지하차도·고가 카메라 옆에 지상 길.
+  // 경로가 그 자리에서 지하차도·고가로 들어가면(네이버 진입 안내) 지상 카메라(4·8)는 빼고, 지상으로 가면 지하·고가 카메라(16)는 뺀다
+  // 경로 거리 s0 → s1 사이의 진행 방향
+  function routeBearingAt(s0, s1) {
+    const pa = routePointAt(Math.max(0, s0)), pb = routePointAt(Math.min(nav.total, s1));
+    return pa && pb && haversine(pa, pb) > 3 ? bearing(pa, pb) : null;
+  }
+  function camLevelOk(c, at) {
+    const lv = c.lv | 0;
+    if (!(lv & 28)) return true;
+    const sep = gradeSepNear(at);
+    if ((lv & 12) && sep) return false;
+    if ((lv & 16) && !sep) return false;
+    return true;
+  }
   // 굽은 길: 최근 주행 궤적이 휜 정도(곡률 k, 1m 당 라디안, + 는 오른쪽으로 굽음)로 앞길을 원호로 보고,
   // 거리 d 앞 지점이 놓일 방향(현 방향 + 원호의 현이 꺾인 각)을 구한다. 곧은 길이면 지금 방향 그대로
   const curv = { hist: [], k: 0 };
@@ -2170,33 +2200,17 @@
   function isAhead(f, c, d, keep) { // keep: 이미 경고 중인 카메라를 계속 둘지 볼 때 (조금 느슨하게)
     if (!camWanted(c)) return false;
     // 길안내 중에는 안내하는 경로 위의 카메라만 (잠깐 경로를 벗어나도 다른 길 카메라는 알리지 않는다)
-    if (nav.active && nav.pts) return camOnRouteAhead(c) || camBesideRouteOnMyRoad(c);
+    if (nav.active && nav.pts) return camOnRouteAhead(c);
     // 길안내가 없으면 진행 방향 앞(굽은 길이면 휘는 대로 예측한 앞길)의 내 도로 카메라
     if (state.heading === null) return false;
-    const same = onSameRoadName(c);
-    const diff = angleDiff(bearing(f, { lat: c[0], lng: c[1] }), pathBearing(d));
-    if (diff > (same ? 75 : 60) && d > 40) return false;
-    // 앞길에서 좌우로 얼마나 떨어져 있는지: 옆 도로(보통 30m 이상 떨어짐)는 빼고, 멀수록 방향 오차를 조금 허용.
-    // 지금 달리는 도로와 이름이 같은 카메라는 굽은 길·좌표 오차를 감안해 훨씬 너그럽게 본다
-    const lateral = d * Math.sin(toRad(Math.min(diff, 90)));
-    const limit = same ? 45 + d * 0.06 : 20 + d * (keep ? 0.03 : 0.015);
-    if (lateral > limit) return false;
-    // 반대편 차로 카메라. 멀리서는 방향 오차·굽은 길 때문에 좌우를 믿기 어려우므로,
-    // 왼쪽으로 보이는 한 방향 카메라는 300m 안으로 들어올 때까지 미뤘다가 그때 판단한다 (멀리서 잠깐 떴다 사라지는 일 방지)
-    const lim = oppSide(c);
-    if (lim < Infinity) {
-      const sd = sideOf(f, c, d);
-      if (keep) { if (sd < -(lim + d * 0.02)) return false; }
-      else if (sd < -lim && (d > 300 || sd < -(lim + d * 0.01))) return false;
-    }
-    return true;
+    // v123: 카메라 차로 위 점이 예측한 앞길 옆 15m 안(멀수록 방향 오차만큼 조금 더)이고, 찍는 방향이 그 앞길 방향과 50° 안
+    const p = camPt(c), dp = haversine(f, p), pb = pathBearing(dp);
+    const dif = angleDiff(bearing(f, p), pb);
+    if (dif > 60 && dp > 40) return false;
+    if (dp * Math.sin(toRad(Math.min(dif, 90))) > CAM_TOL + dp * (keep ? 0.03 : 0.02)) return false;
+    return camDirOk(c, pb);
   }
-  // 경로 선분 i 위의 카메라인지 보고, 맞으면 경로 위 거리(m)를 돌려준다.
-  // 경로에서 20m 이내면 내 도로로 본다. 단, 도로명이 둘 다 구체적인데 서로 다르면(옆 도로·교차로의 가로 도로) 뺀다.
-  // 넓은 도로·고속도로는 카메라가 경로선(도로 가운데)에서 20~40m 떨어져 서 있기도 하다(2026-11-14 전국 16개 경로 점검:
-  // 올림픽로 36m·한밭대로 34m·경부고속도로 35m 등). 그래서 내 도로라고 확인되면 40m 까지 인정한다:
-  //   경로 구간 이름이 카메라 도로명과 같거나, 구간 이름을 모를 때는 근처(800m 안) 경로 바로 위(20m 안)에 같은 도로의 카메라가 있을 때
-  const ROUTE_CAM_NEAR = 20, ROUTE_CAM_FAR = 40;
+  // 경로 선분 i 위의 카메라인지 보고, 맞으면 경로 위 거리(m)를 돌려준다 (v123 규칙: 위 CAM_TOL·CAM_DIR_TOL·camLevelOk).
   // 설치장소에 'A→B'가 적힌 한 방향 카메라: 길안내 경로의 앞뒤 안내 문구로 방향을 가른다 (-1 반대 방향, 1 내 방향, 0 모름).
   // 좌표가 도로 한가운데라 좌우로 못 가르는 경우가 있다 (2026-11-14 하남 창우로 J2735 '(하남ic->팔당대교)' 60:
   // 팔당대교IC → 하남IC 로 가는데 떴다. 지나온 안내에 '팔당대교', 갈 안내에 '하남IC' → 반대 방향).
@@ -2252,52 +2266,23 @@
   }
   const onHighwayAt = (at) => highwaySpans().some(([a, b]) => at >= a && at <= b);
   function camAtSeg(c, i) {
-    const p = { lat: c[0], lng: c[1] }, a = nav.pts[i], b = nav.pts[i + 1];
+    const p = camPt(c), a = nav.pts[i], b = nav.pts[i + 1];
     const pr = projectSeg(p, a, b);
-    if (pr.dist >= ROUTE_CAM_FAR) return null;
+    if (pr.dist > CAM_TOL) return null;                     // 카메라 차로 위 점이 경로선 옆 15m 안
     const rn = routeRoadAt(i), cn = camRoad(c);
     if (pr.dist > 6 && roadsDiffer(rn, cn)) return null;
-    // 경로 왼쪽으로 8m(양방향 카메라는 10m) 넘게 떨어진 카메라는 반대편 차로용
-    if (pr.dist > oppSide(c) && sideOfSeg(p, a, b, pr.dist) < 0) return null;
     const at = nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]);
     // 고속도로 구간이면 옆·아래 일반도로의 저속 카메라(제한 70 이하, 고속국도 아님)는 제외. 구간 이름이 고속도로이거나,
     // 이름이 없어도 안내상 고속도로 진입~출구 사이면 고속도로 ('분당수서고속화도로' 같은 고속화도로는 고속도로가 아니다)
     if ((/고속도로|고속국도/.test(rn) || onHighwayAt(at)) && c[8] !== 1 && c[2] <= 70) return null;
-    const ok = pr.dist < ROUTE_CAM_NEAR || (specificRoad(rn) ? sameRoad(rn, cn) : specificRoad(cn) && sameRoadCamOnRoute(c, i));
-    if (!ok) return null;
-    if (oneDir(c) && arrowSays(c, at) < 0) return null;   // 설치장소 방향이 내 길과 반대
+    if (!camLevelOk(c, at)) return null;                    // 지하차도·고가로 넘어가는 곳의 지상 카메라 등
+    // 찍는 방향이 이 자리 경로 방향과 50° 안. 교차로에서 꺾는 곳이면 들어오는 쪽(30m 전)·나가는 쪽(30m 뒤) 방향도 본다
+    // (가락시장역교차로에서 좌회전: 들어오는 송파대로 북행 카메라). 설치장소 'A→B' 가 안내 문구로 갈리면 그게 먼저:
+    // 반대면 빼고, 내 방향이라고 나오면 기하 판단과 달라도 알린다 (2026-11-14 하남 창우로 J2735, 11-15 가천대역 '복정역→성남시청')
+    const arrow = cams.arrows && cams.arrows.has(c) ? arrowSays(c, at) : 0;
+    if (arrow < 0) return null;
+    if (arrow <= 0 && !camDirOk(c, bearing(a, b)) && !camDirOk(c, routeBearingAt(at - 30, at)) && !camDirOk(c, routeBearingAt(at, at + 30))) return null;
     return at;
-  }
-  // 경로 구간 이름을 모르는 곳: 카메라 c 근처(800m 안)에 같은 도로 이름의 다른 카메라가 경로 바로 위(20m 안)에 있으면
-  // 경로가 그 도로를 지나는 것으로 본다 (선분 i 앞뒤 80개 안에서)
-  function sameRoadCamOnRoute(c, i) {
-    const cn = camRoad(c), pts = nav.pts;
-    const lo = Math.max(0, i - 80), hi = Math.min(pts.length - 2, i + 80);
-    for (const it of camsNear(c[0], c[1], 800)) {
-      if (it.c === c || !sameRoad(camRoad(it.c), cn)) continue;
-      const q = { lat: it.c[0], lng: it.c[1] };
-      for (let j = lo; j <= hi; j++) if (projectSeg(q, pts[j], pts[j + 1]).dist < ROUTE_CAM_NEAR) return true;
-    }
-    return false;
-  }
-  // 길안내 중, 경고 거리 안의 카메라가 경로선에서 20~40m 떨어져 있어 경로 위 카메라로 못 잡은 경우의 마지막 확인:
-  // 지금 달리는 도로(역지오코딩) 이름과 카메라 도로명이 같고 남은 경로 앞쪽 옆에 있으면 내 도로 카메라로 본다
-  function camBesideRouteOnMyRoad(c) {
-    if (!onSameRoadName(c)) return false;
-    const p = { lat: c[0], lng: c[1] }, pts = nav.pts;
-    const lo = Math.max(0, nav.seg), hi = Math.min(pts.length - 2, nav.seg + 120);
-    for (let j = lo; j <= hi && nav.cum[j] < nav.along + CAM_SCAN; j++) {
-      const pr = projectSeg(p, pts[j], pts[j + 1]);
-      if (pr.dist >= ROUTE_CAM_FAR) continue;
-      if (nav.cum[j] + pr.t * (nav.cum[j + 1] - nav.cum[j]) < nav.along - 5) continue;
-      if (pr.dist > oppSide(c) && sideOfSeg(p, pts[j], pts[j + 1], pr.dist) < 0) return false;
-      const atj = nav.cum[j] + pr.t * (nav.cum[j + 1] - nav.cum[j]);
-      if (oneDir(c) && arrowSays(c, atj) < 0) return false;
-      // 고속도로 위에서는 지금 도로 이름(역지오코딩)이 아래 일반도로로 잡혀도 일반도로 저속 카메라는 알리지 않는다
-      if ((/고속도로|고속국도/.test(routeRoadAt(j)) || onHighwayAt(atj)) && c[8] !== 1 && c[2] <= 70) return false;
-      return true;
-    }
-    return false;
   }
   // 경로 위 카메라 목록: 카메라 행 → 경로 위 거리들, 그리고 거리순 목록.
   // 긴 경로를 한 번에 훑으면 그 순간 화면이 멈칫하므로, 차 앞 21km 까지만 찾아 두고 달리면서 조금씩 늘린다.
@@ -2309,7 +2294,7 @@
     let i = nav.routeCamsUpto, added = false;
     for (; i < pts.length - 1 && nav.cum[i] < want; i++) {
       const a = pts[i], b = pts[i + 1], half = (nav.cum[i + 1] - nav.cum[i]) / 2;
-      for (const it of camsNear((a.lat + b.lat) / 2, (a.lng + b.lng) / 2, half + 30)) {
+      for (const it of camsNear((a.lat + b.lat) / 2, (a.lng + b.lng) / 2, half + CAM_TOL + 50)) {   // 차로 위 점은 원래 좌표에서 45m 안
         const at = camAtSeg(it.c, i);
         if (at === null) continue;
         const arr = m.get(it.c);
@@ -2340,6 +2325,36 @@
     else if (tg.c[4] === 1) startSection(tg.c, f);
     tg.after = true; // 카메라 좌표 오차를 감안해 지나간 뒤 CAM_HOLD m (후면 단속은 REAR_HOLD m, 신호는 0) 까지 경고를 유지한다
   }
+  // 경고 카드의 거리: 길안내 중이면 경로를 따라 카메라 자리(차로 위 점의 경로 투영)까지, 아니면 차로 위 점까지 직선 (v123)
+  function camShownDist(tg) {
+    if (nav.active && nav.onRoute && nav.routeCams) {
+      const arr = nav.routeCams.get(tg.c);
+      if (arr) {
+        let best = null;
+        for (const x of arr) if (x >= nav.along - 5 && (best === null || x < best)) best = x;
+        if (best !== null && best - nav.along < tg.d + 200) return Math.max(0, best - nav.along);
+      }
+    }
+    return tg.d;
+  }
+  // v123 (2026-11-15 밤 요청: 운전 중 사진 대신 한 번 눌러 신고): '틀림'·'놓침' 버튼
+  const camNoMap = new Map();   // '위도,경도' → [신고 때 진행 방향들]
+  try { for (const [k, h] of JSON.parse(store.get('camNo') || '[]')) { if (!camNoMap.has(k)) camNoMap.set(k, []); camNoMap.get(k).push(h); } } catch (e) { /* 없음 */ }
+  function camUserNo(c, h) {
+    const a = camNoMap.get(c[0] + ',' + c[1]);
+    return !!a && a.some((x) => x === null || h === null || angleDiff(x, h) <= 45);
+  }
+  function userReport(kind) {
+    const f = state.fix, t0 = f ? f.t : Date.now(), tg = camState.target;
+    const near = f ? camsNear(f.lat, f.lng, 400).sort((x, y) => x.d - y.d).slice(0, 12)
+      .map((it) => ({ i: it.i, lat: it.c[0], lng: it.c[1], lim: it.c[2], kind: it.c[3], eb: it.c.eb, d: Math.round(it.d) })) : [];
+    report('warn', {
+      msg: 'user ' + kind + (tg ? ' camera ' + tg.i : '') + ' @' + Math.round(t0 / 1000), user: kind,
+      cam: tg ? tg.i : null, camEb: tg ? tg.c.eb : null, camLabel: tg ? camLabel(tg.c) : null, near, navOn: !!nav.active,
+      heading: state.heading === null ? null : Math.round(state.heading), kmhNow: Math.round(state.speedKmh || 0),
+      trace: trace1.map((e) => [Math.round((e[0] - t0) / 1000)].concat(e.slice(1))),
+    });
+  }
   function passedChime() { chime(); logAlert('beep', '단속 통과 띠링'); }
   // 신호 카메라를 지난 거리(m, 아직 앞이면 음수). 길안내 중 경로 위면 경로를 따라 잰 거리, 아니면 진행 방향으로 잰 앞뒤 거리
   function camPast(f, tg, d) {
@@ -2350,7 +2365,7 @@
       if (at !== null && Math.abs(at - nav.along) < 200) return nav.along - at;
     }
     if (state.heading === null) return null;
-    return -d * Math.cos(toRad(angleDiff(bearing(f, { lat: tg.c[0], lng: tg.c[1] }), state.heading)));
+    return -d * Math.cos(toRad(angleDiff(bearing(f, camPt(tg.c)), state.heading)));
   }
   // 위치는 1초에 한 번 오므로(시속 60km 면 17m), 다음 위치가 오기 전에 신호 카메라를 2m 지날 거리면 그 시각에 경고를 내린다
   function sigPassSoon(tg, past) {
@@ -2378,7 +2393,7 @@
     let tg = camState.target;
 
     if (tg) {
-      const cp = { lat: tg.c[0], lng: tg.c[1] };
+      const cp = camPt(tg.c);
       const d = haversine(f, cp);
       tg.d = d;
       if (d < tg.minD) tg.minD = d;
@@ -2399,8 +2414,8 @@
       } else if (moving && d > 150 && !isAhead(f, tg.c, d, true)) {
         tg.miss = (tg.miss || 0) + 1;                   // 방향을 틀어 벗어남
         if (tg.miss >= 3) camState.target = tg = null;
-      } else if (moving && d > 25 && d <= 150 && oppSide(tg.c) < Infinity && !nav.active &&
-                 sideOf(f, tg.c, d) < -(oppSide(tg.c) + 2)) {
+      } else if (moving && d > 25 && d <= 150 && camHasDir(tg.c) && !nav.active && state.heading !== null &&
+                 angleDiff(tg.c.eb, state.heading) > 120) {
         // 가까이 와서 보니 왼쪽(반대편 차로) 카메라였다: 길안내 없이 멀리서 방향만 보고 잡은 경우
         tg.miss = (tg.miss || 0) + 1;
         if (tg.miss >= 2) camState.target = tg = null;
@@ -2415,6 +2430,7 @@
       for (const it of camsNear(f.lat, f.lng, CAM_SCAN)) {
         if (it.d > alertRange(it.c)) continue; // 도로 종류별 경고 거리 밖
         if (camState.passed.has(it.i) || (tg && it.i === tg.i)) continue;
+        if (camUserNo(it.c, state.heading)) continue;          // 사용자가 '틀림'으로 신고한 카메라 (이 방향)
         if (it.c[4] === 2 && !camState.section) continue; // 구간 끝 카메라는 구간 안에서만
         if (it.c[4] === 1 && camState.section) continue;  // 구간 안에서는 (반대 방향) 시작 카메라를 무시
         if (!isAhead(f, it.c, it.d)) continue;
@@ -2520,6 +2536,7 @@
   function renderCam() {
     const tg = camState.target, card = $('#camCard');
     const pk = camState.peek, nxEl = $('#camNext');
+    $('#camMissBtn').hidden = !!tg || !prefs.cams || !(nav.active || state.speedKmh >= 5);
     nxEl.hidden = !(pk && prefs.cams && !tg);
     if (!nxEl.hidden) {
       // 길안내 중이면 경로를 따라간 거리, 아니면 직선 거리
@@ -2541,7 +2558,7 @@
       $('#camLimit').textContent = speedCam ? (tg.c[2] || '?') : '신호';
       // 지나간 뒤에도 CAM_HOLD(30m)까지는 카메라 바로 앞인 것처럼 그대로 보여 주고(오차 거리는 따로 알리지 않음), 그 뒤 사라진다
       $('#camType').textContent = camLabel(tg.c);
-      $('#camDist').textContent = tg.after ? '통과' : fmtDist(tg.d);   // v112: 지나친 뒤 '0m' 대신 (문구 검토)
+      $('#camDist').textContent = tg.after ? '통과' : fmtDist(camShownDist(tg));   // v112: 지나친 뒤 '0m' 대신 (문구 검토)
       const span = Math.max(tg.first, 300);
       $('#camBar').style.width = tg.after ? '100%' : Math.max(0, Math.min(100, (1 - tg.d / span) * 100)) + '%';
       card.classList.toggle('over', speedCam && tg.c[2] > 0 && state.speedKmh > tg.c[2] + 1 && tg.d < 600);
@@ -2555,7 +2572,7 @@
       if (zone) {
         const sign = $('#ztSign');
         if (sign.dataset.zone !== zone) { sign.innerHTML = zone === 'kid' ? SIGN_KID : SIGN_ELDER; sign.dataset.zone = zone; }
-        $('#ztDist').textContent = tg.after ? '통과' : fmtDist(tg.d);
+        $('#ztDist').textContent = tg.after ? '통과' : fmtDist(camShownDist(tg));
         $('#ztLabel').textContent = zone === 'kid' ? '어린이보호' : '노인보호';
         $('#ztLimit').textContent = speedCam ? (tg.c[2] || '?') : '신호';
       }
@@ -4382,7 +4399,12 @@
   // 교차로를 가로질러 지난 옆 도로 카메라·반대편 차로용 한 방향 카메라는 빼고 (내 도로 이름과 다르거나 왼쪽 8m 밖)
   const fixLog = [];   // 최근 위치 [시각, 위도, 경도, 정확도, 기기 속도, 기기 방향, 쓴 방향]
   const camMiss = { near: new Map(), sent: 0 };
+  const trace1 = [];   // v123: 1초 간격 최근 2분 30초 위치 [시각, 위도, 경도, 속도, 방향] (틀림·놓침 신고용)
   function logFix(f, devH) {
+    if (!trace1.length || f.t - trace1[trace1.length - 1][0] >= 1000) {
+      trace1.push([f.t, +f.lat.toFixed(6), +f.lng.toFixed(6), Math.round(state.speedKmh || 0), state.heading === null ? null : Math.round(state.heading)]);
+      while (trace1.length > 150) trace1.shift();
+    }
     fixLog.push([f.t, +f.lat.toFixed(6), +f.lng.toFixed(6), Math.round(f.acc || 0), f.speed == null ? null : +(+f.speed).toFixed(1),
       devH === null ? null : Math.round(devH), state.heading === null ? null : Math.round(state.heading)]);
     while (fixLog.length > 60) fixLog.shift();
@@ -4420,7 +4442,7 @@
         if (!isSpeedCam(it.c) || !camWanted(it.c)) continue;
         let m = camMiss.near.get(it.i);
         if (!m) { m = { minD: 1e9, side: 0, alerted: false }; camMiss.near.set(it.i, m); }
-        if (it.d < m.minD) { m.minD = it.d; m.side = sideOf(f, it.c, it.d); m.kmh = Math.round(state.speedKmh); }
+        if (it.d < m.minD) { m.minD = it.d; m.side = sideOf(f, it.c, it.d); m.kmh = Math.round(state.speedKmh); m.hdg = state.heading; }
         if (tg && tg.i === it.i) m.alerted = true;
       }
     }
@@ -4428,12 +4450,12 @@
       const c = cams.rows[i];
       if (haversine(f, { lat: c[0], lng: c[1] }) < 60) return;
       camMiss.near.delete(i);
-      // v122: 알린 카메라가 지나갈 때 내 궤적 왼쪽으로 12m 넘게 떨어져 있었으면(반대편 차로용을 알린 것으로 보임) 궤적을 올린다
-      if (m.alerted && m.side < -12 && (camMiss.leftSent || 0) < 5) {
+      // v123: 알린 카메라가 찍는 방향이 지나갈 때 내 진행 방향과 120° 넘게 다르면(반대 방향 카메라를 알린 것) 궤적을 올린다
+      if (m.alerted && camHasDir(c) && m.hdg != null && angleDiff(c.eb, m.hdg) > 120 && (camMiss.leftSent || 0) < 5) {
         camMiss.leftSent = (camMiss.leftSent || 0) + 1;
         const t1 = f.t;
         report('warn', {
-          msg: 'left camera alerted ' + i, cam: i, lim: c[2], kind: c[3], dir: c[9], flags: c[10] || 0, camRoad: camRoad(c), myRoad: road.name,
+          msg: 'opposite camera alerted ' + i, cam: i, eb: c.eb, hdg: Math.round(m.hdg), lim: c[2], kind: c[3], dir: c[9], flags: c[10] || 0, camRoad: camRoad(c), myRoad: road.name,
           minD: Math.round(m.minD), side: Math.round(m.side), kmhAt: m.kmh, navOn: !!nav.active,
           trace: fixLog.slice(-40).map((e) => [Math.round((e[0] - t1) / 100) / 10].concat(e.slice(1))),
         });
@@ -4445,7 +4467,7 @@
       if (nav.active && isSignalCam(c) && gradeSepNear(nav.along - 60)) return;
       const cr = camRoad(c);
       if (specificRoad(cr) && specificRoad(road.name) && !sameRoad(cr, road.name)) return;   // 가로지른 옆 도로
-      if (m.side < -oppSide(c)) return;                                                         // 반대편 차로용
+      if (!camDirOk(c, m.hdg)) return;                                                          // 내 방향이 아니다
       if (camMiss.sent >= 5) return;
       camMiss.sent++;
       const t0 = f.t;
@@ -5382,6 +5404,24 @@
   $('#ntUpdate').onclick = () => { closeTray(); goUpdate(); };
   $('#updBtn').onclick = goUpdate;
   $('#navEnd').onclick = () => { endNav(); say('안내를 종료합니다.', 1); };
+    $('#camWrong').onclick = (ev) => {
+      ev.stopPropagation();
+      const tg = camState.target;
+      userReport('wrong');
+      if (tg) {
+        const k = tg.c[0] + ',' + tg.c[1], h = state.heading === null ? null : Math.round(state.heading);
+        if (!camNoMap.has(k)) camNoMap.set(k, []);
+        camNoMap.get(k).push(h);
+        const list = [];
+        camNoMap.forEach((hs, key) => hs.forEach((x) => list.push([key, x])));
+        store.set('camNo', JSON.stringify(list.slice(-300)));
+        camState.passed.set(tg.i, state.fix ? state.fix.t : Date.now());
+        camState.target = null;
+        renderCam();
+      }
+      toast('틀린 경고로 보냈어요. 이 방향에서는 다시 알리지 않을게요.', '', 3000);
+    };
+    $('#camMissBtn').onclick = (ev) => { ev.stopPropagation(); userReport('missed'); toast('놓친 단속 위치를 보냈어요.', '', 3000); };
 
   function applyTesla() {
     $('#app').classList.add('tesla');   // 테슬라 모드만 쓴다 (2026-11-14)

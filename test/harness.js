@@ -838,13 +838,22 @@
   const CAM_SIGNAL = { lat: 33.37693, lng: 126.87362 };
   // 이천 경충대로 [37.25055,127.48265,0,2] — 제한속도 없는 신호 전용. 남남서(200°)에서 다가가면 앞쪽 다른 카메라는 750m 넘게 떨어져 있다
   const CAM_SIGONLY = { lat: 37.25055, lng: 127.48265 };
+  // v123: 카메라 기준 좌표 — 카메라가 찍는 진행 방향(eb, 모르면 dflt)과 그 차로 위 점(tools/osm_cams.py).
+  //       pt(d, side): 카메라 d m 앞(음수면 지난 뒤), 진행 방향 오른쪽 side m (음수면 왼쪽)
+  function camFrame(C, dflt) {
+    const c = T().cams.rows.find((x) => sameCam(x, C));
+    const h = c && c.eb >= 0 && !c.e2 ? c.eb : (dflt || 0);
+    const p0 = c && c.sl != null ? { lat: c.sl, lng: c.sg } : C;
+    return { h, p0, pt: (d, side) => { let q = dest(p0, (h + 180) % 360, d); if (side) q = dest(q, (h + 90) % 360, side); return q; } };
+  }
   async function s13() {
     const t = T(), prev = t.prefs.signalCams;
     const drive = (C, from) => {
       softReset();
       let hit = null;
+      const F = camFrame(C, from === 700 ? 0 : 20);
       for (let s = 0; s <= from - 100; s += 14) {
-        feed(dest(C, from === 700 ? 180 : 200, from - s), 14, from === 700 ? 0 : 20);
+        feed(F.pt(from - s), 14, F.h);
         const tg = t.camState.target;
         if (tg && sameCam(tg.c, C) && !hit) hit = { d: r0(tg.d), sign: text('#camLimit'), type: text('#camType'), signal: hasCls('#camCard', 'signal'), sig: hasCls('#camCard', 'sigspeed') };
       }
@@ -873,10 +882,10 @@
   // S14: 옆 도로 카메라 걸러내기
   //  (a) 길안내 없이: 진행 방향 직선에서 45m 옆(나란한 도로)의 카메라는 잡지 않는다 (CAM_ISO_A)
   //  (b) 길안내 중: 위례성로 카메라(CAM_ISO_B)를 경로 옆 12/25/40m 에 두고 경로 도로명을 바꿔 가며 확인
-  function buildRouteBeside(C, east, name) {
+  function buildRouteBeside(C, east, name) {   // east > 0: 카메라가 경로 왼쪽 east m (v123: 카메라가 찍는 방향으로 놓인 경로)
     const raw = [];
-    const o = dest(dest(C, 180, 1000), 90, east);
-    for (let k = 0; k <= 16; k++) raw.push(dest(o, 0, 100 * k));
+    const F = camFrame(C, 0);
+    for (let k = 0; k <= 16; k++) raw.push(F.pt(1000 - 100 * k, east));
     const path = raw.map((p) => [round6(p.lng), round6(p.lat)]);
     const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
     const cum = [0];
@@ -893,27 +902,30 @@
     const t = T();
     // (a) 길안내 없이 북쪽으로 달린다. east = 내 차 선이 카메라에서 동쪽으로 떨어진 거리 (+ 면 카메라가 내 왼쪽)
     //     CAM_ISO_A 는 한 방향(하행) 카메라
-    const noNav = (east) => {
+    // v123: side = 내 선이 카메라에서 진행 방향 오른쪽으로 떨어진 거리, opp = 반대 방향으로 달림
+    const FA = camFrame(C_A(), 0);
+    const noNav = (side, opp) => {
       softReset();
       let hit = null;
       for (let s = 0; s <= 1150; s += 20) {
-        feed(dest(dest(C_A(), 180, 1150 - s), 90, east), 20, 0);
+        if (opp) feed(FA.pt(-(1150 - s), side), 20, (FA.h + 180) % 360);
+        else feed(FA.pt(1150 - s, side), 20, FA.h);
         const tg = t.camState.target;
         if (tg && sameCam(tg.c, CAM_ISO_A) && hit === null) hit = r0(tg.d);
       }
       return hit;
     };
-    const parallelHit = noNav(45);   // 45m 옆 나란한 도로
-    const oppHit = noNav(14);        // 왼쪽 14m = 반대편 차로
-    const mineHit = noNav(-6);       // 오른쪽 6m = 내 차로 길가
+    const parallelHit = noNav(45);         // 45m 옆 나란한 도로
+    const oppHit = noNav(-14, true);       // 반대 방향 차로 (카메라가 내 왼쪽 14m)
+    const mineHit = noNav(-6);             // 카메라가 내 오른쪽 6m = 내 차로 길가
     // (b) 길안내 중: 위례성로 카메라(CAM_ISO_B, 한 방향)를 경로 오른쪽(east<0)·왼쪽(east>0)에 두고 확인
     const cases = [
       { east: -12, name: '위례성로', want: true },
       { east: -12, name: '다른대로', want: false },
-      { east: -25, name: '위례성로', want: true },
+      { east: -25, name: '위례성로', want: false },  // v123: 허용 거리 15m (예전 같은 이름이면 40m)
       { east: -40, name: '위례성로', want: false },
-      { east: 12, name: '위례성로', want: false },   // 왼쪽 12m: 반대편 차로
-      { east: 5, name: '위례성로', want: true },     // 왼쪽 5m: 중앙선 근처, 거르지 않는다
+      { east: 12, name: '위례성로', want: true },    // v123: 찍는 방향이 내 방향이면 왼쪽 12m(중앙분리대 기둥)도 내 카메라
+      { east: 5, name: '위례성로', want: true },
     ];
     const out = [];
     for (const k of cases) {
@@ -1517,11 +1529,12 @@
     t.endNav();
     softReset();
     const must = {
-      '승안삼거리': ['37.84072,127.50646'], '계량교': ['37.83903,127.5067'], '가평초교(어린이)': ['37.8298,127.51091', '37.82939,127.51094'],
+      '계량교(마장리→대곡리)': ['37.83903,127.5067'], '가평초교(어린이)': ['37.8298,127.51091', '37.82939,127.51094'],
       '포회촌(후면)': ['37.79681,127.48014'], '초옥동': ['37.77894,127.46407'], '청평중학교': ['37.74205,127.42369'],
     };
     const mustNot = { '진동마을(서울→춘천 과속)': '37.81049,127.49785', '포회촌(서울→춘천)': '37.79657,127.4802', '벚꽃길(서울→춘천)': '37.7791,127.46435',
-      '수리재(왼쪽 12m)': '37.76907,127.4477', '소돌마을(왼쪽 16m)': '37.72456,127.40855' };
+      '수리재(왼쪽 12m)': '37.76907,127.4477', '소돌마을(왼쪽 16m)': '37.72456,127.40855',
+      '승안삼거리(대곡리→마장리, 계량교와 반대 방향 쌍)': '37.84072,127.50646' };
     const missing = Object.keys(must).filter((k) => !must[k].some((x) => seen.has(x)));
     const wrong = Object.keys(mustNot).filter((k) => seen.has(mustNot[k]));
     const list = [...seen.entries()].map(([k, v]) => k + ' ' + v.limit + ' ' + v.type);
@@ -2444,14 +2457,15 @@
     const m = await waitFor(() => t.getMap(), 5000, 100);
     if (!m || !('cams' in m)) return { status: 'SKIP', detail: 'no map' };
     const shownAfter = (fn) => { softReset(); t.camState.markerAt = null; fn(); return m.cams.size; };
-    // (a) 카메라를 향해 북쪽으로 (1.5km 남쪽에서 1.2km 남쪽까지)
-    const ahead = shownAfter(() => { for (let s = 0; s <= 300; s += 20) feed(dest(C, 180, 1500 - s), 20, 0); });
-    // (b) 카메라를 지나 북쪽으로 계속 (뒤에 있음)
-    const behind = shownAfter(() => { for (let s = 0; s <= 300; s += 20) feed(dest(C, 0, 200 + s), 20, 0); });
-    // (c) 왼쪽 18m 옆으로 나란히 = 반대편 차로 (300m 안)
-    const opposite = shownAfter(() => { for (let s = 0; s <= 200; s += 20) feed(dest(dest(C, 180, 300 - s), 90, 18), 20, 0); });
-    // (d) 멀리(1.8km→1.5km 앞) 왼쪽 25m = 고속도로 반대편 차로의 카메라. 멀리 있어도 지도에 띄우지 않는다
-    const farOpposite = shownAfter(() => { for (let s = 0; s <= 300; s += 25) feed(dest(dest(C, 180, 1800 - s), 90, 25), 25, 0); });
+    // v123: 카메라가 찍는 방향(F.h) 기준. (a) 카메라를 향해 (1.5km 앞에서 1.2km 앞까지)
+    const F = camFrame(C, 0), back = (F.h + 180) % 360;
+    const ahead = shownAfter(() => { for (let s = 0; s <= 300; s += 20) feed(F.pt(1500 - s), 20, F.h); });
+    // (b) 카메라를 지나 계속 (뒤에 있음)
+    const behind = shownAfter(() => { for (let s = 0; s <= 300; s += 20) feed(F.pt(-(200 + s)), 20, F.h); });
+    // (c) 반대 방향 차로(카메라가 내 왼쪽 18m, 300m 안)
+    const opposite = shownAfter(() => { for (let s = 0; s <= 200; s += 20) feed(F.pt(-(300 - s), -18), 20, back); });
+    // (d) 멀리(1.8km→1.5km 앞) 반대 방향 차로(왼쪽 25m). 멀리 있어도 지도에 띄우지 않는다
+    const farOpposite = shownAfter(() => { for (let s = 0; s <= 300; s += 25) feed(F.pt(-(1800 - s), -25), 25, back); });
     const pass = ahead >= 1 && behind === 0 && opposite === 0 && farOpposite === 0;
     return { pass, detail: 'markers: heading to camera ' + ahead + (ahead >= 1 ? '✓' : '✗') + ', camera behind ' + behind + (behind === 0 ? '✓' : '✗') +
       ', opposite lane ' + opposite + (opposite === 0 ? '✓' : '✗') + ', far opposite lane ' + farOpposite + (farOpposite === 0 ? '✓' : '✗') };
@@ -2495,16 +2509,18 @@
     const t = T(), C = CAM_ISO_B, R = 250;
     const drive = (left) => {
       softReset();
-      // 카메라가 원 위(중심에서 북쪽)에 오도록 중심을 둔다. 왼쪽 굽음: 중심 각을 140°→0° 로 줄이며(반시계) 달린다
-      const center = dest(C, 180, R);
+      // v123: 카메라가 찍는 방향(h)으로 카메라에 닿도록 원을 둔다. 왼쪽 굽음은 중심이 진행 방향 왼쪽(반시계로 달림)
+      const F = camFrame(C, 90), h = F.h;
+      const center = dest(F.p0, (h + (left ? 270 : 90)) % 360, R);
+      const th0 = (h + (left ? 90 : 270)) % 360;
       let first = null;
       for (let deg = 140; deg >= 0; deg -= (13 / R) * 180 / Math.PI) {
-        const phi = left ? deg : -deg;
-        const p = dest(center, (phi + 360) % 360, R);
-        const head = ((left ? phi - 90 : phi + 90) + 360) % 360;
+        const th = (th0 + (left ? deg : -deg) + 360) % 360;
+        const p = dest(center, th, R);
+        const head = ((left ? th - 90 : th + 90) + 360) % 360;
         feed(p, 13, head);
         const tg = t.camState.target;
-        if (first === null && tg && sameCam(tg.c, C)) first = r0(hav(p, C));
+        if (first === null && tg && sameCam(tg.c, C)) first = r0(hav(p, F.p0));
       }
       return first;
     };
@@ -2615,11 +2631,11 @@
       softReset();
       const mark = t.alertLog[t.alertLog.length - 1];
       let first = null, voiceAt = null;
-      const head = (brgFrom + 180) % 360;
+      const F = camFrame(C, (brgFrom + 180) % 360), head = F.h;
       for (let s = 0; s <= from - 100; s += v) {
-        const p = dest(C, brgFrom, from - s);
+        const p = F.pt(from - s);
         feed(p, v, head);
-        const tg = t.camState.target, d = hav(p, C);
+        const tg = t.camState.target, d = hav(p, F.p0);
         if (first === null && tg && sameCam(tg.c, C)) first = r0(d);
         if (voiceAt === null) {
           const from0 = mark ? t.alertLog.indexOf(mark) + 1 : 0;
@@ -2768,6 +2784,8 @@
     { id: 'S65', name: 'S65 auto zoom: 17 while driving even before a turn; the close-up 18 only within 300 m of the destination', fn: s65 },
     { id: 'S58', name: "S58 no-parking cameras: '주정차 단속' only ahead in my direction, when slow (no sound); not behind or on a side street; setting off", fn: s58 },
     { id: 'S57', name: 'S57 fast reroute: wrong-way turn caught in 2 fixes, start asked ahead of the car, a new route that starts behind the car is retried at once (only once)', fn: s57 },
+    { id: 'S75', name: 'S75 (info) cameras alerted on every saved real route, for comparing versions', fn: s75 },
+    { id: 'S74', name: 'S74 camera score on 2026-11-15 real cases (13): false alerts / misses / wrong type, with and without navigation', fn: s74 },
     { id: 'S73', name: 'S73 no spoken overspeed words (과속/초과): limit beeps and the red card only', fn: s73 },
     { id: 'S72', name: 'S72 opposite-lane cameras: two-way cameras more than 10 m left of the route are skipped (Munjeong, Bokjeong, Geumgok IC regressions)', fn: s72 },
     { id: 'S71', name: 'S71 signal camera alert clears as the car passes it (2 m past), even with fixes 17 m apart, on route too', fn: s71 },
@@ -2969,11 +2987,11 @@
     const t = T();
     await resetApp();
     const CAM = { lat: 37.3066, lng: 127.10576 };   // 용구대로 보정 60km 신호·과속 (data/cameras.json)
-    const A0 = dest(CAM, 180, 600), r = {};
+    const A0 = dest(CAM, 0, 600), r = {};   // v123: 이 카메라는 원본 '(보정역→구성역)' 남행이라 북쪽에서 남쪽으로 달린다
     let hit = null;
     for (let s = 0; s <= 720; s += 17) {
-      const p = dest(A0, 0, s);
-      feed(p, 16.7, 180);                     // 기기 방향은 정반대(180°)로 틀리게
+      const p = dest(A0, 180, s);
+      feed(p, 16.7, 0);                       // 기기 방향은 정반대(0°)로 틀리게
       const tg = t.camState.target;
       if (!hit && tg && sameCam(tg.c, CAM)) hit = { s, d: r0(tg.d) };
     }
@@ -2983,8 +3001,8 @@
     // 맞는 방향 값은 그대로 쓴다
     await resetApp();
     const bad0 = t.hdgFix.bad;
-    for (let s = 0; s <= 300; s += 17) feed(dest(A0, 0, s), 16.7, 2);
-    r.goodKept = r0(t.state.heading) === 2 && t.hdgFix.bad === bad0;
+    for (let s = 0; s <= 300; s += 17) feed(dest(A0, 180, s), 16.7, 182);
+    r.goodKept = r0(t.state.heading) === 182 && t.hdgFix.bad === bad0;
     // 놓친 카메라 세기: 경고가 없던 것으로 하고 카메라 옆(5m)을 지나 80m 멀어지면 1번
     await resetApp();
     const sent0 = t.camMiss.sent;
@@ -2992,11 +3010,12 @@
     t.state.speedKmh = 60;
     t.camState.target = null; t.camState.passed.clear(); t.camState.saidById.clear();
     const road0 = t.road.name; t.road.name = '';
+    t.state.heading = 180;
     t.camMissCheck({ lat: dest(CAM, 270, 5).lat, lng: dest(CAM, 270, 5).lng, t: Date.now() });
-    t.camMissCheck({ ...dest(CAM, 0, 80), t: Date.now() + 5000 });
+    t.camMissCheck({ ...dest(CAM, 180, 80), t: Date.now() + 5000 });
     r.missCounted = t.camMiss.sent >= sent0 + 1;
     t.road.name = road0;
-    const ok = typeof r.hit === 'number' && r.hit > 60 && Math.min(r.heading, 360 - r.heading) < 20 && r.badCount >= 10 && r.goodKept && r.missCounted;
+    const ok = typeof r.hit === 'number' && r.hit > 60 && Math.abs(r.heading - 180) < 20 && r.badCount >= 10 && r.goodKept && r.missCounted;
     return { pass: ok, detail: JSON.stringify(r) };
   }
 
@@ -3010,7 +3029,7 @@
     let shown = false, clearedAt = null;
     for (let s = 0; s <= 700; s += 5) {
       const past = s - 600;
-      feed(dest(CAM, 180, 600 - s), 75 / 3.6, 0, { dt: 250 });
+      feed(dest(CAM, 0, 600 - s), 75 / 3.6, 180, { dt: 250 });   // v123: 이 카메라는 원본 '(보정역→구성역)' 남행이라 북쪽에서 남쪽으로 달린다
       const tg = t.camState.target, mine = !!tg && sameCam(tg.c, CAM);
       if (mine) shown = true;
       if (past > 0 && shown && !mine && clearedAt === null) clearedAt = past;
@@ -3118,6 +3137,114 @@
     return { pass: ok, detail: JSON.stringify(r) };
   }
 
+
+  // S74: (v123) 단속 카메라 점수 — 2026-11-15 실제 주행 사례 13건 (사용자 확인·네이버 지도 비교). 실제 네이버 경로로 길안내 있음·없음 둘 다.
+  //      잘못 뜸(오탐)·놓침·종류 틀림을 센다. 같은 시험을 옛 버전에도 돌려 비교한다(harness.html?only=S74).
+  //      경로: route-night-seongnam-giheung(태평동 수정로 → 분당수서로 → 분당수서간도시고속화도로 → 용구대로2469번길 → 용구대로, 21km),
+  //            route-songpa-seongnam-s(송파대로·성남대로 남행), route-bundang-suseo-n(분당수서로 북행, 금곡IC)
+  const SCORE_CASES = [
+    { file: 'route-night-seongnam-giheung.json', cams: [
+      ['중앙시장사거리 옆길 50', 37.44093, 127.13197, 'no'],
+      ['벌말 남행 80 (원본에 없음)', 37.4089, 127.11853, 'yes'],
+      ['삼성르노삼거리 50 (원본에 없음)', 37.32188, 127.10475, 'yes'],
+      ['장애인복지관 앞 50 (북행)', 37.31518, 127.10526, 'no'],
+      ['미키주유소앞 50', 37.31171, 127.10494, 'yes'],
+      ['그린주유소앞 60 (북행)', 37.30272, 127.10593, 'no'],
+      ['연원마을 60 북행 기둥', 37.30094, 127.10668, 'no'],
+      ['연원마을 60 남행 후면', 37.30088, 127.10645, 'rear'],
+    ] },
+    { file: 'route-songpa-seongnam-s.json', cams: [
+      ['문정역 50 (북행)', 37.48625, 127.1227, 'no'],
+      ['건영아파트앞 50', 37.48219, 127.12397, 'yes'],
+      ['복정 동서울대 60 (북행)', 37.46002, 127.12606, 'no'],
+      ['서울→성남시청 60', 37.46216, 127.12578, 'yes'],
+    ] },
+    { file: 'route-bundang-suseo-n.json', guide: [1, { i: 70, t: 2, s: "금곡교차로에서 '성남, 용인시청' 방면으로 좌회전", d: 0, ms: 0 }], cams: [
+      ['금곡IC 80 (용인→분당경찰서)', 37.35405, 127.10454, 'yes'],
+    ] },
+  ];
+  async function scoreRun(withNav) {
+    const t = T(), out = { fp: 0, miss: 0, type: 0, alerts: 0, bad: [] };
+    for (const sc of SCORE_CASES) {
+      await resetApp();
+      softReset();
+      const fx = await (await realFetch(harnessDir + 'fixtures/' + sc.file, { cache: 'no-store' })).json();
+      if (sc.guide) fx.guide.splice(sc.guide[0], 0, sc.guide[1]);
+      const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0];
+      for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+      const R = { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '점수', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+      if (withNav) await planAndStart(R);
+      const seen = new Map(), all = new Set();
+      try {
+        for (let s = 0; s <= R.total - 30; s += 10) {
+          const a = pointAt(R, s);
+          feed(a.p, 55 / 3.6, a.h, { dt: 650 });
+          const tg = t.camState.target;
+          if (!tg) continue;
+          all.add(tg.c[0] + ',' + tg.c[1]);
+          for (const [name, la, lo] of sc.cams) {
+            if (sameCam(tg.c, { lat: la, lng: lo }) && !seen.has(name)) seen.set(name, text('#camType'));
+          }
+        }
+      } finally { if (withNav) t.endNav(); }
+      out.alerts += all.size;
+      for (const [name, , , want] of sc.cams) {
+        const got = seen.has(name), label = seen.get(name) || '';
+        if (want === 'no' && got) { out.fp++; out.bad.push('오탐 ' + name); }
+        if (want !== 'no' && !got) { out.miss++; out.bad.push('놓침 ' + name); }
+        if (want === 'rear' && got && !/후면/.test(label)) { out.type++; out.bad.push('종류 ' + name + ' "' + label + '"'); }
+      }
+    }
+    await resetApp();
+    softReset();
+    return out;
+  }
+  async function s74() {
+    const nav = await scoreRun(true), free = await scoreRun(false);
+    const sum = (o) => o.fp + o.miss + o.type;
+    return { pass: sum(nav) === 0 && sum(free) === 0, detail: String((document.querySelector('script[src*="app.js"]') || {}).src || '').replace(/^.*\//, '') + ' 길안내 ' + JSON.stringify(nav) + ' | 길안내 없음 ' + JSON.stringify(free) };
+  }
+
+
+  // S75: (정보) 저장된 실제 경로마다 길안내로 달리며 알린 카메라 목록. 버전끼리 비교용(harness.html?only=S75 → window.__alertLists)
+  const ALERT_LIST_FILES = ['route-night-seongnam-giheung.json', 'route-songpa-seongnam-s.json', 'route-songpa-n.json', 'route-bokjeong-n.json',
+    'route-bundang-suseo-n.json', 'route-daejeon-yuseong.json', 'route-gapyeong-cheongpyeong.json', 'route-gapyeong-ne.json', 'route-gapyeong-sw.json',
+    'route-gapyeong-town.json', 'route-hanam-paldang-n.json', 'route-paldang-east.json', 'route-paldang-hanamic-s.json', 'route-paldang-west.json',
+    'route-ring1-pangyo.json', 'route-yangseo-bukhangang-n.json', 'route-yangseo-bukhangang-s.json'];
+  async function s75() {
+    const t = T(), lists = {};
+    const routes = [];
+    for (const f of ALERT_LIST_FILES) routes.push([f, await (await realFetch(harnessDir + 'fixtures/' + f, { cache: 'no-store' })).json()]);
+    try {   // 저장소에 올리지 않는 비교용 경로 묶음 (있으면)
+      const r = await realFetch(harnessDir + 'fixtures/_tmp_routes.json', { cache: 'no-store' });
+      if (r.ok) { const j = await r.json(); for (const k of Object.keys(j)) routes.push([k, j[k]]); }
+    } catch (e) { /* 없음 */ }
+    for (const [name, fx] of routes) {
+      await resetApp();
+      softReset();
+      const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0];
+      for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+      const R = { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '목록', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+      await planAndStart(R);
+      const seen = new Set();
+      try {
+        for (let s = 0; s <= R.total - 30; s += 10) {
+          const a = pointAt(R, s);
+          feed(a.p, 55 / 3.6, a.h, { dt: 650 });
+          const tg = t.camState.target;
+          if (tg) seen.add(tg.c[0] + ',' + tg.c[1] + '|' + tg.c[2] + '|' + text('#camType'));
+        }
+      } finally { t.endNav(); }
+      lists[name] = [...seen];
+    }
+    await resetApp();
+    softReset();
+    window.__alertLists = lists;
+    return { pass: true, detail: Object.keys(lists).length + ' routes, ' + Object.values(lists).reduce((a, b) => a + b.length, 0) + ' alerts' };
+  }
+
   // S73: (v122) 음성에 '과속'·'초과'가 없다 (2026-11-15 밤 '속도 초과라는 말 없애줘 놀란다 자꾸'). 제한을 넘어 신호·과속 카메라와
   //      과속 카메라에 다가가도 안내 음성은 'N미터 앞, 신호 단속 카메라. 제한속도 60입니다.' 처럼 말하고, 넘었다는 건 소리·빨간 카드로만
   async function s73() {
@@ -3125,7 +3252,7 @@
     await resetApp();
     const mark = t.alertLog[t.alertLog.length - 1];
     const CAM = { lat: 37.3066, lng: 127.10576 };   // 용구대로 보정 신호·과속 60
-    for (let a = 600; a >= -80; a -= 20) feed(dest(CAM, 180, a), 80 / 3.6, 0);
+    for (let a = 600; a >= -80; a -= 20) feed(dest(CAM, 0, a), 80 / 3.6, 180);   // v123: 이 카메라는 원본 '(보정역→구성역)' 남행이라 북쪽에서 남쪽으로 달린다
     r.overCard = null;
     await resetApp();
     for (let a = 800; a >= -80; a -= 20) {
@@ -3150,13 +3277,14 @@
     const CAM = { lat: 37.3066, lng: 127.10576 };   // 용구대로 보정 신호·과속 60
     const V = 60 / 3.6, STEP = V;                    // 1초에 16.7m
     const mine = () => !!t.camState.target && sameCam(t.camState.target.c, CAM);
+    const F = camFrame(CAM, 180);   // v123: 카메라 차로 위 점·찍는 방향 기준으로 지난 거리를 잰다
     // a0 m 앞에서 시작해 1초마다 17m 씩 북쪽으로: 카메라를 지난 뒤 처음 꺼진 위치(지난 거리)
     const run = (a0, upto, at) => {
       let shown = false, cleared = null;
       for (let k = 0; ; k++) {
         const a = a0 - STEP * k;
         if (-a > upto) break;
-        feed(at ? at(a) : dest(CAM, 180, a), V, 0);
+        feed(at ? at(a) : F.pt(a), V, F.h);   // v123: 이 카메라는 원본 '(보정역→구성역)' 남행이라 북쪽에서 남쪽으로 달린다
         if (mine()) shown = true;
         if (a < 0 && shown && !mine() && cleared === null) cleared = Math.round(-a * 10) / 10;
       }
@@ -3167,17 +3295,17 @@
     await resetApp();
     // (b) 마지막 위치가 카메라 6m 앞: 0.48초 뒤에 꺼져야 한다
     let shownB = false;
-    for (let k = 0; k <= 36; k++) { feed(dest(CAM, 180, 6 + STEP * (36 - k)), V, 0); if (mine()) shownB = true; }
+    for (let k = 0; k <= 36; k++) { feed(F.pt(6 + STEP * (36 - k)), V, F.h); if (mine()) shownB = true; }
     r.bShown = shownB; r.bBefore = mine();
     const mark = t.alertLog[t.alertLog.length - 1];
     await new Promise((res) => setTimeout(res, 800));
     r.bAfter = mine();
     r.bChime = t.alertLog.slice(mark ? t.alertLog.indexOf(mark) + 1 : 0).filter((e) => /단속 통과 띠링/.test(e.text)).length;
-    feed(dest(CAM, 0, STEP - 6), V, 0);              // 다음 위치(10.7m 지나): 다시 뜨지 않는다
+    feed(F.pt(-(STEP - 6)), V, F.h);                 // 다음 위치(10.7m 지나): 다시 뜨지 않는다
     r.bAgain = mine();
     // (c) 길안내: 카메라를 지나는 곧은 경로
     const raw = [];
-    for (let k = 0; k <= 12; k++) raw.push(dest(CAM, 180, 800 - 100 * k));
+    for (let k = 0; k <= 12; k++) raw.push(F.pt(800 - 100 * k));
     const path = raw.map((p) => [round6(p.lng), round6(p.lat)]);
     const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
     const cum = [0];
@@ -3193,7 +3321,7 @@
       await resetApp();
       softReset();
       await planAndStart(R);
-      r.c = run(STEP * 36 - 3, 40, (a) => (a >= 0 ? dest(CAM, 180, a) : dest(CAM, 0, -a)));
+      r.c = run(STEP * 36 - 3, 40, (a) => F.pt(a));
     } finally { t.endNav(); softReset(); }
     const ok = r.a.shown && r.a.cleared !== null && r.a.cleared <= 5 &&
       r.bShown && r.bBefore && !r.bAfter && r.bChime === 1 && !r.bAgain &&
@@ -3613,7 +3741,9 @@
         const t = T();
         addInfo('booted in ' + r0(performance.now() - tStart) + ' ms · cameras ' + t.cams.rows.length + ' (' + t.cams.date + ')' +
           ' · __tnc keys: ' + Object.keys(t).join(','));
+        const only = (new URLSearchParams(location.search).get('only') || '').split(',').filter(Boolean);   // ?only=S74,S72
         for (const sc of SCENARIOS) {
+          if (only.length && !only.includes(sc.id)) continue;
           await runOne(sc.id);
           summarize('running');
           await sleep(0);

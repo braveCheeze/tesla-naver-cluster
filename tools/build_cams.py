@@ -73,6 +73,14 @@ ADDS = [
     # 원본(경찰청)에는 박스형이 없다. 다른 내비가 팔당대교IC 2km 앞에서 239m 앞으로 알린 자리 = 네이버 경로에서 IC 1.76km 앞(±50m).
     # 북서행 경로 오른쪽 10m. 남동행 경로에서는 왼쪽 10m 라 반대편으로 보고 잡히지 않는다.
     {'id': 'U0002', 'lat': 37.53968, 'lng': 127.25632, 'limit': 60, 'kind': 1, 'road': '다산로', 'rtype': 4, 'dir': 1, 'box': 1},
+    # 2026-11-15 밤 주행(성남 → 기흥, 네이버 지도와 같은 순간 사진): 원본에 없는 카메라 셋. 좌표는 실제 네이버 경로 위
+    # 해당 지점에서 진행 방향 오른쪽 6m (osm_cams.py 가 그 차로 방향으로 붙인다).
+    # 분당수서간도시고속화도로 남행 제한 80 과속: 네이버가 벌말지하차도 입구 24m 앞에 '80 · 과속단속'. 원본엔 북행(21906 '분당구청→탄천ic')만
+    {'id': 'U0003', 'lat': 37.4089, 'lng': 127.11853, 'limit': 80, 'kind': 1, 'road': '분당수서간도시고속화도로', 'rtype': 5, 'dir': 2},
+    # 용구대로2469번길 삼성르노자동차삼거리 남행 제한 50 신호·과속 (네이버 '50 · 신호과속', 교차로 10m 앞)
+    {'id': 'U0004', 'lat': 37.32188, 'lng': 127.10475, 'limit': 50, 'kind': 3, 'road': '용구대로2469번길', 'rtype': 5, 'dir': 2},
+    # 용구대로 연원마을사거리 남행 제한 60 후면단속 (네이버 '60 · 후면단속'). 원본의 연원마을사거리(J5490)는 북행 쪽 기둥
+    {'id': 'U0005', 'lat': 37.30088, 'lng': 127.10645, 'limit': 60, 'kind': 3, 'road': '용구대로', 'rtype': 4, 'dir': 2, 'rear': 1},
 ]
 
 roads, road_idx = [], {}
@@ -254,11 +262,10 @@ def has_opposite(row):
                 if o[9] == 3 or (o[9] and o[9] != row[9]):
                     return True
     return False
-both = [row for row in data if row[3] == 3 and row[9] in (1, 2) and not row[4]
-        and (row[0], row[1]) not in added and not has_opposite(row)]
-for row in both:
-    row[9] = 3
-print('signal+speed cameras with no opposite-direction partner -> both directions:', len(both))
+# v123 (2026-11-15 밤): 이 변환을 없앤다. 원본의 한 방향 교차로 카메라를 양방향으로 바꾸니 반대편 차로 카메라가 떴다
+# (복정동 성남대로 '성남시청->서울' 60 이 남행에서, 경춘로 수리재 '서울→춘천' 이 서울행에서). 이제 찍는 방향은
+# osm_cams.py 가 카메라를 OSM 차로에 붙여 정한다(우측통행: 카메라는 자기가 찍는 차로의 오른쪽 길가). 원본 방향 코드는 그대로 둔다
+both = []
 latest = max(d for d in dates if d)
 # 한 방향(1·2) 카메라 중 설치장소에 'A→B'가 적힌 것: [행 번호, A, B]. 좌표가 도로 한가운데라 좌우로 못 가르는 경우
 # (2026-11-14 하남 창우로 J2735 '(하남ic->팔당대교)' 60 이 팔당대교→하남IC 로 갈 때 떴다) 앱이 안내 문구로 가른다
@@ -270,7 +277,7 @@ def name_no(x):
         arrow_names.append(x)
     return arrow_ni[x]
 for i, row in enumerate(data):
-    if id(row) in arrow_of and row[9] in (1, 2):
+    if id(row) in arrow_of:   # v123: 양방향(3) 코드여도 설치장소 방향 글은 앱이 안내 문구로 가른다 (반대면 뺀다)
         a_, b_ = arrow_of[id(row)]
         arrows += [i, name_no(a_), name_no(b_)]
 print('one-way cameras with A-B place text:', len(arrows) // 3, 'names', len(arrow_names))
