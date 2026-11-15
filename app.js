@@ -51,7 +51,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.15-119'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.15-120'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -2191,14 +2191,19 @@
     const ar = cams.arrows && cams.arrows.get(c);
     if (!ar || !nav.guides || !nav.guides.length) return 0;
     const last = nav.cum.length - 1;
-    let behind = '', ahead = '';
+    // 방면('Y, Z')은 가는 곳이지만, 지나온 안내 중에서는 바로 앞 것(지금 달리는 길을 정한 안내)의 방면만 쓴다.
+    // (v120, 2026-11-15 보정동→성남: 3km 전 ''성남, 용인시청' 방면 좌회전'의 '용인시청' 때문에 분당수서로 '용인→분당경찰서' 80 카메라를
+    //  반대 방향으로 보고 뺐다. 그 뒤 경기고속삼거리에서 ''수서, 금곡동' 방면'으로 이미 방향을 틀었다)
+    let behind = '', ahead = '', lastDirs = '';
     for (const g of nav.guides) {
       const s = nav.cum[Math.min(g.i, last)];
       if (s < at - ARROW_SPAN || s > at + ARROW_SPAN) continue;
       const gp = guideParts(g);
-      if (s < at - 30) behind += '|' + gp.loc; else if (s > at + 30) ahead += '|' + gp.loc;
+      if (s < at - 30) { behind += '|' + gp.loc; lastDirs = gp.dirs; continue; }
+      if (s > at + 30) ahead += '|' + gp.loc;
       ahead += '|' + gp.dirs;
     }
+    ahead += '|' + lastDirs;
     const [a, b] = ar, has = (t, k) => t.indexOf(k) >= 0;
     const opp = (has(behind, b) && !has(ahead, b)) || (has(ahead, a) && !has(behind, a));
     const same = (has(behind, a) && !has(ahead, a)) || (has(ahead, b) && !has(behind, b));
