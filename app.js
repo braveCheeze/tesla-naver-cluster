@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-128'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-129'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -4023,31 +4023,34 @@
   // 다른 가지와 갈 수 없는 차로는 회색. 모양은 Atlas(GPT Image 2.6)로 받아 본 네이버풍 화살표(가는 줄기, 작고 날카로운 삼각 촉,
   // 둥근 꺾임, 길쭉한 비율)를 본떴다 (AI 그림 한 장으로는 가지별로 칠할 수 없어 벡터로). viewBox 26×32, 줄기는 x=13, 맨 아래에서
   // 2026-11-16 사용자 '줄기를 조금만 더 두껍게': 줄기 3.2(CSS), 촉도 그만큼 넓게
+  // 2026-11-16 사용자: '16:9 느낌보다 1:1 느낌으로', '너무 길쭉하고 얇아서 보기 안 좋다' → 28×28 정사각형 안에 굵게(줄기 3.8, CSS),
+  // 촉도 넓게. '왼쪽 오른쪽은 라운드를 좀 크게 동글게' → 좌·우 꺾임은 반지름 6(직진과 함께면 5.5)의 1/4 원. 줄기는 x=14, 맨 아래 y=27
   const LANE_HEAD = {
-    up: (x, y) => x + ',' + y + ' ' + (x - 5) + ',' + (y + 7.2) + ' ' + (x + 5) + ',' + (y + 7.2),
-    left: (x, y) => x + ',' + y + ' ' + (x + 6.8) + ',' + (y - 5) + ' ' + (x + 6.8) + ',' + (y + 5),
-    right: (x, y) => x + ',' + y + ' ' + (x - 6.8) + ',' + (y - 5) + ' ' + (x - 6.8) + ',' + (y + 5),
-    down: (x, y) => x + ',' + y + ' ' + (x - 4.7) + ',' + (y - 6.8) + ' ' + (x + 4.7) + ',' + (y - 6.8),
+    up: (x, y) => x + ',' + y + ' ' + (x - 5.8) + ',' + (y + 7.4) + ' ' + (x + 5.8) + ',' + (y + 7.4),
+    left: (x, y) => x + ',' + y + ' ' + (x + 6.8) + ',' + (y - 5.8) + ' ' + (x + 6.8) + ',' + (y + 5.8),
+    right: (x, y) => x + ',' + y + ' ' + (x - 6.8) + ',' + (y - 5.8) + ' ' + (x - 6.8) + ',' + (y + 5.8),
+    down: (x, y) => x + ',' + y + ' ' + (x - 5.2) + ',' + (y - 7) + ' ' + (x + 5.2) + ',' + (y - 7),
   };
   // m 의 가지들: [[방향, 선, 촉], …]과 줄기 끝 높이
   function laneParts(m) {
     const S = m.indexOf('S') >= 0, L = m.indexOf('L') >= 0, R = m.indexOf('R') >= 0, U = m.indexOf('U') >= 0;
     const parts = [];
-    if (!S && !L && !R && !U) return { parts, top: 14 };
-    const jy = S ? 19 : 15;          // 좌·우 가지가 갈라지는 높이 (직진과 함께면 줄기 가운데서)
-    let top = 32;
-    if (S) { parts.push(['S', 'M13 ' + jy + 'V8.4', LANE_HEAD.up(13, 1.5)]); top = jy; }
+    if (!S && !L && !R && !U) return { parts, top: 12 };
+    const r = S ? 5.5 : 6, jy = S ? 21.5 : 15;   // 좌·우 꺾임 반지름과 시작 높이 (직진과 함께면 줄기 아래쪽에서, 직진 촉과 안 닿게)
+    let top = 27;
+    if (S) { parts.push(['S', 'M14 ' + jy + 'V8.8', LANE_HEAD.up(14, 1.2)]); top = jy; }
     if (L || R) {
-      const y = jy - 4.4;
-      if (L) parts.push(['L', 'M13 ' + jy + 'Q13 ' + y + ' 8.6 ' + y, LANE_HEAD.left(2.2, y)]);
-      if (R) parts.push(['R', 'M13 ' + jy + 'Q13 ' + y + ' 17.4 ' + y, LANE_HEAD.right(23.8, y)]);
+      const y = jy - r;
+      if (L) parts.push(['L', 'M14 ' + jy + 'A' + r + ' ' + r + ' 0 0 0 ' + (14 - r) + ' ' + y + 'H' + (14 - r - 0.2), LANE_HEAD.left(14 - r - 6.8, y)]);
+      if (R) parts.push(['R', 'M14 ' + jy + 'A' + r + ' ' + r + ' 0 0 1 ' + (14 + r) + ' ' + y + 'H' + (14 + r + 0.2), LANE_HEAD.right(14 + r + 6.8, y)]);
       top = jy;
     }
     if (U) {
       if (S || L || R) {   // 다른 방향과 함께면 줄기 아래쪽에서 왼쪽으로 돌아 내려오는 고리
-        parts.push(['U', 'M13 24C13 18 5.5 18 5.5 22.5V23.8', LANE_HEAD.down(5.5, 30.4)]);
+        parts.push(['U', 'M14 21C14 15.5 6 15.5 6 19.5V19.8', LANE_HEAD.down(6, 26.6)]);
+        top = Math.min(top, 21);
       } else {             // 유턴만: 줄기 끝에서 왼쪽으로 돌아 내려온다
-        parts.push(['U', 'M13 10A3.8 3.8 0 0 0 5.4 10V23.6', LANE_HEAD.down(5.4, 30.2)]);
+        parts.push(['U', 'M14 10A4.2 4.2 0 0 0 5.6 10V19.4', LANE_HEAD.down(5.6, 26.2)]);
         top = 10;
       }
     }
@@ -4059,9 +4062,9 @@
     const lit = (dir) => go && (dir === M || !parts.some((p) => p[0] === M));
     const g = (on, inner) => '<g class="pt' + (on ? ' on' : '') + '">' + inner + '</g>';
     const draw = (p) => g(lit(p[0]), '<path d="' + p[1] + '"/><polygon points="' + p[2] + '"/>');
-    const stem = g(go, '<path d="M13 32V' + top + '"/>');
+    const stem = g(go, '<path d="M14 27V' + top + '"/>');
     // 회색 가지 먼저, 파란 줄기·가지를 위에 (겹친 곳이 파랗게)
-    return '<svg viewBox="0 0 26 32" aria-hidden="true">' + parts.filter((p) => !lit(p[0])).map(draw).join('') +
+    return '<svg viewBox="0 0 28 28" aria-hidden="true">' + parts.filter((p) => !lit(p[0])).map(draw).join('') +
       stem + parts.filter((p) => lit(p[0])).map(draw).join('') + '</svg>';
   }
   // ---------- 직진 차로 (2026-11-16 요청 '직진 차로도 안내') ----------
@@ -4070,7 +4073,7 @@
   // 그 지점 10m 뒤~100m 앞도 아닌 진입부 (실제 경로: 강일3·6단지 좌회전 진입부가 정지선→회전 지점 72m 라 직진으로 먼저 나왔다).
   // 경로마다 한 번 찾아 경로 거리순으로 둔다
   const LANE_STRAIGHT_SHOW = 300;
-  const LANE_DRAWER_MAX = 5;   // 서랍에 넣는 차로 수 (그보다 많으면 아래 가운데)
+  const LANE_DRAWER_MAX = 6;   // 서랍에 넣는 차로 수 (그보다 많으면 아래 가운데). 남은 거리를 칸 위로 올려 6칸까지 들어간다
   function ensureRouteLanes() {
     if (nav.laneStraight) return nav.laneStraight;
     const out = [];
@@ -4160,10 +4163,12 @@
     const key = (wide ? 'w:' : '') + (hit.M === 'S' ? 's:' : g.i + ':' + g.t + ':') + hit.k;
     if (laneState.key !== key) {
       laneState.key = key;
-      box.innerHTML = hit.lanes.map((m, i) => {
-        const go = hit.ok.indexOf(i) >= 0;
-        return '<b class="lg' + (go ? ' go' : '') + '">' + laneArrowSvg(m, go, hit.M) + '</b>';
-      }).join('') + (hit.M === 'S' ? '<span class="ld"></span>' : '');
+      // 직진 교차로: 칸 위 머리줄 (왼쪽 '다음 교차로 · 직진', 오른쪽 끝 남은 거리)
+      box.innerHTML = (hit.M === 'S' ? '<div class="lh"><span>다음 교차로 · 직진</span><b class="ld"></b></div>' : '') +
+        '<div class="lt">' + hit.lanes.map((m, i) => {
+          const go = hit.ok.indexOf(i) >= 0;
+          return '<b class="lg' + (go ? ' go' : '') + '">' + laneArrowSvg(m, go, hit.M) + '</b>';
+        }).join('') + '</div>';
       box.classList.toggle('straight', hit.M === 'S');
       box.dataset.lanes = hit.lanes.join('|');
       box.dataset.go = hit.ok.map((i) => i + 1).join(',');
