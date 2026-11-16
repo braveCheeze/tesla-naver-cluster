@@ -2215,9 +2215,8 @@
       '남양주(본)': { i: 'MMxx', x: 'MMxxH' },
     } };
     const real = { loaded: t.hipass.loaded, count: Object.keys(t.hipass.o).length, 하남: t.hipass.o['하남'], 군자입구: t.laneNums((t.hipass.o['군자'] || {}).i) };
-    // 칸이 많으면 회색 칸 무리를 끝 2칸만 남기고 접는다 (2026-11-14 요청). [n] = 파란 칸
-    const strip = (code, max) => t.laneStripHtml(code, max).html.replace(/<b class="ln (\w+)">(\d+)<\/b>/g, (m0, k, n) => (k === 'hp' ? '[' + n + ']' : n) + ' ')
-      .replace(/<i class="ln-gap">⋯<\/i>/g, '… ').trim();
+    // v135 네이버 지도처럼: 하이패스 차로만 번호 칸, 그 사이 다른 차로들은 몇 개든 '–' 칸 하나. [n] = 파란 칸
+    const strip = (code, max) => t.laneStripHtml(code, max).html.replace(/<b class="ln (\w+)">([^<]+)<\/b>/g, (m0, k, n) => (k === 'hp' ? '[' + n + ']' : n) + ' ').trim();
     const ds = (t.hipass.o['동서울'] || {}).i;
     real.동서울옆 = strip(ds, 7); real.동서울줄 = strip(ds, 10);
     // v98 부터 톨게이트 이름에 괄호가 남는다 ('남산1호터널톨게이트(도심)'). 영업소 이름 찾기는 끝 괄호를 떼고 본다
@@ -2273,7 +2272,7 @@
       r.realHanam = snap();
       t.endNav();
       // (h) v134 실제 경로 (2026-11-16 제보 상황): 경부 북행 위에서 시작한 경로(재탐색)는 첫 안내가 '서울톨게이트'이고 앞에 진입 안내도
-      //     앞선 톨게이트도 없다 → 본선 영업소 규칙으로 출구 줄 1~4·14~16 (전에는 방향을 몰라 공통 1~4번만). 판교분기점까지만 자른 경로
+      //     앞선 톨게이트도 없다 → 본선 영업소 규칙으로 출구 줄 1~4·14~16 (전에는 방향을 몰라 공통 1~4번만). 성남톨게이트 조금 뒤까지만 자른 경로
       softReset();
       const sx = await (await realFetch(harnessDir + 'fixtures/route-seoultg-n.json', { cache: 'no-store' })).json();
       const SP = sx.path.map((x) => ({ lat: x[1], lng: x[0] }));
@@ -2284,6 +2283,12 @@
       for (let m = 25; m <= sc[19] - 600; m += 25) { const a = pointAt(SR, m); feed(a.p, 25, a.h); t.renderNav(); }
       await new Promise((res) => setTimeout(res, 30)); t.renderNav();
       r.realSeoulTg = snap();
+      // (i) v135 같은 경로를 이어 판교분기점 → 수도권제1순환(구리 쪽) 성남톨게이트: 반시계 방향이라 상행 줄 = 네이버와 같은
+      //     1 2 3 – 8 9 – 11 – (11 = 화물차-하이패스). 2026-11-16 제보: 앱은 상행·하행 공통인 1~3번만 보여 줬다
+      for (let m = sc[19] - 575; m <= sc[127] - 600; m += 25) { const a = pointAt(SR, m); feed(a.p, 25, a.h); t.renderNav(); }
+      await new Promise((res) => setTimeout(res, 30)); t.renderNav();
+      r.realSeongnamTg = snap();
+      r.realSeongnamStrip = [...document.querySelectorAll('#tollLanes .ln')].map((e) => (e.classList.contains('hp') ? e.textContent : '–')).join(' ');
       t.endNav();
     } finally {
       t.setHipassData(null);
@@ -2291,16 +2296,17 @@
       set(prev);
       softReset();
     }
-    const ok = r.far.card && /km|m$/.test(r.far.dist) && r.far.lanes === '1,2,5/5' && r.far.boxes === 5 && r.far.blue === 3 &&
+    const ok = r.far.card && /km|m$/.test(r.far.dist) && r.far.lanes === '1,2,5/5' && r.far.boxes === 4 && r.far.blue === 3 &&
       r.beforeEntry.card && r.beforeEntry.lanes === '1,2,5/5' && r.beforeEntry.dist === '' &&
       r.tollNext.card && r.tollNext.lanes === '1,2,5/5' && r.tollNext.dist === '' &&
       r.unknown.card && r.unknown.lanes === '' &&
       r.toSeoul.lanes === '2/3' && r.fromSeoul.lanes === '1/3' && r.sideways.card && r.sideways.lanes === '' && r.ruleOff.lanes === '1/0' &&
-      r.realHanam.card && r.realHanam.lanes === '2/5' && r.realHanam.boxes === 5 && r.realHanam.blue === 1 &&
-      real.loaded && real.count > 400 && real.하남 && real.하남.u === 'bHPTb' && real.하남.d === 'HPTb' && real.하남.s === 1 && real.군자입구.join(',') === '1,2,3' &&
-      real.동서울옆 === '[1] [2] [3] [4] … 24 25' && real.동서울줄 === '[1] [2] [3] [4] … 21 22 23 24 25' &&
+      r.realHanam.card && r.realHanam.lanes === '2/5' && r.realHanam.boxes === 3 && r.realHanam.blue === 1 &&
+      real.loaded && real.count > 400 && real.하남 && real.하남.u === 'bHPTb' && real.하남.d === 'HPTb' && real.하남.s === 1 && real.군자입구.join(',') === '1,2,3,11' &&
+      real.동서울옆 === '[1] [2] [3] [4] – [22] [23] –' && real.동서울줄 === real.동서울옆 &&
       real.keys === '하남,하남,시흥,남산1호터널' &&
-      r.mainToSeoul.lanes === '1,2,3,4,14,15,16/19' && r.mainToSeoul.blue === 7 && r.mainFromSeoul.lanes === '1,2,3,4/13' &&
+      r.mainToSeoul.lanes === '1,2,3,4,14,15,16/19' && r.mainToSeoul.blue === 7 && r.mainToSeoul.boxes === 9 && r.mainFromSeoul.lanes === '1,2,3,4,9/13' &&
+      r.realSeongnamTg.card && r.realSeongnamTg.lanes === '1,2,3,8,9,11/13' && r.realSeongnamStrip === '1 2 3 – 8 9 – 11 –' &&
       r.mainBon.lanes === '1,2,5/5' && r.afterEntryTg.lanes === '4/4' &&
       r.realSeoulTg.card && r.realSeoulTg.lanes === '1,2,3,4,14,15,16/19' && r.realSeoulTg.blue === 7;
     return { pass: ok, detail: JSON.stringify(r) + ' | real: ' + JSON.stringify(real) + (ok ? '✓' : '✗') };
@@ -2798,7 +2804,7 @@
     { id: 'S50', name: 'S50 traffic colors in five steps (green, yellow, orange, red, dark red) from section speed', fn: s50 },
     { id: 'S51', name: "S51 section cameras found from '구간 시점/종점' place text", fn: s51 },
     { id: 'S52', name: 'S52 on the expressway (entry→exit guides) street cameras below stay quiet even without a section name', fn: s52 },
-    { id: 'S53', name: 'S53 hi-pass lane strip from data/hipass.json (all lanes, hi-pass blue): entry/exit, 상행/하행 toward Seoul, common lanes when unsure; mainline tollgates (서울TG) by direction', fn: s53 },
+    { id: 'S53', name: 'S53 hi-pass lane strip from data/hipass.json (all lanes, hi-pass blue): entry/exit, 상행/하행 toward Seoul, common lanes when unsure; mainline tollgates (서울TG) by direction; ring road counter-clockwise = 상행 (성남TG 1 2 3 – 8 9 – 11 –)', fn: s53 },
     { id: 'S54', name: 'S54 keep-left/right arrows for 왼쪽/오른쪽 방향·도로 주행, OUT/IN for highway exit/entry', fn: s54 },
     { id: 'S55', name: "S55 road caution signs (slippery, rockfall…): 300 m ahead on our side of the route, '주의' just after, setting off", fn: s55 },
     { id: 'S56', name: "S56 dragging the heading-up map keeps the direction, shows '내 위치로', returns after 5 s; pinch/wheel zoom keeps following", fn: s56 },

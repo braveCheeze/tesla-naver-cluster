@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-135'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-136'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -3903,14 +3903,18 @@
   }
   // 톨게이트 앞뒤 400m 로 잰 진행 방향이 지점 to 쪽이면 'u', 반대면 'd', 애매하면 '' (진입로 굽이에 흔들리지 않게).
   // 실제 경로: 하남IC→중부 상행 6°, 하남IC 출구(하행) 140°, 판교IC→경부 상행 20°
-  function towardDir(g, to) {
-    if (!nav.pts) return '';
+  function tollHeading(g) {
+    if (!nav.pts) return null;
     const last = nav.pts.length - 1, i = Math.min(g.i, last), s0 = nav.cum[i];
     let a = i, b = i;
     while (a > 0 && s0 - nav.cum[a] < 400) a--;
     while (b < last && nav.cum[b] - s0 < 400) b++;
-    if (a === b) return '';
-    const diff = angleDiff(bearing(nav.pts[a], nav.pts[b]), bearing(nav.pts[i], to));
+    return a === b ? null : bearing(nav.pts[a], nav.pts[b]);
+  }
+  function towardDir(g, to) {
+    const h = tollHeading(g);
+    if (h === null) return '';
+    const diff = angleDiff(h, bearing(nav.pts[Math.min(g.i, nav.pts.length - 1)], to));
     return diff <= 50 ? 'u' : diff >= 130 ? 'd' : '';
   }
   // 본선 영업소(고속도로 본선을 가로막는 큰 폐쇄식 톨게이트): 지나가는 방향만으로 입구·출구가 정해진다 — 이 도시 쪽으로 가면 폐쇄식
@@ -3945,18 +3949,33 @@
     }
     return before ? '출구' : after ? '입구' : '';
   }
-  // 개방식 영업소(상행·하행)에서 우리 방향: 수도권 방사형 노선(s:1)이면 서울 쪽으로 가면 상행. 애매하면 ''.
-  const tollDir = (g, o) => (o.s ? towardDir(g, SEOUL) : '');
-  // 차로 한 글자씩 (tools/build_hipass.py): H 하이패스 · M 다차로하이패스 · B 하이패스+유인 → 승용차 하이패스(파란 칸),
-  // T 유인 · P 정산기 · h/b/t 화물차 차로 → 회색 칸, x 미운영(토목차로)·- 빈 칸 → 흐린 칸
-  const LANE_KIND = { H: 'hp', M: 'hp', B: 'hp', T: 'op', P: 'op', h: 'op', b: 'op', t: 'op', x: 'off', '-': 'off' };
+  // 수도권제1순환고속도로(옛 외곽순환) 위 개방식 영업소: 거리표가 판교에서 시계 방향으로 늘어나므로 반시계 방향(서울을 왼쪽에 두고
+  // 도는 쪽)이 상행 (v135, 2026-11-16 제보 '성남 하이패스가 1·2·3차로만 있는 게 아니다': 판교→하남 쪽 성남TG 를 네이버는
+  // 1 2 3 – 8 9 – 11 – 로 보여 주고, 이는 자료의 상행 줄과 같다). 그 전에는 방향 규칙이 없어 상행·하행 공통인 1~3번만 나왔다
+  // 본선 영업소만 (토평은 IC 진입로 톨게이트라 진행 방향이 순환선 방향과 맞지 않아 뺀다)
+  const RING_TG = new Set(['성남', '청계', '시흥', '김포', '구리남양주']);
+  function ringDir(g) {
+    const h = tollHeading(g);
+    if (h === null) return '';
+    const p = nav.pts[Math.min(g.i, nav.pts.length - 1)];
+    // 서울에서 본 톨게이트 쪽 방향에서 90° 왼쪽으로 돌린 것이 반시계 방향 (예: 서울 동쪽이면 북쪽). 순환선은 원이 아니어서
+    // 길 방향이 이 접선과 50° 넘게 벌어지기도 한다 (성남TG 북행 52°) — 두 방향뿐이니 80° 안이면 반시계, 100° 넘으면 시계
+    const diff = angleDiff(h, (bearing(SEOUL, p) + 270) % 360);
+    return diff < 80 ? 'u' : diff > 100 ? 'd' : '';
+  }
+  // 개방식 영업소(상행·하행)에서 우리 방향: 수도권 방사형 노선(s:1)이면 서울 쪽으로 가면 상행, 제1순환선이면 반시계가 상행. 애매하면 ''.
+  const tollDir = (g, o, name) => (o.s ? towardDir(g, SEOUL) : RING_TG.has(name) ? ringDir(g) : '');
+  // 차로 한 글자씩 (tools/build_hipass.py): H 하이패스 · M 다차로하이패스 · B 하이패스+유인 · h 화물차-하이패스 → 하이패스(파란 칸),
+  // T 유인 · P 정산기 · b/t 화물차 유인 차로 → 회색 칸, x 미운영(토목차로)·- 빈 칸 → 흐린 칸.
+  // v135: 화물차-하이패스(h)도 파랗게 — 네이버 지도가 하이패스로 보여 준다 (성남TG 상행 11번)
+  const LANE_KIND = { H: 'hp', M: 'hp', B: 'hp', h: 'hp', T: 'op', P: 'op', b: 'op', t: 'op', x: 'off', '-': 'off' };
   const laneNums = (code) => [...String(code || '')].map((c, k) => (LANE_KIND[c] === 'hp' ? k + 1 : 0)).filter(Boolean);
   // 우리 방향의 차로 줄(code)을 고른다. 방향을 모르면: 두 방향 차로가 같으면 그 줄, 다르면 줄 없이 양쪽 다 하이패스인 번호만 (틀리지 않게)
   function hipassLayout(g) {
-    const o = hipassOffice(g)[1];
+    const [name, o] = hipassOffice(g);
     if (!o) return { code: '', nums: [] };
     let a, b, mine = '';
-    if (o.t) { const d = tollDir(g, o); mine = d ? o[d] : ''; a = o.u; b = o.d; } else {
+    if (o.t) { const d = tollDir(g, o, name); mine = d ? o[d] : ''; a = o.u; b = o.d; } else {
       const side = tollSide(g);
       mine = side === '입구' ? o.i : side === '출구' ? o.x : '';
       a = o.i; b = o.x;
@@ -3967,36 +3986,15 @@
     return { code: '', nums: laneNums(a).filter((n) => nb.indexOf(n) >= 0) };
   }
   const hipassNums = (g) => hipassLayout(g).nums;
-  // 하이패스 칸 아래 차로 줄 (2026-11-14 요청: 'hi-pass [2] 번 차로' 대신 톨게이트 차로를 1번부터 칸으로 늘어놓고 하이패스 차로만 파랗게).
-  // 미운영 차로가 3개 넘게 이어지면 '⋯' 하나로. 그래도 max 칸보다 많으면 칸을 줄이지 않고 회색 칸 무리를 끝 2칸만 남기고 '⋯'로
-  // (2026-11-14 요청: 동서울 25차로가 '2122232425'처럼 좁아지기보다 마지막 2~3개만). 파란 칸은 모두 남긴다
-  function laneStripHtml(code, max) {
-    const L = [...String(code || '')].map((c, k) => ({ no: k + 1, kind: LANE_KIND[c] || 'off', keep: true }));
-    for (let k = 0; k < L.length;) {
-      if (L[k].kind !== 'off') { k++; continue; }
-      let e = k;
-      while (e < L.length && L[e].kind === 'off') e++;
-      if (e - k >= 3) for (let j = k; j < e; j++) L[j].keep = false;
-      k = e;
-    }
-    const count = () => { let n = 0, gap = false; for (const x of L) { if (x.keep) { n++; gap = false; } else if (!gap) { n++; gap = true; } } return n; };
-    for (let guard = 0; guard < 40 && max && count() > max; guard++) {
-      let best = null;   // 가장 긴 회색(파랑 아닌) 칸 무리, 3칸 이상만
-      for (let k = 0; k < L.length;) {
-        if (!L[k].keep || L[k].kind === 'hp') { k++; continue; }
-        let e = k;
-        while (e < L.length && L[e].keep && L[e].kind !== 'hp') e++;
-        if (e - k > 3 && (!best || e - k > best[1] - best[0])) best = [k, e];
-        k = e;
-      }
-      if (!best) break;
-      for (let j = best[0]; j < best[1] - 2; j++) L[j].keep = false;   // 무리를 '⋯ + 끝 2칸'으로 (v110: 실제로 칸 수가 줄게)
-    }
+  // 하이패스 칸 아래 차로 줄: 하이패스 차로는 번호를 단 파란 칸, 그 사이 하이패스가 아닌 차로(유인·정산기·화물차 유인·미운영)는
+  // 몇 개든 '–' 회색 칸 하나로 (v135, 네이버 지도처럼: 성남TG 1 2 3 – 8 9 – 11 –, 서울TG 출구 1 2 3 4 – 14 15 16 –).
+  // 그 전(2026-11-14~v134)에는 모든 차로를 번호 칸으로 늘어놓고 미운영 3개 넘게·긴 회색 무리만 '⋯'로 접어, 큰 영업소에서 칸이 좁고 많았다
+  function laneStripHtml(code, max) {   // max: 예전 접기 기준 (지금은 칸 수만 돌려주고 dense 판단은 부르는 쪽에서)
     const out = [];
-    let gap = false;
-    for (const x of L) {
-      if (x.keep) { out.push('<b class="ln ' + x.kind + '">' + x.no + '</b>'); gap = false; } else if (!gap) { out.push('<i class="ln-gap">⋯</i>'); gap = true; }
-    }
+    let run = false;
+    [...String(code || '')].forEach((c, k) => {
+      if (LANE_KIND[c] === 'hp') { out.push('<b class="ln hp">' + (k + 1) + '</b>'); run = false; } else if (!run) { out.push('<b class="ln dash">–</b>'); run = true; }
+    });
     return { html: out.join(''), count: out.length };
   }
   function renderTollLanes(g) {

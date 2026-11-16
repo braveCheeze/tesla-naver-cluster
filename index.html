@@ -1384,6 +1384,8 @@
   .toll-lanes .ln.hp { background: #1565c0; color: #fff; }
   .toll-lanes .ln.off { background: transparent; box-shadow: inset 0 0 0 1px rgba(128, 138, 158, .35); opacity: .6; }
   .toll-lanes .ln-gap { flex: none; font-style: normal; font-weight: 800; color: #8a94a6; padding: 0 1px; }
+  /* v135 네이버 지도처럼: 하이패스 차로 사이의 다른 차로들은 몇 개든 짙은 회색 '–' 칸 하나 (성남TG 1 2 3 – 8 9 – 11 –) */
+  .toll-lanes .ln.dash { background: #4a515c; color: #e6e9ee; }
   .toll-lanes.dense .ln { font-size: 11px; height: 24px; letter-spacing: -.04em; }
   /* 방향을 몰라 줄을 못 그릴 때(양쪽 다 하이패스인 번호만): 예전처럼 이름 옆에 파란 번호 칸만 */
   .toll-lanes.compact { order: 0; flex: none; margin-left: auto; gap: 4px; }
@@ -1760,8 +1762,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-135"></script>
-<script src="img/ai/picks.js?v=2026.11.16-135"></script>
-<script src="app.js?v=2026.11.16-135"></script>
+<script src="icons.js?v=2026.11.16-136"></script>
+<script src="img/ai/picks.js?v=2026.11.16-136"></script>
+<script src="app.js?v=2026.11.16-136"></script>
 </body>
 </html>
