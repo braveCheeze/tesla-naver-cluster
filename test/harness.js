@@ -3598,12 +3598,46 @@
       r.row = visible('#parkGoal') ? text('#parkGoalName') + ' ' + text('#parkGoalDist') : 'hidden';
       r.nextGoal = document.getElementById('nextTurn').classList.contains('goal');
       const mk = (t.getMap() && t.getMap().destMk) || null;
-      r.pMark = !mk ? 'nomap' : mk.some((m) => { try { const ic = m.getIcon ? m.getIcon() : m.options.icon.options; return /parkpin/.test(ic.content ? ic.content.className : ic.html); } catch (e) { return false; } });
+      // 네이버 지도 Marker.getIcon() = { content: 요소 }, OSM(Leaflet) 대체 지도 = L.divIcon (html 은 options.html)
+      const hasP = (list) => list.some((m) => { try { const ic = m.getIcon ? m.getIcon() : m.options.icon; const html = ic.content ? ic.content.className || ic.content.outerHTML : (ic.options && ic.options.html) || ic.html || ''; return /parkpin/.test(html); } catch (e) { return false; } });
+      r.pMark = !mk ? 'nomap' : hasP(mk);
+      t.endNav(); softReset();
+      // (e) v148 '그 건물 입구에 해당하면 됨 (없는 경우)': 주차장 입구가 없는 건물은 그 건물 입구로 — 차량 출입구 먼저, 나가기만 하는 출구는 빼고.
+      //     다른 주차장은 찾지 않는다. 'P' 줄·P 표지 없음, 경로 카드 '입구로 안내 · …'
+      const gNear = dest(D, 90, 40), gCar = dest(D, 270, 80), gExit = dest(D, 0, 20);
+      const qs = [];
+      stub.canned['/search'] = (q) => { qs.push(q.query); return /주차장입구/.test(q.query || '') ? { items: [] } : / 입구$/.test(q.query || '') ? { items: [
+        { name: '테스트오피스텔101동입구', category: '도로시설>방면정보', addr: '', lat: gNear.lat, lng: gNear.lng },
+        { name: '테스트오피스텔후문출구', category: '도로시설>방면정보', addr: '', lat: gExit.lat, lng: gExit.lng },
+        { name: '테스트오피스텔차량출입구', category: '도로시설>방면정보', addr: '', lat: gCar.lat, lng: gCar.lng },
+      ] } : { items: [] }; };
+      const c1 = stub.calls.length;
+      await withTimeout(t.pickDest({ name: '테스트오피스텔', addr: '', lat: D.lat, lng: D.lng, category: '주택>오피스텔' }), 5000, 'pickDest');
+      await waitFor(() => stub.count('/route', c1) >= 1 && !t.nav.busy, 3000);
+      const q2 = stub.since(c1, '/route')[0];
+      r.gateGoal = !q2 ? 'none' : q2.query.goal === pt(gCar) ? 'car' : q2.query.goal === pt(gNear) ? 'near' : q2.query.goal === pt(gExit) ? 'exit' : q2.query.goal === pt(D) ? 'pin' : q2.query.goal;
+      r.gateQueries = qs.join('|');
+      r.gateCard = text('#rcParkName');
+      if (!t.nav.active) t.startNav();
+      for (let s = 10; s <= 100; s += 10) { const a = pointAt(R, s); feed(a.p, 8, a.h); }
+      t.renderNav();
+      r.gateRow = visible('#parkGoal');
+      r.gateP = !mk ? 'nomap' : hasP((t.getMap() && t.getMap().destMk) || []);
+      t.endNav(); softReset();
+      // (f) 목적지가 이미 입구(…101동입구)인데 주차장 입구가 없으면 건물 입구를 또 찾지 않고 그 자리로
+      qs.length = 0;
+      const c2 = stub.calls.length;
+      await withTimeout(t.pickDest({ name: '테스트오피스텔101동입구', addr: '', lat: gNear.lat, lng: gNear.lng, category: '도로시설>방면정보' }), 5000, 'pickDest');
+      await waitFor(() => stub.count('/route', c2) >= 1 && !t.nav.busy, 3000);
+      const q3 = stub.since(c2, '/route')[0];
+      r.entranceKept = !!q3 && q3.query.goal === pt(gNear) && qs.length === 1;
     } finally {
       t.endNav(); softReset();
       stub.canned['/search'] = { items: [] };
     }
-    const ok = r.goal === '101' && r.guides === '2,88' && /^101동 주차장 입출구 2\d0m$/.test(r.row) && r.nextGoal && r.pMark !== false;
+    const ok = r.goal === '101' && r.guides === '2,88' && /^101동 주차장 입출구 2\d0m$/.test(r.row) && r.nextGoal && r.pMark !== false &&
+      r.gateGoal === 'car' && r.gateQueries === '테스트오피스텔 주차장입구|테스트오피스텔 입구' && /^입구로 안내 · 테스트오피스텔차량출입구$/.test(r.gateCard) &&
+      !r.gateRow && r.gateP !== true && r.entranceKept;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

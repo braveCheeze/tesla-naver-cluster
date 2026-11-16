@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-149'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-150'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -923,7 +923,7 @@
       this.destMk.push(new N.Marker({ position: new N.LatLng(d.lat, d.lng), map: this.map, clickable: false, zIndex: 300,
         icon: { content: destPinEl(), anchor: new N.Point(17, 33) } }));
       // v145: 주차장 입구로 안내 중이면 경로 끝(차가 들어가는 곳)에 P 표지
-      if (end && parkGoalOf(d)) this.destMk.push(new N.Marker({ position: new N.LatLng(end.lat, end.lng), map: this.map, clickable: false, zIndex: 299,
+      if (end && parkGoalOf(d) && !parkGoalOf(d).gate) this.destMk.push(new N.Marker({ position: new N.LatLng(end.lat, end.lng), map: this.map, clickable: false, zIndex: 299,
         icon: { content: parkPinEl(), anchor: new N.Point(13, 13) } }));
     },
     // v148 지도를 길게 눌러 고른 자리 핀 (null 이면 지운다)
@@ -1119,7 +1119,7 @@
       this.destMk.push(L.marker([d.lat, d.lng], {
         icon: L.divIcon({ html: destPinEl().outerHTML, className: 'me-wrap', iconSize: [34, 34], iconAnchor: [17, 33] }), interactive: false, keyboard: false, zIndexOffset: 2000,
       }).addTo(this.map));
-      if (end && parkGoalOf(d)) this.destMk.push(L.marker([end.lat, end.lng], {
+      if (end && parkGoalOf(d) && !parkGoalOf(d).gate) this.destMk.push(L.marker([end.lat, end.lng], {
         icon: L.divIcon({ html: parkPinEl().outerHTML, className: 'me-wrap', iconSize: [26, 26], iconAnchor: [13, 13] }), interactive: false, keyboard: false, zIndexOffset: 1900,
       }).addTo(this.map));
     },
@@ -3153,7 +3153,27 @@
       same: !!dong && squash(it.name).includes(dong + '동') }));
     cands.sort((x, y) => (y.same - x.same) || (x.d - y.d));
     const c = cands[0];
-    return c ? { name: c.name, lat: c.lat, lng: c.lng, d: c.d } : null;
+    if (c) return { name: c.name, lat: c.lat, lng: c.lng, d: c.d };
+    return findGate(dest, base, b, dong);
+  }
+  // v148 (2026-11-16 운전자 '목적지 주변 가장 가까운 주차장 찾기는 그 건물 입구에 해당하면 됨 (없는 경우)'): 주차장 입구가 없으면
+  // 다른 주차장을 찾지 않고 그 건물의 입구로 — 차량 출입구 먼저, 그다음 같은 동, 정문·주출입구, 가까운 것. 목적지가 이미 입구(…입구·정문,
+  // '도로시설>방면정보')면 그대로 둔다. 건물 입구는 주차장이 아니라 'P' 줄·지도 P 표지는 없고, 경로 카드에 '입구로 안내'
+  const isGateName = (n) => /(입구|출입구|정문|후문|진입로)$/.test(squash(n));
+  async function findGate(dest, base, b, dong) {
+    if (isGateName(dest.name) || /방면정보/.test(dest.category || '')) return null;
+    let res;
+    try { res = await api('/search', { query: base + ' 입구' }, null, 2500); } catch (e) { return null; }
+    const cands = ((res && res.items) || []).filter((it) => {
+      const n = squash(it.name);
+      if (/주차/.test(n) || !/입구|출입구|정문|진입/.test(n) || (/출구/.test(n) && !/출입구/.test(n)) || !isFinite(it.lat) || !isFinite(it.lng)) return false;
+      if (!(n.includes(b) || (b.length >= 5 && n.includes(b.slice(0, b.length - 2))))) return false;
+      return haversine(dest, it) <= 300;
+    }).map((it) => { const n = squash(it.name); return { name: it.name, lat: it.lat, lng: it.lng, d: Math.round(haversine(dest, it)),
+      car: /차량/.test(n), same: !!dong && n.includes(dong + '동'), main: /정문|주출입구/.test(n) }; });
+    cands.sort((x, y) => (y.car - x.car) || (y.same - x.same) || (y.main - x.main) || (x.d - y.d));
+    const c = cands[0];
+    return c ? { name: c.name, lat: c.lat, lng: c.lng, d: c.d, gate: true } : null;
   }
   // 경로의 도착점: 주차장 입구를 찾았으면 그곳 (정문으로 바꾸면 원래 자리)
   const goalOf = (d) => parkGoalOf(d) || d;
@@ -3171,7 +3191,7 @@
     if (!el) return;
     const d = nav.active ? nav.dest : null, pk = parkGoalOf(d);
     const remain = nav.remain != null ? nav.remain : nav.total;
-    const show = !!pk && remain != null && remain <= PARK_GOAL_SHOW;
+    const show = !!pk && !pk.gate && remain != null && remain <= PARK_GOAL_SHOW;   // 건물 입구(v148)는 주차장이 아니라 'P' 줄 없음
     el.hidden = !show;
     if (!show) return;
     $('#parkGoalName').textContent = parkLabel(pk, d);
@@ -3604,8 +3624,9 @@
     const pk = !cmp && nav.dest && nav.dest.park;
     $('#rcPark').hidden = !pk;
     if (pk) {
-      $('#rcParkName').textContent = nav.dest.parkOff ? '정문(목적지)으로 안내' : '주차장 입구로 안내 · ' + nav.dest.park.name;
-      $('#rcParkBtn').textContent = nav.dest.parkOff ? '주차장 입구로' : '정문으로';
+      const gate = !!nav.dest.park.gate;   // v148: 주차장 입구가 없어 건물 입구로 안내하는 경우
+      $('#rcParkName').textContent = nav.dest.parkOff ? (gate ? '건물 위치(목적지)로 안내' : '정문(목적지)으로 안내') : (gate ? '입구로 안내 · ' : '주차장 입구로 안내 · ') + nav.dest.park.name;
+      $('#rcParkBtn').textContent = nav.dest.parkOff ? (gate ? '입구로' : '주차장 입구로') : (gate ? '건물 위치로' : '정문으로');
     }
     $('#rcStart').textContent = cmp ? '이 경로로 안내' : '안내 시작';
     $('#rcCancel').textContent = cmp ? '원래 경로로' : '취소';
