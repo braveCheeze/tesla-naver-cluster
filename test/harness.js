@@ -4368,6 +4368,8 @@
   //          좌회전이면 오른쪽, 회전을 지나면·설정을 끄면·안내를 끝내면 없어짐  (e) 자료가 없는 회전은 말풍선 없음
   async function s82() {
     const t = T(), R = buildNavRoute();
+    // 새로 연 페이지에서 첫 시험으로 돌면 지도가 아직 없을 수 있다 (창을 숨긴 0×0 페이지에서 말풍선이 하나도 안 생겼다): 지도부터 기다린다
+    await waitFor(() => t.getMap(), 5000);
     R.route = JSON.parse(JSON.stringify(R.route));
     R.route.guide = R.route.guide.filter((g) => g.t !== 1);   // 다음 안내가 바로 우회전(600m)
     const north = (m) => dest(NAV_ORIGIN, 0, m), turn = R.P[5], stop = dest(turn, 180, 40);
