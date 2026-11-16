@@ -2817,6 +2817,7 @@
     { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored; 7-10 lanes fit the drawer as square tiles", fn: s77 },
     { id: 'S78', name: "S78 mainline junction (v133): keep-left/right where the route stays on the same expressway section and goes straight is shown as straight ('신갈분기점에서 직진 · 서울 방면', main-straight junction scene, straight sign); a fork onto another expressway stays a fork", fn: s78 },
     { id: 'S79', name: 'S79 rest areas (v133): distance to where the entry ramp leaves the mainline (OSM), not the rest-area centre; within 3 km and no turn within 1 km the top row becomes the rest area (blue), next row = the guidance after it', fn: s79 },
+    { id: 'S80', name: 'S80 real Gyeongbu northbound route (v135): opposite-carriageway rest stop dropped, section-end camera alerted without its start, no reroute in the Seoul toll plaza or on 0.3 s of 10 Hz jitter, reroute 60 m off outside it', fn: s80 },
     { id: 'S75', name: 'S75 (info) cameras alerted on every saved real route, for comparing versions', fn: s75 },
     { id: 'S74', name: 'S74 camera score on 2026-11-15 real cases (13): false alerts / misses / wrong type, with and without navigation', fn: s74 },
     { id: 'S73', name: 'S73 no spoken overspeed words (과속/초과): limit beeps and the red card only', fn: s73 },
@@ -3661,7 +3662,7 @@
       r.km48 = snap();
     } finally {
       t.endNav(); softReset();
-      try { const j = await (await realFetch(new URL('../data/rest.json', location.href).href)).json(); t.setRestData(j); } catch (e) { /* 다음 실행 때 */ }
+      try { const j = await (await realFetch(new URL('../data/rest.json', location.href).href, { cache: 'no-store' })).json(); t.setRestData(j); } catch (e) { /* 다음 실행 때 */ }
     }
     const ok = r.at != null && Math.abs(r.at - 4750) <= 3 && Math.abs(r.mid - 5000) <= 3 &&
       !r.km1.top && r.km1.row === '테스트휴게소 3.8km' &&
@@ -3669,6 +3670,63 @@
       !r.km44.top && r.km44.dist === '900m' && /서울톨게이트/.test(r.km44.text) && r.km44.row === '테스트휴게소 350m' &&
       !r.km48.top && r.km48.row === '';
     return { pass: ok, detail: JSON.stringify(r) };
+  }
+
+  // S80: 2026-11-16 아침 경부 상행 실제 경로(죽전 → 서울TG → 판교 앞, test/fixtures/route-gyeongbu-jukjeon-n.json)로 v135 세 가지:
+  //      (a) 서울하이패스센터쉼터는 하행 본선에서만 들어가는 곳(OSM 갈림점 179°)이라 상행 경로 휴게소에서 빠진다
+  //      (b) 구간단속 끝 카메라(20926, 제한 110, 찍는 방향 359°)는 구간 시작을 못 봤어도(수원신갈IC 로 중간에 들어옴) 지점 카메라로 알린다
+  //      (c) 서울톨게이트 광장(안내 지점 ±600m)에서는 경로선에서 60m 떨어져 달려도 재탐색하지 않는다. 광장 밖에서 60m 면 재탐색
+  //      (d) 10Hz GPS 로 0.3초(3번)만 40m 벗어난 것은 재탐색하지 않는다
+  async function s80() {
+    const t = T(), r = {};
+    const fx = await (await realFetch(harnessDir + 'fixtures/route-gyeongbu-jukjeon-n.json', { cache: 'no-store' })).json();
+    const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const R = { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '경부 상행', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    const CAM = { lat: 37.3539, lng: 127.10339 };
+    let camS = 0, camD = Infinity;
+    for (let s = 0; s <= R.total; s += 5) { const d = hav(pointAt(R, s).p, CAM); if (d < camD) { camD = d; camS = s; } }
+    const tgS = cum[fx.guide.find((g) => g.t === 121).i];
+    try {
+      t.setRestData(await (await realFetch(new URL('../data/rest.json', location.href).href, { cache: 'no-store' })).json());   // 진입로 갈림점(entries)이 든 지금 자료
+      softReset();
+      await planAndStart(R);
+      r.rest = (t.ensureRouteRest() || []).map((x) => x.name).join(',') || '-';
+      let alertAt = null;
+      for (let s = 0; s <= camS + 60; s += 25) {
+        const a = pointAt(R, s); feed(a.p, 25, a.h);
+        const tg = t.camState.target;
+        if (alertAt === null && tg && sameCam(tg.c, CAM)) alertAt = s;
+      }
+      r.camBefore = alertAt === null ? null : Math.round(camS - alertAt);
+      r.section = !!t.camState.section;
+      // (d) 0.3초 동안 40m 옆
+      const c1 = stub.calls.length;
+      { const a = pointAt(R, camS + 100); for (let k = 0; k < 3; k++) feed(dest(a.p, a.h + 90, 40), 25, a.h, { dt: 100 }); }
+      for (let s = camS + 110; s <= tgS - 700; s += 25) { const a = pointAt(R, s); feed(a.p, 25, a.h); }
+      r.jitterReroutes = stub.since(c1, '/route').length;
+      // (c) 광장: 60m 옆으로 1km
+      const c2 = stub.calls.length;
+      let onAll = true;
+      for (let s = tgS - 680; s <= tgS + 500; s += 20) {
+        const a = pointAt(R, s), off = s >= tgS - 500;
+        feed(off ? dest(a.p, a.h + 90, 60) : a.p, 20, a.h);
+        if (off && !t.nav.onRoute) onAll = false;
+      }
+      r.plazaReroutes = stub.since(c2, '/route').length; r.plazaOnRoute = onAll;
+      for (let s = tgS + 520; s <= tgS + 700; s += 20) { const a = pointAt(R, s); feed(a.p, 20, a.h); }
+      // 광장 밖 60m 옆: 재탐색
+      const c3 = stub.calls.length;
+      for (let s = tgS + 720; s <= Math.min(R.total - 50, tgS + 900); s += 20) { const a = pointAt(R, s); feed(dest(a.p, a.h + 90, 60), 20, a.h); }
+      await sleep(50);
+      r.outsideReroutes = stub.since(c3, '/route').length;
+    } finally {
+      t.endNav(); softReset();
+    }
+    const ok = !/서울하이패스센터쉼터/.test(r.rest) && r.camBefore !== null && r.camBefore >= 250 && !r.section &&
+      r.jitterReroutes === 0 && r.plazaReroutes === 0 && r.plazaOnRoute && r.outsideReroutes >= 1;
+    return { pass: ok, detail: JSON.stringify(r) + ' (camera at ' + Math.round(camS) + ' m, toll at ' + Math.round(tgS) + ' m)' };
   }
 
   // S61: 고속도로 휴게소 (2026-11-14 요청). 북쪽→동쪽으로 가는 경로 옆: 오른쪽 휴게소·양방향 휴게소만, 왼쪽(반대 방향)·먼 것은 빼고,
@@ -3709,7 +3767,7 @@
       r.localNone = !visible('#restCard') && !(t.ensureRouteRest() || []).length;
     } finally {
       t.endNav(); softReset();
-      try { const j = await (await realFetch(new URL('../data/rest.json', location.href).href)).json(); t.setRestData(j); } catch (e) { /* 다음 실행 때 */ }
+      try { const j = await (await realFetch(new URL('../data/rest.json', location.href).href, { cache: 'no-store' })).json(); t.setRestData(j); } catch (e) { /* 다음 실행 때 */ }
     }
     const ok = r.found === '양방향휴게소,오른쪽휴게소' && /^양방향휴게소 50m \/ 다음 오른쪽 7\d0m$/.test(r.card1) && r.markers === 2 && r.place && r.blue && r.fits &&
       /^오른쪽휴게소 4\d0m$/.test(r.card2) && r.endHidden && r.localNone;

@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-134'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-135'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -1589,18 +1589,27 @@
       // v133 (2026-11-16 사용자: 네이버 3km 일 때 우리 3.1~3.2km, '200m 정도 차이'): 휴게소 좌표는 건물·주차장 가운데라
       // 경로에 내리면 진입로가 갈라지는 곳보다 수백 m 뒤다(죽전휴게소 245m). 네이버처럼 본선에서 진입로가 갈라지는 점(OSM, tools/osm_rest.py)
       // 까지 잰다: 경로 15m 안·본선 진행 방향 40° 안·휴게소 가운데보다 1.5km 안 앞의 갈림점. 없으면 예전처럼 가운데
-      let at = mid;
+      // v135 (2026-11-16 주행 중 '이거 딱 봐도 우리 쉼터 아니지 않아??' — 서울하이패스센터쉼터는 하행 본선에서만 들어간다):
+      // 갈림점이 모두 반대 방향 본선(경로 옆 120m 안, 진행 방향이 140° 넘게 다름)에 있으면 우리 방향에서는 못 들어가는 휴게소로 뺀다.
+      // 이름에 '양방향'이 있으면 믿고 두고, 갈림점을 모르면(OSM 에 없음) 예전처럼 둔다
+      let at = mid, hit = false, opp = 0, unk = 0;
       for (const e of r.ent) {
         const p = { lat: e[0], lng: e[1] };
+        let nb = null;
         for (let i = 0; i < pts.length - 1; i++) {
-          if (cum[i + 1] < mid - 1500 || cum[i] > mid + 50) continue;
+          if (cum[i + 1] < mid - 2000 || cum[i] > mid + 2000) continue;   // 반대 방향 갈림점은 휴게소 가운데보다 우리 쪽에서 보면 뒤에 있다
           const pr = projectSeg(p, pts[i], pts[i + 1]);
-          if (pr.dist > 15) continue;
+          if (!nb || pr.dist < nb.dist) nb = { dist: pr.dist, i, t: pr.t };
+          if (pr.dist > 25 || cum[i] > mid + 100) continue;
           if (e[2] >= 0 && angleDiff(e[2], bearing(pts[i], pts[i + 1])) > 40) continue;
           const ea = cum[i] + pr.t * (cum[i + 1] - cum[i]);
-          if (ea <= mid + 50 && ea >= mid - 1500 && (at === mid || ea > at)) at = Math.min(ea, mid);
+          if (ea <= mid + 50 && ea >= mid - 1500) { hit = true; if (at === mid || ea > at) at = Math.min(ea, mid); }
         }
+        if (hit) continue;
+        if (nb && e[2] >= 0 && nb.dist <= 120 && angleDiff(e[2], bearing(pts[nb.i], pts[nb.i + 1])) >= 140) opp++;
+        else unk++;
       }
+      if (!hit && opp > 0 && unk === 0 && !/양방향/.test(r.dir)) continue;
       out.push({ name: r.name, dir: r.dir, at, mid, lat: r.lat, lng: r.lng });
     }
     out.sort((x, y) => x.at - y.at);
@@ -1619,10 +1628,9 @@
   // v133 (2026-11-16 주행 중 사용자: '파란색 배경으로 밑에 있다가 키로미터에 따라서 이렇게 네이버처럼 위로 올려 줘야'):
   // 다음 휴게소가 이 안이면 맨 위 안내 줄을 휴게소로 (네이버 지도는 3km 에서 위 큰 칸이 휴게소, 그 밑 작은 칸이 휴게소 다음 안내)
   const REST_TOP = 3000;
-  // 휴게소 표지 (안내 줄용): 파란 바탕 위 흰 테두리 네모 + 흰 포크·나이프
-  const REST_SIGN = '<svg viewBox="0 0 40 40" class="rest-sign" aria-hidden="true"><rect x="2" y="2" width="36" height="36" rx="8" fill="none" stroke="#fff" stroke-width="3"/>' +
-    '<path d="M13 9v9.5c0 1.6 1.2 2.8 2.6 3.1V31c0 1.1.8 1.9 1.7 1.9s1.7-.8 1.7-1.9v-9.4c1.4-.3 2.6-1.5 2.6-3.1V9M15.5 9v7.5M18.5 9v7.5" fill="none" stroke="#fff" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>' +
-    '<path d="M27.6 9c-2.6 1.2-4.1 4.4-4.1 8.6 0 2 .9 3.3 2.4 3.8V31c0 1.1.8 1.9 1.7 1.9s1.7-.8 1.7-1.9V9z" fill="#fff" stroke="none"/></svg>';
+  // 휴게소 표지 (v135, 2026-11-16 사용자 '휴게소 아이콘도 하나 만들어 줘'): 흰 둥근 타일 + 굵은 파란 포크·나이프 (파란 줄·파란 안내 칸에서 또렷하게,
+  // 흰 바탕에서도 보이게 얇은 파란 테두리). 밑 파란 줄(index.html #restCard)과 같은 그림
+  const REST_SIGN = '<svg viewBox="0 0 48 48" class="rest-sign" aria-hidden="true"><rect x="3" y="3" width="42" height="42" rx="10" fill="#fff" stroke="#1d4fb8" stroke-width="2"/><path d="M14.5 8.5v9c0 2 1.5 3.4 3.3 3.8v16.2c0 1.3.9 2.2 1.9 2.2s1.9-.9 1.9-2.2V21.3c1.8-.4 3.3-1.8 3.3-3.8v-9M17.8 8.5v7M21.4 8.5v7" fill="none" stroke="#1d4fb8" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M34 8.5c-3.4 1.6-5.3 5.8-5.3 11 0 2.6 1.1 4.2 3.1 4.8v13.2c0 1.3.9 2.2 1.9 2.2s1.9-.9 1.9-2.2V8.5z" fill="#1d4fb8" stroke="none"/></svg>';
   function renderRest() {
     const el = $('#restCard');
     const list = nav.active && prefs.rest ? ensureRouteRest() : [];
@@ -2463,7 +2471,9 @@
         if (it.d > alertRange(it.c)) continue; // 도로 종류별 경고 거리 밖
         if (camState.passed.has(it.i) || (tg && it.i === tg.i)) continue;
         if (camUserNo(it.c, state.heading)) continue;          // 사용자가 '틀림'으로 신고한 카메라 (이 방향)
-        if (it.c[4] === 2 && !camState.section) continue; // 구간 끝 카메라는 구간 안에서만
+        // 구간 끝 카메라는 구간 안에서만. v135 (2026-11-16 경부 상행 '구간단속 끝 110' 놓침: 수원신갈IC 로 구간 중간에 들어와 시작을 못 봄):
+        // 찍는 방향을 아는 끝 카메라는 구간 밖이어도 그 지점 단속 카메라로 알린다 (끝 지점도 속도를 잰다. 반대 방향은 방향으로 걸러진다)
+        if (it.c[4] === 2 && !camState.section && !camHasDir(it.c)) continue;
         if (it.c[4] === 1 && camState.section) continue;  // 구간 안에서는 (반대 방향) 시작 카메라를 무시
         if (!isAhead(f, it.c, it.d)) continue;
         if (!best || it.d < best.d) best = it;
@@ -3534,6 +3544,14 @@
     nav.drawnAt = state.fix ? state.fix.t : Date.now();
   }
 
+  // 톨게이트 광장 구간(경로 거리): 톨게이트 안내(121~123) 지점 600m 앞 ~ 600m 뒤. 경로마다 한 번
+  function tollZones() {
+    if (nav.tollZonesFor === nav.route && nav.tollZones) return nav.tollZones;
+    const last = nav.cum.length - 1;
+    nav.tollZones = (nav.guides || []).filter((g) => g.t >= 121 && g.t <= 123).map((g) => { const s = nav.cum[Math.min(g.i, last)]; return [s - 600, s + 600]; });
+    nav.tollZonesFor = nav.route;
+    return nav.tollZones;
+  }
   function navUpdate(f) {
     if (!nav.active || !nav.pts || !f) return;
     // 경유지 근처(150m)를 지나면 목록에서 뺀다 (이후 재탐색이 경유지로 되돌아가지 않게)
@@ -3559,30 +3577,37 @@
 
     // 경로에서 이만큼 떨어지면 벗어난 것으로 본다. 테슬라 GPS 는 ±2~5m 로 정확해서
     // 옆으로 나란히 가는 다른 도로(보통 30m 이상)로 잘못 들어선 것도 잡을 수 있게 30m 를 기본으로 한다
-    const offLimit = Math.min(50, Math.max(30, (f.acc || 10) * 2));
+    // v135 (2026-11-16 주행 중 서울톨게이트에서 '경로 이탈' 오판정): 톨게이트 광장은 차로가 20개 넘게 넓게 퍼져 경로선(한 줄)에서
+    // 50m 넘게 떨어져 달리고, 차로를 고르느라 방향도 비스듬하다. 톨게이트 안내 지점 600m 앞 ~ 600m 뒤는 100m 까지 경로 위로 보고,
+    // 방향은 100° 넘게 다를 때만(되돌아가는 길) 다른 길로 본다
+    const inPlaza = tollZones().some(([a, b]) => nav.along >= a && nav.along <= b);
+    const offLimit = inPlaza ? 100 : Math.min(50, Math.max(30, (f.acc || 10) * 2));
     // 가장 가까운 경로 구간과 달리는 방향이 50° 넘게 다르고 18m 넘게 떨어졌으면 다른 길로 들어선 것 (30m 를 기다리지 않는다)
     let skew = 0;
     if (useHeading && best.dist > 18 && best.dist < Infinity && nav.cum[best.seg + 1] - nav.cum[best.seg] > 3) {
       skew = angleDiff(bearing(pts[best.seg], pts[best.seg + 1]), state.heading);
     }
-    const wrongWay = skew > 50;
+    const wrongWay = skew > (inPlaza ? 100 : 50);
     nav.onRoute = best.dist <= offLimit && !wrongWay;
     if (nav.onRoute) {
       nav.seg = best.seg;
       nav.along = nav.cum[best.seg] + best.t * (nav.cum[best.seg + 1] - nav.cum[best.seg]);
-      nav.off = 0;
+      nav.off = 0; nav.offSince = 0;
       if (++nav.onCount >= 5) { nav.gap = 10000; nav.quickLeft = 0; } // 경로 위를 잘 따라가면 재탐색 간격 초기화
     } else if ((f.acc || 0) < 60 && state.speedKmh > 3 &&
                (nav.onCount > 0 || nav.rerouted || f.t - (nav.setAt || 0) > 20000)) {
       // 출발점이 도로에서 떨어진 곳(주차장 등)이면 경로에 한 번 올라탄 뒤부터 센다.
       // 다만 20초가 지나도 경로에 못 올라탔다면(엉뚱한 경로) 그때부터는 센다
+      if (!nav.off) nav.offSince = f.t;
       nav.off++;
     }
-    // 확실히 다른 길(80m 넘게 벗어남·다른 방향)이면 2번, 아니면 3번 연속 확인되면 다시 찾는다
+    // 확실히 다른 길(80m 넘게 벗어남·다른 방향)이면 2번, 아니면 3번 연속 확인되면 다시 찾는다.
+    // v135: 테슬라 GPS 는 1초에 10번 와서 3번 연속이 0.3초였다 — 벗어난 채로 1초(확실히 다른 길)·2초가 지나야 한다 (1초에 한 번이면 예전과 같다)
     const need = best.dist > 80 || wrongWay ? 2 : 3;
+    const offLong = nav.off > 0 && f.t - (nav.offSince || f.t) >= (need - 1) * 1000;
     // 다시 찾은 경로에 한 번도 못 올라탔으면(답이 오는 사이 차가 경로 시작점을 지나쳤으면) 간격을 기다리지 않고 한 번 바로 다시 찾는다
     const quick = nav.quickLeft > 0 && nav.rerouted && nav.onCount === 0 && f.t - (nav.setAt || 0) > 2500;
-    if (nav.off >= need && !nav.busy && (quick || f.t - nav.lastReroute > nav.gap)) {
+    if (nav.off >= need && offLong && !nav.busy && (quick || f.t - nav.lastReroute > nav.gap)) {
       nav.lastReroute = f.t;
       nav.off = 0; nav.onCount = 0;
       if (quick) nav.quickLeft = 0;
