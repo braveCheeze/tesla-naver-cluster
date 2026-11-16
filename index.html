@@ -1276,6 +1276,31 @@
   .lanerow .pt.on { color: #35a2ff; }
   .lanerow .pt path { fill: none; stroke: currentColor; stroke-width: 3.8; stroke-linecap: butt; stroke-linejoin: round; }
   .lanerow .pt polygon { fill: currentColor; stroke: currentColor; stroke-width: .6; stroke-linejoin: round; }
+  /* v139 버스전용차로 칸 (2026-11-16 사용자가 네이버 화면을 보고 '우리도 이런거 있음 좋겠다'): 네이버처럼 앞모습 버스, 회색.
+     버스전용차로가 갈 차로면(그 방향이 거기만 — 바깥 버스전용차로에서 우회전) 파란 화살표 + 오른쪽 위 작은 파란 버스 */
+  .lanerow .pt.bus path, .lanetip .pt.bus path { fill: currentColor; stroke: none; }
+  .lanerow .lg.bus, .lanetip .tl.bus { position: relative; }
+  .lanerow .lg .lbus, .lanetip .tl .lbus { position: absolute; right: 1px; top: 1px; width: 36%; height: 36%; display: flex; }
+  .lanerow .lg .lbus svg, .lanetip .tl .lbus svg { width: 100%; height: 100%; }
+  .lanerow .lbus .pt.bus { color: #35a2ff; }
+  /* v139 지도 위 차로 말풍선 (네이버 길안내처럼 다음 회전 교차로에 흰 말풍선, app.js laneTipFor): 꼬리 끝이 정지선.
+     좌회전·유턴은 꼬리가 왼쪽(말풍선이 정지선 오른쪽 위), 우회전은 오른쪽(.tip-l). 칸 28px (화면 대비 네이버 말풍선 크기쯤) */
+  .lanetip {
+    position: relative; box-sizing: border-box; display: flex; gap: 2px; padding: 4px; height: 36px; pointer-events: none;
+    background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0, 0, 0, .28), 0 0 0 1px rgba(0, 0, 0, .08);
+  }
+  .lanetip::after { content: ''; position: absolute; left: 6px; bottom: -7px; border: 6px solid transparent; border-bottom: 0; border-top: 7px solid #fff; }
+  .lanetip.tip-l::after { left: auto; right: 6px; }
+  .lanetip .tl { flex: 0 0 28px; height: 28px; display: flex; align-items: center; justify-content: center; }
+  .lanetip .tl svg { width: 24px; height: 24px; overflow: visible; }
+  .lanetip .pt { color: #b4bac2; }
+  .lanetip .pt.on, .lanetip .lbus .pt.bus { color: #1a73e8; }
+  .lanetip .pt path { fill: none; stroke: currentColor; stroke-width: 3.8; stroke-linecap: butt; stroke-linejoin: round; }
+  .lanetip .pt polygon { fill: currentColor; stroke: currentColor; stroke-width: .6; stroke-linejoin: round; }
+  #map.night .lanetip { background: #23272e; box-shadow: 0 2px 8px rgba(0, 0, 0, .5), 0 0 0 1px rgba(255, 255, 255, .1); }
+  #map.night .lanetip::after { border-top-color: #23272e; }
+  #map.night .lanetip .pt { color: #69707a; }
+  #map.night .lanetip .pt.on, #map.night .lanetip .lbus .pt.bus { color: #4aa8ff; }
   body:has(#app.tesla):has(#map.night) .tn-arch { fill: #6b7280; }
   body:has(#app.tesla):has(#map.night) .tn-hole { fill: #111827; }
   /* ================= 하이패스도 단속 서랍 안에 (2026-11-14 요청) =================
@@ -1770,8 +1795,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-138"></script>
-<script src="img/ai/picks.js?v=2026.11.16-138"></script>
-<script src="app.js?v=2026.11.16-138"></script>
+<script src="icons.js?v=2026.11.16-139"></script>
+<script src="img/ai/picks.js?v=2026.11.16-139"></script>
+<script src="app.js?v=2026.11.16-139"></script>
 </body>
 </html>

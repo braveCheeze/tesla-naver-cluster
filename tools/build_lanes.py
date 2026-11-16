@@ -6,12 +6,17 @@
     B3_SURFACEMARK 노면 표시. Type 1 이 화살표, Kind 5371 직진 5372 좌 5373 우 5374 좌우 5381 직좌 5382 직우 5383 직좌우
                    5391 유턴 5392 좌회전+유턴 (LinkID = 그 화살표가 칠해진 차로)
     A1_NODE        링크 끝점
+    B2_SURFACELINEMARK 차선. Kind 504 = 버스전용차선, R_LinkID/L_LinkID = 선의 오른쪽·왼쪽 차로 (v139)
   zip 의 대부분(GNSS-INS 주행 궤적 txt, 수 GB)은 쓰지 않는다. zip 을 풀지 않고 필요한 SHP 만 메모리로 읽는다.
 진입부: 교차로 연결선(LinkType 1)으로 이어지는 차로들(옆 차로끼리 묶음), 정지선 쪽 끝점.
   차로마다 방향 = 정지선 가까이(마지막 화살표에서 15m 안) 칠해진 화살표들. 화살표가 없으면 그 차로에서 나가는 연결선의 방향(유턴 빼고).
+  버스전용차로(v139, 2026-11-16 '버스전용차로를 버스 칸으로'): 정지선 쪽 차로나 그 위 60m 안의 같은 차로가 한쪽에 버스전용차선(504),
+  다른 쪽에 504 또는 옆 차로가 없음(가장자리·중앙) → 그 차로 글자 뒤에 'B' (예: 'S|S|SRB'). 서울은 강서·양천·서초·노원·동작·
+  영등포·은평·관악·종로·동대문 자료에만 504 가 있다 (송파·강남·강동 등은 받은 구간에 버스전용차로가 없음).
   차로가 하나뿐이거나 모든 차로가 같은 진입부(알려 줄 것이 없음)는 뺀다.
 출력: {"v":1,"scale":100000,"date","areas":[…],"count","pats":["LU|L|S|RS",…],"d":[dLat,dLng,heading,pat,…]}
-  pats 는 차로 줄(왼쪽 1차로부터 '|'로 구분, 한 차로는 L 좌·S 직·R 우·U 유턴 글자들, 모르면 '?'). 위도 순으로 정렬해 차이로 담는다.
+  pats 는 차로 줄(왼쪽 1차로부터 '|'로 구분, 한 차로는 L 좌·S 직·R 우·U 유턴 글자들, 모르면 '?', 버스전용차로면 끝에 B).
+  위도 순으로 정렬해 차이로 담는다.
 사용법: py -I tools/build_lanes.py data/lanes.json [--keep <폴더>] [<정밀도로지도 zip 또는 푼 폴더> ...]
   zip 하나를 처리할 때마다 그 지역에서 뽑은 진입부를 tools/lanes-src/<지역>.json(수십 KB)에 남기고, data/lanes.json 은 그 폴더의
   모든 지역 파일을 합쳐 만든다. 그래서 원본 zip(지역당 수 GB, 대부분 GNSS 주행 궤적)은 처리한 뒤 지워도 되고, 디스크가 모자라면
@@ -32,7 +37,7 @@ import zipfile
 import zlib
 
 LAYER_DIR = 'HDMap_UTM52N_타원체고'
-LAYERS = ('A1_NODE', 'A2_LINK', 'B3_SURFACEMARK')
+LAYERS = ('A1_NODE', 'A2_LINK', 'B2_SURFACELINEMARK', 'B3_SURFACEMARK')
 ARROW = {'5371': 'S', '5372': 'L', '5373': 'R', '5374': 'LR', '5379': 'SU', '5381': 'LS', '5382': 'RS', '5383': 'LRS',
          '5391': 'U', '5392': 'LU'}
 CANON = {k.lower(): k for k in ('ID', 'LinkType', 'LaneNo', 'R_LinkID', 'L_LinkID', 'FromNodeID', 'ToNodeID', 'Length', 'LinkID',
@@ -181,11 +186,45 @@ def maneuver(d):
 
 
 # ---------------------------------------------------------------- 진입부
-def approaches(links, marks):
+BUS_UP = 60.0   # 정지선 쪽 차로 위로 이만큼 안에서 버스전용차로면 그 차로를 버스 칸으로
+
+
+def bus_lanes(links, lines):
+    """버스전용차로인 차로 링크들: 한쪽이 버스전용차선(504)이고 다른 쪽도 504 이거나 옆 차로가 없다"""
+    left, right = collections.defaultdict(set), collections.defaultdict(set)
+    for r in lines:
+        if r.get('R_LinkID'):
+            left[r['R_LinkID']].add(r.get('Kind'))
+        if r.get('L_LinkID'):
+            right[r['L_LinkID']].add(r.get('Kind'))
+    alone = lambda k, side: not (links[k].get(side) and links[k][side] in links)   # noqa: E731
+    return {k for k in links if links[k]['LinkType'] != '1' and (
+        ('504' in left[k] and ('504' in right[k] or alone(k, 'R_LinkID'))) or ('504' in right[k] and alone(k, 'L_LinkID')))}
+
+
+def approaches(links, marks, lines=()):
     out_of = collections.defaultdict(list)
+    into = collections.defaultdict(list)
     for k, L in links.items():
         out_of[L['FromNodeID']].append(k)
+        if L['LinkType'] != '1':
+            into[L['ToNodeID']].append(k)
     conn = lambda k: links[k]['LinkType'] == '1'   # noqa: E731
+    buses = bus_lanes(links, lines)
+
+    def is_bus(k):   # 정지선 쪽 차로, 또는 갈림 없이 위로 BUS_UP 안의 같은 차로
+        cur, d = k, 0.0
+        for _ in range(30):
+            if cur in buses:
+                return True
+            ps = into.get(links[cur]['FromNodeID'], [])
+            if len(ps) != 1:
+                return False
+            cur = ps[0]
+            d += links[cur]['Length'] or 0
+            if d > BUS_UP:
+                return False
+        return False
     appr = {}
     for k, L in links.items():
         if conn(k):
@@ -255,7 +294,7 @@ def approaches(links, marks):
                 s = set(''.join(a for d, a in arr if d - near <= 15))
             else:
                 s = set(appr[k]['moves'])
-            lanes.append(''.join(c for c in 'LSRU' if c in s) or '?')
+            lanes.append((''.join(c for c in 'LSRU' if c in s) or '?') + ('B' if is_bus(k) else ''))
         if len(set(lanes)) < 2:
             continue   # 모든 차로가 같으면 알려 줄 것이 없음
         lat, lng = utm_to_ll(cx, cy)
@@ -284,7 +323,7 @@ def extract(src, keepdir=None):
             os.replace(kpath + '.part', kpath)
         else:
             os.remove(kpath + '.part')
-    links, marks, n, dates = {}, [], len(secs), set()
+    links, marks, lines, n, dates = {}, [], [], len(secs), set()
     for sec in sorted(secs):
         files = secs[sec]
         for g, r in layer(files, 'A2_LINK'):
@@ -295,7 +334,8 @@ def extract(src, keepdir=None):
         for g, r in layer(files, 'B3_SURFACEMARK'):
             r['c'] = (sum(p[0] for p in g) / len(g), sum(p[1] for p in g) / len(g))
             marks.append(r)
-    ap = approaches(links, marks)
+        lines.extend(r for g, r in layer(files, 'B2_SURFACELINEMARK') if r.get('Kind') == '504')
+    ap = approaches(links, marks, lines)
     print('%s: %d sections, %d lane links, %d marks -> %d approaches' % (name, n, len(links), len(marks), len(ap)))
     if not n:
         print('  (구간이 없음: 덜 받은 zip 이거나 정밀도로지도 zip 이 아님 — 지역 파일을 만들지 않음)')

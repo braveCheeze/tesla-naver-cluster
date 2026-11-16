@@ -2825,6 +2825,7 @@
     { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored; 7-10 lanes fit the drawer as square tiles", fn: s77 },
     { id: 'S78', name: "S78 mainline junction (v133): keep-left/right where the route stays on the same expressway section and goes straight is shown as straight ('신갈분기점에서 직진 · 서울 방면', main-straight junction scene, straight sign); a fork onto another expressway stays a fork", fn: s78 },
     { id: 'S79', name: 'S79 rest areas (v133): distance to where the entry ramp leaves the mainline (OSM), not the rest-area centre; within 3 km and no turn within 1 km the top row becomes the rest area (blue), next row = the guidance after it', fn: s79 },
+    { id: 'S82', name: "S82 bus-only lanes and the map lane callout (v139, user saw Naver's '[↰][↑][↑][bus]'): bus lanes drawn as a grey bus and never blue unless the turn exists only there; a white callout at the next turn's stop line from 1 km, blue lanes for this turn, left of the stop line for right turns; nothing where there is no lane data", fn: s82 },
     { id: 'S80', name: 'S80 real Gyeongbu northbound route (v135): opposite-carriageway rest stop dropped, section-end camera alerted without its start, no reroute in the Seoul toll plaza or on 0.3 s of 10 Hz jitter, reroute 60 m off outside it', fn: s80 },
     { id: 'S81', name: 'S81 signal cameras sit at the stop line of the approach they enforce (v138, 길동사거리 left turn): our approach camera is warned, camera distance ≤ turn distance, the cross street camera is not', fn: s81 },
     { id: 'S75', name: 'S75 (info) cameras alerted on every saved real route, for comparing versions', fn: s75 },
@@ -4048,6 +4049,112 @@
       r.uturn.shown && r.uturn.go === '1' && r.uturn.onParts === 2 && r.uturn.offInGo === 2 &&
       !r.none.shown &&
       r.real.loaded && r.real.n > 100;
+    return { pass: ok, detail: JSON.stringify(r) + (ok ? ' ✓' : ' ✗') };
+  }
+
+  // S82: 버스전용차로 칸 + 지도 위 차로 말풍선 (v139, 2026-11-16 사용자가 네이버 길안내 화면을 보고 '우리도 이런거 있음 좋겠다').
+  //      시험 경로(북쪽 600m → 우회전)의 우회전 진입부(회전 지점 40m 앞)와 450m 직진 교차로에
+  //      (a) 우회전 'L|S|SR|SB'(4차로 버스전용): 3차로만 파랑, 4차로는 회색 버스 그림(화살표 없음)
+  //      (b) 직진 교차로 'S|S|SB': 다 직진이어도 버스 칸이 있으니 보이고 1·2차로만 파랑
+  //      (c) 우회전이 버스전용차로에만 'S|S|SRB': 그 차로를 파랗게 + 구석 작은 버스
+  //      (d) 지도 말풍선: 1km 안에서 회전 진입부 정지선에(꼬리 끝 = 정지선), 칸 수 = 차로 수, 갈 차로 파랑, 우회전이면 정지선 왼쪽(.tip-l),
+  //          좌회전이면 오른쪽, 회전을 지나면·설정을 끄면·안내를 끝내면 없어짐  (e) 자료가 없는 회전은 말풍선 없음
+  async function s82() {
+    const t = T(), R = buildNavRoute();
+    R.route = JSON.parse(JSON.stringify(R.route));
+    R.route.guide = R.route.guide.filter((g) => g.t !== 1);   // 다음 안내가 바로 우회전(600m)
+    const north = (m) => dest(NAV_ORIGIN, 0, m), turn = R.P[5], stop = dest(turn, 180, 40);
+    const data = (list) => {
+      const pats = [], d = [];
+      let pa = 0, pb = 0;
+      list.forEach(([q, h, pat]) => {
+        if (pats.indexOf(pat) < 0) pats.push(pat);
+        const a = Math.round(q.lat * 1e5), b = Math.round(q.lng * 1e5);
+        d.push(a - pa, b - pb, h, pats.indexOf(pat)); pa = a; pb = b;
+      });
+      t.setLaneData({ v: 1, scale: 1e5, date: '2025-09', areas: ['시험'], count: list.length, pats, d });
+    };
+    const el = () => document.getElementById('laneRow');
+    const row = () => ({ shown: visible('#laneRow'), lanes: el().dataset.lanes || '', go: el().dataset.go || '', bus: el().dataset.bus || '',
+      busTiles: document.querySelectorAll('#laneRow .lg.bus').length, busIcons: document.querySelectorAll('#laneRow .lg.bus:not(.go) .pt.bus').length,
+      busArrows: document.querySelectorAll('#laneRow .lg.bus:not(.go) .pt:not(.bus)').length, busBlue: document.querySelectorAll('#laneRow .lg.bus:not(.go) .pt.on').length,
+      goBus: document.querySelectorAll('#laneRow .lg.go.bus .lbus').length, move: el().dataset.move || '' });
+    const tip = () => {
+      const m = t.getMap(), box = document.querySelector('#map .lanetip');
+      if (!box) return { shown: false, obj: !!(m && m._tip) };
+      const b = box.getBoundingClientRect(), cp = t.canvasPoint ? null : null;
+      return { shown: visible('#map .lanetip'), obj: !!(m && m._tip), cells: box.querySelectorAll('.tl').length, go: box.querySelectorAll('.tl.go').length,
+        goIdx: Array.from(box.querySelectorAll('.tl')).map((c, i) => (c.classList.contains('go') ? i + 1 : 0)).filter(Boolean).join(','),
+        bus: box.querySelectorAll('.tl.bus:not(.go) .pt.bus').length, left: box.classList.contains('tip-l'),
+        blue: (() => { const g = box.querySelector('.tl.go .pt.on'), o = box.querySelector('.tl:not(.go) .pt');
+          return g && o ? getComputedStyle(g).color !== getComputedStyle(o).color : null; })(),
+        w: Math.round(b.width), h: Math.round(b.height), cp };
+    };
+    const go = (Rx, m) => { const a = pointAt(Rx, m); feed(a.p, 15, a.h); };
+    const prevPref = t.prefs.lanes;
+    const r = {};
+    try {
+      // (a) 우회전 + 4차로 버스전용, (b) 450m 직진 교차로 'S|S|SB'
+      data([[stop, 0, 'L|S|SR|SB'], [dest(north(450), 90, 6), 0, 'S|S|SB']]);
+      softReset();
+      await planAndStart(R);
+      go(R, 15); go(R, 60);
+      r.tipFar = tip();                                // 우회전까지 540m: 말풍선은 1km 안이라 보임
+      for (let m = 110; m <= 200; m += 15) go(R, m);
+      r.straight = row();                              // 직진 교차로 250m 앞
+      for (let m = 230; m <= 470; m += 20) go(R, m);
+      r.right = row();                                 // 직진 교차로 지나 우회전 130m 앞
+      r.tipNear = tip();
+      t.prefs.lanes = false; go(R, 480);
+      r.tipOff = tip();
+      t.prefs.lanes = true; go(R, 490);
+      r.tipOn = tip();
+      for (let m = 510; m <= 700; m += 25) go(R, m);
+      r.tipAfter = tip();                              // 우회전 지나 다음 안내 = 목적지
+      t.endNav();
+      r.tipEnded = tip();
+      // (c) 우회전이 버스전용차로에만
+      data([[stop, 0, 'S|S|SRB']]);
+      softReset();
+      await planAndStart(R);
+      for (let m = 15; m <= 470; m += 25) go(R, m);
+      r.busOnly = row();
+      r.tipBusOnly = tip();
+      t.endNav();
+      // 같은 곳이 좌회전 안내면 말풍선은 정지선 오른쪽
+      data([[stop, 0, 'LU|L|S|SB']]);
+      const RL = JSON.parse(JSON.stringify(R));
+      RL.route.guide[0].t = 2; RL.route.guide[0].s = "'시험로' 방면으로 좌회전";
+      softReset();
+      await planAndStart(RL);
+      for (let m = 15; m <= 470; m += 25) go(RL, m);
+      r.leftTip = tip();
+      r.left = row();
+      t.endNav();
+      // (e) 자료 밖 회전
+      data([[dest(turn, 0, 3000), 0, 'L|S|R']]);
+      softReset();
+      await planAndStart(R);
+      for (let m = 15; m <= 470; m += 25) go(R, m);
+      r.tipNone = tip();
+      t.endNav();
+    } finally {
+      t.prefs.lanes = prevPref;
+      t.setLaneData(null);
+      await t.loadLanes();
+      softReset();
+    }
+    r.realBus = (t.lanesData.pats || []).filter((p) => p.join('|').indexOf('B') >= 0).length;
+    const ok = r.tipFar.shown && r.tipFar.cells === 4 &&
+      r.straight.shown && r.straight.move === 'S' && r.straight.go === '1,2' && r.straight.bus === '3' && r.straight.busIcons === 1 && r.straight.busArrows === 0 &&
+      r.right.shown && r.right.go === '3' && r.right.bus === '4' && r.right.busIcons === 1 && r.right.busArrows === 0 && r.right.busBlue === 0 &&
+      r.tipNear.shown && r.tipNear.cells === 4 && r.tipNear.goIdx === '3' && r.tipNear.bus === 1 && r.tipNear.left === true && r.tipNear.blue === true &&
+      r.tipNear.w === 4 * 28 + 3 * 2 + 8 && r.tipNear.h === 36 &&
+      !r.tipOff.shown && !r.tipOff.obj && r.tipOn.shown && !r.tipAfter.shown && !r.tipEnded.shown && !r.tipEnded.obj &&
+      r.busOnly.shown && r.busOnly.go === '3' && r.busOnly.goBus === 1 && r.tipBusOnly.shown && r.tipBusOnly.goIdx === '3' &&
+      r.leftTip.shown && r.leftTip.left === false && r.leftTip.goIdx === '1,2' && r.left.go === '1,2' && r.left.bus === '4' &&
+      !r.tipNone.shown && !r.tipNone.obj &&
+      r.realBus > 10;
     return { pass: ok, detail: JSON.stringify(r) + (ok ? ' ✓' : ' ✗') };
   }
 

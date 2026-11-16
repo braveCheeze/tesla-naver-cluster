@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-138'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-139'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -905,6 +905,17 @@
       this.destMk.push(new N.Marker({ position: new N.LatLng(d.lat, d.lng), map: this.map, clickable: false, zIndex: 300,
         icon: { content: destPinEl(), anchor: new N.Point(17, 33) } }));
     },
+    // 차로 말풍선 (v139): tip = laneTipFor() 결과 또는 null. 같은 말풍선이면 그대로
+    setLaneTip(tip) {
+      const key = tip ? tip.key : '';
+      if (key === this._tipKey && (!tip || this._tip)) return;
+      this._tipKey = key;
+      if (this._tip) { this._tip.setMap(null); this._tip = null; }
+      if (!tip || !this.map) return;
+      const N = naver.maps;
+      this._tip = new N.Marker({ position: new N.LatLng(tip.lat, tip.lng), map: this.map, clickable: false, zIndex: 150,
+        icon: { content: tip.html, size: new N.Size(tip.w, tip.h), anchor: new N.Point(tip.ax, tip.ay) } });
+    },
     // 주정차 단속 카메라: 작은 주정차 금지 표지
     setParks(list) {
       const N = naver.maps;
@@ -927,6 +938,8 @@
       (this.destMk || []).forEach((m) => m.setMap(null)); this.destMk = [];
       (this.restMk || []).forEach((m) => m.setMap(null)); this.restMk = [];
       (this._arrowObjs || []).forEach((o) => o.setMap(null)); this._arrowObjs = []; this._arrow = null;
+      if (this._tip) this._tip.setMap(null);
+      this._tip = null; this._tipKey = '';
       this.cams = new Map(); this.bumps = new Map();
       this.clearRoute();
       if (this.map) this.map.destroy();
@@ -1072,6 +1085,17 @@
         icon: L.divIcon({ html: destPinEl().outerHTML, className: 'me-wrap', iconSize: [34, 34], iconAnchor: [17, 33] }), interactive: false, keyboard: false, zIndexOffset: 2000,
       }).addTo(this.map));
     },
+    setLaneTip(tip) {
+      const key = tip ? tip.key : '';
+      if (key === this._tipKey && (!tip || this._tip)) return;
+      this._tipKey = key;
+      if (this._tip) { this._tip.remove(); this._tip = null; }
+      if (!tip || !this.map) return;
+      this._tip = L.marker([tip.lat, tip.lng], {
+        icon: L.divIcon({ html: tip.html, className: 'me-wrap', iconSize: [tip.w, tip.h], iconAnchor: [tip.ax, tip.ay] }),
+        interactive: false, keyboard: false, zIndexOffset: 1500,
+      }).addTo(this.map);
+    },
     setParks(list) {
       if (!this.parks) this.parks = new Map();
       const keep = new Set(list.map((x) => x.k));
@@ -1088,7 +1112,7 @@
       this.clearRoute();
       if (this.map) this.map.remove();
       this.map = null; this.marker = null; this.cams = new Map(); this.bumps = new Map(); this.parks = new Map();
-      this.destMk = []; this._arrowObjs = []; this._arrow = null; this.restMk = [];
+      this.destMk = []; this._arrowObjs = []; this._arrow = null; this.restMk = []; this._tip = null; this._tipKey = '';
     },
   };
 
@@ -4117,6 +4141,15 @@
       if (r.ok) setLaneData(await r.json());
     } catch (e) { /* 차로 자료가 없으면 차로 칸 없이 */ }
   }
+  // 버스전용차로 (v139, 2026-11-16 사용자 '우리도 이런거 있음 좋겠다' — 네이버처럼 버스 칸): 자료의 차로 글자 끝 'B'
+  // (tools/build_lanes.py: 정밀도로지도 버스전용차선 504). 갈 차로에서 빼되, 그 방향이 버스전용차로에만 있으면(바깥 버스전용차로에서
+  // 우회전 — 점선 구간에서 들어가 돈다) 그 차로를 갈 차로로 둔다
+  const isBusLane = (l) => String(l).indexOf('B') >= 0;
+  function laneOk(lanes, M) {
+    const all = lanes.map((l, i) => (l.indexOf(M) >= 0 ? i : -1)).filter((i) => i >= 0);
+    const car = all.filter((i) => !isBusLane(lanes[i]));
+    return car.length ? car : all;
+  }
   // 이 회전 안내에서 갈 차로: { lanes: ['LU','L','S','RS'], ok: [0, 1], k } 또는 null. 경로마다 안내별로 한 번만 찾는다
   function laneGuide(g) {
     const M = g && LANE_MOVE[turnKind(g)];
@@ -4140,9 +4173,9 @@
           if (along < -8 || along > 90 || side > 22) continue;   // 큰 교차로는 정지선 → 네이버 회전 지점이 70m 넘기도 (강일3·6단지 72m)
           const lanes = lanesData.pats[lanesData.pat[k]] || [];
           // 유턴은 노면 유턴 화살표가 있는 차로, 없으면 1차로 (유턴은 1차로에서)
-          const ok = lanes.map((l, i) => (l.indexOf(M) >= 0 ? i : -1)).filter((i) => i >= 0);
+          const ok = laneOk(lanes, M);
           const painted = ok.length > 0;   // 그 방향 화살표가 실제로 칠해진 차로가 있음
-          if (M === 'U' && !ok.length) ok.push(0);
+          if (M === 'U' && !ok.length) ok.push(Math.max(0, lanes.findIndex((l) => !isBusLane(l))));   // 1차로 (중앙 버스전용차로면 그다음)
           cands.push({ k, lanes, ok, painted, along, far: along > 45 ? 1 : 0 });
         }
       }
@@ -4219,6 +4252,17 @@
     return '<svg viewBox="0 0 28 28" aria-hidden="true"><g' + (dx ? ' transform="translate(' + dx + ' 0)"' : '') + '>' +
       stemGrey + parts.filter((p) => !lit(p[0])).map(draw).join('') + stem + parts.filter((p) => lit(p[0])).map(draw).join('') + '</g></svg>';
   }
+  // 버스 칸: 네이버처럼 앞모습 버스 (몸통에 앞유리·전조등 구멍, 바퀴 둘). 28×28, 칸 색(currentColor)으로 칠한다
+  const BUS_LANE_SVG = '<svg viewBox="0 0 28 28" aria-hidden="true"><g class="pt bus"><path fill-rule="evenodd" d="M10.2 3H17.8A3.2 3.2 0 0 1 21 6.2V21H7V6.2A3.2 3.2 0 0 1 10.2 3Z' +
+    'M9.3 6.2V12.8H18.7V6.2ZM9.2 17.2A1.4 1.4 0 1 0 12 17.2A1.4 1.4 0 1 0 9.2 17.2ZM16 17.2A1.4 1.4 0 1 0 18.8 17.2A1.4 1.4 0 1 0 16 17.2Z' +
+    'M7.8 21H11.2V24A1 1 0 0 1 10.2 25H8.8A1 1 0 0 1 7.8 24ZM16.8 21H20.2V24A1 1 0 0 1 19.2 25H17.8A1 1 0 0 1 16.8 24Z"/></g></svg>';
+  // 차로 칸 하나 (서랍 칸·지도 말풍선 같이): 버스전용차로는 버스 그림(회색). 버스전용차로가 갈 차로면(그 방향이 거기만 — 우회전)
+  // 화살표를 파랗게 그리고 구석에 작은 버스
+  function laneCell(m, go, M, cls) {
+    const bus = isBusLane(m);
+    return '<b class="' + cls + (go ? ' go' : '') + (bus ? ' bus' : '') + '">' +
+      (bus && !go ? BUS_LANE_SVG : laneArrowSvg(m, go, M) + (bus ? '<i class="lbus">' + BUS_LANE_SVG + '</i>' : '')) + '</b>';
+  }
   // ---------- 직진 차로 (2026-11-16 요청 '직진 차로도 안내') ----------
   // 경로가 곧게 지나가는(회전 안내가 없는) 교차로 진입부 중 일부 차로가 좌·우회전 전용인 곳: 직진할 수 있는 차로를 파랗게.
   // 경로 선에서 옆으로 15m 안, 방향 25° 안, 정지선 20m 뒤 경로가 35° 넘게 꺾이지 않고, 회전 안내(좌·우·유턴)에 쓰인 진입부가 아니고
@@ -4281,8 +4325,8 @@
       if (fast.some(([s, e]) => o.at >= s && o.at <= e)) continue;          // 고속·도시고속도로 위 (아래·옆 일반도로 교차로)
       if (routeTurnAt(o.at + 20) > 35) continue;                            // 경로가 그 교차로에서 꺾임
       const lanes = lanesData.pats[lanesData.pat[k]] || [];
-      const ok = lanes.map((l, i) => (l.indexOf('S') >= 0 ? i : -1)).filter((i) => i >= 0);
-      if (!ok.length || ok.length === lanes.length) continue;               // 직진 차로가 없거나 다 직진이면 알려 줄 것이 없음
+      const ok = laneOk(lanes, 'S');
+      if (!ok.length || ok.length === lanes.length) continue;               // 직진 차로가 없거나 다 직진이면 알려 줄 것이 없음 (버스 칸이 있으면 보임)
       out.push({ at: o.at, k, lanes, ok, M: 'S' });
     }
     out.sort((u, v) => u.at - v.at);
@@ -4332,19 +4376,39 @@
       laneState.key = key;
       // 직진 교차로: 칸 위 머리줄 (왼쪽 '다음 교차로 · 직진', 오른쪽 끝 남은 거리). 칸은 정사각형, 8차로 넘으면 틈을 좁힘
       box.innerHTML = (hit.M === 'S' ? '<div class="lh"><span>다음 교차로 · 직진</span><b class="ld"></b></div>' : '') +
-        '<div class="lt' + (hit.lanes.length >= 8 ? ' many' : '') + '">' + hit.lanes.map((m, i) => {
-          const go = hit.ok.indexOf(i) >= 0;
-          return '<b class="lg' + (go ? ' go' : '') + '">' + laneArrowSvg(m, go, hit.M) + '</b>';
-        }).join('') + '</div>';
+        '<div class="lt' + (hit.lanes.length >= 8 ? ' many' : '') + '">' +
+        hit.lanes.map((m, i) => laneCell(m, hit.ok.indexOf(i) >= 0, hit.M, 'lg')).join('') + '</div>';
       box.classList.toggle('straight', hit.M === 'S');
       box.dataset.lanes = hit.lanes.join('|');
       box.dataset.go = hit.ok.map((i) => i + 1).join(',');
       box.dataset.move = hit.M;
-      box.setAttribute('aria-label', (hit.M === 'S' ? '직진 ' : '') + hit.lanes.length + '차로 중 ' + hit.ok.map((i) => i + 1).join('·') + '차로');
+      const busN = hit.lanes.map((m, i) => (isBusLane(m) ? i + 1 : 0)).filter(Boolean);
+      box.dataset.bus = busN.join(',');
+      box.setAttribute('aria-label', (hit.M === 'S' ? '직진 ' : '') + hit.lanes.length + '차로 중 ' + hit.ok.map((i) => i + 1).join('·') + '차로' +
+        (busN.length ? ', 버스전용 ' + busN.join('·') + '차로' : ''));
     }
     if (hit.M === 'S') box.querySelector('.ld').textContent = fmtDist(Math.max(0, hit.d));
     syncDrawer();
   }
+  // ---------- 지도 위 차로 말풍선 (v139, 2026-11-16 사용자 '우리도 이런거 있음 좋겠다' — 네이버 길안내가 다음 회전 교차로에 붙이는
+  // 흰 말풍선 [↰][↑][↑][버스]) ----------
+  // 다음 회전(좌·우·유턴) 안내의 진입부 자료가 있으면 1km 앞부터 그 교차로 정지선에 말풍선: 갈 차로는 파란 화살표, 나머지 회색,
+  // 버스전용차로는 버스 그림. 좌회전·유턴이면 정지선 오른쪽 위, 우회전이면 왼쪽 위 (회전해 나가는 길을 덮지 않게).
+  // 자료가 없는 곳(정밀도로지도 밖)은 아무것도 안 그린다
+  const LANE_TIP_SHOW = 1000;
+  const LANE_TIP = { cell: 28, gap: 2, pad: 4, tail: 7, nose: 12 };
+  function laneTipFor(g) {
+    if (!prefs.lanes || !nav.active || !g || nav.dg == null || nav.dg > LANE_TIP_SHOW || !LANE_MOVE[turnKind(g)]) return null;
+    const hit = laneGuide(g);
+    if (!hit) return null;
+    const T = LANE_TIP, n = hit.lanes.length, w = n * T.cell + (n - 1) * T.gap + 2 * T.pad, h = T.cell + 2 * T.pad + T.tail;
+    const left = hit.M === 'R';
+    const html = '<div class="lanetip' + (left ? ' tip-l' : '') + '" style="width:' + w + 'px">' +
+      hit.lanes.map((m, i) => laneCell(m, hit.ok.indexOf(i) >= 0, hit.M, 'tl')).join('') + '</div>';
+    return { key: g.i + ':' + g.t + ':' + hit.k, lat: lanesData.lat[hit.k], lng: lanesData.lng[hit.k], html, w, h,
+      ax: left ? w - T.nose : T.nose, ay: h };
+  }
+  function renderLaneTip(g) { if (mapA && mapA.setLaneTip) mapA.setLaneTip(laneTipFor(g)); }
   // 테슬라 모드에서 단속 경고 묶음을 길안내 패널(없으면 검색 버튼) 바로 밑에 붙이고,
   // 위쪽 버튼(야간·전체화면·설정)은 그 패널(또는 검색 버튼) 바로 오른쪽에 붙인다
   function placeAlerts() {
@@ -4426,7 +4490,7 @@
   function renderNavPanel() {
     const p = $('#navPanel');
     renderStrip();
-    if (!nav.active) { p.hidden = true; $('#searchBtn').hidden = false; renderLanes(null); return; }
+    if (!nav.active) { p.hidden = true; $('#searchBtn').hidden = false; renderLanes(null); renderLaneTip(null); return; }
     p.hidden = false;
     $('#searchBtn').hidden = true;
     // 맨 위 목적지 줄 (경유지가 있으면 오른쪽에 작게)
@@ -4477,6 +4541,7 @@
       $('#turnText').textContent = g ? guideText(g.s, mainKeep(g)) : nav.dest.name;
     }
     renderLanes(tnMain ? null : g);   // 회전 500m 앞부터 차로 칸 (정밀도로지도가 있는 곳만)
+    renderLaneTip(g);                 // 지도 위 다음 회전 교차로 말풍선 (1km 앞부터)
     // 그다음 칸: 이번 회전을 하고 나서 무엇이 얼마 뒤에 오는지 (거리는 이번 안내 지점 → 그다음 안내 지점).
     //   그다음이 회전이면 네이버 지도처럼 그 회전 아이콘 + 거리만 '↰ 1.2km' (2026-11-14: '직진 … 좌회전'처럼 풀어 쓰지 않음)
     //   그다음이 목적지면 연한 빨강 바탕에 빨간 핀 + '20m', 경유지면 주황 (2026-11-14: '도착' 글자는 빼고 핀·바탕색으로만 구분)
@@ -6204,7 +6269,7 @@
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
       sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
       saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassKey, hipassNums, hipassLayout, laneNums, laneStripHtml, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, icoBase, pickImg, iconPicks: ICON_PICKS, tollParts, arrowSpan, routeStyle: ROUTE_STYLE, trafficPal, roundRoute, setCarIcon, carIcons: CAR_ICONS, parking, parkState, setParkingData, loadParking, evalParking, rest, setRestData, loadRest, ensureRouteRest, renderRest, placeBase, findParking, renderTurnArrow,
-      lanesData, laneState, setLaneData, loadLanes, laneGuide, laneArrowSvg,
+      lanesData, laneState, setLaneData, loadLanes, laneGuide, laneArrowSvg, laneOk, laneTipFor, laneCell,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, expwayNo, camMiss, camMissCheck, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
