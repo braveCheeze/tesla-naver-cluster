@@ -2823,7 +2823,7 @@
     { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored; 7-10 lanes fit the drawer as square tiles", fn: s77 },
     { id: 'S78', name: "S78 mainline junction (v133): keep-left/right where the route stays on the same expressway section and goes straight is shown as straight ('신갈분기점에서 직진 · 서울 방면', main-straight junction scene, straight sign); a fork onto another expressway stays a fork", fn: s78 },
     { id: 'S79', name: 'S79 rest areas (v133): distance to where the entry ramp leaves the mainline (OSM), not the rest-area centre; within 3 km and no turn within 1 km the top row becomes the rest area (blue), next row = the guidance after it', fn: s79 },
-    { id: 'S90', name: "S90 highway fork lanes (v153, 신갈분기점 '차선표기'): the next fork cross-section within 1 km shows its lanes in the drawer; the lanes that lead to the branch the route really takes are blue (exit → only the exit lane, main → the through lanes without the bus lane); nothing when neither branch is on the route; real data/forks.json loads", fn: s90 },
+    { id: 'S91', name: "S91 highway fork lanes (v153, 신갈분기점 '차선표기'): the next fork cross-section within 1 km shows its lanes in the drawer; the lanes that lead to the branch the route really takes are blue (exit → only the exit lane, main → the through lanes without the bus lane); nothing when neither branch is on the route; real data/forks.json loads", fn: s91 },
     { id: 'S85', name: "S85 hi-pass lanes only for the direction you are driving (v142, driver '가는 방향이 있어 확실히 있는 거야?'): the real 경부·수도권제1순환 route both ways (서울TG exit 1-4,14-16 / entry 1-4,9; 성남TG 상행 1 2 3 8 9 11 / 하행 1 2 3 6 7 9), ring road near-sideways heading = common lanes only, same name for a closed and an open office (대동·서영암·가락) = no lanes", fn: s85 },
     { id: 'S84', name: "S84 hi-pass lane row never cut off (v142, 성남TG 하행 1 2 3 – 6 7 – 9 ran past the card): few cells stay beside the badge, many go under a centred badge, centred, and wrap or shrink so every number shows (4, 9, 12, 14, 16 cells; toll next and toll second)", fn: s84 },
     { id: 'S82', name: "S82 bus-only lanes and the map lane callout (v139, user saw Naver's '[↰][↑][↑][bus]'): bus lanes drawn as a grey bus and never blue unless the turn exists only there; a white callout at the next turn's stop line from 1 km, blue lanes for this turn, left of the stop line for right turns; nothing where there is no lane data", fn: s82 },
@@ -4521,12 +4521,12 @@
     return { pass: ok, detail: JSON.stringify(r) + (ok ? ' ✓' : ' ✗') };
   }
 
-  // S90: 고속도로 분기 앞 차로 (v153, 2026-11-16 사용자 '차선표기' — 경부 신갈분기점에서 네이버처럼 [버스][↑][↑][↑][↱][↱][↱]).
+  // S91: 고속도로 분기 앞 차로 (v153, 2026-11-16 사용자 '차선표기' — 경부 신갈분기점에서 네이버처럼 [버스][↑][↑][↑][↱][↱][↱]).
   //      시험 경로(북쪽 600m → 우회전) 북쪽 300m 에 단면 하나 'SB|S|S|S|R' (1차로 버스전용, 5차로는 출구). 갈래 끝점 둘:
   //      (a) 출구 끝점이 경로 위(우회전 뒤 400m), 본선 끝점은 경로 밖(직진 800m) → 5차로만 파랗게, 화살표는 R
   //      (b) 본선 끝점이 경로 위 → 2·3·4차로 파랗게 (버스 칸 1차로는 빼고), 화살표는 S
   //      (c) 두 끝점 다 경로 밖 → 칸 없음   (d) 실제 data/forks.json: 경부선 단면이 300개 넘고 버스 칸·출구가 있는 줄이 있다
-  async function s90() {
+  async function s91() {
     const t = T(), R = buildNavRoute();
     R.route = JSON.parse(JSON.stringify(R.route));
     R.route.guide = R.route.guide.filter((g) => g.t !== 1);
