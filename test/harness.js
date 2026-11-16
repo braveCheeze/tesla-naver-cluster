@@ -665,15 +665,12 @@
     await withTimeout(t.doSearch(), 5000, 'doSearch');
     const btns = Array.from(document.querySelectorAll('#results .result'));
     const names = btns.map((b) => ((b.querySelector('.nm') || b).textContent || '').trim());
-    const seen = new Set(), merged = [];
-    search.concat(geo).forEach((it) => {
-      const k = it.name + '|' + it.lat.toFixed(4) + ',' + it.lng.toFixed(4);
-      if (!seen.has(k)) { seen.add(k); merged.push(it); }
-    });
-    const expected = merged.sort((a, b) => hav(SEOUL, a) - hav(SEOUL, b)).map((it) => it.name);
+    // v148: 장소(가까운 순, 둘 다 이름 앞이 '테스트') 다음에 주소. 장소와 같은 이름·자리의 주소 결과는 뺀다
+    const expected = search.slice().sort((a, b) => hav(SEOUL, a) - hav(SEOUL, b)).map((it) => it.name).concat([geo[1].name]);
     const sq = stub.since(c0, '/search'), gq = stub.since(c0, '/geocode');
-    const callsOk = sq.length === 1 && gq.length === 1 && sq[0].query.query === '테스트' &&
-      gq[0].query.near === SEOUL.lng.toFixed(6) + ',' + SEOUL.lat.toFixed(6);
+    // v148: 장소 검색은 그대로 + 지금 있는 구·동을 붙인 것 (S90), 주소 검색은 한 번
+    const callsOk = sq.length >= 1 && sq.some((c) => c.query.query === '테스트') && sq.every((c) => / ?테스트$/.test(c.query.query)) &&
+      gq.length === 1 && gq[0].query.near === SEOUL.lng.toFixed(6) + ',' + SEOUL.lat.toFixed(6);
     const orderOk = names.length === 3 && names.join('|') === expected.join('|');
     return {
       pass: orderOk && callsOk,
@@ -2833,6 +2830,9 @@
     { id: 'S81', name: 'S81 signal cameras sit at the stop line of the approach they enforce (v138, 길동사거리 left turn): our approach camera is warned, camera distance ≤ turn distance, the cross street camera is not', fn: s81 },
     { id: 'S87', name: "S87 the '놓침' button shows it was pressed (v147): at least 116×52, turns blue '✓ 보냄' at once, a second press within 2.5 s sends nothing, then back to '놓침'", fn: s87 },
     { id: 'S86', name:"S86 destination parking entrance (v145, '기흥역엘리시아트윈101동입구' looped the block): '…101동주차장입출구' counts as an entrance and wins over the nearer 102동 one, the 8 m turn into it is not announced, a 'P 101동 주차장 입출구' row near arrival and a P mark at the route end", fn: s86 },
+    { id: 'S88', name: "S88 zoom keeps following (v148, driver '확대 축소하면 갑자기 내 방향이 풀려버린다'): while following, pinch / double tap / wheel zoom is done by the app around the car (library zoom off), following and the heading-up drive view stay, even when the first finger slid before the second; free look gives zoom back to the map library", fn: s88 },
+    { id: 'S89', name: "S89 long-press place card (v148, '지도를 찍어서 선택하면 간단한 정보랑 위치 찍을 수 있게, 경유지나'): a short tap or a moving finger opens nothing; a long press (or right click) drops a blue pin and a card with the place name, category and distance; '여기로 안내' routes to the place; while navigating '목적지로' and '경유지로' (adds a waypoint and reroutes)", fn: s89 },
+    { id: 'S90', name: "S90 destination search (v148, '목적지 검색이 너무 어렵다'): plain + district + neighbourhood queries merged, name match then distance (13 km downtown stores last, a non-matching hit after the matching ones), a typed region is searched as is, address-looking text puts addresses first, quick category buttons, waypoint search ranks by distance to the route ahead", fn: s90 },
     { id: 'S83', name:"S83 one left/right per guidance (v141, 송파IC '오른쪽 진입' drawn as a left exit): every sided icon's arrow tip is on its side, and on 20 real Naver routes the sentence's side = icon kind = drawn arrow = junction picture; a code/sentence conflict follows the sentence", fn: s83 },
     { id: 'S75', name: 'S75 (info) cameras alerted on every saved real route, for comparing versions', fn: s75 },
     { id: 'S74', name: 'S74 camera score on 2026-11-15 real cases (13): false alerts / misses / wrong type, with and without navigation', fn: s74 },
@@ -3630,6 +3630,225 @@
     const [w, h] = r.size.split('x').map(Number);
     const ok = w >= 116 && h >= 52 && r.text1 === '✓ 보냄' && r.blue && r.toast1 && !r.toast2 && r.text3 === '놓침' && !r.sentAfter;
     return { pass: ok, detail: JSON.stringify(r) };
+  }
+
+  // ---- v148 지도 손 조작 도우미: #map 캔버스에 손가락(포인터) 이벤트를 보낸다
+  function mapFinger() {
+    const el = document.querySelector('#map .mapcanvas') || document.getElementById('map');
+    const box = document.getElementById('map').getBoundingClientRect();
+    const cx = box.left + box.width / 2, cy = box.top + box.height / 2;
+    const P = (type, id, x, y) => el.dispatchEvent(new PointerEvent(type, { pointerId: id, clientX: x, clientY: y, button: 0,
+      buttons: type === 'pointerup' ? 0 : 1, pointerType: 'touch', isPrimary: id === 1, bubbles: true, cancelable: true, composed: true }));
+    return { el, cx, cy, P };
+  }
+  // S88: 따라가는 동안 확대·축소해도 따라가기·진행 방향이 풀리지 않는다 (v148, 사용자 '확대 축소하면 갑자기 내 방향이 풀려버린다')
+  async function s88() {
+    const t = T(), r = {};
+    await waitFor(() => t.getMap(), 5000);
+    const m = t.getMap(), f = mapFinger();
+    const hup0 = t.prefs.headingUp;
+    // 숨은 창에서는 애니메이션 프레임이 돌지 않아 Leaflet 의 부드러운 확대가 끝나지 않는다: 시험 동안만 바로 바뀌게
+    const anim0 = m.map._zoomAnimated;
+    if (m.map._leaflet_id != null) m.map._zoomAnimated = false;
+    const setZ = (z) => { if (m.map.setZoom) m.map.setZoom(z, m.map._leaflet_id != null ? { animate: false } : false); };
+    const pinch = async (grow, preMove) => {
+      f.P('pointerdown', 1, f.cx - 30, f.cy);
+      if (preMove) f.P('pointermove', 1, f.cx - 30 - preMove, f.cy);
+      f.P('pointerdown', 2, f.cx + 30, f.cy);
+      for (let k = 1; k <= 6; k++) f.P('pointermove', 2, f.cx + 30 + (grow ? 12 : -8) * k, f.cy);
+      f.P('pointerup', 2, f.cx + 30, f.cy); f.P('pointerup', 1, f.cx - 30, f.cy);
+      await sleep(400);
+    };
+    try {
+      // 가: 북쪽 위 평면 지도(서 있을 때 같은 화면), 따라가는 중
+      t.prefs.headingUp = false;
+      feed(SEOUL, 0, null);
+      t.setFollowing(true); t.layoutView(true);
+      await sleep(150);
+      r.ownFlat = t.ownZoom();
+      r.libOff = !!(m.map.touchZoom && !m.map.touchZoom.enabled() && !m.map.scrollWheelZoom.enabled() && !m.map.doubleClickZoom.enabled());
+      setZ(15); await sleep(100);
+      let z = m.getZoom(); await pinch(true, 0);
+      r.zoomIn = m.getZoom() - z; r.followA = t.state.following;
+      r.centerA = r0(hav(m.getCenter(), SEOUL));
+      // 나: 첫 손가락이 15px 먼저 미끄러진 뒤 둘째 손가락 (실제 손가락은 동시에 닿지 않는다)
+      z = m.getZoom(); await pinch(false, 15);
+      r.zoomOut = z - m.getZoom(); r.followB = t.state.following;
+      // 다: 두 번 톡 = 한 단계 확대, 따라가기 그대로
+      setZ(15); await sleep(100); z = m.getZoom();
+      for (let k = 0; k < 2; k++) { f.P('pointerdown', 1, f.cx, f.cy); f.P('pointerup', 1, f.cx, f.cy); }
+      await sleep(400);
+      r.dbl = m.getZoom() - z; r.followC = t.state.following;
+      // 라: 손으로 지도를 둘러보는 중(따라가기 꺼짐)이면 확대는 다시 지도 라이브러리가 (손가락 사이를 중심으로)
+      t.setFollowing(false, true);
+      r.libBack = !!(m.map.touchZoom && m.map.touchZoom.enabled() && m.map.doubleClickZoom.enabled());
+      // 마: 진행 방향 위 주행 화면, 달리는 중: 첫 손가락이 먼저 움직여(앞길 보기로 바뀌어도) 확대가 끝나면 바로 따라가기·주행 화면
+      t.prefs.headingUp = true;
+      let p = SEOUL;
+      for (let k = 0; k < 4; k++) { p = dest(p, 90, 12); feed(p, 40, 90); }
+      t.setFollowing(true); t.layoutView(true);
+      await sleep(200);
+      r.drive = t.view.drive;
+      setZ(15); await sleep(100); z = m.getZoom();
+      await pinch(true, 15);
+      r.driveZoom = m.getZoom() - z; r.driveFollow = t.state.following; r.driveView = t.view.drive;
+      r.backMe = !document.getElementById('backMe').hidden;
+    } finally {
+      t.prefs.headingUp = hup0;
+      if (m.map._leaflet_id != null) m.map._zoomAnimated = anim0;
+      t.setFollowing(true); t.layoutView(true);
+      softReset();
+    }
+    const ok = r.ownFlat && r.libOff && r.zoomIn >= 1 && r.followA && r.centerA < 30 && r.zoomOut >= 1 && r.followB &&
+      r.dbl === 1 && r.followC && r.libBack && r.drive && r.driveZoom >= 1 && r.driveFollow && r.driveView && !r.backMe;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S89: 지도를 길게 누르면 그 자리 카드 (v148, 사용자 '지도를 찍어서 선택하면 간단한 정보랑 위치 찍을 수 있게, 경유지나')
+  async function s89() {
+    const t = T(), r = {};
+    await waitFor(() => t.getMap(), 5000);
+    const f = mapFinger(), poi = dest(SEOUL, 45, 20);
+    const pt = (q) => q.lng.toFixed(6) + ',' + q.lat.toFixed(6);
+    stub.canned['/reverse'] = { road: '세종대로', area: '서울특별시 중구 태평로1가' };
+    stub.canned['/search'] = (q) => ({ items: /세종대로/.test(q.query || '') ? [
+      { name: '먼 곳', category: '', addr: '', lat: dest(SEOUL, 0, 500).lat, lng: dest(SEOUL, 0, 500).lng },
+      { name: '서울특별시청', category: '공공,사회기관>특별,광역시청', addr: '서울특별시 중구 세종대로 110', lat: poi.lat, lng: poi.lng },
+    ] : [] });
+    const press = async (ms, move, up) => {
+      const y = f.cy - (up || 0);
+      f.P('pointerdown', 1, f.cx, y);
+      if (move) f.P('pointermove', 1, f.cx + move, y);
+      await sleep(ms);
+      f.P('pointerup', 1, f.cx + (move || 0), y);
+    };
+    try {
+      feed(SEOUL, 0, null);
+      t.setFollowing(true); t.layoutView(true);
+      await sleep(150);
+      // 짧게 톡: 카드 없음
+      await press(120);
+      r.tapNone = !visible('#pickCard');
+      // 손가락이 움직이면 길게 눌러도 카드 없음
+      await press(700, 25);
+      r.moveNone = !visible('#pickCard');
+      t.setFollowing(true); await sleep(100);
+      // 길게 누르기
+      await press(700);
+      r.shown = visible('#pickCard'); r.pin = !!document.querySelector('.pickpin');
+      await waitFor(() => text('#pkName') === '서울특별시청', 3000);
+      r.name = text('#pkName'); r.sub = text('#pkSub'); r.dist = text('#pkDist');
+      r.go = text('#pkGo'); r.viaHidden = !visible('#pkVia'); r.follow = t.state.following;
+      // 닫기
+      document.getElementById('pkClose').click();
+      r.closed = !visible('#pickCard') && !document.querySelector('.pickpin');
+      // PC 오른쪽 클릭도 같은 카드 → [여기로 안내] = 찾은 장소 좌표로 길찾기
+      f.el.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 9, clientX: f.cx, clientY: f.cy, button: 2, buttons: 2, pointerType: 'mouse', isPrimary: true, bubbles: true, cancelable: true }));
+      f.el.dispatchEvent(new MouseEvent('contextmenu', { clientX: f.cx, clientY: f.cy, button: 2, bubbles: true, cancelable: true }));
+      f.el.dispatchEvent(new PointerEvent('pointerup', { pointerId: 9, clientX: f.cx, clientY: f.cy, button: 2, buttons: 0, pointerType: 'mouse', isPrimary: true, bubbles: true, cancelable: true }));
+      r.ctx = visible('#pickCard');
+      await waitFor(() => text('#pkName') === '서울특별시청', 3000);
+      const R = buildNavRoute();
+      stub.canned['/route'] = R.route;
+      const c0 = stub.calls.length;
+      document.getElementById('pkGo').click();
+      await waitFor(() => stub.count('/route', c0) >= 1 && !t.nav.busy, 4000);
+      const q1 = stub.since(c0, '/route')[0];
+      r.goal = q1 ? q1.query.goal === pt(poi) : 'none';
+      r.destName = t.nav.dest ? t.nav.dest.name : '';
+      r.cardGone = !visible('#pickCard');
+      t.endNav();
+      // 길안내 중: [목적지로] + [경유지로] → 경유지 넣고 다시 찾기
+      await planAndStart(R);
+      await sleep(150);
+      await press(700, 0, 200);   // 차에서 200px(약 200m) 떨어진 곳 (차 바로 옆이면 경유지를 곧바로 지난 것으로 친다)
+      r.navShown = visible('#pickCard');
+      await waitFor(() => !/찾는 중/.test(text('#pkSub')), 3000);
+      r.navGo = text('#pkGo'); r.navVia = visible('#pkVia') ? text('#pkVia') : 'hidden';
+      const c1 = stub.calls.length;
+      document.getElementById('pkVia').click();
+      await waitFor(() => stub.count('/route', c1) >= 1 && !t.nav.busy, 4000);
+      const q2 = stub.since(c1, '/route')[0];
+      r.waypoint = !!(q2 && q2.query.waypoints && t.nav.via && t.nav.via.length === 1);
+      if (!r.waypoint) r.viaDbg = { via: (t.nav.via || []).length, busy: t.nav.busy, active: t.nav.active, routes: stub.count('/route', c1), q: q2 && q2.query, toast: text('#toast') };
+    } finally {
+      t.closePick();
+      t.endNav(); softReset();
+      stub.canned['/search'] = { items: [] };
+    }
+    const ok = r.tapNone && r.moveNone && r.shown && r.pin && r.name === '서울특별시청' && /광역시청/.test(r.sub) && /m$/.test(r.dist) &&
+      r.go === '여기로 안내' && r.viaHidden && r.follow && r.closed && r.ctx && r.goal === true && r.destName === '서울특별시청' && r.cardGone &&
+      r.navShown && r.navGo === '목적지로' && r.navVia === '경유지로' && r.waypoint;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S90: 목적지 검색 (v148, 사용자 '목적지 검색할 때 너무 어렵다'): 그대로·구·동 붙인 검색을 합쳐 이름이 맞고 가까운 순서,
+  // 지역을 이미 적었으면 그대로 한 번만, 주소처럼 보이면 주소 먼저, 자주 찾는 종류 버튼, 경유지 찾기는 경로에서 가까운 순서
+  async function s90() {
+    const t = T(), r = {};
+    const near1 = dest(SEOUL, 90, 800), near2 = dest(SEOUL, 0, 1200), noise = dest(SEOUL, 180, 300);
+    const far1 = dest(SEOUL, 270, 13000), far2 = dest(SEOUL, 260, 13500);
+    const it = (name, p, category) => ({ name, category: category || '음식점>카페,디저트', addr: '테스트시 테스트로 1', lat: p.lat, lng: p.lng });
+    const R = buildNavRoute();
+    const onRoute = dest(R.P[7], 0, 40), offRoute = dest(R.P[0], 270, 250);
+    stub.canned['/search'] = (q) => {
+      const s = q.query || '';
+      if (s === '스타벅스' && t.nav.active) return { items: [it('스타벅스 경로옆점', onRoute), it('스타벅스 출발옆점', offRoute)] };
+      if (s === '스타벅스') return { items: [it('스타벅스 시청점', far1), it('스타벅스 무교로점', far2)] };
+      if (s === '강동구 스타벅스') return { items: [it('스타벅스 강동역점', near2), it('스타벅스 올림픽공원점', near1)] };
+      if (s === '성내동 스타벅스') return { items: [it('스타벅스 올림픽공원점', near1), it('제이스크린골프존', noise, '스포츠,오락>골프연습장')] };
+      if (s === '하남 코스트코') return { items: [it('코스트코코리아 하남점', far1, '쇼핑,유통>대형마트')] };
+      return { items: [] };
+    };
+    stub.canned['/geocode'] = (q) => (/성내로\s*25/.test(q.query || '') ? { items: [{ name: '서울특별시 강동구 성내로 25', addr: '서울특별시 강동구 성내동 540', lat: near1.lat, lng: near1.lng }] } : { items: [] });
+    const names = () => [...document.querySelectorAll('#results .result .nm')].map((e) => e.textContent).join(',');
+    const area0 = t.road.area;
+    try {
+      feed(SEOUL, 0, null);
+      t.road.area = '서울특별시 강동구 성내동';
+      t.openSearch('dest');
+      r.cats = [...document.querySelectorAll('#results .qcat')].map((b) => b.textContent).join(',');
+      const q = document.getElementById('q');
+      q.value = '스타벅스';
+      let c0 = stub.calls.length;
+      await t.doSearch();
+      r.queries = stub.since(c0, '/search').map((c) => c.query.query).sort().join('|');
+      r.order = names();
+      r.title = text('#results .rtitle');
+      q.value = '하남 코스트코'; c0 = stub.calls.length;
+      await t.doSearch();
+      r.hanam = stub.since(c0, '/search').map((c) => c.query.query).join('|');
+      q.value = '성내로 25';
+      await t.doSearch();
+      r.addrFirst = text('#results .rtitle');
+      // 자주 찾는 종류 버튼
+      q.value = ''; t.openSearch('dest');
+      c0 = stub.calls.length;
+      const chip = document.querySelector('#results .qcat');
+      if (chip) chip.click();
+      await waitFor(() => stub.count('/search', c0) >= 1, 2000);
+      r.chip = (stub.since(c0, '/search')[0] || { query: {} }).query.query;
+      await waitFor(() => !/검색 중/.test(text('#results')), 2000);
+      document.getElementById('searchClose').click();
+      // 길안내 중 경유지 찾기: 경로에서 가까운 곳이 먼저, 거리는 '경로 …'
+      await planAndStart(R);
+      t.road.area = '';
+      t.openSearch('via');
+      q.value = '스타벅스';
+      await t.doSearch();
+      r.viaOrder = names();
+      r.viaDist = text('#results .result .dist');
+      document.getElementById('searchClose').click();
+    } finally {
+      t.road.area = area0;
+      t.endNav(); softReset();
+      stub.canned['/search'] = { items: [] }; stub.canned['/geocode'] = { items: [] };
+    }
+    const ok = r.cats.startsWith('수퍼차저,') && r.queries === '강동구 스타벅스|성내동 스타벅스|스타벅스' &&
+      r.order === '스타벅스 올림픽공원점,스타벅스 강동역점,제이스크린골프존,스타벅스 시청점,스타벅스 무교로점' && r.title === '장소' &&
+      r.hanam === '하남 코스트코' && r.addrFirst === '주소' && r.chip === '수퍼차저' &&
+      r.viaOrder === '스타벅스 경로옆점,스타벅스 출발옆점' && /^경로 (3\d|4\d)m$/.test(r.viaDist);
+    return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
   // S60: 지도 위 회전 화살표 + 목적지 핀·점선 (2026-11-14 요청: 휴대폰 내비처럼)

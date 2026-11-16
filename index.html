@@ -421,6 +421,10 @@
   .qchip .qt { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
   .qchip b { font-size: 17px; font-weight: 800; }
   .qchip .qt span { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* v148 자주 찾는 종류: 한 줄 알약 버튼 (넘치면 옆으로 밀어 본다) */
+  .qcats { display: flex; gap: 6px; overflow-x: auto; margin: 2px 0 8px; padding-bottom: 2px; scrollbar-width: none; }
+  .qcats::-webkit-scrollbar { display: none; }
+  .sheet-card button.qcat { flex: none; min-height: 40px; padding: 0 14px; border-radius: 20px; font-size: 15px; font-weight: 700; white-space: nowrap; }
   .rrow { display: flex; gap: 6px; align-items: stretch; }
   .rrow .result { flex: 1; min-width: 0; }
   .sheet-card button.star { flex: none; width: 54px; min-height: 64px; padding: 0; font-size: 24px; color: #8b93a1; }
@@ -573,6 +577,21 @@
   .alt-sub { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .routecard .row { margin-top: 14px; }
   .routecard button.primary { flex: 1; }
+  /* v148 길게 눌러 고른 자리 카드: 경로 카드와 같은 유리판, 좁게 (테슬라 화면에서 차 앞길을 덜 가리게) */
+  /* 맨 아래 줄(지금 위치 띠·내 위치로) 위에 뜬다 — 경로 버튼 줄(.navtray)과 같은 높이 */
+  .pickcard { width: min(440px, calc(100% - 32px)); padding: 14px 16px; z-index: 1065; bottom: 66px; }
+  .pk-head { display: flex; align-items: flex-start; gap: 10px; }
+  .pk-txt { flex: 1; min-width: 0; }
+  .pickcard .rc-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pickcard .rc-meta { margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pk-dist { flex: none; font-size: 15px; font-weight: 700; color: var(--muted); padding-top: 3px; font-variant-numeric: tabular-nums; }
+  .routecard button.pk-x { flex: none; width: 36px; height: 36px; min-height: 0; padding: 0; display: grid; place-items: center; border-radius: 50%; margin: -4px -6px 0 0; }
+  .pk-x svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
+  .pickcard .row { margin-top: 12px; flex-wrap: nowrap; }
+  .pickcard .row button { min-height: 46px; white-space: nowrap; }
+  .pickcard .row button:not(.primary) { flex: none; padding: 0 16px; }
+  .pickpin { animation: pkdrop .25s var(--ease) both; }
+  @keyframes pkdrop { from { transform: translateY(-14px); opacity: 0; } to { transform: none; opacity: 1; } }
 
   /* 시트(검색·설정) */
   .sheet { background: rgba(0, 0, 0, .45); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
@@ -1666,6 +1685,20 @@
       </div>
     </div>
 
+    <!-- v148 지도를 길게 누른 자리(PC 는 오른쪽 클릭): 이름·주소·거리 + 여기로 안내 / 경유지로 / 저장 -->
+    <div id="pickCard" class="routecard pickcard" hidden>
+      <div class="pk-head">
+        <div class="pk-txt"><div id="pkName" class="rc-title"></div><div id="pkSub" class="rc-meta"></div></div>
+        <div id="pkDist" class="pk-dist"></div>
+        <button id="pkClose" class="pk-x" aria-label="닫기"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </div>
+      <div class="row">
+        <button id="pkGo" class="primary">여기로 안내</button>
+        <button id="pkVia" hidden>경유지로</button>
+        <button id="pkFav">☆ 저장</button>
+      </div>
+    </div>
+
     <!-- 하단 위치 띠를 누르면 올라오는 버튼: 길안내 중이면 경로 비교·재추천·경유지, 아니면 목적지 검색 -->
     <div id="navTray" class="navtray" hidden>
       <button id="ntCompare"><svg viewBox="0 0 24 24"><path d="M6 21V11a4 4 0 0 1 4-4h9"/><path d="M15 3l4 4-4 4"/><path d="M6 21V3"/></svg><span>경로 비교</span></button>
@@ -1809,8 +1842,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-147"></script>
-<script src="img/ai/picks.js?v=2026.11.16-147"></script>
-<script src="app.js?v=2026.11.16-147"></script>
+<script src="icons.js?v=2026.11.16-148"></script>
+<script src="img/ai/picks.js?v=2026.11.16-148"></script>
+<script src="app.js?v=2026.11.16-148"></script>
 </body>
 </html>

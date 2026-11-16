@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-147'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-148'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -584,6 +584,13 @@
     return out;
   }
   function dotEl() { const el = document.createElement('div'); el.className = 'destdot'; return el; }
+  // v148 길게 눌러 고른 자리 핀: 도착 핀과 같은 모양, 파란색
+  function pickPinEl() {
+    const el = document.createElement('div');
+    el.className = 'destpin pickpin';
+    el.innerHTML = PIN_ICON.replace('#ef4444', '#2f7cf6');
+    return el;
+  }
   // v145 주차장 입구 표지 (지도·안내 칸 같은 그림): 흰 둥근 네모 + 파란 P
   const PARK_P_SVG = '<svg viewBox="0 0 48 48" aria-hidden="true"><rect x="3" y="3" width="42" height="42" rx="10" fill="#fff" stroke="#1d4fb8" stroke-width="2.5"/>' +
     '<path d="M18.5 36V12.5h8a7.3 7.3 0 0 1 0 14.6h-8" fill="none" stroke="#1d4fb8" stroke-width="5.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -789,6 +796,12 @@
       if (this.gl) return; // GL 지도는 돌린 채로도 손 조작이 맞게 움직인다
       this.map.setOptions({ draggable: on, pinchZoom: on, scrollWheel: on, disableDoubleTapZoom: !on, disableDoubleClickZoom: !on });
     },
+    // v148 확대·축소를 지도 라이브러리에 맡길지 (syncZoomGestures). 그림 지도 주행 화면은 setInteract 가 이미 다 끈다
+    setLibZoom(on) {
+      if (!this.map || (!this.gl && view.drive)) return;
+      this.map.setOptions({ pinchZoom: on, scrollWheel: on, disableDoubleTapZoom: !on, disableDoubleClickZoom: !on });
+    },
+    setDrag(on) { if (this.map && !(!this.gl && view.drive)) this.map.setOptions({ draggable: on }); },
     // 지도 가운데를 캔버스 픽셀만큼 옮긴다 (애니메이션 없이)
     panPx(dx, dy) {
       const N = naver.maps, proj = this.map.getProjection && this.map.getProjection();
@@ -913,6 +926,13 @@
       if (end && parkGoalOf(d)) this.destMk.push(new N.Marker({ position: new N.LatLng(end.lat, end.lng), map: this.map, clickable: false, zIndex: 299,
         icon: { content: parkPinEl(), anchor: new N.Point(13, 13) } }));
     },
+    // v148 지도를 길게 눌러 고른 자리 핀 (null 이면 지운다)
+    setPick(p) {
+      if (this._pick) { this._pick.setMap(null); this._pick = null; }
+      if (!p || !this.map) return;
+      this._pick = new naver.maps.Marker({ position: new naver.maps.LatLng(p.lat, p.lng), map: this.map, clickable: false, zIndex: 310,
+        icon: { content: pickPinEl(), anchor: new naver.maps.Point(17, 33) } });
+    },
     // 차로 말풍선 (v139): tip = laneTipFor() 결과 또는 null. 같은 말풍선이면 그대로
     setLaneTip(tip) {
       const key = tip ? tip.key : '';
@@ -948,6 +968,8 @@
       (this._arrowObjs || []).forEach((o) => o.setMap(null)); this._arrowObjs = []; this._arrow = null;
       if (this._tip) this._tip.setMap(null);
       this._tip = null; this._tipKey = '';
+      if (this._pick) this._pick.setMap(null);
+      this._pick = null;
       this.cams = new Map(); this.bumps = new Map();
       this.clearRoute();
       if (this.map) this.map.destroy();
@@ -992,6 +1014,11 @@
     setInteract(on) {
       ['dragging', 'touchZoom', 'scrollWheelZoom', 'doubleClickZoom'].forEach((k) => { if (this.map[k]) this.map[k][on ? 'enable' : 'disable'](); });
     },
+    setLibZoom(on) {
+      if (!this.map || view.drive) return;
+      ['touchZoom', 'scrollWheelZoom', 'doubleClickZoom'].forEach((k) => { if (this.map[k]) this.map[k][on ? 'enable' : 'disable'](); });
+    },
+    setDrag(on) { if (this.map && !view.drive && this.map.dragging) this.map.dragging[on ? 'enable' : 'disable'](); },
     panPx(dx, dy) { this.map.panBy([dx, dy], { animate: false }); },
     getCenter() { const c = this.map.getCenter(); return { lat: c.lat, lng: c.lng }; },
     coordAt(px, py) { const c = this.map.containerPointToLatLng([px, py]); return { lat: c.lat, lng: c.lng }; },
@@ -1096,6 +1123,13 @@
         icon: L.divIcon({ html: parkPinEl().outerHTML, className: 'me-wrap', iconSize: [26, 26], iconAnchor: [13, 13] }), interactive: false, keyboard: false, zIndexOffset: 1900,
       }).addTo(this.map));
     },
+    setPick(p) {
+      if (this._pick) { this._pick.remove(); this._pick = null; }
+      if (!p || !this.map) return;
+      this._pick = L.marker([p.lat, p.lng], {
+        icon: L.divIcon({ html: pickPinEl().outerHTML, className: 'me-wrap', iconSize: [34, 34], iconAnchor: [17, 33] }), interactive: false, keyboard: false, zIndexOffset: 2100,
+      }).addTo(this.map);
+    },
     setLaneTip(tip) {
       const key = tip ? tip.key : '';
       if (key === this._tipKey && (!tip || this._tip)) return;
@@ -1123,7 +1157,7 @@
       this.clearRoute();
       if (this.map) this.map.remove();
       this.map = null; this.marker = null; this.cams = new Map(); this.bumps = new Map(); this.parks = new Map();
-      this.destMk = []; this._arrowObjs = []; this._arrow = null; this.restMk = []; this._tip = null; this._tipKey = '';
+      this.destMk = []; this._arrowObjs = []; this._arrow = null; this.restMk = []; this._tip = null; this._tipKey = ''; this._pick = null;
     },
   };
 
@@ -1144,6 +1178,7 @@
       if (mapA.setDest && nav.dest) mapA.setDest(nav.dest, nav.pts[nav.pts.length - 1]);
       nav.arrowKey = null; restState.key = '';
     }
+    if (state.pick && mapA.setPick) mapA.setPick(state.pick); // v148 길게 눌러 고른 자리 핀 (지도를 다시 만들면 다시 꽂는다)
     camState.markerAt = null;
     if (state.fix) refreshCamMarkers(state.fix);
     layoutView(true);
@@ -1260,6 +1295,7 @@
     host.classList.toggle('gl', gl);
     if (gl && !drive) glAim(0, 0); // 평면 지도: 북쪽 위, 기울기 없음
     if (mapA && mapA.setInteract) { try { mapA.setInteract(!drive); } catch (e) { /* 다음 배치 때 다시 */ } }
+    syncZoomGestures();
     let jumped = false;
     if (mapA && mapA.resize && w && h) {
       // 지도 라이브러리가 캔버스에 직접 넣은 크기는 지우고 CSS 크기를 따르게 한다
@@ -2903,17 +2939,23 @@
     home: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2.6 1.9 10.7c-.8.6-.3 1.9.7 1.9H4.6v7.9c0 .8.6 1.4 1.4 1.4h4.1v-5.6c0-.5.4-.9.9-.9h2c.5 0 .9.4.9.9v5.6h4.1c.8 0 1.4-.6 1.4-1.4v-7.9h2c1 0 1.5-1.3.7-1.9z"/></svg>',
     work: '<svg viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M4 21.4V4.4C4 3.6 4.6 3 5.4 3h9.2c.8 0 1.4.6 1.4 1.4V9h2.6c.8 0 1.4.6 1.4 1.4v11zM7 6v2.2h2.2V6zm4 0v2.2h2.2V6zM7 10v2.2h2.2V10zm4 0v2.2h2.2V10zM7 14v2.2h2.2V14zm4 0v2.2h2.2V14zm6-2v2h1.6v-2zm0 3.6v2h1.6v-2zM9 18.2v3.2h3v-3.2z"/></svg>',
   };
-  // 검색창을 열었을 때: 집·회사 바로가기, 즐겨찾기, 최근 목적지
+  const QUICK_CATS = ['수퍼차저', '전기차충전소', '주차장', '카페', '편의점', '화장실'];
+  // 검색창을 열었을 때: 집·회사 바로가기, 자주 찾는 종류, 즐겨찾기, 최근 목적지
   function renderStart() {
     const f = favs();
     // 2026-11-14 요청: 집·회사 버튼 앞에 그림(집 / 회사 건물), 아직 안 정했을 때의 안내 글('검색 결과의 ☆ 로 지정')은 뺀다
     const chip = (key, label, it) => '<button class="qchip' + (it ? '' : ' unset') + '" data-q="' + key + '">' +
       '<i class="qic" aria-hidden="true">' + (pickImg('fav_' + key) || QUICK_ICON[key]) + '</i><span class="qt"><b>' + label + '</b>' +
       (it ? '<span>' + esc(it.name) + '</span>' : '') + '</span></button>';
-    const head = '<div class="quick">' + chip('home', '집', f.home) + chip('work', '회사', f.work) + '</div>';
+    // v148 자주 찾는 종류는 한 번 눌러 근처(경유지 찾기면 경로 가까운 곳)를 바로 찾는다
+    const cats = '<div class="qcats">' + QUICK_CATS.map((c) => '<button class="qcat" data-c="' + esc(c) + '">' + esc(c) + '</button>').join('') + '</div>';
+    const head = '<div class="quick">' + chip('home', '집', f.home) + chip('work', '회사', f.work) + '</div>' + cats;
     const rec = recents().filter((r) => !f.list.some((x) => samePlace(x, r)));
     renderSections([{ title: '즐겨찾기', items: f.list }, { title: '최근 목적지', items: rec }],
       '즐겨찾기와 최근 목적지가 없습니다. 장소 이름이나 주소를 검색하세요.', head);
+    $('#results').querySelectorAll('.qcat').forEach((b) => {
+      b.onclick = () => { $('#q').value = b.dataset.c; clearTimeout(qTimer); doSearch(); };
+    });
     $('#results').querySelectorAll('.qchip').forEach((b) => {
       b.onclick = () => {
         const it = favs()[b.dataset.q];
@@ -2935,7 +2977,7 @@
       if (!s.items || !s.items.length) return;
       html += (s.title ? '<div class="rtitle">' + esc(s.title) + '</div>' : '') + s.items.map((it) => {
         const k = flat.push(it) - 1;
-        const dist = state.fix ? fmtDist(haversine(state.fix, it)) : '';
+        const dist = it._gap != null ? '경로 ' + fmtDist(it._gap) : (state.fix ? fmtDist(haversine(state.fix, it)) : '');
         const sub = [it.category, it.addr].filter(Boolean).join(' · ');
         const fk = favKind(it);
         const tag = fk === 'home' ? '<span class="ftag">집</span>' : fk === 'work' ? '<span class="ftag">회사</span>' : '';
@@ -2967,6 +3009,63 @@
       };
     });
   }
+  // ---------- 장소 검색 (v148) ----------
+  // 2026-11-16 사용자: '목적지 검색할 때 너무 어렵고 잘 구현이 안 돼 있다 — 검색엔진을 잘 활용해서 더 나은 환경으로'.
+  // 네이버 장소 검색(지역 검색 API)은 위치를 받지 않고 한 번에 5개까지라, 강동구청 앞에서 '스타벅스'를 치면 13km 떨어진 시청 앞 가게만,
+  // '슈퍼차저'는 김해·대전 것이 나왔다. 그래서 같은 말을 [그대로] · [지금 있는 구 + 말] · [지금 있는 동 + 말] 로 한꺼번에 찾아 합치고
+  // (강동구 스타벅스 → 0.8~1.7km 다섯 곳), 이름이 검색어와 맞는 정도와 거리를 같이 보고 줄 세운다. 주소처럼 보이면 주소 결과가 먼저.
+  // 길안내 중 경유지 찾기는 내 위치가 아니라 앞으로 갈 경로에서 가까운 순서
+  const REGION_WORD = /^(서울|부산|대구|인천|광주|대전|울산|세종|제주|경기|강원|충북|충남|전북|전남|경북|경남|하남|성남|분당|판교|수원|용인|고양|일산|김포|파주|남양주|구리|의정부|안양|부천|광명|시흥|안산|평택|화성|동탄|천안|청주|전주|춘천|강릉|여수|포항|경주|창원|김해|양평|가평|[가-힣]{1,5}(시|구|군|동|읍|면))$/;
+  function regionOf(area) {
+    const t = String(area || '').split(/\s+/).filter(Boolean);
+    const gu = t.filter((x) => /(구|시|군)$/.test(x) && !/(특별시|광역시|특별자치시)$/.test(x)).pop() || '';
+    const last = t[t.length - 1] || '';
+    return { gu, dong: t.length >= 3 && /(동|읍|면|가|리)$/.test(last) ? last : '' };
+  }
+  function queryVariants(q) {
+    const out = [q], toks = q.split(/\s+/);
+    if (toks.length > 1 && REGION_WORD.test(toks[0])) return out; // '하남 코스트코'처럼 지역을 이미 적었으면 그대로
+    const r = regionOf(road.area);
+    if (r.gu && !q.includes(r.gu)) out.push(r.gu + ' ' + q);
+    if (r.dong && !q.includes(r.dong)) out.push(r.dong + ' ' + q);
+    return out;
+  }
+  const looksAddr = (q) => /\d/.test(q) && /(로|길|동|가|리|읍|면)\s*\d/.test(q);
+  // 이름이 검색어와 맞는 정도: 4 같음 · 3 앞이 같음 · 2 들어 있음 · 1 낱말이 이름·분류·주소에 다 있음 · 0 그 밖
+  function nameTier(it, q) {
+    const n = squash(it.name).toLowerCase(), s = squash(q).toLowerCase();
+    if (!s) return 0;
+    if (n === s) return 4;
+    if (n.startsWith(s)) return 3;
+    if (n.includes(s)) return 2;
+    const hay = squash([it.name, it.category, it.addr].join(' ')).toLowerCase();
+    return q.toLowerCase().split(/\s+/).filter(Boolean).every((t) => hay.includes(t)) ? 1 : 0;
+  }
+  const TIER_W = [6, 2.5, 1, 0.6, 0.35];
+  // 경유지 찾기: 지금부터 앞으로 갈 경로(선분)에서 가장 가까운 거리 (그 자리 둘레를 평면으로 보고 m 로)
+  function routeGap(it) {
+    const P = nav.pts;
+    if (!P || P.length < 2) return null;
+    const kx = 111320 * Math.cos(it.lat * Math.PI / 180), ky = 110540;
+    const xy = (q) => [(q.lng - it.lng) * kx, (q.lat - it.lat) * ky];
+    let best = Infinity;
+    for (let i = Math.max(0, nav.seg || 0); i < P.length - 1; i++) {
+      const [ax, ay] = xy(P[i]), [bx, by] = xy(P[i + 1]);
+      const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+      const u = L2 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / L2)) : 0;
+      best = Math.min(best, Math.hypot(ax + u * dx, ay + u * dy));
+    }
+    return best;
+  }
+  function rankPlaces(items, q, via) {
+    const base = via ? null : (state.fix || null);
+    items.forEach((it) => {
+      const d = via ? routeGap(it) : (base ? haversine(base, it) : null);
+      it._gap = via ? d : null;
+      it._key = (d == null ? 5000 : d + 300) * TIER_W[nameTier(it, q)];
+    });
+    return items.sort((a, b) => a._key - b._key);
+  }
   let searchSeq = 0;
   async function doSearch(live) {
     const q = $('#q').value.trim();
@@ -2975,34 +3074,38 @@
     // 입력 중 자동 검색은 이전 결과를 그대로 두고 조용히 바꾼다 (깜빡임 방지)
     if (!live || !$('#results .result')) $('#results').innerHTML = '<div class="empty">검색 중…</div>';
     const near = state.fix ? state.fix.lng.toFixed(6) + ',' + state.fix.lat.toFixed(6) : null;
-    const [poi, geo] = await Promise.allSettled([
-      api('/search', { query: q }),
+    const variants = queryVariants(q);
+    const [geo, ...pois] = await Promise.allSettled([
       api('/geocode', near ? { query: q, near } : { query: q }),
+      ...variants.map((v) => api('/search', { query: v })),
     ]);
     if (seq !== searchSeq) return; // 더 최근 검색이 있으면 이 결과는 버린다
-    const items = [], seen = new Set();
-    [poi, geo].forEach((r) => {
-      if (r.status !== 'fulfilled') return;
-      (r.value.items || []).forEach((it) => {
-        if (!isFinite(it.lat) || !isFinite(it.lng) || !it.lat) return;
-        const k = it.name + '|' + it.lat.toFixed(4) + ',' + it.lng.toFixed(4);
-        if (seen.has(k)) return;
-        seen.add(k);
-        items.push(it);
-      });
-    });
+    const places = [], addrs = [], seen = new Set();
+    const add = (list, it) => {
+      if (!isFinite(it.lat) || !isFinite(it.lng) || !it.lat) return;
+      // 같은 곳이 여러 검색에 겹쳐 나온다: 이름(띄어쓰기 무시) + 약 50m 칸으로 하나만
+      const k = squash(it.name) + '|' + (Math.round(it.lat * 2000) / 2000) + ',' + (Math.round(it.lng * 2000) / 2000);
+      if (seen.has(k)) return;
+      seen.add(k);
+      list.push(it);
+    };
+    pois.forEach((r) => { if (r.status === 'fulfilled') (r.value.items || []).forEach((it) => add(places, it)); });
+    if (geo.status === 'fulfilled') (geo.value.items || []).forEach((it) => add(addrs, it));
     // 장소 이름 검색(네이버 검색 API)이 아직 설정되지 않았으면 주소만 찾힌다는 것을 알려 준다
-    const poiOff = poi.status === 'fulfilled' && poi.value.note === 'search api not configured';
+    const poiOff = pois.length && pois[0].status === 'fulfilled' && pois[0].value.note === 'search api not configured';
     const hint = poiOff ? '지금은 주소만 찾을 수 있어요 (예: 진황도로 14). 가게·건물 이름 검색은 장소 검색 키를 연결하면 됩니다.' : '';
-    if (!items.length) {
-      const err = geo.status === 'rejected' ? geo.reason : (poi.status === 'rejected' ? poi.reason : null);
+    if (!places.length && !addrs.length) {
+      const err = geo.status === 'rejected' ? geo.reason : (pois.some((r) => r.status === 'rejected') ? pois.find((r) => r.status === 'rejected').reason : null);
       renderResults([], '', err
         ? '검색 서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.'
         : (hint || '결과가 없습니다. 다른 이름이나 정확한 주소로 검색해 보세요.'));
       return;
     }
-    if (state.fix) items.sort((a, b) => haversine(state.fix, a) - haversine(state.fix, b));
-    renderResults(items, '검색 결과');
+    const via = searchFor === 'via' && nav.active && !!nav.pts;
+    rankPlaces(places, q, via);
+    rankPlaces(addrs, q, via);
+    const secs = [{ title: via ? '경로 가까운 곳' : '장소', items: places.slice(0, 15) }, { title: '주소', items: addrs }];
+    renderSections(looksAddr(q) ? secs.reverse() : secs, '결과가 없습니다.');
     if (hint) $('#results').insertAdjacentHTML('beforeend', '<div class="empty">' + esc(hint) + '</div>');
   }
   // 입력하는 동안 0.45초 멈추면 자동으로 찾는다 (2글자부터)
@@ -3095,6 +3198,141 @@
     if (park) dest.park = park;
     planRoute(dest, false);
   }
+
+  // ---------- 지도에서 고른 자리 (v148) ----------
+  // 2026-11-16 사용자: '지도를 찍어서 선택하면 간단한 정보랑 위치 찍을 수 있게, 경유지나'. 한 번 톡은 화면 버튼을 보여 주는 데 쓰므로
+  // 길게 누르면(PC 는 오른쪽 클릭) 그 자리에 파란 핀을 꽂고 아래 카드에 이름(장소·건물)·분류·주소·거리와
+  // [여기로 안내](길안내 중이면 [목적지로]) · [경유지로](길안내 중) · [☆ 저장] 을 띄운다. 30초 동안 안 만지면 닫는다.
+  // 이름·주소: 네이버 지도 JS 의 지오코더(역지오코딩: '서울특별시 강동구 성내로 25 강동구청'처럼 건물 이름까지)를 처음 쓸 때 받아 쓰고,
+  // 건물 이름(없으면 도로명 주소)으로 장소 검색을 한 번 더 해 60m 안의 가게·기관 이름과 분류를 붙인다. 그림 지도(OSM)면 길안내 서버의 역지오코딩
+  const PICK_MS = 30000;
+  let pickSeq2 = 0, pickTimer = 0, geocoderP = null;
+  const shortArea = (x) => String(x || '').replace(/\s+/g, ' ').replace(/^(\S+(?:특별시|광역시|특별자치시|특별자치도|도)\s+)/, '').trim();
+  function naverGeocoder() {
+    const N = window.naver && naver.maps;
+    if (!N || mapA !== NaverAdapter) return Promise.resolve(null);
+    if (N.Service && N.Service.reverseGeocode) return Promise.resolve(N.Service);
+    if (!geocoderP) {
+      geocoderP = loadScript('https://oapi.map.naver.com/openapi/v3/maps-geocoder.js')
+        .then(() => (naver.maps.Service && naver.maps.Service.reverseGeocode ? naver.maps.Service : null))
+        .catch(() => { geocoderP = null; return null; });
+    }
+    return geocoderP;
+  }
+  async function describeAt(p) {
+    const S = await naverGeocoder();
+    if (S) {
+      const r = await new Promise((res) => {
+        const t = setTimeout(() => res(null), 5000);
+        try {
+          S.reverseGeocode({ coords: new naver.maps.LatLng(p.lat, p.lng), orders: [S.OrderType.ROAD_ADDR, S.OrderType.ADDR].join(',') },
+            (status, resp) => { clearTimeout(t); res(status === S.Status.OK ? resp : null); });
+        } catch (e) { clearTimeout(t); res(null); }
+      });
+      const a = r && r.v2 && r.v2.address;
+      if (a && (a.roadAddress || a.jibunAddress)) {
+        const road = (r.v2.results || []).find((x) => x.name === 'roadaddr');
+        const ad = road && road.land && road.land.addition0;
+        const bld = ad && ad.type === 'building' ? String(ad.value || '').trim() : '';
+        let addr = shortArea(a.roadAddress || a.jibunAddress);
+        if (bld && addr.endsWith(' ' + bld)) addr = addr.slice(0, -bld.length - 1);
+        return { bld, addr, jibun: shortArea(a.jibunAddress) };
+      }
+    }
+    try {
+      const j = await api('/reverse', { coords: p.lng.toFixed(6) + ',' + p.lat.toFixed(6) }, null, 6000);
+      return { bld: '', addr: shortArea([j.area, j.road].filter(Boolean).join(' ')), jibun: '' };
+    } catch (e) { return { bld: '', addr: '', jibun: '' }; }
+  }
+  // 건물 이름(또는 도로명 주소)으로 장소를 찾아 누른 자리 60m 안의 가장 가까운 곳
+  async function placeNear(p, query) {
+    if (!query) return null;
+    let res;
+    try { res = await api('/search', { query }, null, 4000); } catch (e) { return null; }
+    const c = ((res && res.items) || []).filter((it) => isFinite(it.lat) && isFinite(it.lng) && haversine(p, it) <= 60)
+      .sort((a, b) => haversine(p, a) - haversine(p, b));
+    return c[0] || null;
+  }
+  function closePick() {
+    clearTimeout(pickTimer);
+    pickSeq2++;
+    state.pick = null;
+    $('#pickCard').hidden = true;
+    if (mapA && mapA.setPick) mapA.setPick(null);
+  }
+  function armPickClose() { clearTimeout(pickTimer); pickTimer = setTimeout(closePick, PICK_MS); }
+  function renderPick() {
+    const p = state.pick;
+    if (!p) return;
+    const navOn = nav.active && !!nav.dest;
+    $('#pkName').textContent = p.name || (p.busy ? '이 위치' : (p.addr || '이 위치'));
+    $('#pkSub').textContent = p.busy ? '주소 찾는 중…'
+      : ([p.category, p.name && p.name !== p.addr ? p.addr : (p.jibun || '')].filter(Boolean).join(' · ') || (p.name || p.addr ? '' : '주소 정보 없음'));
+    $('#pkDist').textContent = state.fix ? fmtDist(haversine(state.fix, p)) : '';
+    $('#pkGo').textContent = navOn ? '목적지로' : '여기로 안내';
+    $('#pkVia').hidden = !navOn;
+    $('#pkVia').textContent = nav.via && nav.via.length ? '경유지 바꾸기' : '경유지로';
+    $('#pkFav').textContent = !p.busy && favKind(pickTarget()) ? '★ 저장됨' : '☆ 저장';
+  }
+  async function pickAt(sx, sy) {
+    const cp = canvasPoint(sx, sy);
+    if (!cp || !mapA || !mapA.coordAt) return;
+    let ll = null;
+    try { ll = mapA.coordAt(cp.x, cp.y); } catch (e) { ll = null; }
+    if (!ll || !Number.isFinite(ll.lat) || !Number.isFinite(ll.lng)) return;
+    try { if (navigator.vibrate) navigator.vibrate(12); } catch (e) { /* 무시 */ }
+    const seq = ++pickSeq2;
+    state.pick = { lat: ll.lat, lng: ll.lng, name: '', addr: '', category: '', busy: true };
+    if (mapA.setPick) mapA.setPick(state.pick);
+    $('#pickCard').hidden = false;
+    renderPick();
+    armPickClose();
+    const info = await describeAt(ll);
+    if (seq !== pickSeq2) return;
+    const poi = await placeNear(ll, info.bld || info.addr);
+    if (seq !== pickSeq2) return;
+    const p = state.pick;
+    p.busy = false;
+    p.addr = info.addr || (poi && poi.addr ? shortArea(poi.addr) : '');
+    p.jibun = info.jibun || '';
+    if (poi && (!info.bld || nameTier(poi, info.bld) >= 1 || haversine(ll, poi) <= 25)) {
+      p.name = poi.name; p.category = poi.category || ''; p.placeLat = poi.lat; p.placeLng = poi.lng;
+    } else p.name = info.bld || '';
+    renderPick();
+  }
+  // 고른 자리를 목적지·경유지로: 장소를 찾았으면 그 장소 좌표(주차장 입구 찾기가 이름으로 된다), 아니면 누른 자리
+  function pickTarget() {
+    const p = state.pick;
+    if (!p) return null;
+    const near = p.placeLat != null && haversine(p, { lat: p.placeLat, lng: p.placeLng }) <= 60;
+    return { name: p.name || p.addr || '지도에서 고른 곳', addr: p.addr || '', category: p.category || '',
+      lat: near ? p.placeLat : p.lat, lng: near ? p.placeLng : p.lng };
+  }
+  $('#pkClose').onclick = closePick;
+  $('#pickCard').addEventListener('pointerdown', armPickClose);
+  $('#pkGo').onclick = () => {
+    const t = pickTarget();
+    if (!t) return;
+    closePick();
+    searchFor = 'dest';
+    pickDest(t);
+  };
+  $('#pkVia').onclick = () => {
+    const t = pickTarget();
+    if (!t || !nav.active || !nav.dest) return;
+    closePick();
+    nav.via = [{ name: t.name, lat: t.lat, lng: t.lng }];
+    toast(t.name + ' 경유 경로 찾는 중…', '', 3000);
+    planRoute(nav.dest, 'via');
+  };
+  $('#pkFav').onclick = () => {
+    const t = pickTarget();
+    if (!t) return;
+    const on = !!favKind(t);
+    setFav(t, on ? 'remove' : 'fav');
+    toast(FAV_DONE[on ? 'remove' : 'fav'], '', 2000);
+    renderPick();
+  };
 
   // 길찾기 서버(Worker)는 한 가지 옵션 길찾기(재탐색·교통 갱신)를 주소마다 60초에 4번까지 받는다 (ROUTE_LIMIT).
   // 2026-11-15 12:18 차에서 재탐색이 '잠시 후 다시 시도합니다'(429)로 막혔다: 재탐색 + 시간 초과 재시도 + 바로 한 번 더 + 교통 갱신이 겹침.
@@ -5422,7 +5660,17 @@
     const jumped = layoutView(); // 주행 화면 ↔ 평면 지도 전환
     if (on && state.fix && mapA && !jumped) { const p = mePos(); mapA.center(p.lat, p.lng, false); }
     renderBackMe();
+    syncZoomGestures();
     if (!on && !noAutoReturn) armRefollow();
+  }
+  // v148 (2026-11-16 사용자: '내비 찍고 갈 때 확대 축소하면 갑자기 내 방향이 풀린다 — 안 풀리고 내 방향에서 되게'):
+  // 지도 라이브러리의 두 손가락 확대는 손가락 사이를 중심으로 확대하며 끌기(dragstart)도 내서 따라가기가 꺼졌다.
+  // 멈춰서 북쪽 위가 된 지도에서 확대하면 출발해도 진행 방향으로 안 돌아오고 5~15초 그대로였다.
+  // 그래서 내 위치를 따라가는 동안(과 주행 화면)은 두 손가락·휠·두 번 톡 확대를 앱이 한다: 내 차를 가운데 둔 채 한 단계씩, 따라가기 그대로
+  const ownZoom = () => !!mapA && (view.drive || state.following);
+  function syncZoomGestures() {
+    if (!mapA || !mapA.setLibZoom) return;
+    try { mapA.setLibZoom(!ownZoom()); } catch (e) { /* 다음 배치 때 다시 */ }
   }
   // 손을 떼고 기다리면 내 위치로 돌아간다: 주행 중·길안내 중 5초, 서서 지도를 둘러볼 때 15초.
   // '내 위치로' 아래 막대가 줄어드는 것으로 남은 시간을 보여 준다
@@ -5455,11 +5703,20 @@
     app.classList.toggle('bm-trip', !!tr && tr.width > 0 && mr.left + left < tr.right + 6 && mr.bottom - bottom - b.offsetHeight < tr.bottom);
   }
   // 지도 라이브러리가 직접 끌기 시작(북쪽 위 평면 지도): 손가락이 닿아 있는 동안은 기다렸다가 뗄 때부터 시간을 잰다
-  function onUserPan() { setFollowing(false, nav.preview || gesture.pointers.size > 0, !!(view.drive && glOn())); }
+  // 두 손가락(확대) 중에 라이브러리가 내는 끌기는 따라가기를 끄지 않는다 (v148)
+  function onUserPan() {
+    if (gesture.pointers.size >= 2 || gesture.two) return;
+    setFollowing(false, nav.preview || gesture.pointers.size > 0, !!(view.drive && glOn()));
+  }
   // 지도 손 조작: 톡 치기는 화면 버튼만 보여 준다.
   // 진행 방향 위 주행 화면에서 10px 넘게 끌면 방향·기울기는 그대로 둔 채 지도만 손가락을 따라 옮긴다(앞길 보기).
   // 두 손가락·휠은 가운데(내 차)를 그대로 두고 한 단계씩 확대/축소. 북쪽 위 평면 지도는 지도 라이브러리가 직접 처리한다.
-  const gesture = { x: 0, y: 0, lx: 0, ly: 0, used: false, panning: false, pinch: 0, wheelAt: 0, pointers: new Map() };
+  // two·own·wasFollowing·prePan (v148): 두 손가락이었는지, 앱이 확대했는지, 시작할 때 따라가던 중이었는지, 둘째 손가락 전에 끈 거리
+  // downAt·lastTap: 두 번 톡 확대 · lpT·lp: 길게 눌러 그 자리 정보(v148 pickAt)
+  const gesture = { x: 0, y: 0, lx: 0, ly: 0, used: false, panning: false, pinch: 0, wheelAt: 0, pointers: new Map(),
+    two: false, own: false, wasFollowing: false, prePan: 0, downAt: 0, lastTap: null, lpT: 0, lp: false };
+  const LONG_PRESS_MS = 550;
+  function cancelLongPress() { clearTimeout(gesture.lpT); gesture.lpT = 0; }
   const NOT_MAP = '.btn, .searchbtn, .navpanel, .routecard, .toast, #diagBox, .ctrls, .topctrls, .badge, .soundpill, .navtray, .updbtn, .backme';
   function userMapGesture() {
     gesture.used = true;
@@ -5488,21 +5745,45 @@
     if (gesture.pointers.size === 1) {
       gesture.x = gesture.lx = e.clientX; gesture.y = gesture.ly = e.clientY;
       gesture.used = false; gesture.panning = false;
-    } else if (gesture.pointers.size === 2) { gesture.pinch = pinchDist(); userMapGesture(); }
+      gesture.two = false; gesture.own = false; gesture.wasFollowing = state.following; gesture.prePan = 0;
+      gesture.downAt = Date.now(); gesture.lp = false;
+      cancelLongPress();
+      if (e.button === 0 || e.pointerType === 'touch') gesture.lpT = setTimeout(onLongPress, LONG_PRESS_MS);
+    } else if (gesture.pointers.size === 2) {
+      cancelLongPress();
+      const first = [...gesture.pointers.values()][0];
+      gesture.prePan = Math.hypot(first.x - gesture.x, first.y - gesture.y);
+      gesture.two = true;
+      // 따라가던 중이었으면(첫 손가락이 조금 먼저 움직여 따라가기가 꺼졌어도) 앱이 내 차 가운데로 확대한다.
+      // 라이브러리가 이 두 손가락을 보기 전에(캡처 단계) 라이브러리 확대·끌기를 끈다
+      gesture.own = ownZoom() || (gesture.wasFollowing && gesture.prePan < 60);
+      if (gesture.own && mapA) {
+        try { if (mapA.setLibZoom) mapA.setLibZoom(false); if (mapA.setDrag) mapA.setDrag(false); } catch (err) { /* 무시 */ }
+      }
+      gesture.pinch = pinchDist(); userMapGesture();
+    }
+  }
+  // 길게 누르기: 그 자리 정보 카드 (손가락이 10px 넘게 움직이거나 두 손가락이면 취소)
+  function onLongPress() {
+    gesture.lpT = 0;
+    if (gesture.pointers.size !== 1 || gesture.used) return;
+    gesture.lp = true; gesture.used = true;
+    pickAt(gesture.x, gesture.y);
   }
   function onMapMove(e) {
     const p = gesture.pointers.get(e.pointerId);
     if (!p) return;
     p.x = e.clientX; p.y = e.clientY;
     if (gesture.pointers.size >= 2) {
-      // 주행 화면(래스터): 두 손가락 간격이 1.35배 벌어지거나 줄면 한 단계씩 (GL 지도는 지도 라이브러리가 직접)
-      if (view.drive && !glOn() && gesture.pinch && mapA) {
+      // 앱이 확대할 때(주행 화면·따라가는 중): 두 손가락 간격이 1.35배 벌어지거나 줄면 내 차를 가운데 둔 채 한 단계씩
+      if (gesture.own && gesture.pinch && mapA) {
         const d = pinchDist(), r = d / gesture.pinch;
         if (r > 1.35 || r < 0.74) { mapA.zoomBy(r > 1 ? 1 : -1); gesture.pinch = d; }
       }
       return;
     }
     if (!gesture.used && Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) > 10) {
+      cancelLongPress();
       userMapGesture();
       if (view.drive && !glOn()) {
         gesture.panning = true;
@@ -5520,14 +5801,40 @@
     if (gesture.pointers.size < 2) gesture.pinch = 0;
     // 두 손가락 중 하나만 떼면 남은 손가락 자리부터 이어서 끈다
     if (gesture.pointers.size === 1) { const q = [...gesture.pointers.values()][0]; gesture.lx = q.x; gesture.ly = q.y; }
-    if (!gesture.pointers.size && !state.following) armRefollow();
+    if (gesture.pointers.size) return;
+    cancelLongPress();
+    if (gesture.two) {
+      // 두 손가락을 다 떼면 라이브러리 끌기를 되돌리고, 따라가던 중이었으면 바로 내 위치·진행 방향으로 (5초 기다리지 않는다)
+      if (gesture.own && mapA && mapA.setDrag) { try { mapA.setDrag(true); } catch (err) { /* 무시 */ } }
+      syncZoomGestures();
+      if (gesture.own && gesture.wasFollowing && !nav.preview) { if (!state.following) setFollowing(true); return; }
+    } else if (!gesture.used && e.type === 'pointerup' && Date.now() - gesture.downAt < 300) {
+      // 두 번 톡: 앱이 확대할 때(따라가는 중·주행 화면)는 내 차를 가운데 둔 채 한 단계 확대
+      const now = Date.now(), lt = gesture.lastTap;
+      if (ownZoom() && lt && now - lt.t < 350 && Math.hypot(e.clientX - lt.x, e.clientY - lt.y) < 40) {
+        gesture.lastTap = null;
+        manualZoom(1);
+        return;
+      }
+      gesture.lastTap = { t: now, x: e.clientX, y: e.clientY };
+    }
+    if (!state.following) armRefollow();
   }
   function onMapWheel(e) {
     if (e.target.closest && e.target.closest(NOT_MAP)) return;
     userMapGesture();
-    if (!view.drive || glOn() || !mapA || !e.deltaY) return;
+    if (!ownZoom() || !e.deltaY) return;
     const now = Date.now();
     if (now - gesture.wheelAt > 250) { gesture.wheelAt = now; mapA.zoomBy(e.deltaY < 0 ? 1 : -1); }
+  }
+  // PC 오른쪽 클릭 = 길게 누르기. 길게 누를 때 브라우저 메뉴가 뜨지 않게
+  function onMapMenu(e) {
+    if (e.target.closest && e.target.closest(NOT_MAP)) return;
+    e.preventDefault();
+    if (gesture.lp) return; // 길게 누르기로 이미 열었다
+    cancelLongPress();
+    gesture.used = true;
+    pickAt(e.clientX, e.clientY);
   }
 
   // ---------- 화면 버튼 자동 숨김: 화면을 한 번 터치하면 3초 동안 보인다 ----------
@@ -5573,6 +5880,7 @@
   window.addEventListener('pointerup', onMapUp, true);
   window.addEventListener('pointercancel', onMapUp, true);
   $('#map').addEventListener('wheel', onMapWheel, { capture: true, passive: true });
+  $('#map').addEventListener('contextmenu', onMapMenu, true);
   window.addEventListener('resize', queueLayout);
   window.addEventListener('orientationchange', queueLayout);
   if (window.ResizeObserver) new ResizeObserver(queueLayout).observe($('#map'));
@@ -6423,6 +6731,7 @@
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
+      ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
     };
   }
 })();
