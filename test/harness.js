@@ -4328,7 +4328,6 @@
       await planAndStart(R);
       for (let s = 25; s <= upto; s += 25) { const a = pointAt(R, s); feed(a.p, 25, 0); t.renderNav(); }
       await new Promise((res) => setTimeout(res, 40)); t.renderNav();
-      await new Promise((res) => requestAnimationFrame(() => res()));
       return meas();
     };
     const r = {};
