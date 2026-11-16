@@ -1268,7 +1268,9 @@
         if (sec && o.secAt === null) o.secAt = r0(s - sStart);
         if (sec && !o.mid && s >= (sStart + sEnd) / 2) {
           const rm = /남은 거리 ([\d.]+)(km|m)/.exec(text('#secRemain'));
-          o.mid = { avg: num('#secAvg'), over: hasCls('#secCard', 'over'), shown: visible('#secCard') || (visible('#camAvg') && document.getElementById('camAvg').getClientRects().length > 0), remain: text('#secRemain'),
+          // v137: 평균은 속도 칸('구간평균 97'), 경고 카드에는 게이지 밑 '남은 시간 01:05' (구간단속 카드는 경고 카드가 있으면 접힘)
+          o.mid = { avg: num('#secAvg'), over: hasCls('#secCard', 'over'), shown: visible('#secCard') || (visible('#camHint') && document.getElementById('camHint').getClientRects().length > 0), remain: text('#secRemain'),
+            chip: text('#mySpeedLim'), hint: visible('#camHint') ? text('#camHint') : '',
             remainM: rm ? parseFloat(rm[1]) * (rm[2] === 'km' ? 1000 : 1) : null, wantM: sEnd - s };
         }
         if (o.secAt !== null && !sec && o.endAt === null) o.endAt = r0(s - sEnd);
@@ -1284,11 +1286,11 @@
     const a = await run(27, true), b = await run(31, true), c = await run(27, false);
     // 길안내 중이면 남은 거리는 경로 위 끝 카메라까지의 실제 거리(±100m). 과속하면 권장 속도와 음성 한 번
     const ok = (o, over, navOn) => o.startTarget !== null && o.startTarget > 1000 && o.secAt !== null && o.secAt >= 0 && o.secAt < 60 &&
-      !!o.mid && o.mid.shown && o.mid.over === over && o.endAt !== null && o.endAt >= 0 && o.endAt < 80 && o.voiceStart && o.voiceEnd &&
+      !!o.mid && o.mid.shown && o.mid.over === over && /^구간평균\s*\d+$/.test(o.mid.chip) && (!o.mid.hint || /^남은 시간 \d\d:\d\d/.test(o.mid.hint)) && o.endAt !== null && o.endAt >= 0 && o.endAt < 80 && o.voiceStart && o.voiceEnd &&
       (!navOn || (o.mid.remainM !== null && Math.abs(o.mid.remainM - o.mid.wantM) < 100)) &&
       (!over || (/km\/h 이하로/.test(o.mid.remain) && o.voiceOver === 1));
     const show = (o) => 'start cam alert ' + (o.startTarget === null ? 'NEVER' : o.startTarget + ' m before') + ', section on at +' + o.secAt + ' m' +
-      (o.mid ? ', mid avg ' + o.mid.avg + ' km/h' + (o.mid.over ? ' OVER' : '') + ' "' + o.mid.remain + '" (real ' + r0(o.mid.wantM) + ' m)' : ', NO CARD') +
+      (o.mid ? ', mid avg ' + o.mid.avg + ' km/h' + (o.mid.over ? ' OVER' : '') + ' "' + o.mid.remain + '" chip "' + o.mid.chip + '" hint "' + o.mid.hint + '" (real ' + r0(o.mid.wantM) + ' m)' : ', NO CARD') +
       ', off at end +' + o.endAt + ' m, voice start ' + o.voiceStart + ' end ' + o.voiceEnd;
     const okA = ok(a, false, true), okB = ok(b, true, true), okC = ok(c, false, false);
     return {
@@ -3791,6 +3793,7 @@
       47: 'rest', 48: 'ferry', 50: 'ins', 52: 'ins', 75: 'ins', 51: 'outs', 78: 'outs', 11: 'sharp_l', 16: 'sharp_r',
       13: 'sl', 14: 'sr', 12: 'l', 15: 'r', 8: 'l', 1: 's', 2: 'l', 3: 'r', 6: 'u', 87: 'via', 88: 'goal',
       41: 'kl', 42: 'kr', 81: 'kl', 82: 'kr', 57: 'inl', 66: 'inr', 58: 'outl', 67: 'outr',
+      54: 'jc',   // v137: 방향 없는 전방 분기 = 분기 후 합류(JC) 그림
     };
     const bad = Object.keys(want).filter((c) => k(+c, '') !== want[c]).map((c) => c + '→' + k(+c, '') + '≠' + want[c]);
     // 코드가 없을 때 글자로: 회전교차로 3시 → 오른쪽 출구, 로터리 9시 → 왼쪽, 고가차도 글자는 꺾는 화살표가 아님

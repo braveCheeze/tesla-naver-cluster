@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-136'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-137'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -2372,7 +2372,8 @@
       if (arr) {
         let best = null;
         for (const x of arr) if (x >= nav.along - 5 && (best === null || x < best)) best = x;
-        if (best !== null && best - nav.along < tg.d + 200) return Math.max(0, best - nav.along);
+        // v137: 굽은 길은 경로 거리가 직선보다 길다(2026-11-16 판교→성남TG 구간단속 끝: 경로 2.6km, 직선 2.2km 로 나왔다). 1.6배 + 300m 안이면 경로 거리
+        if (best !== null && best - nav.along < tg.d * 1.6 + 300) return Math.max(0, best - nav.along);
       }
     }
     return tg.d;
@@ -2683,8 +2684,12 @@
       const leftS = (done + remain) / (s.limit / 3.6) - dt; // 제한속도로 달렸을 때 걸렸을 시간 - 이미 쓴 시간
       need = leftS > 0 ? remain / leftS * 3.6 : 0;
     }
-    return { avg, done, remain, over, need };
+    // v137: 남은 시간 = 구간 전체를 제한속도로 달린 시간 - 이미 쓴 시간 (이보다 빨리 끝 카메라에 닿으면 평균이 제한을 넘는다).
+    // 2026-11-16 네이버 '구간평균 84 · 남은 구간 2.6km · 01:32'(2,794m 구간 앞 200m 를 84km/h)와 같은 계산
+    const minLeft = remain !== null ? Math.max(0, (done + remain) / (s.limit / 3.6) - dt) : null;
+    return { avg, done, remain, over, need, minLeft };
   }
+  const mmss = (sec) => { const t = Math.round(sec); return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0'); };
   function renderSection() {
     const s = camState.section, card = $('#secCard');
     if (!s) { card.hidden = true; return; }
@@ -2692,7 +2697,7 @@
     const st = sectionStats(s);
     $('#secLimit').textContent = s.limit;
     $('#secAvg').textContent = st.avg === null ? '-' : Math.round(st.avg);
-    let line = st.remain !== null ? '남은 거리 ' + fmtDist(st.remain) : fmtDist(st.done) + ' 주행';
+    let line = st.remain !== null ? '남은 거리 ' + fmtDist(st.remain) + (st.minLeft !== null ? ' · ' + mmss(st.minLeft) : '') : fmtDist(st.done) + ' 주행';
     if (st.need !== null) {
       if (st.need >= 20) {
         line += ' · ' + Math.floor(st.need) + ' km/h 이하로';
@@ -2713,20 +2718,29 @@
     if (!lim) { el.hidden = true; return; }
     el.hidden = false;
     $('#mySpeedVal').textContent = Math.round(state.speedKmh);
-    $('#mySpeedLim').textContent = '제한 ' + lim;
+    // v137 (2026-11-16 사용자: '제한 백인건 알고 있으니까 그 제한 쪽에다가 평균 속도를 넣어 주면'): 구간단속 중에는 '제한 100' 자리에 구간 평균.
+    // 평균이 제한을 넘으면 빨갛게 (칸이 빨가면 노랗게). 제한은 위 빨간 표지에 그대로 보인다
+    const em = $('#mySpeedLim');
+    if (s) {
+      const st = sectionStats(s);
+      em.innerHTML = '<small>구간평균</small>' + (st.avg === null ? '-' : Math.round(st.avg));
+      em.classList.toggle('avg-over', st.over);
+    } else { em.textContent = '제한 ' + lim; em.classList.remove('avg-over'); }
     el.classList.toggle('over', state.speedKmh > lim + 1);
   }
   function renderCamAvg() {
     const el = $('#camAvg'), hint = $('#camHint'), s = camState.section;
-    if (!s || !camState.target) { el.hidden = true; hint.hidden = true; return; }
+    if (!s || !camState.target) { el.hidden = true; hint.hidden = true; hint.classList.remove('sec', 'over'); return; }
     const st = sectionStats(s);
-    el.hidden = false;
-    el.classList.toggle('over', st.over);
-    el.innerHTML = '<small>평균</small><b>' + (st.avg === null ? '-' : Math.round(st.avg)) + '</b><i>km/h</i>';
-    // 평균을 넘었을 때만 게이지 밑에 한 줄로: 남은 구간에서 지킬 속도
-    const need = st.need !== null && st.need >= 20 ? '남은 구간 ' + Math.floor(st.need) + ' km/h 이하로' : st.over ? '구간 평균 초과' : '';
-    hint.hidden = !need;
-    hint.textContent = need;
+    // v137: 평균은 위 속도 칸('구간평균 80')으로 옮겼다. 거리 옆에 붙이면 '틀림' 버튼과 겹쳤다(2026-11-16 사진).
+    // 게이지 밑 한 줄: 남은 시간(네이버처럼) + 평균을 넘었으면 남은 구간에서 지킬 속도
+    el.hidden = true;
+    const need = st.need !== null && st.need >= 20 ? Math.floor(st.need) + ' km/h 이하로' : st.over ? '평균 초과' : '';
+    const line = [st.minLeft !== null ? '남은 시간 ' + mmss(st.minLeft) : '', need].filter(Boolean).join(' · ');
+    hint.hidden = !line;
+    hint.textContent = line;
+    hint.classList.add('sec');
+    hint.classList.toggle('over', st.over);
   }
   // 구간단속 남은 거리: 길안내 중이면 경로 위 구간 끝 카메라까지의 실제 거리(데이터의 구간 길이는 어림값이거나 비어 있음),
   // 아니면 데이터의 구간 길이 - 달린 거리. 모르면 null
@@ -3394,7 +3408,8 @@
     const s = g.s || '', t = g.t;
     if (t >= 21 && t <= 34) return rbKind(t - 21);   // 로터리
     if (t >= 91 && t <= 104) return rbKind(t - 91);  // 회전교차로
-    if (t === 54) return /왼쪽/.test(s) ? 'kl' : /오른쪽/.test(s) ? 'kr' : 's'; // 전방 분기 도로
+    // 전방 분기 도로. 방향이 없으면 v137 (2026-11-16 사용자 '분기 도로합류지점 아이콘도 만들어 줘', 네이버 '분기 후 합류'): JC 그림
+    if (t === 54) return /왼쪽/.test(s) ? 'kl' : /오른쪽/.test(s) ? 'kr' : 'jc';
     if (KIND_BY_CODE[t]) return KIND_BY_CODE[t];
     // 코드가 없거나 표에 없는 코드: 안내 글자로
     if (/유턴|U턴/i.test(s)) return 'u';
@@ -3460,6 +3475,14 @@
 
   // 사용자가 AI 로 그린 아이콘(icons.js, tools/build_icons.py 로 분홍 배경 없이 SVG 로 딴 것)이 있으면 그것으로 바꾼다
   Object.assign(TURN_ICONS, window.TNC_ICONS || {});
+  // v137 (2026-11-16 사용자 '분기 도로합류지점 아이콘도 만들어 줘', 네이버 사진의 JC·OUT 그림): 톨게이트(TG) 그림과 같은 짜임 —
+  // 어두운 길 + 흰 화살표. 나가기(OUT)·들어가기(IN, 합류)는 rampIcon(길 하나 + 갈라지는/합쳐지는 연결로 + 고속도로 방패 표지),
+  // 분기 후 합류(JC)는 길이 마름모 섬을 끼고 갈라졌다 다시 합쳐지는 모양에 흰 화살표가 오른쪽 갈래로
+  Object.assign(TURN_ICONS, { outr: rampIcon(true, false), outl: rampIcon(true, true), inr: rampIcon(false, false), inl: rampIcon(false, true),
+    jc: '<svg viewBox="0 0 48 48" class="jc"><path class="jc-rd" d="M16.5 47V37L6.5 25.5V22.5L16.5 11V1h15v10l10 11.5v3L31.5 37v10z" fill="#2b3440" stroke="none"/>' +
+      '<path d="M24 14.5 32 24 24 33.5 16 24z" fill="#fff" stroke="none"/><path class="jc-isl" d="M24 18 29 24 24 30 19 24z" fill="#c9d2dd" stroke="none"/>' +
+      '<path d="M27 45V38.5c0-1.6.6-2.6 1.6-3.8l4-4.4c1.3-1.5 1.3-3.7 0-5.2l-4.6-5.2c-1-1.1-1.5-2.2-1.5-3.6V9" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<path d="M26.5 2.5 32.2 10.3h-11.4z" fill="#fff" stroke="none"/></svg>' });
   // 아직 그림이 없는 종류는 가장 가까운 그림으로 (꺾는 화살표로 잘못 보이지 않게): 순서대로 채운다
   const ICON_FALLBACK = {
     sl: 'l', sr: 'r', rb: 'r', via: 'goal', rb_l: 'rb', rb_s: 's', rb_r: 'r', rb_u: 'u', sharp_l: 'l', sharp_r: 'r',
@@ -3470,7 +3493,7 @@
   // 진출입로는 단순한 길 화살표로. v124 (2026-11-15 요청 '터널 고가 안내 같은건 아이콘 만들어서 적용해 줘'):
   // 지하차도·고가·옆길(under_*, over_*, side_*, oside_*)은 전용 그림(img/ai, 초록 경로선)을 쓴다 — 예전엔 여기서 직진·비켜 가기 화살표로 바꿔 그렸다
   const PLAIN_ROAD = {
-    outr: 'kr', outl: 'kl', inr: 'kr', inl: 'kl', outs: 's', ins: 's',   // v110: inr/inl 이 거꾸로였다(디자인 검토 P0)
+    outs: 's', ins: 's',   // v137: 오른쪽·왼쪽 나가기/들어가기는 다시 OUT·IN 그림(rampIcon). 곧게 나가기/들어가기만 직진 화살표
     // v125 (2026-11-15 밤): 휴게소 진입은 흰 그림 대신 초록 비켜 가기(오른쪽), 방향 모를 회전교차로는 초록 회전교차로 그림('rb svg는 필요없지 않아?')
     rest: 'kr', rb: 'rb_r',
   };
@@ -3660,7 +3683,8 @@
     let place = m[1] || '', act = straight ? '직진' : m[3];   // v133: 본선 그대로(mainKeep)면 '왼쪽 방향' 대신 '직진'
     act = act.replace(/(왼쪽|오른쪽)\s+(?:도시)?고속도로\s+(출구|진입)$/, '$1 $2')
       .replace(/(왼쪽|오른쪽)\s+도로\s+주행$/, '$1 방향')
-      .replace(/^지하차도\s+(왼쪽|오른쪽)\s+옆길$/, '$1 옆길');
+      .replace(/^지하차도\s+(왼쪽|오른쪽)\s+옆길$/, '$1 옆길')
+      .replace(/^분기\s*도로\s*진입$/, '분기 후 합류');   // v137: 네이버 지도 앱이 같은 안내를 '분기 후 합류'로 보여 준다
     const k = place.match(/(지하차도|고가차도|터널)$/);
     const r = k && act.match(new RegExp('^(?:(왼쪽|오른쪽)\\s+)?' + k[1] + '\\s+진입$'));
     if (r) { act = (r[1] ? r[1] + ' ' : '') + place + ' 진입'; place = ''; }
