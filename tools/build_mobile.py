@@ -10,6 +10,11 @@
   gn/nt5090_02.csv      경남경찰청 이동식 교통단속장비 운영장소(위도·경도, 방향)              https://www.gnpolice.go.kr/data.do?file=nt5090_02.csv
   ggb/ggb.pdf           경기북부경찰청 무인교통단속장비 PDF 58~64쪽 '이동식 장비리스트'(부스 273곳, 경도·위도)
                         https://www.ggbpolice.go.kr/commons/main/files/ggpolice_cctv(261031).pdf
+  ggn/ggn.xls           경기남부경찰청 고속도로순찰대 '이동형 단속 부스'(43곳, 경도·위도, 전부 부스. Referer 헤더가 있어야 받아짐)
+                        https://ggpolice.go.kr/include/main/files/고속도로순찰대_이동형 단속 부스.xls
+  seoul/seoul.json      서울경찰청 '이동식 단속 사전 예고지점'(PDF 240곳, 좌표 없음)을 tools/geo_mobile_seoul.py 로 좌표를 붙인 것
+                        (원본 https://www.smpa.go.kr/user/nd41940.do?View&boardNo=00037233 첨부 '이동식사전예고지점.pdf')
+                        v146 (2026-11-16 사용자 '넣어 줘')
   (광주경찰청 zip 은 내부 장비 정보 시트가 섞여 있어 쓰지 않는다)
 
 규칙
@@ -27,6 +32,8 @@ import os
 import re
 import sys
 from datetime import date
+
+sys.path.insert(0, r'D:\pylib')   # pypdf·xlrd
 
 SRC = sys.argv[1]
 OUT = sys.argv[2] if len(sys.argv) > 2 else os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'mobile.json')
@@ -105,7 +112,7 @@ if os.path.exists(p):
 # 경기북부: PDF 58~64쪽. 줄: '연번 설치장소(방향) 관할서 경도 위도' (경도와 위도가 붙어 나오기도 함: 127.2567337.54048)
 p = os.path.join(SRC, 'ggb', 'ggb.pdf')
 if os.path.exists(p):
-    sys.path.insert(0, os.path.join(os.path.dirname(SRC), 'pylib'))
+    sys.path[:0] = [os.path.join(os.path.dirname(SRC), 'pylib'), r'D:\pylib']
     from pypdf import PdfReader
     pdf = PdfReader(p)
     COORD = re.compile(r'(12[4-9]\.\d+?)\s*(3[3-8]\.\d{3,})\s*$')
@@ -133,6 +140,29 @@ if os.path.exists(p):
                 continue
             pts.append({'src': 'ggb', 'id': 'GGB-' + n.group(1), 'lat': c[0], 'lng': c[1], 'text': body, 'booth': True, 'limit': 0,
                         'school': '어린이' in body or '스쿨' in body})
+
+# 경기남부(고속도로순찰대): xls [연번, 지구대, 설치장소(약칭)=ID, 설치장소('영동고속도로 20.8k (주소) (인천->강릉)'), 도로구분,
+#   부스 유무, 경도, 위도, 비고]
+p = os.path.join(SRC, 'ggn', 'ggn.xls')
+if os.path.exists(p):
+    import xlrd
+    sh = xlrd.open_workbook(p).sheets()[0]
+    for i in range(1, sh.nrows):
+        r = [c.value for c in sh.row(i)]
+        if len(r) < 8 or not str(r[2]).strip():
+            continue
+        c = ok_coord(num(r[7]) or 0, num(r[6]) or 0)
+        if not c:
+            continue
+        text = str(r[3])
+        pts.append({'src': 'ggn', 'id': str(r[2]).strip(), 'lat': c[0], 'lng': c[1], 'text': text, 'booth': '부스' in str(r[5]),
+                    'limit': 0, 'school': '어린이' in text or '스쿨' in str(r[4])})
+
+# 서울: tools/geo_mobile_seoul.py 가 좌표를 붙인 지점 (확실한 것만. 뺀 것은 seoul.json 의 skipped)
+p = os.path.join(SRC, 'seoul', 'seoul.json')
+if os.path.exists(p):
+    for q in json.load(open(p, encoding='utf-8'))['points']:
+        pts.append({k: q[k] for k in ('src', 'id', 'lat', 'lng', 'text', 'booth', 'limit', 'school')})
 
 # 고정 카메라 (cameras.json): 중복 빼기·제한속도 빌리기
 cam = json.load(open(os.path.join(ROOT, 'data', 'cameras.json'), encoding='utf-8'))
@@ -195,7 +225,9 @@ for p_ in kept:
     by[k] = by.get(k, 0) + 1
 out = {'v': 1, 'date': date.today().isoformat(), 'count': len(rows), 'fields': cam['fields'], 'roads': [],
        'sources': {'busan': '부산경찰청 이동식 과속 단속 지점 2026-10-13', 'gn': '경남경찰청 이동식 교통단속장비 운영장소 2026-11-01',
-                   'ggb': '경기북부경찰청 이동식 장비 단속부스 2026-10-31'},
+                   'ggb': '경기북부경찰청 이동식 장비 단속부스 2026-10-31',
+                   'ggn': '경기남부경찰청 고속도로순찰대 이동형 단속 부스 (2026-11-16 받음)',
+                   'seoul': '서울경찰청 이동식 단속 사전 예고지점 2026-10-28 (주소·장소를 좌표로 바꾼 것)'},
        'rows': rows, 'arrowNames': names, 'arrows': arrows}
 with open(OUT, 'w', encoding='utf-8') as fh:
     json.dump(out, fh, ensure_ascii=False, separators=(',', ':'))
