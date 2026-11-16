@@ -3979,9 +3979,14 @@
   // 톨게이트 이름 → 영업소 이름: 공백, 끝의 괄호('하남톨게이트(서울방향)'·'(개방식)', v98 부터 tollParts 가 이름에 괄호를 남긴다), '톨게이트' 등을 뗀다
   const hipassKey = (s) => String(s || '').replace(/\s+/g, '').replace(/(\([^()]*\))+$/, '').replace(/(톨게이트|영업소|요금소|TG)$/i, '');
   // 톨게이트 안내 → [영업소 이름, 자료]. 본선 영업소는 자료 이름에 '(본)'이 붙기도 한다 (네이버 '남양주톨게이트' → '남양주(본)')
+  // v142 (2026-11-16 운전자 '가는 방향이 있어 확실히 있는 거야?' — 확실할 때만): 같은 이름으로 폐쇄식(입구·출구)과 개방식(상행·하행)
+  // 영업소가 따로 있는 곳(전국 자료에서 서영암·대동·가락 3곳)은 네이버 안내가 어느 쪽인지 알 수 없어 차로 자료가 없는 것으로 본다
+  // (전에는 둘이 한 이름에 섞여 개방식 줄을 썼다). 카드·'하이패스 차로 이용'은 그대로, 차로 칸만 안 보인다
+  const hipassMixed = (o) => !!o && !!(o.i || o.x) && !!(o.u || o.d);
   function hipassOffice(g) {
     const k = hipassKey(tollParts(g).name);
-    return hipass.o[k] ? [k, hipass.o[k]] : hipass.o[k + '(본)'] ? [k + '(본)', hipass.o[k + '(본)']] : [k, null];
+    const [name, o] = hipass.o[k] ? [k, hipass.o[k]] : hipass.o[k + '(본)'] ? [k + '(본)', hipass.o[k + '(본)']] : [k, null];
+    return [name, hipassMixed(o) ? null : o];
   }
   // 톨게이트 앞뒤 400m 로 잰 진행 방향이 지점 to 쪽이면 'u', 반대면 'd', 애매하면 '' (진입로 굽이에 흔들리지 않게).
   // 실제 경로: 하남IC→중부 상행 6°, 하남IC 출구(하행) 140°, 판교IC→경부 상행 20°
@@ -4041,9 +4046,10 @@
     if (h === null) return '';
     const p = nav.pts[Math.min(g.i, nav.pts.length - 1)];
     // 서울에서 본 톨게이트 쪽 방향에서 90° 왼쪽으로 돌린 것이 반시계 방향 (예: 서울 동쪽이면 북쪽). 순환선은 원이 아니어서
-    // 길 방향이 이 접선과 50° 넘게 벌어지기도 한다 (성남TG 북행 52°) — 두 방향뿐이니 80° 안이면 반시계, 100° 넘으면 시계
+    // 길 방향이 이 접선과 50° 넘게 벌어지기도 한다 (성남TG 북행 52°, 남행 128°). v142: 확실할 때만 — 65° 안이면 반시계, 115° 넘으면
+    // 시계, 그 사이는 방향 모름(양쪽 공통 하이패스 차로만). 전에는 80°/100° 로 갈랐다
     const diff = angleDiff(h, (bearing(SEOUL, p) + 270) % 360);
-    return diff < 80 ? 'u' : diff > 100 ? 'd' : '';
+    return diff <= 65 ? 'u' : diff >= 115 ? 'd' : '';
   }
   // 개방식 영업소(상행·하행)에서 우리 방향: 수도권 방사형 노선(s:1)이면 서울 쪽으로 가면 상행, 제1순환선이면 반시계가 상행. 애매하면 ''.
   const tollDir = (g, o, name) => (o.s ? towardDir(g, SEOUL) : RING_TG.has(name) ? ringDir(g) : '');
@@ -4071,7 +4077,7 @@
   // 하이패스 칸 아래 차로 줄: 하이패스 차로는 번호를 단 파란 칸, 그 사이 하이패스가 아닌 차로(유인·정산기·화물차 유인·미운영)는
   // 몇 개든 '–' 회색 칸 하나로 (v135, 네이버 지도처럼: 성남TG 1 2 3 – 8 9 – 11 –, 서울TG 출구 1 2 3 4 – 14 15 16 –).
   // 그 전(2026-11-14~v134)에는 모든 차로를 번호 칸으로 늘어놓고 미운영 3개 넘게·긴 회색 무리만 '⋯'로 접어, 큰 영업소에서 칸이 좁고 많았다
-  function laneStripHtml(code, max) {   // max: 예전 접기 기준 (지금은 칸 수만 돌려주고 dense 판단은 부르는 쪽에서)
+  function laneStripHtml(code, max) {   // max: 예전 접기 기준 (쓰지 않음). 칸 배치는 fitTollLanes
     const out = [];
     let run = false;
     [...String(code || '')].forEach((c, k) => {
@@ -4102,11 +4108,44 @@
         el.setAttribute('aria-label', '하이패스 ' + lay.nums.join(', ') + '번 차로');
       }
     }
-    // 접어도 칸이 너무 많을 때만(파란 칸이 많은 큰 영업소) 글자를 조금 작게
-    el.classList.toggle('dense', (tollState.items || 0) > (beside ? 7 : 10));
     const show = tollState.nums.length > 0;
     el.hidden = !show;
     $('#tollCard').classList.toggle('has-lanes', show);
+    if (show) fitTollLanes(el, beside);
+  }
+  // v142 (2026-11-16 20:30 성남TG 1.6km 앞 남행: 배지 옆 한 줄 '1 2 3 – 6 7 – 9'에서 9가 카드 밖으로 반쯤 잘리고 뒤 '–'는 안 보임.
+  // 운전자 '이게 많으면 그냥 가운데 밑에다가 보여줘 … 꼭 숫자를'): 칸이 배지 옆에 넉넉히(칸 26px) 안 들어가면 배지는 가운데 위,
+  // 칸은 그 아래 줄 가운데로. 아래 줄에서 칸이 22px 밑으로 작아져야 하면 줄을 나눠(줄마다 거의 같은 수) 가운데로 — 글자를 줄이지 않는다.
+  // 하이패스가 아닌 차로 '–' 칸은 그대로 둔다 (네이버와 같고, 몇 번 차로인지 세는 데 필요). 방향을 몰라 번호만 보일 때(시흥·김포 6개)도 같게
+  const TOLL_FIT = { gap: 3, min: 22, side: 26, name: 90 };
+  function fitTollLanes(el, beside) {
+    const card = $('#tollCard'), cs = getComputedStyle(card);
+    const W = card.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    if (!(W > 0)) return;   // 안 보이는 중 (다음 그리기에서)
+    const cells = el.querySelectorAll('.ln'), n = cells.length, compact = el.classList.contains('compact');
+    const cg = parseFloat(cs.columnGap) || 0, badge = card.querySelector('.toll-badge').getBoundingClientRect().width;
+    const dist = $('#tollDist'), distW = dist.hidden ? 0 : dist.getBoundingClientRect().width + cg;
+    // 차로 줄(code)은 톨게이트가 다음 안내일 때만 배지 옆, 아니면 원래 따로 한 줄. 번호만이면 이름 옆
+    let under = !beside && !compact;
+    if (!under) {
+      const need = compact ? [...cells].reduce((s, c) => s + Math.max(26, 12 + 10 * c.textContent.length), 0) + 4 * (n - 1)
+        : n * TOLL_FIT.side + TOLL_FIT.gap * (n - 1);
+      under = need > W - badge - cg - (beside ? 2 : TOLL_FIT.name + cg + distW);
+    }
+    card.classList.toggle('lanes-under', under && (beside || compact));
+    let per = n;
+    if (under) {
+      const cell = compact ? 34 : TOLL_FIT.min, g = compact ? 4 : TOLL_FIT.gap;
+      const fit = Math.max(1, Math.floor((W + g) / (cell + g)));
+      per = Math.ceil(n / Math.ceil(n / fit));
+    }
+    const rows = Math.ceil(n / per);
+    if (el.dataset.per !== String(per) || el.querySelectorAll('.ln-br').length !== rows - 1) {
+      el.querySelectorAll('.ln-br').forEach((b) => b.remove());
+      for (let k = per; k < n; k += per) { const br = document.createElement('i'); br.className = 'ln-br'; cells[k].before(br); }
+      el.dataset.per = String(per);
+    }
+    el.dataset.rows = String(rows);
   }
   function renderToll() {
     const el = $('#tollCard');

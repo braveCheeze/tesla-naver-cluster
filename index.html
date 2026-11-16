@@ -1407,7 +1407,7 @@
   /* 하이패스 차로 줄 (2026-11-14 요청): 카드 아래 줄에 톨게이트 차로를 1번부터 칸으로 늘어놓고 하이패스 차로만 파랗게,
      유인·정산기·화물차 차로는 회색, 미운영 차로는 흐리게(3개 넘게 이어지면 '⋯'). '700m'·'번 차로' 글자는 뺀다 */
   .tollcard.has-lanes { flex-wrap: wrap; row-gap: 8px; }
-  .toll-lanes { order: 10; flex: 1 0 100%; display: flex; align-items: center; gap: 3px; min-width: 0; overflow: hidden; }
+  .toll-lanes { order: 10; flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 3px; min-width: 0; }
   .toll-lanes .ln {
     flex: 1 1 0; min-width: 22px; max-width: 34px; height: 28px; border-radius: 5px; display: flex; align-items: center; justify-content: center;
     font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; text-shadow: none; overflow: hidden;
@@ -1418,7 +1418,6 @@
   .toll-lanes .ln-gap { flex: none; font-style: normal; font-weight: 800; color: #8a94a6; padding: 0 1px; }
   /* v135 네이버 지도처럼: 하이패스 차로 사이의 다른 차로들은 몇 개든 짙은 회색 '–' 칸 하나 (성남TG 1 2 3 – 8 9 – 11 –) */
   .toll-lanes .ln.dash { background: #4a515c; color: #e6e9ee; }
-  .toll-lanes.dense .ln { font-size: 11px; height: 24px; letter-spacing: -.04em; }
   /* 방향을 몰라 줄을 못 그릴 때(양쪽 다 하이패스인 번호만): 예전처럼 이름 옆에 파란 번호 칸만 */
   .toll-lanes.compact { order: 0; flex: none; margin-left: auto; gap: 4px; }
   .toll-lanes.compact .ln { flex: none; min-width: 26px; max-width: none; height: 30px; padding: 0 6px; font-size: 17px; }
@@ -1427,7 +1426,12 @@
   .tollcard.is-next .toll-name { display: none; }
   .tollcard.is-next.has-lanes .toll-info { display: none; }
   .tollcard.is-next.has-lanes { flex-wrap: nowrap; }
-  .tollcard.is-next.has-lanes .toll-lanes { order: 0; flex: 1 1 auto; margin-left: 2px; }
+  .tollcard.is-next.has-lanes .toll-lanes { order: 0; flex: 1 1 auto; margin-left: 2px; justify-content: flex-start; }
+  /* v142 (2026-11-16 성남TG 하행 '1 2 3 – 6 7 – 9'에서 9가 잘림, 운전자 '많으면 가운데 밑에다가 … 꼭 숫자를'): 칸이 배지 옆에
+     넉넉히 안 들어가면 배지는 가운데 위, 칸은 그 아래 줄 가운데 (app.js fitTollLanes). 칸이 너무 작아지면 .ln-br 에서 줄을 나눈다 */
+  .tollcard.is-next.has-lanes.lanes-under { flex-wrap: wrap; justify-content: center; }
+  .tollcard.has-lanes.lanes-under .toll-lanes { order: 10; flex: 1 0 100%; margin-left: 0; justify-content: center; }
+  .toll-lanes .ln-br { flex: 0 0 100%; height: 0; }
   /* ================= 2026-11-14 요청 세 가지 =================
      ① 날씨: '비 93%' 파란 글자 대신 흰 글자 + 우산 표지 + 숫자 */
   .wxumb { width: 1.05em; height: 1.05em; vertical-align: -0.15em; margin-right: 2px; }

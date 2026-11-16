@@ -2825,6 +2825,8 @@
     { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored; 7-10 lanes fit the drawer as square tiles", fn: s77 },
     { id: 'S78', name: "S78 mainline junction (v133): keep-left/right where the route stays on the same expressway section and goes straight is shown as straight ('신갈분기점에서 직진 · 서울 방면', main-straight junction scene, straight sign); a fork onto another expressway stays a fork", fn: s78 },
     { id: 'S79', name: 'S79 rest areas (v133): distance to where the entry ramp leaves the mainline (OSM), not the rest-area centre; within 3 km and no turn within 1 km the top row becomes the rest area (blue), next row = the guidance after it', fn: s79 },
+    { id: 'S85', name: "S85 hi-pass lanes only for the direction you are driving (v142, driver '가는 방향이 있어 확실히 있는 거야?'): the real 경부·수도권제1순환 route both ways (서울TG exit 1-4,14-16 / entry 1-4,9; 성남TG 상행 1 2 3 8 9 11 / 하행 1 2 3 6 7 9), ring road near-sideways heading = common lanes only, same name for a closed and an open office (대동·서영암·가락) = no lanes", fn: s85 },
+    { id: 'S84', name: "S84 hi-pass lane row never cut off (v142, 성남TG 하행 1 2 3 – 6 7 – 9 ran past the card): few cells stay beside the badge, many go under a centred badge, centred, and wrap or shrink so every number shows (4, 9, 12, 14, 16 cells; toll next and toll second)", fn: s84 },
     { id: 'S82', name: "S82 bus-only lanes and the map lane callout (v139, user saw Naver's '[↰][↑][↑][bus]'): bus lanes drawn as a grey bus and never blue unless the turn exists only there; a white callout at the next turn's stop line from 1 km, blue lanes for this turn, left of the stop line for right turns; nothing where there is no lane data", fn: s82 },
     { id: 'S80', name: 'S80 real Gyeongbu northbound route (v135): opposite-carriageway rest stop dropped, section-end camera alerted without its start, no reroute in the Seoul toll plaza or on 0.3 s of 10 Hz jitter, reroute 60 m off outside it', fn: s80 },
     { id: 'S81', name: 'S81 signal cameras sit at the stop line of the approach they enforce (v138, 길동사거리 left turn): our approach camera is warned, camera distance ≤ turn distance, the cross street camera is not', fn: s81 },
@@ -4148,6 +4150,205 @@
       r.uturn.shown && r.uturn.go === '1' && r.uturn.onParts === 2 && r.uturn.offInGo === 2 &&
       !r.none.shown &&
       r.real.loaded && r.real.n > 100;
+    return { pass: ok, detail: JSON.stringify(r) + (ok ? ' ✓' : ' ✗') };
+  }
+
+  // S85: 하이패스 차로는 지금 가는 방향 것만 (v142, 2026-11-16 20:30 성남TG 남행에서 운전자 '하이패스 없는데 왜 자꾸 하이패스
+  //      보여 주는 거야 가는 방향이 있어 확실히 있는 거야?'). 실제 자료(data/hipass.json)로:
+  //      (a) 실제 경로 경부 북행 → 판교JC → 수도권제1순환 북행 (아침 09:03 네이버 '1 2 3 – 8 9 – 11 –'): 서울TG 출구, 성남TG 상행
+  //      (b) 같은 길을 거꾸로 (저녁 귀갓길: 성남TG 남행 → 판교JC → 경부 남행): 성남TG 하행 1 2 3 – 6 7 – 9 –, 서울TG 입구 1 2 3 4 – 9 –
+  //      (c) 순환선 영업소를 접선과 거의 직각(72°)으로 지나면 방향 모름 → 양쪽 공통(성남 1·2·3·9)만. 40°면 상행, 140°면 하행
+  //      (d) 같은 이름에 폐쇄식·개방식 영업소가 따로 있는 대동·서영암·가락: 어느 쪽인지 몰라 차로 칸 없음 (카드는 보임)
+  async function s85() {
+    const t = T(), box = TESLA_ONLY, prev = t.prefs.tesla;
+    const set = (on) => { box.checked = on; box.dispatchEvent(new Event('change')); };
+    const lanes = () => { const e = document.getElementById('tollLanes'); return visible('#tollLanes') ? e.dataset.hp + '/' + e.dataset.n : ''; };
+    const snap = () => ({ card: visible('#tollCard'), lanes: lanes(), strip: [...document.querySelectorAll('#tollLanes .ln')].map((e) => (e.classList.contains('hp') ? e.textContent : '–')).join(' ') });
+    const mk = (path, guides, sections) => {
+      const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0];
+      for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+      const guide = guides.map((x, k) => ({ ...x, d: r0(cum[x.i] - (k ? cum[guides[k - 1].i] : 0)), ms: 60000 }));
+      const total = cum[cum.length - 1];
+      return { route: { distance: r0(total), duration: r0(total / 20 * 1000), tollFare: 900, fuelPrice: 3000, path, guide, sections }, P, cum, total,
+        dest: { name: '방향 시험', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    };
+    const driveTo = (R, from, upto) => { for (let m = from; m <= upto; m += 25) { const a = pointAt(R, m); feed(a.p, 25, a.h); t.renderNav(); } };
+    const settle = async () => { await new Promise((res) => setTimeout(res, 30)); t.renderNav(); };
+    // 순환선 방향 판정에 쓰는 각도 (앱 ringDir 과 같은 셈: 톨게이트 앞뒤 400m 진행 방향 vs 서울에서 본 방향 + 270°)
+    const ringDiff = (R, i) => {
+      const s0 = R.cum[i];
+      let a = i, b = i;
+      while (a > 0 && s0 - R.cum[a] < 400) a--;
+      while (b < R.P.length - 1 && R.cum[b] - s0 < 400) b++;
+      const d = Math.abs(((brg(R.P[a], R.P[b]) - (brg(SEOUL, R.P[i]) + 270)) % 360 + 540) % 360 - 180);
+      return Math.round(d);
+    };
+    const r = {};
+    try {
+      set(true);
+      t.setHipassData(null); await t.loadHipass();
+      const fx = await (await realFetch(harnessDir + 'fixtures/route-seoultg-n.json', { cache: 'no-store' })).json();
+      const N = fx.path.length;
+      const iSeoul = fx.guide.find((g) => /서울톨게이트/.test(g.s)).i, iSeongnam = fx.guide.find((g) => /성남톨게이트/.test(g.s)).i;
+      // (a) 북행 (실제 경로 그대로)
+      softReset();
+      const F = mk(fx.path, fx.guide.map((g) => ({ i: g.i, t: g.t, s: g.s })), fx.sections);
+      await planAndStart(F);
+      driveTo(F, 25, F.cum[iSeoul] - 600); await settle();
+      r.northSeoul = snap();
+      driveTo(F, F.cum[iSeoul] - 575, F.cum[iSeongnam] - 600); await settle();
+      r.northSeongnam = snap();
+      r.northDiff = ringDiff(F, iSeongnam);
+      t.endNav();
+      // (b) 거꾸로 (남행): 길·안내 번호를 뒤집는다. 회전 안내는 방향이 달라 빼고 톨게이트·목적지만
+      softReset();
+      const rv = (i) => N - 1 - i;
+      const B = mk(fx.path.slice().reverse(),
+        [{ i: rv(iSeongnam), t: 121, s: '성남톨게이트 (통행료 500원)' }, { i: rv(iSeoul), t: 121, s: '서울톨게이트' }, { i: N - 1, t: 88, s: '목적지' }],
+        [{ i: 0, n: rv(55) + 1, name: '수도권제1순환고속도로', speed: 70, cong: 1 }, { i: rv(55), n: 56, name: '경부고속도로', speed: 70, cong: 1 }]);
+      await planAndStart(B);
+      driveTo(B, 25, B.cum[rv(iSeongnam)] - 300); await settle();
+      r.southSeongnam = snap();
+      r.southDiff = ringDiff(B, rv(iSeongnam));
+      driveTo(B, B.cum[rv(iSeongnam)] - 275, B.cum[rv(iSeoul)] - 600); await settle();
+      r.southSeoul = snap();
+      t.endNav();
+      // (c) 순환선 영업소(성남)를 접선과 40°·72°·140° 로 지남 (시험 출발점 둘레의 직선 길)
+      const tangent = (brg(SEOUL, NAV_ORIGIN) + 270) % 360;
+      for (const [k, off] of [['ring40', 40], ['ring72', 72], ['ring140', 140]]) {
+        softReset();
+        const h = (tangent + off) % 360, raw = [];
+        for (let q = 0; q <= 40; q++) raw.push(dest(NAV_ORIGIN, h, 100 * q));
+        const R = mk(raw.map((x) => [round6(x.lng), round6(x.lat)]), [{ i: 25, t: 121, s: '성남톨게이트 (통행료 500원)' }, { i: 40, t: 88, s: '목적지' }],
+          [{ i: 0, n: 41, name: '수도권제1순환고속도로', speed: 70, cong: 1 }]);
+        await planAndStart(R);
+        driveTo(R, 25, 2200); await settle();
+        r[k] = snap(); r[k].diff = ringDiff(R, 25);
+        t.endNav();
+      }
+      // (d) 같은 이름의 폐쇄식·개방식 영업소
+      for (const name of ['대동', '서영암', '가락']) {
+        softReset();
+        const raw = [];
+        for (let q = 0; q <= 40; q++) raw.push(dest(NAV_ORIGIN, 0, 100 * q));
+        const R = mk(raw.map((x) => [round6(x.lng), round6(x.lat)]),
+          [{ i: 20, t: 66, s: "시험IC에서 '부산' 방면으로 오른쪽 고속도로 진입" }, { i: 25, t: 121, s: name + '톨게이트' }, { i: 40, t: 88, s: '목적지' }],
+          [{ i: 0, n: 41, name: '시험고속도로', speed: 70, cong: 1 }]);
+        await planAndStart(R);
+        driveTo(R, 25, 2200); await settle();
+        r[name] = snap();
+        t.endNav();
+      }
+      r.mixedData = ['대동', '서영암', '가락'].every((k) => { const o = t.hipass.o[k]; return o && (o.i || o.x) && (o.u || o.d); });
+    } finally {
+      t.setHipassData(null);
+      await t.loadHipass();
+      set(prev);
+      softReset();
+    }
+    const ok = r.northSeoul.lanes === '1,2,3,4,14,15,16/19' && r.northSeongnam.lanes === '1,2,3,8,9,11/13' && r.northSeongnam.strip === '1 2 3 – 8 9 – 11 –' &&
+      r.southSeongnam.lanes === '1,2,3,6,7,9/12' && r.southSeongnam.strip === '1 2 3 – 6 7 – 9 –' &&
+      r.southSeoul.lanes === '1,2,3,4,9/13' && r.southSeoul.strip === '1 2 3 4 – 9 –' &&
+      r.northDiff <= 65 && r.southDiff >= 115 &&
+      r.ring40.lanes === '1,2,3,8,9,11/13' && r.ring72.card && r.ring72.lanes === '1,2,3,9/0' && r.ring140.lanes === '1,2,3,6,7,9/12' &&
+      r.mixedData && ['대동', '서영암', '가락'].every((k) => r[k].card && r[k].lanes === '');
+    return { pass: ok, detail: JSON.stringify(r) + (ok ? ' ✓' : ' ✗') };
+  }
+
+  // S84: 하이패스 차로 줄이 카드 밖으로 넘치지 않음 (v142, 2026-11-16 20:30 성남TG 1.6km 앞 남행: 배지 옆 한 줄
+  //      '1 2 3 – 6 7 – 9'에서 9가 반쯤 잘리고 뒤 '–'는 안 보임. 운전자 '이게 많으면 그냥 가운데 밑에다가 보여줘 … 꼭 숫자를').
+  //      804×638 테슬라 서랍에서 칸 4·9(성남 하행 실제 줄)·12(서서울 출구 실제 줄)·14·16개를, 톨게이트가 다음 안내일 때(배지 옆)와
+  //      그다음 안내일 때(따로 한 줄) 모두: 모든 칸이 카드 안, 숫자가 칸 안에 다 보임(글자 12px 이상), 칸 수 그대로.
+  //      칸이 적으면(4) 배지 옆 한 줄, 많으면 배지가 가운데 위 + 그 아래 줄에 칸을 가운데로 (넘치면 줄을 바꿔 가운데)
+  async function s84() {
+    const t = T(), box = TESLA_ONLY, prev = t.prefs.tesla;
+    const set = (on) => { box.checked = on; box.dispatchEvent(new Event('change')); };
+    const mkRoute = (guides) => {
+      const raw = [];
+      for (let k = 0; k <= 40; k++) raw.push(dest(NAV_ORIGIN, 0, 100 * k));
+      const path = raw.map((p) => [round6(p.lng), round6(p.lat)]);
+      const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0];
+      for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+      const total = cum[cum.length - 1];
+      const guide = guides.map((x, k) => ({ ...x, d: r0(cum[x.i] - (k ? cum[guides[k - 1].i] : 0)), ms: 20000 }));
+      return {
+        route: { distance: r0(total), duration: r0(total / 25 * 1000), tollFare: 500, fuelPrice: 300, path, guide,
+          sections: [{ i: 0, n: 41, name: '테스트로', speed: 60, cong: 1 }] },
+        P, cum, total, dest: { name: '하이패스 칸 시험', addr: '', lat: P[40].lat, lng: P[40].lng },
+      };
+    };
+    const enter = { i: 20, t: 66, s: "시험IC에서 '서울' 방면으로 오른쪽 고속도로 진입" };
+    const end = { i: 40, t: 88, s: '목적지' };
+    const toll = (name) => ({ i: 25, t: 121, s: name + '톨게이트 (통행료 500원)' });
+    const codes = {
+      칸4: 'HHTxH',                                  // 1 2 – 5
+      칸9: 'MMMxTHHThttb',                           // 성남 하행 실제 줄: 1 2 3 – 6 7 – 9 –
+      칸12: 'xMMMMxxPPxHHHxPTBxx',                   // 서서울 출구 실제 줄: – 2 3 4 5 – 11 12 13 – 17 –
+      칸14: 'HHHHxHxHxHxHHH',                        // 1 2 3 4 – 6 – 8 – 10 – 12 13 14
+      칸16: 'xxxHHxHxHHxHxHHxHH',                    // – 4 5 – 7 – 9 10 – 12 – 14 15 – 17 18
+    };
+    const data = { v: 2, date: '2026-06-30', o: {} };
+    for (const [k, c] of Object.entries(codes)) data.o['시험' + k] = { i: c, x: c };
+    // 방향을 몰라 양쪽 공통 번호만 보일 때 (실제 자료에서 가장 많은 시흥·김포 6개): 번호 칸도 넘치지 않게
+    data.o.시험번호6 = { t: 1, u: 'HHHHHHT', d: 'HHHHHHP' };
+    // ?hold=칸9옆 : 그 상태에서 6초 멈춤 (눈으로 확인·사진용)
+    const hold = new URLSearchParams(location.search).get('hold');
+    const meas = () => {
+      const card = document.getElementById('tollCard'), lanes = document.getElementById('tollLanes'), badge = card.querySelector('.toll-badge');
+      if (!visible('#tollCard') || !visible('#tollLanes')) return { shown: false };
+      const c = card.getBoundingClientRect(), b = badge.getBoundingClientRect(), cs = getComputedStyle(card);
+      const inL = c.left + parseFloat(cs.paddingLeft), inR = c.right - parseFloat(cs.paddingRight);
+      const cells = [...lanes.querySelectorAll('.ln')];
+      const R = cells.map((e) => e.getBoundingClientRect());
+      const out = R.filter((q) => q.left < c.left - 0.5 || q.right > c.right + 0.5 || q.left < 0 || q.right > window.innerWidth).length;
+      const cut = cells.filter((e) => e.scrollWidth > e.clientWidth + 0.5 || e.scrollHeight > e.clientHeight + 0.5).length;
+      const font = Math.min(...cells.map((e) => parseFloat(getComputedStyle(e).fontSize)));
+      const minW = Math.min(...R.map((q) => q.width));
+      const rows = [...new Set(R.map((q) => Math.round(q.top)))];
+      const below = R.every((q) => q.top >= b.bottom - 0.5);
+      const beside = R.every((q) => q.top < b.bottom && q.bottom > b.top && q.left >= b.right);
+      // 가운데: 줄마다 왼쪽 여백 ≈ 오른쪽 여백, 배지도 가운데
+      const off = rows.map((y) => { const rr = R.filter((q) => Math.round(q.top) === y);
+        return Math.abs((Math.min(...rr.map((q) => q.left)) - inL) - (inR - Math.max(...rr.map((q) => q.right)))); });
+      return { shown: true, n: cells.length, out, cut, font, minW: Math.round(minW * 10) / 10, rows: rows.length, below, beside,
+        centred: Math.max(...off) <= 3, badgeMid: Math.abs((b.left + b.right) / 2 - (inL + inR) / 2) <= 3,
+        text: cells.map((e) => (e.classList.contains('hp') ? e.textContent : '–')).join(' '), cardW: Math.round(c.width), cardH: Math.round(c.height) };
+    };
+    const drive = async (R, upto) => {
+      await planAndStart(R);
+      for (let s = 25; s <= upto; s += 25) { const a = pointAt(R, s); feed(a.p, 25, 0); t.renderNav(); }
+      await new Promise((res) => setTimeout(res, 40)); t.renderNav();
+      await new Promise((res) => requestAnimationFrame(() => res()));
+      return meas();
+    };
+    const r = {};
+    try {
+      set(true);
+      t.setHipassData(data);
+      for (const k of [...Object.keys(codes), '번호6']) {
+        softReset();
+        r[k + '옆'] = await drive(mkRoute([toll('시험' + k), end]), 2200);           // 톨게이트가 다음 안내 (배지 옆 자리)
+        if (hold === k + '옆') await new Promise((res) => setTimeout(res, 6000));
+        t.endNav(); softReset();
+        r[k + '줄'] = await drive(mkRoute([enter, toll('시험' + k), end]), 1700);    // 그다음 안내 (따로 한 줄)
+        if (hold === k + '줄') await new Promise((res) => setTimeout(res, 6000));
+        t.endNav();
+      }
+    } finally {
+      t.setHipassData(null);
+      await t.loadHipass();
+      set(prev);
+      softReset();
+    }
+    const want = { 칸4: 4, 칸9: 9, 칸12: 12, 칸14: 14, 칸16: 16, 번호6: 6 };
+    const okAll = Object.keys(want).every((k) => ['옆', '줄'].every((w) => { const m = r[k + w];
+      return m.shown && m.n === want[k] && m.out === 0 && m.cut === 0 && m.font >= 12 && m.minW >= 18; }));
+    const ok = okAll && r.칸4옆.beside && r.칸4옆.rows === 1 &&
+      r.칸9옆.text === '1 2 3 – 6 7 – 9 –' &&
+      ['칸9옆', '칸12옆', '칸14옆', '칸16옆'].every((k) => r[k].below && r[k].badgeMid && r[k].centred) &&
+      ['칸12줄', '칸14줄', '칸16줄'].every((k) => r[k].centred) && r.번호6옆.text === '1 2 3 4 5 6';
     return { pass: ok, detail: JSON.stringify(r) + (ok ? ' ✓' : ' ✗') };
   }
 
