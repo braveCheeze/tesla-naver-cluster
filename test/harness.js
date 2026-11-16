@@ -3830,10 +3830,13 @@
       // 길안내 중: [목적지로] + [경유지로] → 경유지 넣고 다시 찾기
       await planAndStart(R);
       await sleep(150);
-      await press(700, 0, 200);   // 차에서 200px(약 200m) 떨어진 곳 (차 바로 옆이면 경유지를 곧바로 지난 것으로 친다)
+      await press(700, 0, 200);   // 차에서 200px 떨어진 곳 (테스트 지도는 약 200m. 차 바로 옆이면 경유지를 곧바로 지난 것으로 친다)
       r.navShown = visible('#pickCard');
       await waitFor(() => !/찾는 중/.test(text('#pkSub')), 3000);
       r.navGo = text('#pkGo'); r.navVia = visible('#pkVia') ? text('#pkVia') : 'hidden';
+      // 네이버 지도(Pages)는 주행 화면 배율이 커서 200px 이 약 94m: 경유지 150m 안이면 곧바로 '통과'로 빼므로 그때는 고른 자리를 300m 앞으로
+      const fx = t.state.fix, pk = t.state.pick;
+      if (fx && pk && hav(fx, pk) < 200) { const fwd = dest(fx, 0, 300); pk.lat = fwd.lat; pk.lng = fwd.lng; pk.placeLat = null; }
       const c1 = stub.calls.length;
       document.getElementById('pkVia').click();
       await waitFor(() => stub.count('/route', c1) >= 1 && !t.nav.busy, 4000);
