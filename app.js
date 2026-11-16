@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-140'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-141'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -3436,7 +3436,32 @@
     const k = turnKind0(g);
     return (k === 'kl' || k === 'kr') && mainKeep(g) ? 's' : k;
   }
+  // v141 좌우는 한 곳에서 (2026-11-16 송파IC '오른쪽 진입'인데 IN 그림이 왼쪽으로 빠지는 모양 — 운전자 '로직 잘 좀 봐줘'):
+  // 안내 하나의 좌우 = 네이버 안내 코드 → 종류(KIND_BY_CODE). 같은 응답의 문장(동작 부분 '오른쪽 고속도로 진입')이 반대 쪽을 말하면 문장을 따른다
+  // (저장된 실제 경로 316개 안내에서 코드와 문장이 어긋난 곳은 0곳 — 안전장치). 아이콘·그다음 칸·분기점 그림(juncInfo)이 모두 이 값을 쓰고,
+  // 패널 글·음성은 문장 그대로, 지도 화살표는 경로 모양 그대로라 같은 쪽이 된다
+  const SIDE_L = new Set(['l', 'sl', 'sharp_l', 'kl', 'inl', 'outl', 'over_l', 'under_l', 'side_l', 'oside_l', 'rb_l']);
+  const SIDE_R = new Set(['r', 'sr', 'sharp_r', 'kr', 'inr', 'outr', 'over_r', 'under_r', 'side_r', 'oside_r', 'rb_r']);
+  const kindSide = (k) => SIDE_L.has(k) ? 'l' : SIDE_R.has(k) ? 'r' : null;
+  const mirrorKind = (k) => k === 'l' ? 'r' : k === 'r' ? 'l' : k.replace(/l$/, '\u0000').replace(/r$/, 'l').replace('\u0000', 'r');
+  function textSide(s) {
+    const m = String(s || '').match(/^(?:(.+?)에서\s+)?(?:'([^']+)'\s*방면으로\s+)?(.+)$/);
+    const a = m ? m[3] : String(s || '');
+    const h = a.match(/(\d{1,2})시\s*방향/);
+    if (h && !/회전교차로|로터리/.test(a)) { const n = +h[1]; if (n >= 7 && n <= 11) return 'l'; if (n >= 1 && n <= 5) return 'r'; }
+    const l = /왼쪽|좌회전|좌측/.test(a), r = /오른쪽|우회전|우측/.test(a);
+    return l && !r ? 'l' : r && !l ? 'r' : null;
+  }
   function turnKind0(g) {
+    if (!g) return 's';
+    if (g._tkFor === g.s + '|' + g.t) return g._tk;
+    let k = turnKind00(g);
+    const ks = kindSide(k), ts = textSide(g.s);
+    if (ks && ts && ks !== ts && !/^rb_/.test(k)) { k = mirrorKind(k); nav.sideFixes = (nav.sideFixes || 0) + 1; }
+    g._tk = k; g._tkFor = g.s + '|' + g.t;
+    return k;
+  }
+  function turnKind00(g) {
     const s = g.s || '', t = g.t;
     if (t >= 21 && t <= 34) return rbKind(t - 21);   // 로터리
     if (t >= 91 && t <= 104) return rbKind(t - 91);  // 회전교차로
@@ -3472,14 +3497,14 @@
   // 오른쪽으로 그리고, 왼쪽은 도로·화살표만 좌우로 뒤집고 표지는 왼쪽 위로 옮긴다. 그다음 안내 칸(작은 크기)에서는 표지를 숨긴다
   function rampIcon(out, left) {
     const flip = left ? ' transform="matrix(-1 0 0 1 48 0)"' : '';
+    // v141 (2026-11-16 송파IC '오른쪽 진입'에서 운전자 '나는 오른쪽으로 들어가야 되는데 왜 왼쪽으로 빠지라고 나와 있어?'):
+    // 들어가기(IN)도 나가기(OUT)처럼 '지금 달리는 길에서 그쪽 연결로로 휘어 들어가는' 그림 하나 (네이버 IN 그림과 같은 짜임).
+    // 예전 IN 은 오른쪽 연결로가 왼쪽 본선으로 합쳐지는 그림이라 화살표 끝이 왼쪽 길 위에 있어 왼쪽으로 가라는 것처럼 보였다
     const road = '<path class="rd-f" d="M4 47V3h15v44z" fill="#2b3440" stroke="none"/>' +
       '<path d="M11.5 44V5" stroke="#fff" stroke-width="1.6" stroke-dasharray="4 4" opacity=".55" fill="none"/>' +
-      (out ? '<path class="rd-s" d="M14 47C14 35 22 27 37 21" stroke="#2b3440" stroke-width="12" fill="none"/>' +
-             '<path d="M13 45C13 34.5 20 28.6 31 23.6" stroke="#fff" stroke-width="4.5" stroke-linecap="round" fill="none"/>' +
-             '<path d="M38.5 20.2 33.3 28 29.2 19z" fill="#fff" stroke="none"/>'
-           : '<path class="rd-s" d="M38 47C38 35 30 26 15 20" stroke="#2b3440" stroke-width="12" fill="none"/>' +
-             '<path d="M36 45C36 34 27 28 15.5 22 12.5 20.3 11.5 18 11.5 14" stroke="#fff" stroke-width="4.5" stroke-linecap="round" fill="none"/>' +
-             '<path d="M11.5 4 16.5 12.5H6.5z" fill="#fff" stroke="none"/>');
+      '<path class="rd-s" d="M14 47C14 35 22 27 37 21" stroke="#2b3440" stroke-width="12" fill="none"/>' +
+      '<path d="M13 45C13 34.5 20 28.6 31 23.6" stroke="#fff" stroke-width="4.5" stroke-linecap="round" fill="none"/>' +
+      '<path d="M38.5 20.2 33.3 28 29.2 19z" fill="#fff" stroke="none"/>';
     const shield = '<g class="shield"' + (left ? ' transform="translate(-24 0)"' : '') + '>' +
       '<path d="M26.5 2.5h19v8.2c0 4.6-4.2 7.4-9.5 9.3-5.3-1.9-9.5-4.7-9.5-9.3z" fill="#1d4fb8" stroke="#fff" stroke-width="1.2"/>' +
       '<path d="M27.1 3.1h17.8v3.6H27.1z" fill="#d93b3b" stroke="none"/>' +
@@ -3759,7 +3784,6 @@
   // 차로 수는 모르므로 그리지 않는다. 길안내 패널 밑 서랍 맨 위에, 안내 지점 800m 앞부터
   const JUNC_FORK = new Set([4, 5, 41, 42, 54]);                                  // 갈림길: 두 갈래
   const JUNC_RAMP = new Set([57, 58, 59, 60, 66, 67, 68, 69, 76, 77, 79, 80]);   // 진입·진출로: 본선 옆으로 빠짐
-  const JUNC_LEFT = new Set([4, 41, 57, 58, 59, 60, 76, 79, 62, 63, 64, 65]);
   const JUNC_ENTRY = new Set([57, 59, 66, 68, 76, 77]);               // 진입로: 본선으로 합류 (2026-11-15: 진출 그림이 나오던 것)
   // 고가·지하차도·옆길 (2026-11-15 '안내 표기가 어려우면 밑에처럼 이미지로')
   const JUNC_ROAD = { 62: 'over', 71: 'over', 64: 'under', 73: 'under', 63: 'oside', 72: 'oside', 65: 'side', 74: 'side' };   // v110: 55·56(직진)은 빼다
@@ -3768,8 +3792,10 @@
   function juncInfo(g) {
     if (!g || (!JUNC_FORK.has(g.t) && !JUNC_RAMP.has(g.t) && !JUNC_ROAD[g.t])) return null;
     const s = String(g.s || '');
-    let left = JUNC_LEFT.has(g.t);
-    if (g.t === 54) { if (/왼쪽/.test(s)) left = true; else if (/오른쪽/.test(s)) left = false; else return null; }
+    // v141: 좌우는 안내 아이콘과 같은 값 (turnKind0 → kindSide). 방향 없는 전방 분기(54 → 'jc')는 그림 없음
+    const side = kindSide(turnKind0(g));
+    if (!side) return null;
+    const left = side === 'l';
     const m = s.match(/^(.*?)에서\s/);
     const q = s.match(/'([^']+)'/);
     const label = dirNames(q ? q[1] : '').join(' · ');   // 패널 문장과 같은 규칙 (dirNames)
@@ -6282,7 +6308,7 @@
       saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassKey, hipassNums, hipassLayout, laneNums, laneStripHtml, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, icoBase, pickImg, iconPicks: ICON_PICKS, tollParts, arrowSpan, routeStyle: ROUTE_STYLE, trafficPal, roundRoute, setCarIcon, carIcons: CAR_ICONS, parking, parkState, setParkingData, loadParking, evalParking, rest, setRestData, loadRest, ensureRouteRest, renderRest, placeBase, findParking, renderTurnArrow,
       lanesData, laneState, setLaneData, loadLanes, laneGuide, laneArrowSvg, laneOk, laneTipFor, laneCell,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, expwayNo, camMiss, camMissCheck, hdgFix, fixLog, ensureRouteCams,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, expwayNo, camMiss, camMissCheck, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
     };
   }

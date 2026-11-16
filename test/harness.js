@@ -2828,6 +2828,7 @@
     { id: 'S82', name: "S82 bus-only lanes and the map lane callout (v139, user saw Naver's '[↰][↑][↑][bus]'): bus lanes drawn as a grey bus and never blue unless the turn exists only there; a white callout at the next turn's stop line from 1 km, blue lanes for this turn, left of the stop line for right turns; nothing where there is no lane data", fn: s82 },
     { id: 'S80', name: 'S80 real Gyeongbu northbound route (v135): opposite-carriageway rest stop dropped, section-end camera alerted without its start, no reroute in the Seoul toll plaza or on 0.3 s of 10 Hz jitter, reroute 60 m off outside it', fn: s80 },
     { id: 'S81', name: 'S81 signal cameras sit at the stop line of the approach they enforce (v138, 길동사거리 left turn): our approach camera is warned, camera distance ≤ turn distance, the cross street camera is not', fn: s81 },
+    { id: 'S83', name: "S83 one left/right per guidance (v141, 송파IC '오른쪽 진입' drawn as a left exit): every sided icon's arrow tip is on its side, and on 20 real Naver routes the sentence's side = icon kind = drawn arrow = junction picture; a code/sentence conflict follows the sentence", fn: s83 },
     { id: 'S75', name: 'S75 (info) cameras alerted on every saved real route, for comparing versions', fn: s75 },
     { id: 'S74', name: 'S74 camera score on 2026-11-15 real cases (13): false alerts / misses / wrong type, with and without navigation', fn: s74 },
     { id: 'S73', name: 'S73 no spoken overspeed words (과속/초과): limit beeps and the red card only', fn: s73 },
@@ -3695,6 +3696,93 @@
       r.km2.top && r.km2.dist === '2.8km' && r.km2.text === '테스트휴게소' && r.km2.next === '550m' && r.km2.nextToll && r.km2.row === '' &&
       !r.km44.top && r.km44.dist === '900m' && /서울톨게이트/.test(r.km44.text) && r.km44.row === '테스트휴게소 350m' &&
       !r.km48.top && r.km48.row === '' && r.city === '' && r.nearIn === '테스트휴게소 2.6km';
+    return { pass: ok, detail: JSON.stringify(r) };
+  }
+
+  // S83: 좌우는 한 값 (v141, 2026-11-16 송파IC '오른쪽 진입'인데 IN 그림이 왼쪽으로 빠지는 모양, 운전자 '로직 잘 좀 봐줘').
+  //      (a) 좌우가 있는 아이콘 종류마다 그려진 화살표 끝(가장 위의 흰 점, 도로·방패·차선 점선은 뺌)이 그쪽 절반에 있다.
+  //          AI 그림(<img>)은 파일 이름(… '_l__' / 'kl__')의 좌우가 같다
+  //      (b) 저장된 실제 네이버 경로 20개의 모든 안내: 문장 동작('오른쪽 고속도로 진입')의 좌우 = 아이콘 종류의 좌우 = 그려진 화살표 끝 쪽 = 분기점 그림 좌우
+  //      (c) 하남IC '오른쪽 고속도로 진입' 600m 앞에서 안내 칸(#turnIcon)의 화살표 끝이 오른쪽
+  //      (d) 코드와 문장이 어긋나면 문장을 따른다 (66 인데 '왼쪽 고속도로 진입' → inl)
+  async function s83() {
+    const t = T(), r = { tips: {}, bad: [], guides: 0, sided: 0, junc: 0 };
+    const KINDS = ['l', 'r', 'sl', 'sr', 'sharp_l', 'sharp_r', 'kl', 'kr', 'inl', 'inr', 'outl', 'outr', 'rb_l', 'rb_r',
+      'over_l', 'over_r', 'under_l', 'under_r', 'side_l', 'side_r', 'oside_l', 'oside_r'];
+    const box = document.createElement('div');
+    box.className = 'turnicon';
+    box.style.cssText = 'position:fixed;left:0;top:0;width:96px;height:96px;opacity:0;pointer-events:none';
+    document.body.appendChild(box);
+    const tipOf = (root) => {
+      const img = root.querySelector('img');
+      if (img) { const base = decodeURIComponent(img.src.split('/').pop().split('?')[0]).split('__')[0]; const c = base.slice(-1); return c === 'l' || c === 'r' ? c : '?' + base; }
+      const svg = root.querySelector('svg');
+      if (!svg) return '?none';
+      if (root === box) { svg.style.width = '96px'; svg.style.height = '96px'; }
+      const rc = svg.getBoundingClientRect(), cx = rc.left + rc.width / 2;
+      let top = null;
+      for (const el of svg.querySelectorAll('path,polygon,polyline,line,rect,circle,ellipse')) {
+        if (el.closest('.shield') || /\b(rd-f|rd-s|jc-rd|jc-isl|tg-road)\b/.test(el.getAttribute('class') || '') || el.hasAttribute('stroke-dasharray')) continue;
+        const len = el.getTotalLength ? el.getTotalLength() : 0, m = el.getScreenCTM();
+        if (!len || !m) continue;
+        for (let k = 0; k <= 80; k++) {
+          const q = el.getPointAtLength(len * k / 80), p = new DOMPoint(q.x, q.y).matrixTransform(m);
+          if (!top || p.y < top.y - 0.01) top = p;
+        }
+      }
+      if (!top) return '?empty';
+      return top.x < cx - 2 ? 'l' : top.x > cx + 2 ? 'r' : 'c';
+    };
+    const drawn = (html) => { box.innerHTML = html; return tipOf(box); };
+    try {
+      for (const k of KINDS) {
+        const s = drawn(t.ico(k));
+        r.tips[k] = s;
+        if (s !== k.slice(-1)) r.bad.push('icon ' + k + ' drawn ' + s);
+      }
+      const FILES = ['route-night-seongnam-giheung', 'route-songpa-seongnam-s', 'route-songpa-n', 'route-bokjeong-n', 'route-bundang-suseo-n', 'route-daejeon-yuseong',
+        'route-gapyeong-cheongpyeong', 'route-gapyeong-ne', 'route-gapyeong-sw', 'route-gapyeong-town', 'route-hanam-paldang-n', 'route-paldang-east',
+        'route-paldang-hanamic-s', 'route-paldang-west', 'route-ring1-pangyo', 'route-yangseo-bukhangang-n', 'route-yangseo-bukhangang-s',
+        'route-gildong-left', 'route-gyeongbu-jukjeon-n', 'route-seoultg-n'];
+      r.files = 0;
+      for (const f of FILES) {
+        let fx = null;
+        try { fx = await (await realFetch(harnessDir + 'fixtures/' + f + '.json', { cache: 'no-store' })).json(); } catch (e) { r.bad.push('load ' + f); continue; }
+        const route = fx.path ? fx : fx.route && fx.route.path ? fx.route : fx.alternatives ? fx.alternatives[0] : null;
+        if (!route || !route.guide) { r.bad.push('shape ' + f); continue; }
+        r.files++;
+        for (const g of route.guide) {
+          r.guides++;
+          const ts = t.textSide(g.s);
+          if (!ts) continue;
+          r.sided++;
+          const k = t.turnKind0(g), ks = t.kindSide(k), dr = drawn(t.ico(k));
+          if (ks !== ts || dr !== ts) r.bad.push(f + ' "' + g.s + '" text ' + ts + ' kind ' + k + ' drawn ' + dr);
+          const j = t.juncInfo(g);
+          if (j) { r.junc++; if (j.left !== (ts === 'l')) r.bad.push(f + ' junction "' + g.s + '" left=' + j.left); }
+        }
+      }
+      // (c) 실제 안내 칸: 하남IC 오른쪽 고속도로 진입 600m 앞
+      const fx = await (await realFetch(harnessDir + 'fixtures/route-paldang-hanamic-s.json', { cache: 'no-store' })).json();
+      const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0];
+      for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+      const R = { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '하남', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+      const gIn = fx.guide.find((g) => g.t === 66);
+      const at = cum[Math.min(gIn.i, cum.length - 1)];
+      softReset();
+      await planAndStart(R);
+      for (let s = Math.max(0, at - 1500); s <= at - 600; s += 20) { const a = pointAt(R, s); feed(a.p, 15, a.h); }
+      t.renderNav();
+      r.panelText = text('#turnText');
+      r.panelTip = tipOf(document.getElementById('turnIcon'));
+      t.endNav(); softReset();
+      // (d)
+      r.conflict = t.turnKind0({ t: 66, i: 0, s: "X에서 'Y' 방면으로 왼쪽 고속도로 진입" });
+      r.songpa = t.turnKind0({ t: 66, i: 0, s: "송파IC에서 '판교, 성남' 방면으로 오른쪽 고속도로 진입" });
+    } finally { box.remove(); t.endNav(); softReset(); }
+    const ok = !r.bad.length && r.files === 20 && r.sided >= 90 && r.junc >= 25 && /오른쪽 진입/.test(r.panelText) && r.panelTip === 'r' &&
+      r.conflict === 'inl' && r.songpa === 'inr';
     return { pass: ok, detail: JSON.stringify(r) };
   }
 
