@@ -3611,6 +3611,8 @@
     const t = T(), R = buildNavRoute(), r = {};
     const bld = dest(R.P[9], 0, 40);   // 경로 끝에서 40m 떨어진 건물
     R.dest = Object.assign({}, R.dest, { lat: bld.lat, lng: bld.lng });
+    // 새로 연 숨은 창(0×0)에서 맨 먼저 돌면 지도가 아직 없다 (S82 와 같은 출발 경쟁, 'reading route of null')
+    await waitFor(() => t.getMap(), 5000);
     try {
       await planAndStart(R);
       const m = t.getMap();
