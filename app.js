@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-154'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-155'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -3022,12 +3022,13 @@
     const last = t[t.length - 1] || '';
     return { gu, dong: t.length >= 3 && /(동|읍|면|가|리)$/.test(last) ? last : '' };
   }
+  // v155: 지역 이름은 낱말로 견준다 — '강동구청'은 '강동구'를 글자로 품고 있지만 지역을 적은 게 아니다 (글자로 견주면 '강동구 강동구청'을 안 찾았다)
   function queryVariants(q) {
     const out = [q], toks = q.split(/\s+/);
     if (toks.length > 1 && REGION_WORD.test(toks[0])) return out; // '하남 코스트코'처럼 지역을 이미 적었으면 그대로
     const r = regionOf(road.area);
-    if (r.gu && !q.includes(r.gu)) out.push(r.gu + ' ' + q);
-    if (r.dong && !q.includes(r.dong)) out.push(r.dong + ' ' + q);
+    if (r.gu && !toks.includes(r.gu)) out.push(r.gu + ' ' + q);
+    if (r.dong && !toks.includes(r.dong)) out.push(r.dong + ' ' + q);
     return out;
   }
   const looksAddr = (q) => /\d/.test(q) && /(로|길|동|가|리|읍|면)\s*\d/.test(q);
@@ -3270,7 +3271,7 @@
   async function placeNear(p, query, area) {
     if (!query) return null;
     const qs = [query], gu = regionOf(area).gu;
-    if (gu && !query.includes(gu)) qs.push(gu + ' ' + query);
+    if (gu && !query.split(/\s+/).includes(gu)) qs.push(gu + ' ' + query);
     const lists = await Promise.all(qs.map((q) => api('/search', { query: q }, null, 4000).then((r) => (r && r.items) || [], () => [])));
     const c = [].concat(...lists).filter((it) => isFinite(it.lat) && isFinite(it.lng) && haversine(p, it) <= 60)
       .map((it) => ({ it, t: nameTier(it, query), d: haversine(p, it) }))

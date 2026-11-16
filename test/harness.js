@@ -3775,9 +3775,11 @@
     const FAR = { name: '먼 곳', category: '', addr: '', lat: far.lat, lng: far.lng };
     const EAT = { name: '한식당 서울특별시청점', category: '음식점>한식', addr: '서울특별시 중구 무교로 1', lat: eat.lat, lng: eat.lng };
     const HALL = { name: '서울특별시청', category: '공공,사회기관>특별,광역시청', addr: '서울특별시 중구 세종대로 110', lat: poi.lat, lng: poi.lng };
+    const gh = dest(SEOUL, 120, 30), GUHALL = { name: '중구청', category: '공공,사회기관>구청', addr: '서울특별시 중구 창경궁로 17', lat: gh.lat, lng: gh.lng };
     stub.canned['/search'] = (q) => {
       const s = q.query || '';
-      return { items: /세종대로/.test(s) ? [FAR, HALL] : /^중구 서울특별시청$/.test(s) ? [HALL, EAT, FAR] : s === '서울특별시청' ? [EAT, FAR] : [] };
+      return { items: /세종대로/.test(s) ? [FAR, HALL] : /^중구 서울특별시청$/.test(s) ? [HALL, EAT, FAR] : s === '서울특별시청' ? [EAT, FAR]
+        : s === '중구 중구청' ? [GUHALL, EAT] : s === '중구청' ? [EAT, FAR] : [] };
     };
     const press = async (ms, move, up) => {
       const y = f.cy - (up || 0);
@@ -3792,6 +3794,9 @@
       r.near = hall ? hall.name : 'none';
       r.nearQs = stub.since(0, '/search').slice(-2).map((c) => c.query.query).sort().join('|');
       r.tail = t.catTail('공공,사회기관>특별,광역시청');
+      // v155: 건물 이름이 구 이름을 품어도('중구청' ⊃ '중구') '중구 중구청'을 찾는다 (강동구청에서 실제로 빠졌다)
+      const gu = await t.placeNear(SEOUL, '중구청', '중구 창경궁로 17');
+      r.guHall = gu ? gu.name : 'none';
       feed(SEOUL, 0, null);
       t.setFollowing(true); t.layoutView(true);
       await sleep(150);
@@ -3849,7 +3854,7 @@
       t.endNav(); softReset();
       stub.canned['/search'] = { items: [] };
     }
-    const ok = r.near === '서울특별시청' && r.nearQs === '서울특별시청|중구 서울특별시청' && r.tail === '특별,광역시청' &&
+    const ok = r.near === '서울특별시청' && r.nearQs === '서울특별시청|중구 서울특별시청' && r.tail === '특별,광역시청' && r.guHall === '중구청' &&
       r.tapNone && r.moveNone && r.shown && r.pin && r.name === '서울특별시청' && /^특별,광역시청 · /.test(r.sub) && /m$/.test(r.dist) &&
       r.go === '여기로 안내' && r.viaHidden && r.follow && r.closed && r.ctx && r.goal === true && r.destName === '서울특별시청' && r.cardGone &&
       r.navShown && r.navGo === '목적지로' && r.navVia === '경유지로' && r.waypoint;
@@ -3892,6 +3897,10 @@
       q.value = '하남 코스트코'; c0 = stub.calls.length;
       await t.doSearch();
       r.hanam = stub.since(c0, '/search').map((c) => c.query.query).join('|');
+      // v155: '강동구청'은 '강동구'를 글자로 품어도 지역을 적은 게 아니다 → 구·동 붙인 검색도 한다. '강동구 카페'처럼 낱말이면 그대로
+      t.road.area = '서울특별시 강동구 성내동';
+      r.guHall = t.queryVariants('강동구청').join('|');
+      r.guWord = t.queryVariants('스타벅스 강동구').join('|');
       q.value = '성내로 25';
       await t.doSearch();
       r.addrFirst = text('#results .rtitle');
@@ -3921,6 +3930,7 @@
     const ok = r.cats.startsWith('수퍼차저,') && r.queries === '강동구 스타벅스|성내동 스타벅스|스타벅스' &&
       r.order === '스타벅스 올림픽공원점,스타벅스 강동역점,제이스크린골프존,스타벅스 시청점,스타벅스 무교로점' && r.title === '장소' &&
       r.hanam === '하남 코스트코' && r.addrFirst === '주소' && r.chip === '수퍼차저' &&
+      r.guHall === '강동구청|강동구 강동구청|성내동 강동구청' && r.guWord === '스타벅스 강동구|성내동 스타벅스 강동구' &&
       r.viaOrder === '스타벅스 경로옆점,스타벅스 출발옆점' && /^경로 (3\d|4\d)m$/.test(r.viaDist);
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
