@@ -2831,7 +2831,8 @@
     { id: 'S82', name: "S82 bus-only lanes and the map lane callout (v139, user saw Naver's '[↰][↑][↑][bus]'): bus lanes drawn as a grey bus and never blue unless the turn exists only there; a white callout at the next turn's stop line from 1 km, blue lanes for this turn, left of the stop line for right turns; nothing where there is no lane data", fn: s82 },
     { id: 'S80', name: 'S80 real Gyeongbu northbound route (v135): opposite-carriageway rest stop dropped, section-end camera alerted without its start, no reroute in the Seoul toll plaza or on 0.3 s of 10 Hz jitter, reroute 60 m off outside it', fn: s80 },
     { id: 'S81', name: 'S81 signal cameras sit at the stop line of the approach they enforce (v138, 길동사거리 left turn): our approach camera is warned, camera distance ≤ turn distance, the cross street camera is not', fn: s81 },
-    { id: 'S83', name: "S83 one left/right per guidance (v141, 송파IC '오른쪽 진입' drawn as a left exit): every sided icon's arrow tip is on its side, and on 20 real Naver routes the sentence's side = icon kind = drawn arrow = junction picture; a code/sentence conflict follows the sentence", fn: s83 },
+    { id: 'S86', name: "S86 destination parking entrance (v145, '기흥역엘리시아트윈101동입구' looped the block): '…101동주차장입출구' counts as an entrance and wins over the nearer 102동 one, the 8 m turn into it is not announced, a 'P 101동 주차장 입출구' row near arrival and a P mark at the route end", fn: s86 },
+    { id: 'S83', name:"S83 one left/right per guidance (v141, 송파IC '오른쪽 진입' drawn as a left exit): every sided icon's arrow tip is on its side, and on 20 real Naver routes the sentence's side = icon kind = drawn arrow = junction picture; a code/sentence conflict follows the sentence", fn: s83 },
     { id: 'S75', name: 'S75 (info) cameras alerted on every saved real route, for comparing versions', fn: s75 },
     { id: 'S74', name: 'S74 camera score on 2026-11-15 real cases (13): false alerts / misses / wrong type, with and without navigation', fn: s74 },
     { id: 'S73', name: 'S73 no spoken overspeed words (과속/초과): limit beeps and the red card only', fn: s73 },
@@ -3554,6 +3555,57 @@
     return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + r[k]).join(', ') };
   }
 
+  // S86: 목적지 주차장 입구 v145 (2026-11-16 '기흥역엘리시아트윈101동입구'에서 블록 한 바퀴: 네이버엔 '…101동주차장입출구'로 올라 있는데
+  //      '입구'만 찾고 '출구'가 든 이름을 빼던 규칙에 걸려 못 찾았다. 운전자 '입구를 보고 입구로 안내해줘야 해'). 실제 좌표 없이 같은 모양으로:
+  //      (a) '입출구'도 입구, 나가기만 하는 '출구'는 뺀다  (b) 목적지가 '101동입구'면 핀에 더 가까운 102동 입구보다 101동 입구
+  //      (c) 경로 끝 8m 앞 우회전(주차장으로 꺾어 들어감)은 안내하지 않는다 — 좌회전 다음이 바로 도착 (네이버 '좌회전 후 도착')
+  //      (d) 도착 700m 안에서 안내 칸에 'P 101동 주차장 입출구 · 거리' 줄, 지도 경로 끝에 P 표지
+  async function s86() {
+    const t = T(), r = {};
+    const raw = [];
+    for (let k = 0; k <= 29; k++) raw.push(dest(NAV_ORIGIN, 0, 10 * k));
+    raw.push(dest(raw[29], 270, 8));
+    const path = raw.map((p) => [round6(p.lng), round6(p.lat)]);
+    const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const total = cum[cum.length - 1];
+    const route = { distance: r0(total), duration: r0(total / 8 * 1000), tollFare: 0, fuelPrice: 0, path,
+      guide: [{ i: 14, t: 2, s: '좌회전', d: r0(cum[14]), ms: 20000 }, { i: 29, t: 3, s: '우회전', d: r0(cum[29] - cum[14]), ms: 15000 },
+              { i: 30, t: 88, s: '목적지', d: r0(cum[30] - cum[29]), ms: 1000 }],
+      sections: [{ i: 0, n: 31, name: '테스트로', speed: 30, cong: 1 }] };
+    const R = { route, P, cum, total };
+    const D = dest(P[30], 0, 60), e101 = P[30], e102 = dest(D, 90, 50), exitOnly = dest(D, 180, 20);
+    const pt = (q) => q.lng.toFixed(6) + ',' + q.lat.toFixed(6);
+    stub.canned['/search'] = (q) => (/주차장입구/.test(q.query || '') ? { items: [
+      { name: '테스트아파트주차장출구', category: '도로시설>방면정보', addr: '', lat: exitOnly.lat, lng: exitOnly.lng },
+      { name: '테스트아파트102동주차장입출구', category: '도로시설>방면정보', addr: '', lat: e102.lat, lng: e102.lng },
+      { name: '테스트아파트101동주차장입출구', category: '도로시설>방면정보', addr: '', lat: e101.lat, lng: e101.lng },
+    ] } : { items: [] });
+    stub.canned['/route'] = route;
+    feed(P[0], 0, null);
+    try {
+      const c0 = stub.calls.length;
+      await withTimeout(t.pickDest({ name: '테스트아파트101동입구', addr: '', lat: D.lat, lng: D.lng, category: '도로시설>방면정보' }), 5000, 'pickDest');
+      await waitFor(() => stub.count('/route', c0) >= 1 && !t.nav.busy, 3000);
+      const q1 = stub.since(c0, '/route')[0];
+      r.goal = !q1 ? 'none' : q1.query.goal === pt(e101) ? '101' : q1.query.goal === pt(e102) ? '102' : q1.query.goal === pt(D) ? 'pin' : q1.query.goal;
+      if (!t.nav.active) t.startNav();
+      r.guides = (t.nav.guides || []).map((g) => g.t).join(',');
+      for (let s = 10; s <= 100; s += 10) { const a = pointAt(R, s); feed(a.p, 8, a.h); }
+      t.renderNav();
+      r.row = visible('#parkGoal') ? text('#parkGoalName') + ' ' + text('#parkGoalDist') : 'hidden';
+      r.nextGoal = document.getElementById('nextTurn').classList.contains('goal');
+      const mk = (t.getMap() && t.getMap().destMk) || null;
+      r.pMark = !mk ? 'nomap' : mk.some((m) => { try { const ic = m.getIcon ? m.getIcon() : m.options.icon.options; return /parkpin/.test(ic.content ? ic.content.className : ic.html); } catch (e) { return false; } });
+    } finally {
+      t.endNav(); softReset();
+      stub.canned['/search'] = { items: [] };
+    }
+    const ok = r.goal === '101' && r.guides === '2,88' && /^101동 주차장 입출구 2\d0m$/.test(r.row) && r.nextGoal && r.pMark !== false;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
   // S60: 지도 위 회전 화살표 + 목적지 핀·점선 (2026-11-14 요청: 휴대폰 내비처럼)
   async function s60() {
     const t = T(), R = buildNavRoute(), r = {};
@@ -3909,7 +3961,9 @@
       r.markers = (t.getMap().restMk || []).length;
       // v132: 안내 카드 안, 터널 줄 밑 '안내 종료' 줄 바로 위 파란 줄. 그다음 휴게소 이름이 길어도 거리는 카드 안에 보인다
       { const el = document.getElementById('restCard'), nx = document.getElementById('restNext');
-        r.place = el.parentElement.id === 'navPanel' && el.previousElementSibling.id === 'tunnelRow' && el.nextElementSibling.classList.contains('navmeta');
+        // v145: 그 사이에 도착 가까이에서만 보이는 주차장 입구 줄(#parkGoal)
+        const nx2 = el.nextElementSibling && el.nextElementSibling.id === 'parkGoal' ? el.nextElementSibling.nextElementSibling : el.nextElementSibling;
+        r.place = el.parentElement.id === 'navPanel' && el.previousElementSibling.id === 'tunnelRow' && nx2.classList.contains('navmeta');
         r.blue = getComputedStyle(el).backgroundColor === 'rgb(29, 79, 184)';
         const sp = nx.querySelector('span'); const keep = sp.textContent; sp.textContent = '다음 서울하이패스센터쉼터아주아주긴이름';
         const pr = document.getElementById('navPanel').getBoundingClientRect(), db = nx.querySelector('b').getBoundingClientRect(), nb = document.getElementById('restDist').getBoundingClientRect();

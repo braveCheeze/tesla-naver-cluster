@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-144'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-145'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -584,6 +584,11 @@
     return out;
   }
   function dotEl() { const el = document.createElement('div'); el.className = 'destdot'; return el; }
+  // v145 주차장 입구 표지 (지도·안내 칸 같은 그림): 흰 둥근 네모 + 파란 P
+  const PARK_P_SVG = '<svg viewBox="0 0 48 48" aria-hidden="true"><rect x="3" y="3" width="42" height="42" rx="10" fill="#fff" stroke="#1d4fb8" stroke-width="2.5"/>' +
+    '<path d="M18.5 36V12.5h8a7.3 7.3 0 0 1 0 14.6h-8" fill="none" stroke="#1d4fb8" stroke-width="5.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  function parkPinEl() { const el = document.createElement('div'); el.className = 'parkpin'; el.innerHTML = PARK_P_SVG; return el; }
+  const parkGoalOf = (d) => (d && d.park && !d.parkOff ? d.park : null);
   // 휴게소 표지: 파란 네모 + 흰 포크·나이프 (고속도로 휴게소 안내 표지처럼)
   const REST_SVG = '<svg viewBox="0 0 40 40" aria-hidden="true"><rect x="1.5" y="1.5" width="37" height="37" rx="8" fill="#1d4fb8" stroke="#fff" stroke-width="2.5"/>' +
     '<path d="M13 9v9.5c0 1.6 1.2 2.8 2.6 3.1V31c0 1.1.8 1.9 1.7 1.9s1.7-.8 1.7-1.9v-9.4c1.4-.3 2.6-1.5 2.6-3.1V9M15.5 9v7.5M18.5 9v7.5" fill="none" stroke="#fff" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>' +
@@ -904,6 +909,9 @@
       // 도착 핀은 카메라·방지턱·휴게소·주정차 표지보다 늘 위 (2026-11-14: 명동역 '50' 카메라 표지가 핀을 덮었다)
       this.destMk.push(new N.Marker({ position: new N.LatLng(d.lat, d.lng), map: this.map, clickable: false, zIndex: 300,
         icon: { content: destPinEl(), anchor: new N.Point(17, 33) } }));
+      // v145: 주차장 입구로 안내 중이면 경로 끝(차가 들어가는 곳)에 P 표지
+      if (end && parkGoalOf(d)) this.destMk.push(new N.Marker({ position: new N.LatLng(end.lat, end.lng), map: this.map, clickable: false, zIndex: 299,
+        icon: { content: parkPinEl(), anchor: new N.Point(13, 13) } }));
     },
     // 차로 말풍선 (v139): tip = laneTipFor() 결과 또는 null. 같은 말풍선이면 그대로
     setLaneTip(tip) {
@@ -1083,6 +1091,9 @@
       }).addTo(this.map)));
       this.destMk.push(L.marker([d.lat, d.lng], {
         icon: L.divIcon({ html: destPinEl().outerHTML, className: 'me-wrap', iconSize: [34, 34], iconAnchor: [17, 33] }), interactive: false, keyboard: false, zIndexOffset: 2000,
+      }).addTo(this.map));
+      if (end && parkGoalOf(d)) this.destMk.push(L.marker([end.lat, end.lng], {
+        icon: L.divIcon({ html: parkPinEl().outerHTML, className: 'me-wrap', iconSize: [26, 26], iconAnchor: [13, 13] }), interactive: false, keyboard: false, zIndexOffset: 1900,
       }).addTo(this.map));
     },
     setLaneTip(tip) {
@@ -3024,17 +3035,44 @@
     if (b.length < 3) return null;
     let res;
     try { res = await api('/search', { query: base + ' 주차장입구' }, null, 2500); } catch (e) { return null; }
+    // v145 (2026-11-16 '기흥역엘리시아트윈101동입구'에서 블록을 한 바퀴 돌았다 — 운전자 '입구를 보고 입구로 안내해줘야 해',
+    //  '가장 가까운 주차장으로 안내하거나 입구중에 주차장인곳을 알려줘야 해'): 네이버에 '…101동주차장입출구'로 올라 있어
+    //  '입구'만 찾고 '출구'가 든 이름을 빼던 규칙에 걸려 못 찾았다. 입출구·출입구·진입로도 입구로 본다(나가기만 하는 '출구'만 뺀다).
+    //  목적지 이름에 'N동'이 있으면 같은 동 입구를 먼저(102동 입구가 핀에서 10m 더 가깝지만 그쪽은 600m 를 돌아간다)
+    const dong = (String(dest.name || '').match(/([0-9]+|[A-Za-z])동/) || [])[1] || '';
     const cands = ((res && res.items) || []).filter((it) => {
       const n = squash(it.name);
-      if (!/주차.*입구/.test(n) || /출구/.test(n) || !isFinite(it.lat) || !isFinite(it.lng)) return false;
+      if (!/주차/.test(n) || !/입구|입출구|출입구|진입/.test(n) || (/출구/.test(n) && !/입출구|출입구/.test(n)) || !isFinite(it.lat) || !isFinite(it.lng)) return false;
       if (!(n.includes(b) || (b.length >= 5 && n.includes(b.slice(0, b.length - 2))))) return false;
       return haversine(dest, it) <= 600;
-    }).map((it) => ({ name: it.name, lat: it.lat, lng: it.lng, d: Math.round(haversine(dest, it)) }));
-    cands.sort((x, y) => x.d - y.d);
-    return cands[0] || null;
+    }).map((it) => ({ name: it.name, lat: it.lat, lng: it.lng, d: Math.round(haversine(dest, it)),
+      same: !!dong && squash(it.name).includes(dong + '동') }));
+    cands.sort((x, y) => (y.same - x.same) || (x.d - y.d));
+    const c = cands[0];
+    return c ? { name: c.name, lat: c.lat, lng: c.lng, d: c.d } : null;
   }
   // 경로의 도착점: 주차장 입구를 찾았으면 그곳 (정문으로 바꾸면 원래 자리)
-  const goalOf = (d) => (d.park && !d.parkOff ? d.park : d);
+  const goalOf = (d) => parkGoalOf(d) || d;
+  // v145 도착 700m 안에서 안내 칸에 'P 101동 주차장 입출구 250m' 한 줄 (운전자 '입구중에 주차장인곳을 알려줘야 해')
+  const PARK_GOAL_SHOW = 700;
+  function parkLabel(pk, d) {
+    let n = squash(pk.name);
+    const b = squash(placeBase(d && d.name));
+    if (b && n.startsWith(b)) n = n.slice(b.length);
+    n = n.replace(/^([0-9]+|[A-Za-z])동/, '$1동 ').replace(/(지하)?주차장/, (m) => m + ' ').replace(/\s+/g, ' ').trim();
+    return n && /주차/.test(n) ? n : '주차장 입구';
+  }
+  function renderParkGoal() {
+    const el = $('#parkGoal');
+    if (!el) return;
+    const d = nav.active ? nav.dest : null, pk = parkGoalOf(d);
+    const remain = nav.remain != null ? nav.remain : nav.total;
+    const show = !!pk && remain != null && remain <= PARK_GOAL_SHOW;
+    el.hidden = !show;
+    if (!show) return;
+    $('#parkGoalName').textContent = parkLabel(pk, d);
+    $('#parkGoalDist').textContent = fmtDist(Math.max(10, remain));
+  }
   let pickSeq = 0;
   async function pickDest(it) {
     closeSearch();
@@ -3205,6 +3243,7 @@
     }
   }
 
+  const FINAL_TURN = new Set(['l', 'r', 'sl', 'sr', 'sharp_l', 'sharp_r', 'kl', 'kr']);
   function setRoute(r, dest, keepAlerts) {
     nav.route = r; nav.dest = dest;
     nav.pts = r.path.map((p) => ({ lat: p[1], lng: p[0] }));
@@ -3225,6 +3264,13 @@
     if (!keepAlerts) { nav.said = {}; nav.gap = 10000; }
     nav.remain = nav.total; nav.next = null; nav.dg = null;
     nav.guides = (r.guide || []).filter((g) => g.i < nav.pts.length).sort((a, b) => a.i - b.i);
+    // v145: 도착 20m 앞의 회전(주차장 입구로 들어가는 마지막 꺾음 '우회전 → 8m 도착')은 따로 알리지 않고 도착으로 (네이버처럼 '좌회전 후 도착')
+    {
+      const n = nav.guides.length, last = nav.cum.length - 1;
+      const gl = nav.guides[n - 1], gp = nav.guides[n - 2];
+      if (gl && gp && (gl.t === 88 || /목적지/.test(gl.s || '')) && FINAL_TURN.has(turnKind(gp)) &&
+          nav.cum[last] - nav.cum[Math.min(gp.i, last)] <= 20) nav.guides.splice(n - 2, 1);
+    }
     if (mapA) mapA.drawRoute(nav.pts, r.sections);
     if (mapA && mapA.setDest) mapA.setDest(dest, nav.pts[nav.pts.length - 1]);
     nav.arrowKey = null;
@@ -4587,6 +4633,7 @@
     const g = nav.next;
     renderTurnArrow();
     renderRest();
+    renderParkGoal();
     // v118 (2026-11-15 주행 중 요청 '터널을 위로 올려 주고, 직진 그다음 터널이면 그냥 터널까지 몇 km 남았는지'):
     //   지금 안내가 직진(직진·직진 지하차도·직진 고가)인데 터널 안이거나 그 전에 터널이 있으면, 안내 줄을 터널로
     //   ('터널 출구까지 680m' + 지나온 만큼 초록 막대 / '남한터널까지 1.2km'). 작은 터널 줄은 숨긴다. 회전·갈림길은 그대로.
@@ -6363,7 +6410,7 @@
       saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassKey, hipassNums, hipassLayout, laneNums, laneStripHtml, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, icoBase, pickImg, iconPicks: ICON_PICKS, tollParts, arrowSpan, routeStyle: ROUTE_STYLE, trafficPal, roundRoute, setCarIcon, carIcons: CAR_ICONS, parking, parkState, setParkingData, loadParking, evalParking, rest, setRestData, loadRest, ensureRouteRest, renderRest, placeBase, findParking, renderTurnArrow,
       lanesData, laneState, setLaneData, loadLanes, laneGuide, laneArrowSvg, laneOk, laneTipFor, laneCell,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, expwayNo, camMiss, camMissCheck, hdgFix, fixLog, ensureRouteCams,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
     };
   }
