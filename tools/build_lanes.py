@@ -3,8 +3,11 @@
 자료: 국토정보플랫폼 정밀도로지도 (map.ngii.go.kr → 정밀도로지도, 시군구·노선별 zip, 로그인 후 내려받기. 공공누리 출처표시)
   zip 안 구간 폴더(SEC001_…)마다 HDMap_UTM52N_타원체고/ 에 SHP 레이어가 있다. 여기서는 셋만 쓴다.
     A2_LINK        차로 하나하나의 중심선. LaneNo(1 = 중앙선 쪽), L_LinkID/R_LinkID(옆 차로), LinkType 1 = 교차로 안 연결선
-    B3_SURFACEMARK 노면 표시. Type 1 이 화살표, Kind 5371 직진 5372 좌 5373 우 5374 좌우 5381 직좌 5382 직우 5383 직좌우
-                   5391 유턴 5392 좌회전+유턴 (LinkID = 그 화살표가 칠해진 차로)
+    B3_SURFACEMARK 노면 표시. Type 1 이 화살표, Kind 5371 직진 5372 좌 5373 우 5374 좌우 5379 전방향(좌직우) 5381 직좌 5382 직우
+                   5383 직진+유턴 5391 유턴 5392 좌회전+유턴 (LinkID = 그 화살표가 칠해진 차로)
+                   (v146, 국토지리정보원 '정밀도로지도 설명 및 안내자료(2023.5)' 코드표로 바로잡음: 전엔 5379 를 직진+유턴, 5383 을 직좌우로 읽었다.
+                    5379 차로는 실제로 좌·직·우 연결선이 다 나간다. 5383 은 5392 와 같은 10m 유턴 계열 화살표(1차로·포켓, 유턴구역선 옆)인데
+                    연결선은 29곳 중 22곳이 좌회전뿐이라, 유턴 + 그 차로의 실제 연결 방향(좌 또는 직)으로 적는다.)
     A1_NODE        링크 끝점
     B2_SURFACELINEMARK 차선. Kind 504 = 버스전용차선, R_LinkID/L_LinkID = 선의 오른쪽·왼쪽 차로 (v139)
   zip 의 대부분(GNSS-INS 주행 궤적 txt, 수 GB)은 쓰지 않는다. zip 을 풀지 않고 필요한 SHP 만 메모리로 읽는다.
@@ -38,8 +41,8 @@ import zlib
 
 LAYER_DIR = 'HDMap_UTM52N_타원체고'
 LAYERS = ('A1_NODE', 'A2_LINK', 'B2_SURFACELINEMARK', 'B3_SURFACEMARK')
-ARROW = {'5371': 'S', '5372': 'L', '5373': 'R', '5374': 'LR', '5379': 'SU', '5381': 'LS', '5382': 'RS', '5383': 'LRS',
-         '5391': 'U', '5392': 'LU'}
+ARROW = {'5371': 'S', '5372': 'L', '5373': 'R', '5374': 'LR', '5379': 'LRS', '5381': 'LS', '5382': 'RS', '5383': 'U+',
+         '5391': 'U', '5392': 'LU'}   # '+' = 나머지 가지는 그 차로에서 나가는 연결선(좌·직)으로 (5383, 위 설명)
 CANON = {k.lower(): k for k in ('ID', 'LinkType', 'LaneNo', 'R_LinkID', 'L_LinkID', 'FromNodeID', 'ToNodeID', 'Length', 'LinkID',
                                  'Kind', 'Type', 'UpdateDate')}
 
@@ -259,7 +262,10 @@ def approaches(links, marks, lines=()):
             cur = nx[0]
         if cur in appr:
             to_stop = (math.dist(c, appr[cur]['end']) if first else dist + (links[cur]['Length'] or 0))
-            appr[cur]['arrows'].append((to_stop, ARROW[m['Kind']]))
+            a = ARROW[m['Kind']]
+            if a.endswith('+'):
+                a = a[:-1] + ''.join(c for c in 'LS' if c in appr[cur]['moves'])
+            appr[cur]['arrows'].append((to_stop, a))
     # 옆 차로끼리 묶기
     parent = {k: k for k in appr}
 
