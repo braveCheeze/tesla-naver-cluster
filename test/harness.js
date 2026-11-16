@@ -2332,7 +2332,8 @@
     softReset();
     await planAndStart(R);
     const a = pointAt(R, 30); feed(a.p, 15, a.h); t.renderNav();
-    const drawn = { main: !!document.querySelector('#turnIcon svg.keep.kl, #turnIcon img[src*="img/ai/kl__"]'),
+    // v143: '왼쪽 도로 주행'(41)은 네이버 '도로 주행' 그림(직진 화살표 밑동이 오른쪽에서 넘어옴, ml)
+    const drawn = { main: !!document.querySelector('#turnIcon svg.keep2.ml'),
       next: !!document.querySelector('#nextIcon svg.ramp.out, #nextIcon img[src*="img/ai/outr__"], #nextIcon svg.keep.kr, #nextIcon img[src*="img/ai/kr__"]') };   // v110: 굵은 비켜 가기 그림   // v109: 나가기는 기본 화살표(오른쪽 길로)
     t.endNav(); softReset();
     const bad = Object.keys(map).filter((x) => !map[x]);
@@ -3621,7 +3622,9 @@
       const el = document.getElementById('juncCard'), img = el.querySelector('#juncSvg img.jv-day');
       return { text: text('#turnText'), kind: t.turnKind(t.nav.next), junc: visible('#juncCard'), main: el.classList.contains('main'), left: el.classList.contains('left'),
         img: img ? img.getAttribute('src').replace(/^.*\/img\/ai\//, '').replace(/\?.*$/, '') : '', flip: img ? getComputedStyle(img).transform : '',
-        straightSign: !!el.querySelector('#juncLabel .sg-arrow path[d^="M12 28V10"]'), sign: text('#juncLabel') };
+        straightSign: !!el.querySelector('#juncLabel .sg-arrow path[d^="M12 28V10"]'), sign: text('#juncLabel'),
+        // v143: 안내 칸 그림 — 본선 그대로는 네이버 '도로 주행' 그림(ml/mr), '오른쪽 방향'은 굵은 화살표 하나(sr 그림)
+        icon: (() => { const ti = document.querySelector('#turnIcon svg, #turnIcon img'); if (!ti) return ''; if (ti.tagName === 'IMG') return ti.getAttribute('src').replace(/^.*\/img\/ai\//, '').split('__')[0]; return (ti.getAttribute('class') || '').replace(/\s+/g, ' ').trim(); })() };
     };
     try {
       softReset();
@@ -3635,7 +3638,8 @@
     }
     const a = r.singal, b = r.pangyo;
     const ok = !!a && !!b && a.kind === 's' && a.text === '신갈분기점에서 직진 · 서울 방면' && a.junc && a.main && a.left && /^junc_main_day/.test(a.img) && a.flip === 'none' && a.straightSign && a.sign === '서울' &&
-      b.kind === 'kr' && /오른쪽 방향/.test(b.text) && b.junc && !b.main && !b.straightSign;
+      b.kind === 'kr' && /오른쪽 방향/.test(b.text) && b.junc && !b.main && !b.straightSign &&
+      /\bml\b/.test(a.icon) && b.icon === 'sr';
     return { pass: ok, detail: JSON.stringify(r) };
   }
 
@@ -3709,7 +3713,7 @@
   //      (d) 코드와 문장이 어긋나면 문장을 따른다 (66 인데 '왼쪽 고속도로 진입' → inl)
   async function s83() {
     const t = T(), r = { tips: {}, bad: [], guides: 0, sided: 0, junc: 0 };
-    const KINDS = ['l', 'r', 'sl', 'sr', 'sharp_l', 'sharp_r', 'kl', 'kr', 'inl', 'inr', 'outl', 'outr', 'rb_l', 'rb_r',
+    const KINDS = ['l', 'r', 'sl', 'sr', 'sharp_l', 'sharp_r', 'kl', 'kr', 'ml', 'mr', 'inl', 'inr', 'outl', 'outr', 'rb_l', 'rb_r',
       'over_l', 'over_r', 'under_l', 'under_r', 'side_l', 'side_r', 'oside_l', 'oside_r'];
     const box = document.createElement('div');
     box.className = 'turnicon';
@@ -3758,7 +3762,7 @@
           const ts = t.textSide(g.s);
           if (!ts) continue;
           r.sided++;
-          const k = t.turnKind0(g), ks = t.kindSide(k), dr = drawn(t.ico(k));
+          const k = t.turnKind0(g), ks = t.kindSide(k), dr = drawn(t.ico(t.iconKind(g)));
           if (ks !== ts || dr !== ts) r.bad.push(f + ' "' + g.s + '" text ' + ts + ' kind ' + k + ' drawn ' + dr);
           const j = t.juncInfo(g);
           if (j) { r.junc++; if (j.left !== (ts === 'l')) r.bad.push(f + ' junction "' + g.s + '" left=' + j.left); }
@@ -3782,9 +3786,13 @@
       // (d)
       r.conflict = t.turnKind0({ t: 66, i: 0, s: "X에서 'Y' 방면으로 왼쪽 고속도로 진입" });
       r.songpa = t.turnKind0({ t: 66, i: 0, s: "송파IC에서 '판교, 성남' 방면으로 오른쪽 고속도로 진입" });
+      // v143 판교분기점(20:31 네이버 '4.1km 대전' 굵은 화살표 하나, '1.6km' 도로 주행 그림)
+      r.pgJc = t.iconKind({ t: 5, i: 0, s: "판교분기점에서 '경부고속도로, 대전, 판교' 방면으로 오른쪽 방향" });
+      r.pgIc = t.iconKind({ t: 42, i: 0, s: "판교IC에서 '대전, 신갈분기점' 방면으로 오른쪽 도로 주행" });
+      r.pgJcImg = (/src="[^"]*\/img\/ai\/([^"?]+)/.exec(t.ico(r.pgJc)) || [])[1] || '';
     } finally { box.remove(); t.endNav(); softReset(); }
     const ok = !r.bad.length && r.files === 20 && r.sided >= 90 && r.junc >= 25 && /오른쪽 진입/.test(r.panelText) && r.panelTip === 'r' &&
-      r.conflict === 'inl' && r.songpa === 'inr';
+      r.conflict === 'inl' && r.songpa === 'inr' && r.pgJc === 'kr' && /^sr__/.test(r.pgJcImg) && r.pgIc === 'mr';
     return { pass: ok, detail: JSON.stringify(r) };
   }
 

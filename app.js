@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-142'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-143'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -3436,12 +3436,22 @@
     const k = turnKind0(g);
     return (k === 'kl' || k === 'kr') && mainKeep(g) ? 's' : k;
   }
+  // 안내 칸·그다음 칸에 그릴 그림 (v143, 2026-11-16 판교분기점 운전자 '네이버 지도에 있는 아이콘이 이런 식으로 나오는데 왜 우리는 이런 식으로 나와'):
+  // 네이버는 '오른쪽 방향'(4·5, 방향 있는 전방 분기)은 굵은 화살표 하나가 그쪽으로 휘는 그림('4.1km 대전'),
+  // '오른쪽 도로 주행'(41·42)과 본선을 그대로 가는 갈림길은 직진 화살표 밑동이 반대쪽에서 살짝 넘어오는 그림('1.6km')이다.
+  // 예전엔 둘 다 구불구불한 S 자(kl/kr)였고 본선 그대로는 직진 화살표만이었다. 좌우는 turnKind0 그대로 (종류·차로·지도 화살표는 turnKind 그대로)
+  function iconKind(g) {
+    if (!g) return 'goal';
+    const k0 = turnKind0(g);
+    if ((k0 === 'kl' || k0 === 'kr') && (g.t === 41 || g.t === 42 || mainKeep(g))) return k0 === 'kl' ? 'ml' : 'mr';
+    return turnKind(g);
+  }
   // v141 좌우는 한 곳에서 (2026-11-16 송파IC '오른쪽 진입'인데 IN 그림이 왼쪽으로 빠지는 모양 — 운전자 '로직 잘 좀 봐줘'):
   // 안내 하나의 좌우 = 네이버 안내 코드 → 종류(KIND_BY_CODE). 같은 응답의 문장(동작 부분 '오른쪽 고속도로 진입')이 반대 쪽을 말하면 문장을 따른다
   // (저장된 실제 경로 316개 안내에서 코드와 문장이 어긋난 곳은 0곳 — 안전장치). 아이콘·그다음 칸·분기점 그림(juncInfo)이 모두 이 값을 쓰고,
   // 패널 글·음성은 문장 그대로, 지도 화살표는 경로 모양 그대로라 같은 쪽이 된다
-  const SIDE_L = new Set(['l', 'sl', 'sharp_l', 'kl', 'inl', 'outl', 'over_l', 'under_l', 'side_l', 'oside_l', 'rb_l']);
-  const SIDE_R = new Set(['r', 'sr', 'sharp_r', 'kr', 'inr', 'outr', 'over_r', 'under_r', 'side_r', 'oside_r', 'rb_r']);
+  const SIDE_L = new Set(['l', 'sl', 'sharp_l', 'kl', 'ml', 'inl', 'outl', 'over_l', 'under_l', 'side_l', 'oside_l', 'rb_l']);
+  const SIDE_R = new Set(['r', 'sr', 'sharp_r', 'kr', 'mr', 'inr', 'outr', 'over_r', 'under_r', 'side_r', 'oside_r', 'rb_r']);
   const kindSide = (k) => SIDE_L.has(k) ? 'l' : SIDE_R.has(k) ? 'r' : null;
   const mirrorKind = (k) => k === 'l' ? 'r' : k === 'r' ? 'l' : k.replace(/l$/, '\u0000').replace(/r$/, 'l').replace('\u0000', 'r');
   function textSide(s) {
@@ -3540,6 +3550,12 @@
       '<path d="M24 14.5 32 24 24 33.5 16 24z" fill="#fff" stroke="none"/><path class="jc-isl" d="M24 18 29 24 24 30 19 24z" fill="#c9d2dd" stroke="none"/>' +
       '<path d="M27 45V38.5c0-1.6.6-2.6 1.6-3.8l4-4.4c1.3-1.5 1.3-3.7 0-5.2l-4.6-5.2c-1-1.1-1.5-2.2-1.5-3.6V9" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>' +
       '<path d="M26.5 2.5 32.2 10.3h-11.4z" fill="#fff" stroke="none"/></svg>' });
+  // v143 차로 따라 비켜 가기(도로 주행·본선 그대로, iconKind): 네이버 '1.6km' 그림처럼 직진 화살표의 밑동이 반대쪽에서 살짝 넘어온다.
+  // 'ti' 그림(색은 테슬라 모드에서 네이버 초록, 아니면 흰색 — 직진·좌우회전 그림과 같은 굵기)
+  const keepIcon = (left) => '<svg viewBox="0 0 48 48" class="ti keep2 ' + (left ? 'ml' : 'mr') + '"><g' + (left ? ' transform="matrix(-1 0 0 1 48 0)"' : '') + '>' +
+    '<path d="M18 44.5V36c0-2.3.9-3.8 2.6-5.4l6.8-6.3c1.7-1.6 2.6-3.1 2.6-5.4V15" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>' +
+    '<path d="M30 3 41.5 17.5h-23z" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></g></svg>';
+  Object.assign(TURN_ICONS, { ml: keepIcon(true), mr: keepIcon(false) });
   // 아직 그림이 없는 종류는 가장 가까운 그림으로 (꺾는 화살표로 잘못 보이지 않게): 순서대로 채운다
   const ICON_FALLBACK = {
     sl: 'l', sr: 'r', rb: 'r', via: 'goal', rb_l: 'rb', rb_s: 's', rb_r: 'r', rb_u: 'u', sharp_l: 'l', sharp_r: 'r',
@@ -4596,7 +4612,7 @@
     turnRow.style.setProperty('--tnp', tnMain && ta0.inside ? Math.round(Math.max(0, Math.min(1, ta0.p)) * 100) + '%' : '0%');
     // 산 터널은 터널 그림, 지하차도는 지하차도 입구 그림(초록 경로선), 고가는 고가 그림
     $('#turnIcon').innerHTML = restMain ? REST_SIGN : tunnelStep || (tnMain && underName(ta0.t.name)) ? (pickImg('under_s', 'ti') || pickImg('tunnel', 'ti tn-ai') || TUNNEL_ICON)
-      : tnMain ? (pickImg('tunnel', 'ti tn-ai') || TUNNEL_ICON) : overStep ? ico('over_s') : ico(kind0);
+      : tnMain ? (pickImg('tunnel', 'ti tn-ai') || TUNNEL_ICON) : overStep ? ico('over_s') : ico(g ? iconKind(g) : kind0);
     $('#turnDist').textContent = fmtDist(Math.max(10, restMain ? rs.d : tnMain ? ta0.d : nav.dg != null ? nav.dg : nav.total));   // '0m' 대신 최소 10m (음성과 같게)
     if (restMain) {
       $('#turnText').textContent = rs.name;
@@ -4637,7 +4653,7 @@
         $('#nextIcon').innerHTML = pinIco(isVia);
         $('#nextDist').textContent = fmtDist(gap);
       } else {
-        $('#nextIcon').innerHTML = ico(k2);
+        $('#nextIcon').innerHTML = ico(iconKind(g2));
         $('#nextDist').textContent = fmtDist(gap);
       }
     }
@@ -6347,7 +6363,7 @@
       saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassKey, hipassNums, hipassLayout, laneNums, laneStripHtml, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, icoBase, pickImg, iconPicks: ICON_PICKS, tollParts, arrowSpan, routeStyle: ROUTE_STYLE, trafficPal, roundRoute, setCarIcon, carIcons: CAR_ICONS, parking, parkState, setParkingData, loadParking, evalParking, rest, setRestData, loadRest, ensureRouteRest, renderRest, placeBase, findParking, renderTurnArrow,
       lanesData, laneState, setLaneData, loadLanes, laneGuide, laneArrowSvg, laneOk, laneTipFor, laneCell,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, expwayNo, camMiss, camMissCheck, hdgFix, fixLog, ensureRouteCams,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, expwayNo, camMiss, camMissCheck, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
     };
   }
