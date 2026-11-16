@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-139'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-140'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -1650,6 +1650,11 @@
     return merged;
   }
   const restState = { key: '', next: null };
+  const REST_HW_LEAD = 2000;
+  function restRoadNear() {
+    if (highwaySpans().some(([a, b]) => nav.along >= a - REST_HW_LEAD && nav.along <= b)) return true;
+    return /고속도로|고속국도/.test(routeRoadAt(nav.seg || 0));   // 진입 안내 없이 구간 이름만 고속도로인 경로
+  }
   // v133 (2026-11-16 주행 중 사용자: '파란색 배경으로 밑에 있다가 키로미터에 따라서 이렇게 네이버처럼 위로 올려 줘야'):
   // 다음 휴게소가 이 안이면 맨 위 안내 줄을 휴게소로 (네이버 지도는 3km 에서 위 큰 칸이 휴게소, 그 밑 작은 칸이 휴게소 다음 안내)
   const REST_TOP = 3000;
@@ -1661,7 +1666,9 @@
     const list = nav.active && prefs.rest ? ensureRouteRest() : [];
     const ahead = list.filter((r) => r.at > nav.along + 30);
     const next = ahead[0];
-    const show = !!next && next.at - nav.along <= REST_SHOW;
+    // v140 (2026-11-16 잠실→기흥역, 석촌호수사거리에서 '서울하이패스센터쉼터 19km' 파란 줄 — 네이버는 시내에서는 휴게소를 띄우지 않는다):
+    // 고속도로 위이거나 고속도로 진입이 REST_HW_LEAD 안으로 다가왔을 때만 보여 준다 (지도 표지는 그대로)
+    const show = !!next && next.at - nav.along <= REST_SHOW && restRoadNear();
     el.hidden = !show;
     restState.next = show ? { name: next.name.replace(/쉼터휴게소$/, '쉼터'), d: next.at - nav.along } : null;   // 가까우면 안내 줄로 (renderNavPanel)
     if (show) {
@@ -4535,8 +4542,12 @@
       const p = tollParts(g), fee = fareText(p.fare);
       $('#turnText').innerHTML = (fee ? '<b class="tt-fare">' + esc(fee) + '</b>' : '') + esc(p.name);
     } else if (tunnelStep || overStep) {
+      // v140 (2026-11-16 '송파지하차도에서 '성남, 가락시장역' 방면으로 지하차도 진입': 네이버는 '1.6km 가락시장역', 우리는 '송파지하차도까지'):
+      // 방면이 있으면 다른 안내 줄처럼 방면 이름을 보여 준다 (지하차도·고가 그림이 이미 무엇인지 알려 준다). 방면이 없으면 예전처럼 'OO지하차도까지'
       const m = /^(.*?)에서\s/.exec(String(g.s || ''));
-      $('#turnText').textContent = (m ? m[1] : tunnelStep ? '지하차도' : '고가차도') + '까지';
+      const dm = /'([^']+)'\s*방면/.exec(String(g.s || ''));
+      const d = dm ? dirNames(dm[1]) : [];
+      $('#turnText').textContent = d.length ? d.join(', ') + ' 방면' : (m ? m[1] : tunnelStep ? '지하차도' : '고가차도') + '까지';
     } else {
       $('#turnText').textContent = g ? guideText(g.s, mainKeep(g)) : nav.dest.name;
     }

@@ -3093,7 +3093,8 @@
     const total = cum[cum.length - 1];
     const R = {
       route: { distance: r0(total), duration: r0(total / 20 * 1000), tollFare: 0, fuelPrice: 300, path,
-        guide: [{ i: 12, t: 56, s: '벌말지하차도에서 지하차도 진입', d: r0(cum[12]), ms: 60000 }, { i: 20, t: 55, s: '금곡고가차도에서 고가차도 진입', d: r0(cum[20] - cum[12]), ms: 40000 },
+        // v140: 방면이 있는 진입은 방면 이름 ('송파지하차도에서 '성남, 가락시장역' 방면으로 지하차도 진입' → '성남, 가락시장역 방면', 네이버 '가락시장역')
+        guide: [{ i: 12, t: 56, s: '벌말지하차도에서 지하차도 진입', d: r0(cum[12]), ms: 60000 }, { i: 20, t: 55, s: "금곡고가차도에서 '성남, 가락시장역' 방면으로 고가차도 진입", d: r0(cum[20] - cum[12]), ms: 40000 },
           { i: 30, t: 88, s: '목적지', d: r0(total - cum[20]), ms: 50000 }],
         sections: [{ i: 0, n: 31, name: '테스트로', speed: 60, cong: 1 }] },
       P, cum, total, dest: { name: '터널 테스트', addr: '', lat: P[30].lat, lng: P[30].lng },
@@ -3113,7 +3114,7 @@
       r.overIcon = !!document.querySelector('#turnIcon img[src*="over"]');
     } finally { t.endNav(); softReset(); }
     const ok = r.shown && r.clearedAt !== null && r.clearedAt <= 20 && !r.voice && r.beep && r.turnText === '벌말지하차도까지' && r.tunnelIcon &&
-      r.nextOver && r.overText === '금곡고가차도까지' && r.overIcon;
+      r.nextOver && String(r.overText).replace(/ /g, ' ') === '성남, 가락시장역 방면' && r.overIcon;
     return { pass: ok, detail: JSON.stringify(r) };
   }
 
@@ -3675,6 +3676,16 @@
       r.km44 = snap();
       for (let s = 4420; s <= 4800; s += 20) go(s);
       r.km48 = snap();
+      // v140 (2026-11-16 잠실 석촌호수사거리에서 '서울하이패스센터쉼터 19km'): 시내에서는 휴게소 줄 없음.
+      //      같은 길인데 고속도로 진입이 4.0km 지점이면 1km 에서는 없고(진입 3km 앞), 2.2km 에서(진입 1.8km 앞) 나온다
+      t.endNav(); softReset();
+      const R3 = { ...R, route: { ...R.route, guide: [{ ...R.route.guide[0], i: 40, d: r0(cum[40]) }, ...R.route.guide.slice(1).map((g) => ({ ...g }))],
+        sections: [{ i: 40, n: 81, name: '경부고속도로', speed: 90, cong: 1 }] } };
+      await planAndStart(R3);
+      for (let s = 20; s <= 1000; s += 20) go(s);
+      r.city = snap().row;
+      for (let s = 1020; s <= 2200; s += 20) go(s);
+      r.nearIn = snap().row;
     } finally {
       t.endNav(); softReset();
       try { const j = await (await realFetch(new URL('../data/rest.json', location.href).href, { cache: 'no-store' })).json(); t.setRestData(j); } catch (e) { /* 다음 실행 때 */ }
@@ -3683,7 +3694,7 @@
       !r.km1.top && r.km1.row === '테스트휴게소 3.8km' &&
       r.km2.top && r.km2.dist === '2.8km' && r.km2.text === '테스트휴게소' && r.km2.next === '550m' && r.km2.nextToll && r.km2.row === '' &&
       !r.km44.top && r.km44.dist === '900m' && /서울톨게이트/.test(r.km44.text) && r.km44.row === '테스트휴게소 350m' &&
-      !r.km48.top && r.km48.row === '';
+      !r.km48.top && r.km48.row === '' && r.city === '' && r.nearIn === '테스트휴게소 2.6km';
     return { pass: ok, detail: JSON.stringify(r) };
   }
 
