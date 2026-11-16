@@ -3769,10 +3769,16 @@
       }
     }
     stub.canned['/reverse'] = { road: '세종대로', area: '서울특별시 중구 태평로1가' };
-    stub.canned['/search'] = (q) => ({ items: /세종대로|서울특별시청/.test(q.query || '') ? [
-      { name: '먼 곳', category: '', addr: '', lat: dest(SEOUL, 0, 500).lat, lng: dest(SEOUL, 0, 500).lng },
-      { name: '서울특별시청', category: '공공,사회기관>특별,광역시청', addr: '서울특별시 중구 세종대로 110', lat: poi.lat, lng: poi.lng },
-    ] : [] });
+    // 장소 검색은 위치를 안 받는다: 건물 이름만 치면 둘레 '○○ 서울특별시청점' 식당만 나오고(강동구청에서 실제로 그랬다),
+    // '<구> 건물 이름'을 쳐야 시청이 나온다 (v154). 주소(세종대로)로 찾으면 시청도 나온다 (OSM 지도 길)
+    const far = dest(SEOUL, 0, 500), eat = dest(SEOUL, 300, 20);
+    const FAR = { name: '먼 곳', category: '', addr: '', lat: far.lat, lng: far.lng };
+    const EAT = { name: '한식당 서울특별시청점', category: '음식점>한식', addr: '서울특별시 중구 무교로 1', lat: eat.lat, lng: eat.lng };
+    const HALL = { name: '서울특별시청', category: '공공,사회기관>특별,광역시청', addr: '서울특별시 중구 세종대로 110', lat: poi.lat, lng: poi.lng };
+    stub.canned['/search'] = (q) => {
+      const s = q.query || '';
+      return { items: /세종대로/.test(s) ? [FAR, HALL] : /^중구 서울특별시청$/.test(s) ? [HALL, EAT, FAR] : s === '서울특별시청' ? [EAT, FAR] : [] };
+    };
     const press = async (ms, move, up) => {
       const y = f.cy - (up || 0);
       f.P('pointerdown', 1, f.cx, y);
@@ -3781,6 +3787,11 @@
       f.P('pointerup', 1, f.cx + (move || 0), y);
     };
     try {
+      // 건물 이름만으로는 식당만 나와도 '<구> 건물 이름' 결과의 시청(이름이 같음)을 고른다. 카드 분류는 끝말만
+      const hall = await t.placeNear(SEOUL, '서울특별시청', '중구 세종대로 110');
+      r.near = hall ? hall.name : 'none';
+      r.nearQs = stub.since(0, '/search').slice(-2).map((c) => c.query.query).sort().join('|');
+      r.tail = t.catTail('공공,사회기관>특별,광역시청');
       feed(SEOUL, 0, null);
       t.setFollowing(true); t.layoutView(true);
       await sleep(150);
@@ -3835,7 +3846,8 @@
       t.endNav(); softReset();
       stub.canned['/search'] = { items: [] };
     }
-    const ok = r.tapNone && r.moveNone && r.shown && r.pin && r.name === '서울특별시청' && /광역시청/.test(r.sub) && /m$/.test(r.dist) &&
+    const ok = r.near === '서울특별시청' && r.nearQs === '서울특별시청|중구 서울특별시청' && r.tail === '특별,광역시청' &&
+      r.tapNone && r.moveNone && r.shown && r.pin && r.name === '서울특별시청' && /^특별,광역시청 · /.test(r.sub) && /m$/.test(r.dist) &&
       r.go === '여기로 안내' && r.viaHidden && r.follow && r.closed && r.ctx && r.goal === true && r.destName === '서울특별시청' && r.cardGone &&
       r.navShown && r.navGo === '목적지로' && r.navVia === '경유지로' && r.waypoint;
     return { pass: !!ok, detail: JSON.stringify(r) };

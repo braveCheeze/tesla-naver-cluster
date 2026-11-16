@@ -3264,15 +3264,21 @@
       return { bld: '', addr: shortArea([j.area, j.road].filter(Boolean).join(' ')), jibun: '' };
     } catch (e) { return { bld: '', addr: '', jibun: '' }; }
   }
-  // 건물 이름(또는 도로명 주소)으로 장소를 찾아 누른 자리 60m 안의 가장 가까운 곳
-  async function placeNear(p, query) {
+  // 건물 이름(또는 도로명 주소)으로 장소를 찾아 누른 자리 60m 안에서: 이름(주소)이 맞는 곳 먼저, 같으면 가까운 곳.
+  // v154: 장소 검색은 위치를 안 받아서 '강동구청'만 치면 '○○ 강동구청점' 식당 다섯 곳만 나오고 구청은 안 나온다.
+  // 그래서 '<구> 건물 이름'(강동구 강동구청 → 강동구청 · 공공,사회기관>구청)도 같이 찾아 합친다
+  async function placeNear(p, query, area) {
     if (!query) return null;
-    let res;
-    try { res = await api('/search', { query }, null, 4000); } catch (e) { return null; }
-    const c = ((res && res.items) || []).filter((it) => isFinite(it.lat) && isFinite(it.lng) && haversine(p, it) <= 60)
-      .sort((a, b) => haversine(p, a) - haversine(p, b));
-    return c[0] || null;
+    const qs = [query], gu = regionOf(area).gu;
+    if (gu && !query.includes(gu)) qs.push(gu + ' ' + query);
+    const lists = await Promise.all(qs.map((q) => api('/search', { query: q }, null, 4000).then((r) => (r && r.items) || [], () => [])));
+    const c = [].concat(...lists).filter((it) => isFinite(it.lat) && isFinite(it.lng) && haversine(p, it) <= 60)
+      .map((it) => ({ it, t: nameTier(it, query), d: haversine(p, it) }))
+      .sort((a, b) => b.t - a.t || a.d - b.d);
+    return c.length ? c[0].it : null;
   }
+  // 카드에는 분류의 끝말만 ('공공,사회기관>구청' → '구청')
+  const catTail = (c) => String(c || '').split('>').pop().trim();
   function closePick() {
     clearTimeout(pickTimer);
     pickSeq2++;
@@ -3287,7 +3293,7 @@
     const navOn = nav.active && !!nav.dest;
     $('#pkName').textContent = p.name || (p.busy ? '이 위치' : (p.addr || '이 위치'));
     $('#pkSub').textContent = p.busy ? '주소 찾는 중…'
-      : ([p.category, p.name && p.name !== p.addr ? p.addr : (p.jibun || '')].filter(Boolean).join(' · ') || (p.name || p.addr ? '' : '주소 정보 없음'));
+      : ([catTail(p.category), p.name && p.name !== p.addr ? p.addr : (p.jibun || '')].filter(Boolean).join(' · ') || (p.name || p.addr ? '' : '주소 정보 없음'));
     $('#pkDist').textContent = state.fix ? fmtDist(haversine(state.fix, p)) : '';
     $('#pkGo').textContent = navOn ? '목적지로' : '여기로 안내';
     $('#pkVia').hidden = !navOn;
@@ -3309,7 +3315,7 @@
     armPickClose();
     const info = await describeAt(ll);
     if (seq !== pickSeq2) return;
-    const poi = await placeNear(ll, info.bld || info.addr);
+    const poi = await placeNear(ll, info.bld || info.addr, info.addr || info.jibun);
     if (seq !== pickSeq2) return;
     const p = state.pick;
     p.busy = false;
@@ -6859,7 +6865,7 @@
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
-      ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
+      ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
     };
   }
 })();
