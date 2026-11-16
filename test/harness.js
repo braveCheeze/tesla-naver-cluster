@@ -4270,6 +4270,8 @@
   //      그다음 안내일 때(따로 한 줄) 모두: 모든 칸이 카드 안, 숫자가 칸 안에 다 보임(글자 12px 이상), 칸 수 그대로.
   //      칸이 적으면(4) 배지 옆 한 줄, 많으면 배지가 가운데 위 + 그 아래 줄에 칸을 가운데로 (넘치면 줄을 바꿔 가운데)
   async function s84() {
+    // 칸 자리를 재는 시험이라 화면 크기가 있어야 한다 (창을 숨기면 페이지가 0×0 이라 카드 폭이 24px 로 나온다)
+    if (innerWidth < 600 || innerHeight < 400) return { status: 'SKIP', detail: 'page is ' + innerWidth + '×' + innerHeight + ' (hidden pane): lane cell layout cannot be measured; run S84 again with the pane visible at 804×638' };
     const t = T(), box = TESLA_ONLY, prev = t.prefs.tesla;
     const set = (on) => { box.checked = on; box.dispatchEvent(new Event('change')); };
     const mkRoute = (guides) => {
