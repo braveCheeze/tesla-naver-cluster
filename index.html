@@ -130,6 +130,10 @@
   .cam-report:active { background: rgba(255,255,255,.25); }
   /* '놓침'은 다음 단속(80 · 4.4km) 바로 밑 왼쪽 (2026-11-15 요청 '여기다가 해주라': 지도 가운데 말고) */
   .cam-miss { display: block; align-self: flex-start; margin: 0; min-height: 40px; font-size: 15px; background: rgba(20,24,30,.62); }
+  /* v147 (2026-11-16 '누를때 알람만 밑에 떠서 누른지 모르겠거든? 누르면 파란색 뜨게 … 좀만 길게 … 크게'): 더 크게(116×52),
+     누르면 2.5초 동안 파란 바탕 '✓ 보냄' (그사이 또 눌러도 한 번만 보낸다) */
+  .cam-miss { min-width: 116px; min-height: 52px; padding: 0 20px; border-radius: 14px; font-size: 18px; }
+  .cam-miss.sent, .cam-miss.sent:active { background: #1d4fb8; border-color: #fff; }
   .cam-miss[hidden] { display: none; }
   .camnext b { color: var(--text); font-variant-numeric: tabular-nums; }
   .mini-sign {
@@ -1805,8 +1809,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-146"></script>
-<script src="img/ai/picks.js?v=2026.11.16-146"></script>
-<script src="app.js?v=2026.11.16-146"></script>
+<script src="icons.js?v=2026.11.16-147"></script>
+<script src="img/ai/picks.js?v=2026.11.16-147"></script>
+<script src="app.js?v=2026.11.16-147"></script>
 </body>
 </html>

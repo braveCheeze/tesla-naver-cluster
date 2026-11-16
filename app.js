@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-146'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-147'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -2422,6 +2422,7 @@
     return tg.d;
   }
   // v123 (2026-11-15 밤 요청: 운전 중 사진 대신 한 번 눌러 신고): '틀림'·'놓침' 버튼
+  const MISS_SENT_MS = 2500;
   const camNoMap = new Map();   // '위도,경도' → [신고 때 진행 방향들]
   try { for (const [k, h] of JSON.parse(store.get('camNo') || '[]')) { if (!camNoMap.has(k)) camNoMap.set(k, []); camNoMap.get(k).push(h); } } catch (e) { /* 없음 */ }
   function camUserNo(c, h) {
@@ -6060,7 +6061,17 @@
       }
       toast('틀린 경고로 보냈어요. 이 방향에서는 다시 알리지 않을게요.', '', 3000);
     };
-    $('#camMissBtn').onclick = (ev) => { ev.stopPropagation(); userReport('missed'); toast('놓친 단속 위치를 보냈어요.', '', 3000); };
+    // v147: 누른 것이 버튼에서 바로 보이게 — 2.5초 동안 파란 바탕 '✓ 보냄', 그사이 또 누르면 다시 보내지 않는다
+    $('#camMissBtn').onclick = (ev) => {
+      ev.stopPropagation();
+      const b = $('#camMissBtn');
+      if (b.classList.contains('sent')) return;
+      userReport('missed');
+      b.classList.add('sent'); b.textContent = '✓ 보냄';
+      clearTimeout(b._sentT);
+      b._sentT = setTimeout(() => { b.classList.remove('sent'); b.textContent = '놓침'; }, MISS_SENT_MS);
+      toast('놓친 단속 위치를 보냈어요.', '', 3000);
+    };
 
   function applyTesla() {
     $('#app').classList.add('tesla');   // 테슬라 모드만 쓴다 (2026-11-14)

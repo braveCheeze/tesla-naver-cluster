@@ -2831,7 +2831,8 @@
     { id: 'S82', name: "S82 bus-only lanes and the map lane callout (v139, user saw Naver's '[↰][↑][↑][bus]'): bus lanes drawn as a grey bus and never blue unless the turn exists only there; a white callout at the next turn's stop line from 1 km, blue lanes for this turn, left of the stop line for right turns; nothing where there is no lane data", fn: s82 },
     { id: 'S80', name: 'S80 real Gyeongbu northbound route (v135): opposite-carriageway rest stop dropped, section-end camera alerted without its start, no reroute in the Seoul toll plaza or on 0.3 s of 10 Hz jitter, reroute 60 m off outside it', fn: s80 },
     { id: 'S81', name: 'S81 signal cameras sit at the stop line of the approach they enforce (v138, 길동사거리 left turn): our approach camera is warned, camera distance ≤ turn distance, the cross street camera is not', fn: s81 },
-    { id: 'S86', name: "S86 destination parking entrance (v145, '기흥역엘리시아트윈101동입구' looped the block): '…101동주차장입출구' counts as an entrance and wins over the nearer 102동 one, the 8 m turn into it is not announced, a 'P 101동 주차장 입출구' row near arrival and a P mark at the route end", fn: s86 },
+    { id: 'S87', name: "S87 the '놓침' button shows it was pressed (v147): at least 116×52, turns blue '✓ 보냄' at once, a second press within 2.5 s sends nothing, then back to '놓침'", fn: s87 },
+    { id: 'S86', name:"S86 destination parking entrance (v145, '기흥역엘리시아트윈101동입구' looped the block): '…101동주차장입출구' counts as an entrance and wins over the nearer 102동 one, the 8 m turn into it is not announced, a 'P 101동 주차장 입출구' row near arrival and a P mark at the route end", fn: s86 },
     { id: 'S83', name:"S83 one left/right per guidance (v141, 송파IC '오른쪽 진입' drawn as a left exit): every sided icon's arrow tip is on its side, and on 20 real Naver routes the sentence's side = icon kind = drawn arrow = junction picture; a code/sentence conflict follows the sentence", fn: s83 },
     { id: 'S75', name: 'S75 (info) cameras alerted on every saved real route, for comparing versions', fn: s75 },
     { id: 'S74', name: 'S74 camera score on 2026-11-15 real cases (13): false alerts / misses / wrong type, with and without navigation', fn: s74 },
@@ -3604,6 +3605,31 @@
     }
     const ok = r.goal === '101' && r.guides === '2,88' && /^101동 주차장 입출구 2\d0m$/.test(r.row) && r.nextGoal && r.pMark !== false;
     return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S87: '놓침' 버튼 (v147, 2026-11-16 '누를때 알람만 밑에 떠서 누른지 모르겠거든? 누르면 파란색 뜨게 … 좀만 길게 … 크게'):
+  //      116×52 이상, 누르면 바로 파란 바탕 '✓ 보냄' + 아래 알림, 2.5초 안에 또 누르면 다시 보내지 않고(알림도 없음), 2.5초 뒤 '놓침'으로
+  async function s87() {
+    const t = T(), r = {}, b = document.getElementById('camMissBtn'), toastEl = document.getElementById('toast');
+    const prevHidden = b.hidden;
+    try {
+      b.hidden = false;
+      const rc = b.getBoundingClientRect();
+      r.size = Math.round(rc.width) + 'x' + Math.round(rc.height);
+      b.click();
+      r.text1 = b.textContent; r.blue = getComputedStyle(b).backgroundColor === 'rgb(29, 79, 184)';
+      r.toast1 = !toastEl.hidden && /놓친 단속/.test(toastEl.textContent);
+      toastEl.hidden = true;
+      b.click();
+      r.toast2 = !toastEl.hidden;
+      await new Promise((res) => setTimeout(res, 2700));
+      r.text3 = b.textContent; r.sentAfter = b.classList.contains('sent');
+    } finally {
+      clearTimeout(b._sentT); b.classList.remove('sent'); b.textContent = '놓침'; b.hidden = prevHidden; toastEl.hidden = true;
+    }
+    const [w, h] = r.size.split('x').map(Number);
+    const ok = w >= 116 && h >= 52 && r.text1 === '✓ 보냄' && r.blue && r.toast1 && !r.toast2 && r.text3 === '놓침' && !r.sentAfter;
+    return { pass: ok, detail: JSON.stringify(r) };
   }
 
   // S60: 지도 위 회전 화살표 + 목적지 핀·점선 (2026-11-14 요청: 휴대폰 내비처럼)
