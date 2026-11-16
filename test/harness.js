@@ -2826,6 +2826,7 @@
     { id: 'S78', name: "S78 mainline junction (v133): keep-left/right where the route stays on the same expressway section and goes straight is shown as straight ('신갈분기점에서 직진 · 서울 방면', main-straight junction scene, straight sign); a fork onto another expressway stays a fork", fn: s78 },
     { id: 'S79', name: 'S79 rest areas (v133): distance to where the entry ramp leaves the mainline (OSM), not the rest-area centre; within 3 km and no turn within 1 km the top row becomes the rest area (blue), next row = the guidance after it', fn: s79 },
     { id: 'S80', name: 'S80 real Gyeongbu northbound route (v135): opposite-carriageway rest stop dropped, section-end camera alerted without its start, no reroute in the Seoul toll plaza or on 0.3 s of 10 Hz jitter, reroute 60 m off outside it', fn: s80 },
+    { id: 'S81', name: 'S81 signal cameras sit at the stop line of the approach they enforce (v138, 길동사거리 left turn): our approach camera is warned, camera distance ≤ turn distance, the cross street camera is not', fn: s81 },
     { id: 'S75', name: 'S75 (info) cameras alerted on every saved real route, for comparing versions', fn: s75 },
     { id: 'S74', name: 'S74 camera score on 2026-11-15 real cases (13): false alerts / misses / wrong type, with and without navigation', fn: s74 },
     { id: 'S73', name: 'S73 no spoken overspeed words (과속/초과): limit beeps and the red card only', fn: s73 },
@@ -3211,6 +3212,11 @@
     ] },
     { file: 'route-bundang-suseo-n.json', guide: [1, { i: 70, t: 2, s: "금곡교차로에서 '성남, 용인시청' 방면으로 좌회전", d: 0, ms: 0 }], cams: [
       ['금곡IC 80 (용인→분당경찰서)', 37.35405, 127.10454, 'yes'],
+    ] },    // v138 (2026-11-16 09:20 길동사거리 제보): 양재대로 북행에서 좌회전. 우리 접근로를 찍는 북행 카메라는 알리고, 좌회전 뒤 천호대로를
+    // 찍는 서행 카메라(동쪽 접근로)는 알리지 않는다
+    { file: 'route-gildong-left.json', cams: [
+      ['길동사거리 양재대로 북행 50 (좌회전 전)', 37.53408, 127.13883, 'yes'],
+      ['길동사거리 천호대로 서행 50 (다른 접근로)', 37.53426, 127.13841, 'no'],
     ] },
   ];
   async function scoreRun(withNav) {
@@ -3677,6 +3683,41 @@
       r.km2.top && r.km2.dist === '2.8km' && r.km2.text === '테스트휴게소' && r.km2.next === '550m' && r.km2.nextToll && r.km2.row === '' &&
       !r.km44.top && r.km44.dist === '900m' && /서울톨게이트/.test(r.km44.text) && r.km44.row === '테스트휴게소 350m' &&
       !r.km48.top && r.km48.row === '';
+    return { pass: ok, detail: JSON.stringify(r) };
+  }
+
+  // S81: 신호 카메라는 찍는 방향의 접근로 정지선에 (v138, 2026-11-16 길동사거리: 원본 좌표가 교차로 한가운데라 좌회전하는 경로에서
+  //      우리 접근로 카메라가 빠지고 좌회전 뒤 천호대로 카메라가 '240m'로 잡혔다. 네이버 211m, 회전 60m 일 때 카메라 90m).
+  //      좌회전 300m·100m 앞에서 경고 카메라는 양재대로 북행(25009)이고, 카메라 거리 ≤ 회전 거리, 회전 뒤에는 천호대로 카메라를 알리지 않는다
+  async function s81() {
+    const t = T(), r = {};
+    const fx = await (await realFetch(harnessDir + 'fixtures/route-gildong-left.json', { cache: 'no-store' })).json();
+    const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const R = { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '천호', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    const turnS = cum[fx.guide.find((g) => g.t === 2).i];
+    const N = { lat: 37.53408, lng: 127.13883 }, W = { lat: 37.53426, lng: 127.13841 };
+    const snap = () => { const tg = t.camState.target; return { cam: tg ? (sameCam(tg.c, N) ? 'N' : sameCam(tg.c, W) ? 'W' : tg.c[0] + ',' + tg.c[1]) : '-', camM: distM(text('#camDist')), turnM: distM(text('#turnDist')) }; };
+    try {
+      softReset();
+      await planAndStart(R);
+      for (let s = 0; s <= turnS - 300; s += 15) { const a = pointAt(R, s); feed(a.p, 12, a.h); }
+      t.renderNav(); r.at300 = snap();
+      for (let s = turnS - 285; s <= turnS - 100; s += 15) { const a = pointAt(R, s); feed(a.p, 12, a.h); }
+      t.renderNav(); r.at100 = snap();
+      let west = false;
+      for (let s = turnS - 85; s <= Math.min(R.total - 30, turnS + 300); s += 15) {
+        const a = pointAt(R, s); feed(a.p, 12, a.h);
+        const tg = t.camState.target;
+        if (s > turnS + 10 && tg && sameCam(tg.c, W)) west = true;
+      }
+      r.westAfterTurn = west;
+    } finally {
+      t.endNav(); softReset();
+    }
+    const okAt = (o) => o.cam === 'N' && o.camM !== null && o.turnM !== null && o.camM <= o.turnM;
+    const ok = okAt(r.at300) && okAt(r.at100) && !r.westAfterTurn;
     return { pass: ok, detail: JSON.stringify(r) };
   }
 

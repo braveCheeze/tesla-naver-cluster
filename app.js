@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-137'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-138'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -853,7 +853,8 @@
       list.forEach((x) => {
         if (this.cams.has(x.i)) return;
         this.cams.set(x.i, new N.Marker({
-          position: new N.LatLng(x.c[0], x.c[1]), map: this.map, clickable: false, zIndex: 100,
+          // v138: 원본 좌표(교차로 한가운데인 것이 많다) 대신 카메라가 찍는 자리(접근로 정지선·차로 위 점)에 그린다
+          position: new N.LatLng(camPt(x.c).lat, camPt(x.c).lng), map: this.map, clickable: false, zIndex: 100,
           icon: { content: camEl(x.c), anchor: new N.Point(15, 15) },
         }));
       });
@@ -1022,7 +1023,7 @@
       this.cams.forEach((m, i) => { if (!keep.has(i)) { m.remove(); this.cams.delete(i); } });
       list.forEach((x) => {
         if (this.cams.has(x.i)) return;
-        this.cams.set(x.i, L.marker([x.c[0], x.c[1]], {
+        this.cams.set(x.i, L.marker([camPt(x.c).lat, camPt(x.c).lng], {
           icon: L.divIcon({ html: camEl(x.c), className: 'me-wrap', iconSize: [30, 30], iconAnchor: [15, 15] }),
           interactive: false, keyboard: false,
         }).addTo(this.map));
@@ -2334,7 +2335,7 @@
     let i = nav.routeCamsUpto, added = false;
     for (; i < pts.length - 1 && nav.cum[i] < want; i++) {
       const a = pts[i], b = pts[i + 1], half = (nav.cum[i + 1] - nav.cum[i]) / 2;
-      for (const it of camsNear((a.lat + b.lat) / 2, (a.lng + b.lng) / 2, half + CAM_TOL + 50)) {   // 차로 위 점은 원래 좌표에서 45m 안
+      for (const it of camsNear((a.lat + b.lat) / 2, (a.lng + b.lng) / 2, half + CAM_TOL + 70)) {   // 차로 위 점은 원래 좌표에서 65m 안 (v138: 신호 카메라는 접근로 정지선으로 옮겨 최대 63m)
         const at = camAtSeg(it.c, i);
         if (at === null) continue;
         const arr = m.get(it.c);
@@ -6205,7 +6206,7 @@
       saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassKey, hipassNums, hipassLayout, laneNums, laneStripHtml, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, icoBase, pickImg, iconPicks: ICON_PICKS, tollParts, arrowSpan, routeStyle: ROUTE_STYLE, trafficPal, roundRoute, setCarIcon, carIcons: CAR_ICONS, parking, parkState, setParkingData, loadParking, evalParking, rest, setRestData, loadRest, ensureRouteRest, renderRest, placeBase, findParking, renderTurnArrow,
       lanesData, laneState, setLaneData, loadLanes, laneGuide, laneArrowSvg,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, expwayNo, camMiss, camMissCheck, hdgFix, fixLog,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, expwayNo, camMiss, camMissCheck, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
     };
   }
