@@ -44,7 +44,7 @@ def service_key():
         except OSError:
             k = ''
     if not k:
-        sys.exit('DATA_GO_KR_KEY 가 없습니다. data.go.kr 에서 15028200 활용신청 후 인증키를 사용자 환경변수 DATA_GO_KR_KEY 로 넣어 주세요.')
+        sys.exit('DATA_GO_KR_KEY 가 없습니다. data.go.kr 에서 쓸 데이터셋(15028200 경찰청 표준데이터, 15111673 성남시 교통단속 카메라)을 활용신청한 뒤 인증키를 사용자 환경변수 DATA_GO_KR_KEY 로 넣어 주세요.')
     return k if '%' in k else urllib.parse.quote(k, safe='')
 
 

@@ -27,6 +27,7 @@
 | `tools/build_lanes.py` | 국토지리정보원 정밀도로지도 zip(또는 푼 폴더) → 지역별 `tools/lanes-src/<지역>.json` → 합쳐서 `data/lanes.json` (교차로 진입부마다 차로별 갈 수 있는 방향, 시험판). `--keep <폴더>` 로 벡터 레이어만 지역별 작은 zip 으로 남김 |
 | `tools/build_cams.py` | 원본 카메라 CSV → `data/cameras.json` 변환 (직접 확인한 데이터 보정 `FIXES` 포함) |
 | `tools/fetch_cams.py` | 같은 원본을 data.go.kr OpenAPI(15028200, `tn_pubr_public_unmanned_traffic_camera_api`, 1,000건씩)로 받아 파일 다운로드와 같은 CSV(cp949, 23열)로 저장. 인증키는 사용자 환경변수 `DATA_GO_KR_KEY`(활용신청은 사용자가 직접, 키 값은 출력·저장하지 않음). `--compare <예전 CSV>` 로 늘어난·빠진·바뀐 수. 반기 갱신이라 다시 받을 때: `fetch_cams.py <새.csv> --compare <예전.csv>` → `build_cams.py`·`build_parking.py` → `osm_cams.py` → `osm_arrows.py` |
+| `tools/fetch_seongnam_cams.py` | 경기도 성남시_교통단속 카메라 OpenAPI(15111673, 같은 키, 따로 활용신청)를 받아 경찰청 자료와 대조: 같은 카메라(30m 안)·위치가 다를 수 있음(30~100m)·경찰청 자료에 없음. 단속 종류·제한속도 항목이 없어 앱에 바로 넣지는 않는다 |
 
 ## 1. 네이버 지도 키 (NAVER Cloud Platform)
 
