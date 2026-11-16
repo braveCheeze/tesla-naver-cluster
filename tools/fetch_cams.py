@@ -85,6 +85,16 @@ def page(key, no):
     return items, int(body.get('totalCount') or 0)
 
 
+# 실제 응답은 명세와 조금 다르다 (2026-11-16 확인: instt_code·instt_nm 대신 insttCode·insttNm). 대소문자·밑줄을 무시하고 맞춘다
+def _k(name):
+    return name.replace('_', '').lower()
+
+
+def row(it):
+    low = {_k(k): v for k, v in it.items()}
+    return [('' if low.get(_k(f)) is None else str(low.get(_k(f))).strip()) for f in FIELDS]
+
+
 def fetch(out):
     key = service_key()
     rows, total, no = [], None, 1
@@ -93,7 +103,7 @@ def fetch(out):
         if total is None:
             total = tc
             print('totalCount', total, 'pages', math.ceil(total / PER) if total else 0)
-        rows += [[('' if it.get(f) is None else str(it.get(f)).strip()) for f in FIELDS] for it in items]
+        rows += [row(it) for it in items]
         if not items or len(rows) >= total:
             break
         no += 1
@@ -119,36 +129,25 @@ def load(p):
 
 
 def compare(new, old):
+    """행 전체(21열)를 묶음으로 맞대어 같은 행·예전에만·새로만 있는 행을 센다. 관리번호는 기관마다 겹쳐(2026-11 1,171개)
+    번호로 맞추면 순서만 달라도 '바뀜'으로 나온다. 예전에만/새로만 있는 행은 관리번호로 다시 묶어 '바뀜'(같은 번호가 양쪽에)과
+    '늘어남'·'빠짐'으로 나눈다"""
+    from collections import Counter
     a, b = load(old), load(new)
-    key = lambda r: (r[0].strip(), r[18].strip())   # 관리번호 + 관리기관명 (기관마다 번호 체계가 달라 겹칠 수 있다)
-    A, B = {}, {}
-    for r in a:
-        A.setdefault(key(r), r)
-    for r in b:
-        B.setdefault(key(r), r)
-    added = [k for k in B if k not in A]
-    removed = [k for k in A if k not in B]
-    moved = changed = 0
-    what = {}
-    for k in B:
-        if k not in A:
-            continue
-        x, y = A[k], B[k]
-        diff = [HEAD[i] for i in range(min(len(x), len(y), 20)) if x[i].strip() != y[i].strip()]
-        if diff:
-            changed += 1
-            for d in diff:
-                what[d] = what.get(d, 0) + 1
-            try:
-                if abs(float(x[9]) - float(y[9])) > 1e-4 or abs(float(x[10]) - float(y[10])) > 1e-4:
-                    moved += 1
-            except ValueError:
-                pass
-    speed = lambda rs, ks: sum(1 for k in ks if '4' not in rs[k][12].replace(' ', '').split('+'))
-    print('예전 %d행 → 새 %d행' % (len(a), len(b)))
-    print('늘어남 %d (주정차 아닌 것 %d), 빠짐 %d (주정차 아닌 것 %d), 바뀜 %d (그중 10m 넘게 옮긴 것 %d)' % (
-        len(added), speed(B, added), len(removed), speed(A, removed), changed, moved))
-    print('바뀐 항목', sorted(what.items(), key=lambda x: -x[1])[:10])
+    row = lambda r: tuple(x.strip() for x in r[:21])
+    A, B = Counter(row(r) for r in a), Counter(row(r) for r in b)
+    only_old, only_new = list((A - B).elements()), list((B - A).elements())
+    ko = Counter((r[0], r[18]) for r in only_old)
+    kn = Counter((r[0], r[18]) for r in only_new)
+    changed = sum(min(ko[k], kn[k]) for k in ko if k in kn)
+    added = sum(kn.values()) - changed
+    removed = sum(ko.values()) - changed
+    speed = lambda rs: sum(1 for r in rs if '4' not in r[12].replace(' ', '').split('+'))
+    print('예전 %d행 → 새 %d행. 같은 행 %d' % (len(a), len(b), sum((A & B).values())))
+    print('늘어남 %d, 빠짐 %d, 바뀜 %d (예전에만 %d행 중 주정차 아닌 것 %d / 새로만 %d행 중 %d)' % (
+        added, removed, changed, len(only_old), speed(only_old), len(only_new), speed(only_new)))
+    dates = Counter(r[20] for r in b)
+    print('새 자료 데이터기준일자 최신 %s, 많은 순 %s' % (max(dates) if dates else '-', dates.most_common(3)))
 
 
 if __name__ == '__main__':

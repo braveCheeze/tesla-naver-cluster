@@ -89,7 +89,9 @@ def dist(a, b):
 
 
 def compare(sn_file, police_csv):
-    sn = json.load(open(sn_file, encoding='utf-8'))
+    # 실제 응답 항목 이름은 소문자다 (sisulnm, policenm, referencedate …. 2026-11-16 확인) → 명세 이름으로 맞춘다
+    NAMES = {k.lower(): k for k in ('id', 'latitude', 'longitude', 'sfznId', 'ctprvnNm', 'signguNm', 'sisulNm', 'policeNm', 'referenceDate', 'image', 'remark')}
+    sn = [{NAMES.get(k.lower(), k): v for k, v in it.items()} for it in json.load(open(sn_file, encoding='utf-8'))]
     pts = []
     for it in sn:
         try:
