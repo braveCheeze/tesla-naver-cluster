@@ -3647,10 +3647,18 @@
     await waitFor(() => t.getMap(), 5000);
     const m = t.getMap(), f = mapFinger();
     const hup0 = t.prefs.headingUp;
-    // 숨은 창에서는 애니메이션 프레임이 돌지 않아 Leaflet 의 부드러운 확대가 끝나지 않는다: 시험 동안만 바로 바뀌게
+    // 숨은 창에서는 애니메이션 프레임이 돌지 않아 지도의 부드러운 확대가 끝나지 않는다(배율 값이 그대로).
+    // 그래서 배율 대신 앱이 지도에 시킨 확대 단계(zoomBy)를 센다. 테스트 지도(Leaflet)든 네이버 지도(Pages)든 같게
+    const isL = m.map._leaflet_id != null;
     const anim0 = m.map._zoomAnimated;
-    if (m.map._leaflet_id != null) m.map._zoomAnimated = false;
-    const setZ = (z) => { if (m.map.setZoom) m.map.setZoom(z, m.map._leaflet_id != null ? { animate: false } : false); };
+    if (isL) m.map._zoomAnimated = false;
+    const zb0 = m.zoomBy;
+    let dz = 0;
+    m.zoomBy = function (d) { dz += d; return zb0.call(this, d); };
+    const steps = async (fn) => { dz = 0; await fn(); return dz; };
+    const lib = () => (isL ? [m.map.touchZoom.enabled(), m.map.scrollWheelZoom.enabled(), m.map.doubleClickZoom.enabled()]
+      : [m.map.getOptions('pinchZoom'), m.map.getOptions('scrollWheel'), !m.map.getOptions('disableDoubleTapZoom')]).map(Boolean);
+    const setZ = (z) => { if (m.map.setZoom) m.map.setZoom(z, isL ? { animate: false } : false); };
     const pinch = async (grow, preMove) => {
       f.P('pointerdown', 1, f.cx - 30, f.cy);
       if (preMove) f.P('pointermove', 1, f.cx - 30 - preMove, f.cy);
@@ -3666,22 +3674,22 @@
       t.setFollowing(true); t.layoutView(true);
       await sleep(150);
       r.ownFlat = t.ownZoom();
-      r.libOff = !!(m.map.touchZoom && !m.map.touchZoom.enabled() && !m.map.scrollWheelZoom.enabled() && !m.map.doubleClickZoom.enabled());
+      r.libOff = lib().every((x) => !x);
       setZ(15); await sleep(100);
-      let z = m.getZoom(); await pinch(true, 0);
-      r.zoomIn = m.getZoom() - z; r.followA = t.state.following;
+      r.zoomIn = await steps(() => pinch(true, 0)); r.followA = t.state.following;
       r.centerA = r0(hav(m.getCenter(), SEOUL));
       // 나: 첫 손가락이 15px 먼저 미끄러진 뒤 둘째 손가락 (실제 손가락은 동시에 닿지 않는다)
-      z = m.getZoom(); await pinch(false, 15);
-      r.zoomOut = z - m.getZoom(); r.followB = t.state.following;
+      r.zoomOut = -(await steps(() => pinch(false, 15))); r.followB = t.state.following;
       // 다: 두 번 톡 = 한 단계 확대, 따라가기 그대로
-      setZ(15); await sleep(100); z = m.getZoom();
-      for (let k = 0; k < 2; k++) { f.P('pointerdown', 1, f.cx, f.cy); f.P('pointerup', 1, f.cx, f.cy); }
-      await sleep(400);
-      r.dbl = m.getZoom() - z; r.followC = t.state.following;
+      setZ(15); await sleep(100);
+      r.dbl = await steps(async () => {
+        for (let k = 0; k < 2; k++) { f.P('pointerdown', 1, f.cx, f.cy); f.P('pointerup', 1, f.cx, f.cy); }
+        await sleep(400);
+      });
+      r.followC = t.state.following;
       // 라: 손으로 지도를 둘러보는 중(따라가기 꺼짐)이면 확대는 다시 지도 라이브러리가 (손가락 사이를 중심으로)
       t.setFollowing(false, true);
-      r.libBack = !!(m.map.touchZoom && m.map.touchZoom.enabled() && m.map.doubleClickZoom.enabled());
+      r.libBack = lib().every(Boolean);
       // 마: 진행 방향 위 주행 화면, 달리는 중: 첫 손가락이 먼저 움직여(앞길 보기로 바뀌어도) 확대가 끝나면 바로 따라가기·주행 화면
       t.prefs.headingUp = true;
       let p = SEOUL;
@@ -3689,13 +3697,15 @@
       t.setFollowing(true); t.layoutView(true);
       await sleep(200);
       r.drive = t.view.drive;
-      setZ(15); await sleep(100); z = m.getZoom();
-      await pinch(true, 15);
-      r.driveZoom = m.getZoom() - z; r.driveFollow = t.state.following; r.driveView = t.view.drive;
+      setZ(15); await sleep(100);
+      r.driveZoom = await steps(() => pinch(true, 15));
+      r.driveFollow = t.state.following; r.driveView = t.view.drive;
       r.backMe = !document.getElementById('backMe').hidden;
+      r.map = isL ? 'leaflet' : (m.gl ? 'naver-gl' : 'naver');
     } finally {
       t.prefs.headingUp = hup0;
-      if (m.map._leaflet_id != null) m.map._zoomAnimated = anim0;
+      m.zoomBy = zb0;
+      if (isL) m.map._zoomAnimated = anim0;
       t.setFollowing(true); t.layoutView(true);
       softReset();
     }
@@ -3710,8 +3720,21 @@
     await waitFor(() => t.getMap(), 5000);
     const f = mapFinger(), poi = dest(SEOUL, 45, 20);
     const pt = (q) => q.lng.toFixed(6) + ',' + q.lat.toFixed(6);
+    // 테스트 지도(Leaflet)는 길안내 서버 /reverse 를, 네이버 지도(Pages 에서 돌릴 때)는 네이버 지오코더를 쓴다: 둘 다 같은 답으로 바꿔 둔다
+    const N = window.naver && naver.maps, isL = t.getMap().map._leaflet_id != null;
+    let rg0 = null;
+    if (N && !isL) {
+      await t.describeAt(SEOUL);   // 지오코더를 받아 둔다
+      if (N.Service && N.Service.reverseGeocode) {
+        rg0 = N.Service.reverseGeocode;
+        N.Service.reverseGeocode = (opt, cb) => setTimeout(() => cb(N.Service.Status.OK, { v2: {
+          address: { roadAddress: '서울특별시 중구 세종대로 110 서울특별시청', jibunAddress: '서울특별시 중구 태평로1가 31' },
+          results: [{ name: 'roadaddr', land: { name: '세종대로', number1: '110', addition0: { type: 'building', value: '서울특별시청' } } }],
+        } }), 0);
+      }
+    }
     stub.canned['/reverse'] = { road: '세종대로', area: '서울특별시 중구 태평로1가' };
-    stub.canned['/search'] = (q) => ({ items: /세종대로/.test(q.query || '') ? [
+    stub.canned['/search'] = (q) => ({ items: /세종대로|서울특별시청/.test(q.query || '') ? [
       { name: '먼 곳', category: '', addr: '', lat: dest(SEOUL, 0, 500).lat, lng: dest(SEOUL, 0, 500).lng },
       { name: '서울특별시청', category: '공공,사회기관>특별,광역시청', addr: '서울특별시 중구 세종대로 110', lat: poi.lat, lng: poi.lng },
     ] : [] });
@@ -3772,6 +3795,7 @@
       r.waypoint = !!(q2 && q2.query.waypoints && t.nav.via && t.nav.via.length === 1);
       if (!r.waypoint) r.viaDbg = { via: (t.nav.via || []).length, busy: t.nav.busy, active: t.nav.active, routes: stub.count('/route', c1), q: q2 && q2.query, toast: text('#toast') };
     } finally {
+      if (rg0) N.Service.reverseGeocode = rg0;
       t.closePick();
       t.endNav(); softReset();
       stub.canned['/search'] = { items: [] };
