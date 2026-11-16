@@ -3518,7 +3518,7 @@
     nav.routeBumps = null; bumpState.markerKey = '';
     nav.routeSigns = null; tollState.numsKey = '';
     nav.routeTunnels = null;
-    nav.laneCache = null; nav.laneStraight = null; laneState.key = '';
+    nav.laneCache = null; nav.laneStraight = null; nav.forkList = null; laneState.key = '';
     nav.lastTraffic = state.fix ? state.fix.t : Date.now();
     if (!keepAlerts) { nav.said = {}; nav.gap = 10000; }
     nav.remain = nav.total; nav.next = null; nav.dg = null;
@@ -4535,6 +4535,107 @@
       if (r.ok) setLaneData(await r.json());
     } catch (e) { /* 차로 자료가 없으면 차로 칸 없이 */ }
   }
+  // ---------- 고속도로 분기점·나들목 앞 차로 (v153, 2026-11-16 사용자 '차선표기' — 경부 신갈분기점에서 네이버처럼
+  // [버스][↑][↑][↑][↱][↱][↱]) ----------
+  // data/forks.json (tools/build_forks.py, 국토지리정보원 정밀도로지도 고속국도): 분기 앞 차로 단면마다 차로 글자(S 본선·R/L 출구·
+  // 끝 B 버스전용)와 차로마다 하류 2km 에서 닿는 갈래 끝점. 길안내 경로가 실제로 지나는 갈래(끝점이 경로 30m 안)로 가는 차로를
+  // 파랗게 칠한다 — 출구가 둘 이상이어도 '오른쪽' 글자로 고르지 않는다. 버스전용차로는 갈 차로에서 뺀다(그 갈래가 버스 칸뿐이면 둔다).
+  // 경로 위 다음 단면이 1km 안이면 서랍 차로 칸에 (지나가면 다음 단면으로 바뀐다). 자료가 있는 곳: 경부고속도로
+  const forksData = { loaded: false, rows: [], ends: [], grid: new Map(), areas: [] };
+  const FORK_SHOW = 1000, FORK_SIDE = 18, FORK_END = 30, FORK_AHEAD = 2600;
+  function setForkData(j) {
+    forksData.loaded = false; forksData.grid = new Map(); forksData.rows = []; nav.forkList = null; laneState.key = '';
+    if (!j || !Array.isArray(j.rows) || !Array.isArray(j.ends)) return;
+    forksData.rows = j.rows.map((r) => ({ lat: +r[0], lng: +r[1], h: +r[2], lanes: String(r[3]).split('|'), cl: r[4] || [] }));
+    forksData.ends = j.ends;
+    forksData.rows.forEach((r, k) => {
+      const key = Math.floor(r.lat * 100) + ':' + Math.floor(r.lng * 100);
+      let c = forksData.grid.get(key);
+      if (!c) forksData.grid.set(key, c = []);
+      c.push(k);
+    });
+    forksData.areas = j.areas || [];
+    forksData.loaded = true;
+  }
+  async function loadForks() {
+    try {
+      const r = await fetch('data/forks.json?v=' + APP_VERSION);
+      if (r.ok) setForkData(await r.json());
+    } catch (e) { /* 분기 차로 자료가 없으면 칸 없이 */ }
+  }
+  // 경로 위 분기 단면들 (경로가 바뀔 때 한 번): [{ at, k, lanes, ok, M }] at 순서
+  function ensureRouteForks() {
+    if (nav.forkList) return nav.forkList;
+    const out = [];
+    if (!forksData.loaded || !nav.pts || nav.pts.length < 2) return out;
+    const pts = nav.pts, cum = nav.cum, last = pts.length - 1;
+    const best = new Map();
+    for (let i = 0; i < last; i++) {
+      const a = pts[i], b = pts[i + 1], len = cum[i + 1] - cum[i];
+      if (len <= 0) continue;
+      const brg = bearing(a, b);
+      const cells = new Set();
+      const steps = Math.max(1, Math.ceil(len / 400));
+      for (let q = 0; q <= steps; q++) {
+        const la = a.lat + (b.lat - a.lat) * q / steps, ln = a.lng + (b.lng - a.lng) * q / steps;
+        for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) cells.add((Math.floor(la * 100) + y) + ':' + (Math.floor(ln * 100) + x));
+      }
+      for (const c of cells) for (const k of forksData.grid.get(c) || []) {
+        const r = forksData.rows[k];
+        if (angleDiff(r.h, brg) > 30) continue;
+        const pr = projectSeg(r, a, b);
+        if (pr.dist > FORK_SIDE || (pr.t <= 0 && i > 0) || (pr.t >= 1 && i < last - 1)) continue;
+        const at = cum[i] + pr.t * len;
+        const o = best.get(k);
+        if (!o || pr.dist < o.side) best.set(k, { at, side: pr.dist });
+      }
+    }
+    // 끝점이 경로(그 단면 뒤 FORK_AHEAD m 안) 30m 안인가
+    const onRoute = (e, from) => {
+      const p = { lat: e[0], lng: e[1] };
+      for (let i = 0; i < last; i++) {
+        if (cum[i + 1] < from || cum[i] > from + FORK_AHEAD) continue;
+        if (projectSeg(p, pts[i], pts[i + 1]).dist <= FORK_END) return true;
+      }
+      return false;
+    };
+    for (const [k, o] of best) {
+      const r = forksData.rows[k];
+      const used = [...new Set(r.cl.flat())];
+      const hitEnds = new Set(used.filter((e) => forksData.ends[e] && onRoute(forksData.ends[e], o.at)));
+      if (!hitEnds.size) continue;                                  // 경로가 어느 갈래로도 안 감 (자료 밖으로 감)
+      const all = r.lanes.map((m, i) => ((r.cl[i] || []).some((e) => hitEnds.has(e)) ? i : -1)).filter((i) => i >= 0);
+      const car = all.filter((i) => !isBusLane(r.lanes[i]));
+      const ok = car.length ? car : all;
+      if (!ok.length || ok.length === r.lanes.length) continue;       // 다 갈 수 있으면 알려 줄 것이 없음
+      // 본선 끝점: 'S' 만 있는 차로가 닿는 끝점. 경로가 그쪽이면 S, 아니면 그 갈래 차로의 출구 쪽 글자
+      const sIdx = r.lanes.findIndex((m) => m.replace('B', '') === 'S');
+      const mainE = sIdx >= 0 ? (r.cl[sIdx] || [])[0] : null;
+      let M = 'S';
+      if (mainE == null || !hitEnds.has(mainE)) {
+        const lane = r.lanes[ok[0]].replace('B', '');
+        M = lane.indexOf('R') >= 0 ? 'R' : lane.indexOf('L') >= 0 ? 'L' : 'S';
+      }
+      out.push({ at: o.at, k, lanes: r.lanes, ok, M });
+    }
+    out.sort((u, v) => u.at - v.at);
+    nav.forkList = out;
+    return out;
+  }
+  // 다음 길안내(분기점·나들목·직진 안내) 1km 앞부터, 그 안내 지점보다 앞의 다음 단면 (안내 없이 지나는 나들목 앞에서는 안 띄운다).
+  // 경로가 지나는 갈래 끝점이 자료에 없으면(연결로가 다른 노선 자료에 있는 분기점: 경부 북행 판교분기점) 그 단면은 건너뛴다 — 틀린 칸보다 없는 편
+  function forkLane() {
+    const g = nav.next;
+    if (!g || nav.dg == null || nav.dg > FORK_SHOW) return null;
+    const sg = nav.cum[Math.min(g.i, nav.cum.length - 1)];
+    const list = ensureRouteForks();
+    for (const x of list) {
+      const d = x.at - nav.along;
+      if (d < -5) continue;
+      return d <= FORK_SHOW && x.at <= sg + 50 ? Object.assign({ d, fork: true }, x) : null;
+    }
+    return null;
+  }
   // 버스전용차로 (v139, 2026-11-16 사용자 '우리도 이런거 있음 좋겠다' — 네이버처럼 버스 칸): 자료의 차로 글자 끝 'B'
   // (tools/build_lanes.py: 정밀도로지도 버스전용차선 504). 갈 차로에서 빼되, 그 방향이 버스전용차로에만 있으면(바깥 버스전용차로에서
   // 우회전 — 점선 구간에서 들어가 돈다) 그 차로를 갈 차로로 둔다
@@ -4750,7 +4851,8 @@
     if (!el) return;
     let hit = null;
     if (prefs.lanes && nav.active) {
-      hit = nextStraightLane();   // 가까운 직진 교차로가 먼저
+      hit = forkLane();           // 고속도로 분기 앞 (v153)
+      if (!hit) hit = nextStraightLane();   // 가까운 직진 교차로가 먼저
       if (!hit) hit = g && nav.dg != null && nav.dg <= LANE_SHOW ? laneGuide(g) : null;
     }
     laneState.hit = hit;
@@ -4765,23 +4867,26 @@
     cancelDrawerClose();
     el.hidden = false;
     const box = el;
-    const key = (hit.M === 'S' ? 's:' : g.i + ':' + g.t + ':') + hit.k;
+    const key = (hit.fork ? 'f:' : hit.M === 'S' ? 's:' : g.i + ':' + g.t + ':') + hit.k;
+    const head = hit.fork || hit.M === 'S';   // 칸 위 머리줄 (분기 차로·직진 교차로)
     if (laneState.key !== key) {
       laneState.key = key;
       // 직진 교차로: 칸 위 머리줄 (왼쪽 '다음 교차로 · 직진', 오른쪽 끝 남은 거리). 칸은 정사각형, 8차로 넘으면 틈을 좁힘
-      box.innerHTML = (hit.M === 'S' ? '<div class="lh"><span>다음 교차로 · 직진</span><b class="ld"></b></div>' : '') +
+      box.innerHTML = (head ? '<div class="lh"><span>' + (hit.fork ? '갈림길 차로' : '다음 교차로 · 직진') + '</span><b class="ld"></b></div>' : '') +
         '<div class="lt' + (hit.lanes.length >= 8 ? ' many' : '') + '">' +
         hit.lanes.map((m, i) => laneCell(m, hit.ok.indexOf(i) >= 0, hit.M, 'lg')).join('') + '</div>';
-      box.classList.toggle('straight', hit.M === 'S');
+      box.classList.toggle('straight', head);
+      box.classList.toggle('fork', !!hit.fork);
       box.dataset.lanes = hit.lanes.join('|');
       box.dataset.go = hit.ok.map((i) => i + 1).join(',');
       box.dataset.move = hit.M;
+      box.dataset.fork = hit.fork ? '1' : '';
       const busN = hit.lanes.map((m, i) => (isBusLane(m) ? i + 1 : 0)).filter(Boolean);
       box.dataset.bus = busN.join(',');
       box.setAttribute('aria-label', (hit.M === 'S' ? '직진 ' : '') + hit.lanes.length + '차로 중 ' + hit.ok.map((i) => i + 1).join('·') + '차로' +
         (busN.length ? ', 버스전용 ' + busN.join('·') + '차로' : ''));
     }
-    if (hit.M === 'S') box.querySelector('.ld').textContent = fmtDist(Math.max(0, hit.d));
+    if (head) box.querySelector('.ld').textContent = fmtDist(Math.max(0, hit.fork && nav.dg != null ? nav.dg : hit.d));   // 분기: 다음 안내(분기점)까지
     syncDrawer();
   }
   // ---------- 지도 위 차로 말풍선 (v139, 2026-11-16 사용자 '우리도 이런거 있음 좋겠다' — 네이버 길안내가 다음 회전 교차로에 붙이는
@@ -6721,6 +6826,7 @@
   loadRest();
   loadSigns();
   loadLanes();
+  loadForks();
   loadHipass();
   loadTunnels();
   startGps();
@@ -6749,6 +6855,7 @@
       sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
       saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassKey, hipassNums, hipassLayout, laneNums, laneStripHtml, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, icoBase, pickImg, iconPicks: ICON_PICKS, tollParts, arrowSpan, routeStyle: ROUTE_STYLE, trafficPal, roundRoute, setCarIcon, carIcons: CAR_ICONS, parking, parkState, setParkingData, loadParking, evalParking, rest, setRestData, loadRest, ensureRouteRest, renderRest, placeBase, findParking, renderTurnArrow,
       lanesData, laneState, setLaneData, loadLanes, laneGuide, laneArrowSvg, laneOk, laneTipFor, laneCell,
+      forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
