@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-133'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-134'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -3871,8 +3871,36 @@
   }
   // 톨게이트 이름 → 영업소 이름: 공백, 끝의 괄호('하남톨게이트(서울방향)'·'(개방식)', v98 부터 tollParts 가 이름에 괄호를 남긴다), '톨게이트' 등을 뗀다
   const hipassKey = (s) => String(s || '').replace(/\s+/g, '').replace(/(\([^()]*\))+$/, '').replace(/(톨게이트|영업소|요금소|TG)$/i, '');
+  // 톨게이트 안내 → [영업소 이름, 자료]. 본선 영업소는 자료 이름에 '(본)'이 붙기도 한다 (네이버 '남양주톨게이트' → '남양주(본)')
+  function hipassOffice(g) {
+    const k = hipassKey(tollParts(g).name);
+    return hipass.o[k] ? [k, hipass.o[k]] : hipass.o[k + '(본)'] ? [k + '(본)', hipass.o[k + '(본)']] : [k, null];
+  }
+  // 톨게이트 앞뒤 400m 로 잰 진행 방향이 지점 to 쪽이면 'u', 반대면 'd', 애매하면 '' (진입로 굽이에 흔들리지 않게).
+  // 실제 경로: 하남IC→중부 상행 6°, 하남IC 출구(하행) 140°, 판교IC→경부 상행 20°
+  function towardDir(g, to) {
+    if (!nav.pts) return '';
+    const last = nav.pts.length - 1, i = Math.min(g.i, last), s0 = nav.cum[i];
+    let a = i, b = i;
+    while (a > 0 && s0 - nav.cum[a] < 400) a--;
+    while (b < last && nav.cum[b] - s0 < 400) b++;
+    if (a === b) return '';
+    const diff = angleDiff(bearing(nav.pts[a], nav.pts[b]), bearing(nav.pts[i], to));
+    return diff <= 50 ? 'u' : diff >= 130 ? 'd' : '';
+  }
+  // 본선 영업소(고속도로 본선을 가로막는 큰 폐쇄식 톨게이트): 지나가는 방향만으로 입구·출구가 정해진다 — 이 도시 쪽으로 가면 폐쇄식
+  // 구간을 나가는 출구, 반대면 들어가는 입구. 진입 안내·앞선 톨게이트로 고르는 규칙보다 먼저 (v134, 2026-11-16 서울TG 제보: 경부 북행인데
+  // 하이패스 4개만 — 경로가 경부 위에서 시작하거나 바로 앞 IC 진입 안내 때문에 입구로 보거나 방향을 몰라 입구·출구 공통인 1~4번만 나왔고,
+  // 출구 14~16번 하이패스가 빠졌다). 군자·장유·서대구는 어느 쪽이 출구인지 확실하지 않아 넣지 않았다 (모르면 양쪽 공통 차로만)
+  const MAIN_TG = { 서울: SEOUL, 동서울: SEOUL, 서서울: SEOUL, '남양주(본)': SEOUL, 부산: { lat: 35.1796, lng: 129.0756 } };
   // 폐쇄식 영업소: 고속도로에 들어가는 톨게이트(앞 4km 안에 고속도로 진입 안내)면 입구 차로, 나오는 곳(앞 3km 안에 출구 안내)이면 출구 차로
   function tollSide(g) {
+    const [name] = hipassOffice(g);
+    if (MAIN_TG[name]) {
+      const d = towardDir(g, MAIN_TG[name]);
+      if (d) return d === 'u' ? '출구' : '입구';
+    }
+    const closed = (x) => { const o = hipassOffice(x)[1]; return !!o && !o.t; };
     const last = nav.cum.length - 1, sg = nav.cum[Math.min(g.i, last)];
     let side = '';
     for (const x of nav.guides || []) {
@@ -3880,37 +3908,27 @@
       if (s >= sg) break;
       if (sg - s <= 4000 && HW_IN.has(x.t)) side = '입구';
       if (sg - s <= 3000 && HW_OUT.has(x.t)) side = '출구';
+      // 진입 안내 뒤 다른 폐쇄식 톨게이트를 먼저 지나면 그곳이 들어간 입구 — 이번은 나가는 쪽 (수원신갈IC 로 들어와 서울TG 등)
+      if (side === '입구' && x.t === 121 && closed(x)) side = '출구';
     }
     if (side) return side;
     // 안내로 모르면: 같은 경로에 앞서 지난 폐쇄식 톨게이트가 있으면 이번이 출구, 뒤에 또 있으면 이번이 입구
     let before = false, after = false;
     for (const x of nav.guides || []) {
-      if (x === g || x.t !== 121) continue;
-      const o = hipass.o[hipassKey(tollParts(x).name)];
-      if (!o || o.t) continue;
+      if (x === g || x.t !== 121 || !closed(x)) continue;
       if (x.i < g.i) before = true; else after = true;
     }
     return before ? '출구' : after ? '입구' : '';
   }
   // 개방식 영업소(상행·하행)에서 우리 방향: 수도권 방사형 노선(s:1)이면 서울 쪽으로 가면 상행. 애매하면 ''.
-  // 톨게이트 앞뒤 400m 로 진행 방향을 잰다 (진입로 굽이에 흔들리지 않게). 실제 경로: 하남IC→중부 상행 6°, 하남IC 출구(하행) 140°, 판교IC→경부 상행 20°
-  function tollDir(g, o) {
-    if (!o.s || !nav.pts) return '';
-    const last = nav.pts.length - 1, i = Math.min(g.i, last), s0 = nav.cum[i];
-    let a = i, b = i;
-    while (a > 0 && s0 - nav.cum[a] < 400) a--;
-    while (b < last && nav.cum[b] - s0 < 400) b++;
-    if (a === b) return '';
-    const diff = angleDiff(bearing(nav.pts[a], nav.pts[b]), bearing(nav.pts[i], SEOUL));
-    return diff <= 50 ? 'u' : diff >= 130 ? 'd' : '';
-  }
+  const tollDir = (g, o) => (o.s ? towardDir(g, SEOUL) : '');
   // 차로 한 글자씩 (tools/build_hipass.py): H 하이패스 · M 다차로하이패스 · B 하이패스+유인 → 승용차 하이패스(파란 칸),
   // T 유인 · P 정산기 · h/b/t 화물차 차로 → 회색 칸, x 미운영(토목차로)·- 빈 칸 → 흐린 칸
   const LANE_KIND = { H: 'hp', M: 'hp', B: 'hp', T: 'op', P: 'op', h: 'op', b: 'op', t: 'op', x: 'off', '-': 'off' };
   const laneNums = (code) => [...String(code || '')].map((c, k) => (LANE_KIND[c] === 'hp' ? k + 1 : 0)).filter(Boolean);
   // 우리 방향의 차로 줄(code)을 고른다. 방향을 모르면: 두 방향 차로가 같으면 그 줄, 다르면 줄 없이 양쪽 다 하이패스인 번호만 (틀리지 않게)
   function hipassLayout(g) {
-    const o = hipass.o[hipassKey(tollParts(g).name)];
+    const o = hipassOffice(g)[1];
     if (!o) return { code: '', nums: [] };
     let a, b, mine = '';
     if (o.t) { const d = tollDir(g, o); mine = d ? o[d] : ''; a = o.u; b = o.d; } else {

@@ -2210,6 +2210,9 @@
       시험폐쇄: { i: 'HHTxH', x: 'TTPH' },
       시험개방: { t: 1, s: 1, u: 'xHT', d: 'HTT' },
       시험지방: { t: 1, u: 'HTH', d: 'HHT' },
+      시험입구: { i: 'HT', x: 'TH' },
+      서울: { i: 'MMMMxxxxhtttb', x: 'MMMMxxxxTPPxxHHHxTT' },   // 실제 자료 그대로 (2026-06-30)
+      '남양주(본)': { i: 'MMxx', x: 'MMxxH' },
     } };
     const real = { loaded: t.hipass.loaded, count: Object.keys(t.hipass.o).length, 하남: t.hipass.o['하남'], 군자입구: t.laneNums((t.hipass.o['군자'] || {}).i) };
     // 칸이 많으면 회색 칸 무리를 끝 2칸만 남기고 접는다 (2026-11-14 요청). [n] = 파란 칸
@@ -2245,6 +2248,16 @@
       r.sideways = await drive(mkRoute(160, [toll('시험개방'), end]), 2200);           // 옆으로 → 양쪽 공통 없음 → 번호 없음
       t.endNav(); softReset();
       r.ruleOff = await drive(mkRoute(250, [toll('시험지방'), end]), 2200);            // 방향 규칙 없는 곳 → 양쪽 공통 1번만
+      t.endNav(); softReset();
+      // (g) v134 본선 영업소 (2026-11-16 제보: 경부 북행 서울TG 하이패스가 4개만): 서울 쪽이면 출구 줄 1~4·14~16 (바로 앞 IC 진입 안내가
+      //     있어도), 반대면 입구 줄 1~4. 네이버 '남양주톨게이트' → 자료 '남양주(본)'. 진입 → 다른 폐쇄식 톨게이트(입구)를 지난 뒤 톨게이트는 출구
+      r.mainToSeoul = await drive(mkRoute(250, [enter, toll('서울'), end]), 2200);
+      t.endNav(); softReset();
+      r.mainFromSeoul = await drive(mkRoute(70, [toll('서울'), end]), 2200);
+      t.endNav(); softReset();
+      r.mainBon = await drive(mkRoute(250, [toll('남양주'), end]), 2200);
+      t.endNav(); softReset();
+      r.afterEntryTg = await drive(mkRoute(0, [enter, { i: 25, t: 121, s: '시험입구톨게이트 (통행료 800원)' }, { i: 32, t: 121, s: '시험폐쇄톨게이트 (통행료 800원)' }, end]), 2800);
       t.endNav();
       // (f) 실제 경로·실제 자료 (2026-11-14 실제 앱 흉내 주행에서 번호가 안 나왔던 곳): 팔당→하남IC→중부고속도로(서울 쪽) 하남톨게이트 = 상행 2번
       t.setHipassData(null); await t.loadHipass();
@@ -2258,6 +2271,19 @@
       for (let m = 25; m <= fc[110] - 900; m += 25) { const a = pointAt(RR, m); feed(a.p, 25, a.h); t.renderNav(); }
       await new Promise((res) => setTimeout(res, 30)); t.renderNav();
       r.realHanam = snap();
+      t.endNav();
+      // (h) v134 실제 경로 (2026-11-16 제보 상황): 경부 북행 위에서 시작한 경로(재탐색)는 첫 안내가 '서울톨게이트'이고 앞에 진입 안내도
+      //     앞선 톨게이트도 없다 → 본선 영업소 규칙으로 출구 줄 1~4·14~16 (전에는 방향을 몰라 공통 1~4번만). 판교분기점까지만 자른 경로
+      softReset();
+      const sx = await (await realFetch(harnessDir + 'fixtures/route-seoultg-n.json', { cache: 'no-store' })).json();
+      const SP = sx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const sc = [0];
+      for (let k = 1; k < SP.length; k++) sc.push(sc[k - 1] + hav(SP[k - 1], SP[k]));
+      const SR = { route: sx, P: SP, cum: sc, total: sc[sc.length - 1], dest: { name: '판교분기점', addr: '', lat: SP[SP.length - 1].lat, lng: SP[SP.length - 1].lng } };
+      await planAndStart(SR);
+      for (let m = 25; m <= sc[19] - 600; m += 25) { const a = pointAt(SR, m); feed(a.p, 25, a.h); t.renderNav(); }
+      await new Promise((res) => setTimeout(res, 30)); t.renderNav();
+      r.realSeoulTg = snap();
       t.endNav();
     } finally {
       t.setHipassData(null);
@@ -2273,7 +2299,10 @@
       r.realHanam.card && r.realHanam.lanes === '2/5' && r.realHanam.boxes === 5 && r.realHanam.blue === 1 &&
       real.loaded && real.count > 400 && real.하남 && real.하남.u === 'bHPTb' && real.하남.d === 'HPTb' && real.하남.s === 1 && real.군자입구.join(',') === '1,2,3' &&
       real.동서울옆 === '[1] [2] [3] [4] … 24 25' && real.동서울줄 === '[1] [2] [3] [4] … 21 22 23 24 25' &&
-      real.keys === '하남,하남,시흥,남산1호터널';
+      real.keys === '하남,하남,시흥,남산1호터널' &&
+      r.mainToSeoul.lanes === '1,2,3,4,14,15,16/19' && r.mainToSeoul.blue === 7 && r.mainFromSeoul.lanes === '1,2,3,4/13' &&
+      r.mainBon.lanes === '1,2,5/5' && r.afterEntryTg.lanes === '4/4' &&
+      r.realSeoulTg.card && r.realSeoulTg.lanes === '1,2,3,4,14,15,16/19' && r.realSeoulTg.blue === 7;
     return { pass: ok, detail: JSON.stringify(r) + ' | real: ' + JSON.stringify(real) + (ok ? '✓' : '✗') };
   }
 
@@ -2769,7 +2798,7 @@
     { id: 'S50', name: 'S50 traffic colors in five steps (green, yellow, orange, red, dark red) from section speed', fn: s50 },
     { id: 'S51', name: "S51 section cameras found from '구간 시점/종점' place text", fn: s51 },
     { id: 'S52', name: 'S52 on the expressway (entry→exit guides) street cameras below stay quiet even without a section name', fn: s52 },
-    { id: 'S53', name: 'S53 hi-pass lane strip from data/hipass.json (all lanes, hi-pass blue): entry/exit, 상행/하행 toward Seoul, common lanes when unsure', fn: s53 },
+    { id: 'S53', name: 'S53 hi-pass lane strip from data/hipass.json (all lanes, hi-pass blue): entry/exit, 상행/하행 toward Seoul, common lanes when unsure; mainline tollgates (서울TG) by direction', fn: s53 },
     { id: 'S54', name: 'S54 keep-left/right arrows for 왼쪽/오른쪽 방향·도로 주행, OUT/IN for highway exit/entry', fn: s54 },
     { id: 'S55', name: "S55 road caution signs (slippery, rockfall…): 300 m ahead on our side of the route, '주의' just after, setting off", fn: s55 },
     { id: 'S56', name: "S56 dragging the heading-up map keeps the direction, shows '내 위치로', returns after 5 s; pinch/wheel zoom keeps following", fn: s56 },
