@@ -2823,6 +2823,7 @@
     { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored; 7-10 lanes fit the drawer as square tiles", fn: s77 },
     { id: 'S78', name: "S78 mainline junction (v133): keep-left/right where the route stays on the same expressway section and goes straight is shown as straight ('신갈분기점에서 직진 · 서울 방면', main-straight junction scene, straight sign); a fork onto another expressway stays a fork", fn: s78 },
     { id: 'S79', name: 'S79 rest areas (v133): distance to where the entry ramp leaves the mainline (OSM), not the rest-area centre; within 3 km and no turn within 1 km the top row becomes the rest area (blue), next row = the guidance after it', fn: s79 },
+    { id: 'S93', name: "S93 U-turn picks the approach camera (v157, 송파IC 진출램프 끝 유턴: we showed 위례중앙로 50, Naver and the road show 30): after the highway exit guide a section still named '수도권제1순환고속도로' no longer hides the ramp's signal+speed 30, the card 80 m before the U-turn reads 30, and the 50 on the road we turn into is dropped; with equal limits both stay", fn: s93 },
     { id: 'S92', name: "S92 split-then-merge (v156, 수도권1순환 북행 '분기도로 진입' showed '직진'): a direction-less fork on the mainline reads '분기 후 합류' like Naver, with the JC icon whose two arrows go round both sides of the island (symmetric, two arrowheads) and no junction picture; a keep-left on the same mainline is still '직진'", fn: s92 },
     { id: 'S91', name: "S91 highway fork lanes (v153, 신갈분기점 '차선표기'): the next fork cross-section within 1 km shows its lanes in the drawer; the lanes that lead to the branch the route really takes are blue (exit → only the exit lane, main → the through lanes without the bus lane); nothing when neither branch is on the route; real data/forks.json loads", fn: s91 },
     { id: 'S85', name: "S85 hi-pass lanes only for the direction you are driving (v142, driver '가는 방향이 있어 확실히 있는 거야?'): the real 경부·수도권제1순환 route both ways (서울TG exit 1-4,14-16 / entry 1-4,9; 성남TG 상행 1 2 3 8 9 11 / 하행 1 2 3 6 7 9), ring road near-sideways heading = common lanes only, same name for a closed and an open office (대동·서영암·가락) = no lanes", fn: s85 },
@@ -4659,6 +4660,54 @@
       /직진/.test(b.text) && b.kind === 's' &&
       heads === 2 && lo < 14 && hi > 34 && Math.abs((lo + hi) / 2 - 24) < 0.6;
     return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S93: (v157, 2026-11-17 14:01 송파IC 진출램프 끝 유턴 → 위례중앙로 '위례' 방면) 운전자 '여기는 유턴 구간 이기 때문에 30으로 봐야 해'.
+  //      실제 네이버 경로(수도권1순환 → 송파IC 출구 → 램프 끝 유턴): 구간 이름이 유턴 지점까지 '수도권제1순환고속도로'라 램프의 신호·과속 30
+  //      ('송파IC 진출램프', 원본 도로명 '서울외곽순환고속도로')이 고속도로 규칙으로 빠지고 유턴 뒤 위례중앙로 50 만 떴다.
+  //      이제: 출구 안내를 지났으니 램프 30 은 경로 위 카메라, 유턴 80m 앞 카드는 30, 위례중앙로 50(꺾어 들어간 길의 카메라)은 안 뜬다.
+  //      대조: 램프 카메라를 50 으로 바꾸면(제한속도가 같으면) 위례중앙로 50 은 그대로 둔다
+  async function s93() {
+    const t = T(), RAMP30 = { lat: 37.47585, lng: 127.12836 }, ROAD50 = { lat: 37.47555, lng: 127.12838 };
+    const rows = t.cams.rows, ramp = rows.find((c) => sameCam(c, RAMP30)), road = rows.find((c) => sameCam(c, ROAD50));
+    if (!ramp || !road) return { pass: false, detail: 'cameras not in data/cameras.json' };
+    const fx = await (await realFetch(harnessDir + 'fixtures/route-songpaic-uturn.json', { cache: 'no-store' })).json();
+    const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const R = { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '위례', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    const U = cum[fx.guide.find((g) => g.t === 6).i];
+    const run = async () => {
+      await resetApp();
+      softReset();
+      await planAndStart(R);
+      const o = { ramp: null, road: false, at80: null, drops: 0 };
+      try {
+        t.ensureRouteCams();
+        o.onRoute = { ramp: t.nav.routeCams.has(ramp), road: t.nav.routeCams.has(road) };
+        o.drops = t.nav.turnCamDrops || 0;
+        for (let s = 0; s <= R.total - 30; s += 10) {
+          const a = pointAt(R, s);
+          feed(a.p, 40 / 3.6, a.h, { dt: 900 });
+          const tg = t.camState.target;
+          if (tg && sameCam(tg.c, RAMP30) && !o.ramp) o.ramp = { s, d: r0(U - s), limit: text('#camLimit') };
+          if (tg && sameCam(tg.c, ROAD50)) o.road = true;
+          if (o.at80 === null && s >= U - 80) o.at80 = tg ? text('#camLimit') : '';
+        }
+      } finally { t.endNav(); }
+      return o;
+    };
+    const r = {};
+    try {
+      r.real = await run();
+      const keep = ramp[2];
+      ramp[2] = 50;
+      try { r.same = await run(); } finally { ramp[2] = keep; }
+    } finally { await resetApp(); softReset(); }
+    const a = r.real, b = r.same;
+    const ok = a.ramp && a.ramp.limit === '30' && a.at80 === '30' && !a.road && a.onRoute.ramp && !a.onRoute.road && a.drops >= 1 &&
+      b.onRoute.ramp && b.onRoute.road && b.drops === 0;
+    return { pass: !!ok, detail: 'U-turn at ' + r0(U) + ' m ' + JSON.stringify(r) };
   }
 
   // S85: 하이패스 차로는 지금 가는 방향 것만 (v142, 2026-11-16 20:30 성남TG 남행에서 운전자 '하이패스 없는데 왜 자꾸 하이패스

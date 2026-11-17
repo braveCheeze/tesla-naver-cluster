@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-156'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-157'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -2230,7 +2230,8 @@
     return s;
   }
   const camRoad = (c) => (cams.roads && c[7] >= 0 ? cams.roads[c[7]] : '') || '';
-  const roadKey = (s) => String(s || '').replace(/\s+/g, '').replace(/고속도로$/, '고속');
+  // v157: '서울외곽순환고속도로'(경찰청 카메라 자료의 옛 이름)는 '수도권제1순환고속도로'(2020년 바뀐 이름, 네이버 경로 구간)와 같은 길
+  const roadKey = (s) => String(s || '').replace(/\s+/g, '').replace('서울외곽순환', '수도권제1순환').replace(/고속도로$/, '고속');
   // 두 도로 이름이 같은 도로를 가리키는지 (한쪽이 다른 쪽을 포함하면 같다고 본다)
   function sameRoad(a, b) {
     const x = roadKey(a), y = roadKey(b);
@@ -2384,6 +2385,19 @@
     return spans;
   }
   const onHighwayAt = (at) => highwaySpans().some(([a, b]) => at >= a && at <= b);
+  // 경로 거리 at 앞에서 마지막 고속도로 진입·출구 안내가 출구(OUT)인지. v157 (2026-11-17 14:01 송파IC 진출램프 끝 유턴):
+  // 네이버 경로는 출구 연결로 끝(유턴 지점)까지 구간 이름을 '수도권제1순환고속도로'로 준다. 그래서 램프 끝 신호·과속 30 카메라
+  // ('송파IC 진출램프')가 '고속도로 위 저속 카메라'로 빠지고, 유턴 뒤 위례중앙로 50 만 떴다. 출구 안내를 지났으면 이름만으로 고속도로라 하지 않는다
+  function pastHwExit(at) {
+    if (nav.hwEvFor !== nav.route || !nav.hwEv) {
+      const ev = [], last = nav.cum.length - 1;
+      for (const g of nav.guides || []) if (HW_IN.has(g.t) || HW_OUT.has(g.t)) ev.push([nav.cum[Math.min(g.i, last)], HW_OUT.has(g.t)]);
+      nav.hwEv = ev; nav.hwEvFor = nav.route;
+    }
+    let out = false;
+    for (const [s, o] of nav.hwEv) { if (s > at) break; out = o; }
+    return out;
+  }
   function camAtSeg(c, i) {
     const p = camPt(c), a = nav.pts[i], b = nav.pts[i + 1];
     const pr = projectSeg(p, a, b);
@@ -2393,7 +2407,7 @@
     const at = nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]);
     // 고속도로 구간이면 옆·아래 일반도로의 저속 카메라(제한 70 이하, 고속국도 아님)는 제외. 구간 이름이 고속도로이거나,
     // 이름이 없어도 안내상 고속도로 진입~출구 사이면 고속도로 ('분당수서고속화도로' 같은 고속화도로는 고속도로가 아니다)
-    if ((/고속도로|고속국도/.test(rn) || onHighwayAt(at)) && c[8] !== 1 && c[2] <= 70) return null;
+    if (((/고속도로|고속국도/.test(rn) && !pastHwExit(at)) || onHighwayAt(at)) && c[8] !== 1 && c[2] <= 70) return null;
     if (!camLevelOk(c, at)) return null;                    // 지하차도·고가로 넘어가는 곳의 지상 카메라 등
     // 찍는 방향이 이 자리 경로 방향과 50° 안. 교차로에서 꺾는 곳이면 들어오는 쪽(30m 전)·나가는 쪽(30m 뒤) 방향도 본다
     // (가락시장역교차로에서 좌회전: 들어오는 송파대로 북행 카메라). 설치장소 'A→B' 가 안내 문구로 갈리면 그게 먼저:
@@ -2424,8 +2438,36 @@
       }
     }
     nav.routeCamsUpto = i;
-    if (added) list.sort((x, y) => x.at - y.at);
+    if (added) { list.sort((x, y) => x.at - y.at); pruneTurnCams(); }
     return true;
+  }
+  // v157 (2026-11-17 14:01 운전자 '여기는 유턴 구간이기 때문에 30으로 봐야 해', 송파IC 진출램프 끝 유턴 → 위례중앙로):
+  // 경로가 꺾는(유턴·좌회전·우회전) 교차로에 제한속도가 다른 카메라가 함께 걸리면, 들어가는 쪽(내 접근로)을 찍는 카메라만 남긴다.
+  // 꺾어 들어간 길의 신호 카메라는 그 길로 곧장 오는 차를 그 정지선에서 찍는다 (네이버도 램프 30 만 보여 준다).
+  // 꺾은 지점 60m 전 ~ 40m 뒤의 카메라 중, 찍는 방향이 들어오는 방향(꺾기 40m 전~3m 전)과 맞는 것이 있으면
+  // 꺾은 뒤 방향만 맞는 신호 카메라(제한속도가 그것들과 다른 것)를 경로 위 목록에서 뺀다. 접근로 카메라가 없으면 그대로 둔다
+  const TURN_CAM_KINDS = new Set(['u', 'l', 'r', 'sl', 'sr', 'sharp_l', 'sharp_r']);
+  function pruneTurnCams() {
+    const list = nav.routeCamList, m = nav.routeCams, last = nav.cum.length - 1;
+    for (const g of nav.guides || []) {
+      if (!TURN_CAM_KINDS.has(turnKind0(g))) continue;
+      const T = nav.cum[Math.min(g.i, last)];
+      const near = list.filter((x) => x.at >= T - 60 && x.at <= T + 40 && camWanted(x.c));
+      if (near.length < 2) continue;
+      const inB = routeBearingAt(T - 40, T - 3), outB = routeBearingAt(T + 3, T + 40);
+      if (inB === null || outB === null) continue;
+      const appr = near.filter((x) => camHasDir(x.c) && x.at <= T + 5 && angleDiff(x.c.eb, inB) <= CAM_DIR_TOL);
+      if (!appr.length) continue;
+      for (const x of near) {
+        if (!isSignalCam(x.c) || !camHasDir(x.c) || x.at < T - 15 || appr.includes(x)) continue;
+        if (angleDiff(x.c.eb, inB) <= CAM_DIR_TOL || angleDiff(x.c.eb, outB) > CAM_DIR_TOL) continue;
+        if (appr.some((a) => a.c[2] === x.c[2])) continue;          // 제한속도가 같으면 그대로 (헷갈릴 일이 없다)
+        list.splice(list.indexOf(x), 1);
+        const arr = (m.get(x.c) || []).filter((v) => v !== x.at);
+        if (arr.length) m.set(x.c, arr); else m.delete(x.c);
+        nav.turnCamDrops = (nav.turnCamDrops || 0) + 1;
+      }
+    }
   }
   // 길안내 중: 카메라가 남은 경로 위(경고 거리 안)에 있는지
   function camOnRouteAhead(c) {
@@ -3521,7 +3563,7 @@
     // 달리는 중 다시 찾은 경로(재탐색·재추천·경유지·교통 갱신)는 출발 직후 유예(주차장 출발용 20초) 없이 바로 벗어남을 센다
     nav.rerouted = !!keepAlerts;
     nav.setAt = state.fix ? state.fix.t : Date.now(); nav.drawnSeg = 0; nav.drawnAlong = 0; nav.drawnAt = 0;
-    nav.routeCams = null; nav.routeCamList = []; camState.markerAt = null; // 경로 위 카메라·지도 표시를 새 경로로
+    nav.routeCams = null; nav.routeCamList = []; nav.turnCamDrops = 0; camState.markerAt = null; // 경로 위 카메라·지도 표시를 새 경로로
     nav.routeBumps = null; bumpState.markerKey = '';
     nav.routeSigns = null; tollState.numsKey = '';
     nav.routeTunnels = null;
@@ -3686,7 +3728,7 @@
     clearTimeout(nav.retryT); nav.retryT = null;
     nav.active = false; nav.preview = false;
     nav.route = null; nav.pts = null; nav.cum = null; nav.dest = null; nav.guides = [];
-    nav.routeCams = null; nav.routeCamList = []; camState.markerAt = null; camState.peekAt = 0;
+    nav.routeCams = null; nav.routeCamList = []; nav.turnCamDrops = 0; camState.markerAt = null; camState.peekAt = 0;
     nav.alts = null; nav.altIdx = 0; nav.via = []; nav.comparing = false; nav.compareBase = null;
     if (mapA) { mapA.clearRoute(); if (mapA.drawAlts) mapA.drawAlts([]); }
     if (mapA && mapA.setDest) mapA.setDest(null);
