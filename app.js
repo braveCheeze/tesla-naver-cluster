@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-157'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-158'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -1619,6 +1619,8 @@
     if (!b) return;
     $('#bumpLabel').textContent = b.cont ? '연속 과속방지턱' : '과속방지턱';
     $('#bumpDist').textContent = fmtDist(b.d);
+    el._d = b.d;
+    orderAlerts();
   }
   // ---------- 고속도로 휴게소 (한국도로공사 휴게소 위치정보 202곳, data/rest.json · tools/build_rest.py, 2026-11-14 요청) ----------
   // 길안내 경로가 고속도로를 지날 때 그 옆 400m 안의 휴게소 중 내 진행 방향 쪽 것만 고른다: 우측 통행이라 경로 오른쪽
@@ -1847,7 +1849,7 @@
   function renderPark() {
     const el = $('#parkCard'), p = parkState.near;
     el.hidden = !p;
-    if (p) $('#parkDist').textContent = fmtDist(p.d);
+    if (p) { $('#parkDist').textContent = fmtDist(p.d); el._d = p.d; orderAlerts(); }
   }
   // ---------- 주의 표지 (전국도로안전표지표준데이터의 주의표지, data/signs.json · tools/build_signs.py) ----------
   // 다른 내비의 '미끄럼 주의'처럼 미끄러운 도로·낙석·급경사 같은 주의 표지를 300m 앞부터 표지 그림 + 거리로 알린다 (2026-11-14 요청).
@@ -1996,6 +1998,8 @@
       el.dataset.type = t.id;
     }
     $('#signDist').textContent = s.passed ? '주의' : fmtDist(s.d);
+    el._d = s.passed ? 0 : s.d;
+    orderAlerts();
   }
   // ---------- 터널 (OpenStreetMap 의 터널 도로, data/tunnels.json · tools/build_tunnels.py) ----------
   // 네이버 길찾기 안내에는 터널이 없다 (지하차도는 있음). 길안내 경로가 지나는 터널을 찾아
@@ -2119,6 +2123,7 @@
     // AI 로 그린 터널 아이콘(icons.js 의 tunnel)이 있으면 그것, 없으면 앱에 그려 둔 아치
     if (!ic.firstChild) ic.innerHTML = pickImg('tunnel') || (window.TNC_ICONS && window.TNC_ICONS.tunnel ? icoBase('tunnel') : TUNNEL_ICON);
     el.classList.toggle('inside', a.inside);
+    el._d = a.d;   // 줄 순서 (v158): 터널 안이면 출구, 밖이면 입구까지
     const name = a.t.name || '터널';
     $('#tunnelDist').textContent = fmtDist(a.d);
     $('#tunnelText').textContent = a.inside ? name + ' 출구까지' : name + ' 입구까지' + (a.t.len >= 1000 ? ' · 길이 ' + fmtDist(a.t.len) : '');
@@ -2710,6 +2715,7 @@
       // 테슬라 모드에서는 '다음 단속' 글자 없이 제한속도 표지 + 거리만 (표지만 봐도 안다). 글자는 화면 읽기용으로 남긴다
       nxEl.innerHTML = '<span class="mini-sign' + (pk.c[3] === 3 ? ' k3' : '') + (pk.c[3] === 8 || isBox(pk.c) ? ' mob' : '') + '">' + (pk.c[2] || '?') + '</span><span class="nx-label">다음 단속 </span><b>' + fmtDist(d) + '</b>';
       nxEl.setAttribute('aria-label', '다음 단속 ' + fmtDist(d));
+      nxEl._d = d;
     }
     if (!tg || !prefs.cams) {
       // 테슬라 모드에서 서랍이 열려 있으면 위로 접히는 동안(0.36초)은 내용을 그대로 두었다가 숨긴다.
@@ -2724,6 +2730,7 @@
       // 지나간 뒤에도 CAM_HOLD(30m)까지는 카메라 바로 앞인 것처럼 그대로 보여 주고(오차 거리는 따로 알리지 않음), 그 뒤 사라진다
       $('#camType').textContent = camLabel(tg.c);
       $('#camDist').textContent = tg.after ? '통과' : fmtDist(camShownDist(tg));   // v112: 지나친 뒤 '0m' 대신 (문구 검토)
+      card._d = tg.after ? 0 : Math.max(0, tg.d);   // 서랍 칸 순서 (v158)
       const span = Math.max(tg.first, 300);
       $('#camBar').style.width = tg.after ? '100%' : Math.max(0, Math.min(100, (1 - tg.d / span) * 100)) + '%';
       card.classList.toggle('over', speedCam && tg.c[2] > 0 && state.speedKmh > tg.c[2] + 1 && tg.d < 600);
@@ -2767,6 +2774,7 @@
     (q !== '#camCard' && !$('#camCard').hidden);
   function syncDrawer() {
     const dr = $('#camDrawer');
+    orderAlerts();   // v158: 서랍 칸·작은 칸을 가까운 순서로
     if (drawer.closing) return;
     const any = DRAWER_ITEMS.some((q) => !$(q).hidden);
     if (any === dr.classList.contains('open')) return;
@@ -2793,6 +2801,47 @@
     clearTimeout(drawer.hideT);
     drawer.closing = false;
   }
+  // ---------- 가까운 것이 위로 (v158) ----------
+  // 2026-11-17 20:04 이배재터널 안 운전자 '우리 가까운 순서가 위로 올라오기로 했는데 … 전체적으로 확인해볼래':
+  // 안내 카드 밑 줄(그다음 안내·터널·휴게소·주차장 입구), 단속 서랍 칸(차로·분기점 그림·단속·구간단속·하이패스),
+  // 서랍 밑 작은 칸(과속방지턱·주정차 단속·주의 표지·다음 단속)을 각 묶음 안에서 차에서부터 경로를 따라 잰 거리(_d)가 가까운 것이 위로.
+  // 이웃한 두 칸은 아래 칸이 ROW_HYST 넘게 더 가까울 때만 자리를 바꾼다 (같은 교차로처럼 거리가 비슷하면 지금 순서 그대로 — 오르내리지 않게).
+  // 숨은 칸은 보이는 칸 밑에 처음(HTML) 순서대로 모아 둔다 (새로 뜨는 칸은 맨 밑에서 시작해 더 가까우면 그 자리에서 바로 올라간다).
+  // 바꿀 것이 없으면 DOM 을 건드리지 않는다. groups: [[기준 칸, 함께 다니는 칸…], …] (HTML 순서), 기준 칸이 보일 때만 센다
+  const ROW_HYST = 25;
+  const docBefore = (a, b) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+  function orderByDist(groups) {
+    groups = groups.filter((g) => g[0]);
+    if (groups.length < 2) return false;
+    const shown = (g) => !g[0].hidden && Number.isFinite(g[0]._d);
+    const cur = groups.slice().sort((a, b) => (docBefore(a[0], b[0]) ? -1 : 1));   // 지금 DOM 순서
+    const want = cur.filter(shown);
+    for (let pass = 0; pass < want.length; pass++) {
+      let swapped = false;
+      for (let k = 0; k + 1 < want.length; k++) {
+        if (want[k + 1][0]._d < want[k][0]._d - ROW_HYST) { const t = want[k]; want[k] = want[k + 1]; want[k + 1] = t; swapped = true; }
+      }
+      if (!swapped) break;
+    }
+    for (const g of groups) if (!shown(g)) want.push(g);
+    const flat = (list) => list.reduce((a, g) => a.concat(g.filter(Boolean)), []);
+    const wantEls = flat(want), curEls = flat(cur).sort((a, b) => (docBefore(a, b) ? -1 : 1));
+    if (wantEls.every((el, k) => el === curEls[k])) return false;
+    const parent = curEls[0].parentNode;
+    let at = curEls[0].previousSibling;
+    for (const el of wantEls) {
+      if (el.parentNode !== parent) continue;
+      if (at) at.after(el); else parent.prepend(el);
+      at = el;
+    }
+    return true;
+  }
+  // 서랍 칸과 서랍 밑 작은 칸 (서랍이 접히는 동안은 그대로). 내 속도 띠는 단속 카드에 딸려 다닌다(테슬라 모드에서는 CSS 로 서랍 맨 위)
+  function orderAlerts() {
+    if (drawer.closing) return;
+    orderByDist([[$('#laneRow')], [$('#juncCard')], [$('#camCard'), $('#mySpeed'), $('#zoneBadge')], [$('#secCard')], [$('#tollCard')]]);
+    orderByDist([[$('#bumpCard')], [$('#parkCard')], [$('#signCard')], [$('#camNext')]]);
+  }
   // 구간단속 계산: 평균 속도, 남은 거리, 평균을 넘었을 때 남은 구간에서 지킬 속도(need)
   function sectionStats(s) {
     const now = state.fix ? state.fix.t : Date.now();
@@ -2817,6 +2866,7 @@
     if (!s) { card.hidden = true; return; }
     card.hidden = false;
     const st = sectionStats(s);
+    card._d = st.remain !== null ? st.remain : 0;   // 서랍 칸 순서 (v158): 구간 끝까지
     $('#secLimit').textContent = s.limit;
     $('#secAvg').textContent = st.avg === null ? '-' : Math.round(st.avg);
     let line = st.remain !== null ? '남은 거리 ' + fmtDist(st.remain) + (st.minLeft !== null ? ' · ' + mmss(st.minLeft) : '') : fmtDist(st.done) + ' 주행';
@@ -3802,6 +3852,22 @@
   // 네이버는 '오른쪽 방향'(4·5, 방향 있는 전방 분기)은 굵은 화살표 하나가 그쪽으로 휘는 그림('4.1km 대전'),
   // '오른쪽 도로 주행'(41·42)과 본선을 그대로 가는 갈림길은 직진 화살표 밑동이 반대쪽에서 살짝 넘어오는 그림('1.6km')이다.
   // 예전엔 둘 다 구불구불한 S 자(kl/kr)였고 본선 그대로는 직진 화살표만이었다. 좌우는 turnKind0 그대로 (종류·차로·지도 화살표는 turnKind 그대로)
+  // 그다음 칸 거리의 기준 글자 (v158): 위 안내 줄이 가리키는 곳. 하는 동작이면 '좌회전 후', 지나가는 곳이면 '톨게이트 지나'
+  const AFTER_WORD = {
+    l: '좌회전 후', sharp_l: '좌회전 후', rb_l: '좌회전 후', r: '우회전 후', sharp_r: '우회전 후', rb_r: '우회전 후',
+    u: '유턴 후', rb_u: '유턴 후', s: '직진 후', rb_s: '직진 후',
+    sl: '갈림길 지나', sr: '갈림길 지나', kl: '갈림길 지나', kr: '갈림길 지나', jc: '갈림길 지나',
+    ins: '진입 후', inl: '진입 후', inr: '진입 후', outs: '진출 후', outl: '진출 후', outr: '진출 후',
+    over_s: '고가차도 진입 후', over_l: '고가차도 진입 후', over_r: '고가차도 진입 후',
+    under_s: '지하차도 진입 후', under_l: '지하차도 진입 후', under_r: '지하차도 진입 후',
+    side_l: '옆길 진입 후', side_r: '옆길 진입 후', oside_l: '옆길 진입 후', oside_r: '옆길 진입 후',
+    toll: '톨게이트 지나', rest: '휴게소 지나', via: '경유지 지나', ferry: '도선 후',
+  };
+  function afterWord(g, under, over) {
+    if (under) return '지하차도 진입 후';
+    if (over) return '고가차도 진입 후';
+    return AFTER_WORD[turnKind(g)] || '앞 안내 후';
+  }
   function iconKind(g) {
     if (!g) return 'goal';
     const k0 = turnKind0(g);
@@ -4322,6 +4388,7 @@
       return;
     }
     cancelDrawerClose();
+    el._d = nav.dg;   // 서랍 칸 순서 (v158): 안내 지점까지
     const key = g.i + ':' + g.t + ':' + g.s;
     if (juncState.key !== key) {
       juncState.key = key;
@@ -4554,6 +4621,7 @@
     const p = tollParts(g);
     $('#tollName').textContent = p.name;
     $('#tollDist').textContent = fmtDist(ahead);
+    el._d = ahead;
     // 이 톨게이트가 길안내 패널의 다음 안내면 거리가 패널에 크게 나오므로 여기서는 뺀다 (2026-11-14: 같은 미터기는 안 보여도 됨).
     // 그다음 칸('TG 300m')에 나올 때도 뺀다 (2026-11-14 실제 앱 흉내 주행 화면에 사용자가 '700m'에 X 표시: 패널의 'TG 300m'와 겹쳐 헷갈림.
     // 거리를 빼면 이름 '하남톨게이트'도 잘리지 않는다)
@@ -4926,6 +4994,7 @@
     }
     cancelDrawerClose();
     el.hidden = false;
+    el._d = hit.d != null ? hit.d : nav.dg != null ? nav.dg : Infinity;   // 서랍 칸 순서 (v158): 갈림길·직진 교차로는 그곳, 회전 차로는 안내 지점까지
     const box = el;
     const key = (hit.fork ? 'f:' : hit.M === 'S' ? 's:' : g.i + ':' + g.t + ':') + hit.k;
     const head = hit.fork || hit.M === 'S';   // 칸 위 머리줄 (분기 차로·직진 교차로)
@@ -5032,6 +5101,7 @@
     renderToll();
     renderJunction();
     renderNavPanel();
+    orderAlerts();
     placeAlerts(); // 안내 패널 높이가 바뀌면 그 밑의 단속 경고도 따라 움직인다
     checkTripCover();
   }
@@ -5110,12 +5180,20 @@
     //   그다음이 회전이면 네이버 지도처럼 그 회전 아이콘 + 거리만 '↰ 1.2km' (2026-11-14: '직진 … 좌회전'처럼 풀어 쓰지 않음)
     //   그다음이 목적지면 연한 빨강 바탕에 빨간 핀 + '20m', 경유지면 주황 (2026-11-14: '도착' 글자는 빼고 핀·바탕색으로만 구분)
     // v133: 위 줄이 휴게소면 그다음 칸은 지금 안내 (거리 = 휴게소 진입로 → 그 안내 지점, 네이버 '휴게소 3km' 밑 'TG 3.9km' 처럼)
+    // v158 (2026-11-17 20:04 이배재터널 안 '1.8km 좌회전' 밑에 '370m 터널 출구까지', 그 밑 '↗ 230m' — 운전자 '가까운 순서가 위로 올라오기로 했는데'):
+    //   230m 는 좌회전 지점부터 잰 거리(차에서는 2.0km)라 순서는 맞았지만 기준이 달라 거꾸로 보였다. 거리는 네이버처럼 위 안내 지점부터 재고
+    //   ('휴게소 3km' 밑 'TG 3.9km' 도 휴게소부터), 기준을 옆에 작게 쓴다: '230m 좌회전 후'. 위 줄이 터널이면 터널 출구부터 ('터널 지나')
     const g2 = restMain ? g : g ? nav.guides[nav.gi + 1] : null;
     const nn = $('#nextTurn');
     nn.hidden = !g2;
     if (g2) {
       const last = nav.cum.length - 1;
-      const gap = restMain ? Math.max(0, nav.dg - rs.d) : Math.max(0, nav.cum[Math.min(g2.i, last)] - nav.cum[Math.min(g.i, last)]);
+      const g2at = nav.cum[Math.min(g2.i, last)] - nav.along;   // 차에서 그다음 안내 지점까지 (줄 순서에 쓴다)
+      const tnOut = tnMain ? (ta0.inside ? ta0.d : Math.max(ta0.d, ta0.t.s1 - nav.along)) : 0;
+      const gap = restMain ? Math.max(0, nav.dg - rs.d) : tnMain ? Math.max(0, g2at - tnOut) : Math.max(0, nav.cum[Math.min(g2.i, last)] - nav.cum[Math.min(g.i, last)]);
+      nn._d = restMain ? nav.dg : g2at;
+      $('#nextAfter').textContent = restMain ? '휴게소 지나' : tnMain ? '터널 지나' : afterWord(g, tunnelStep, overStep);
+      nn.setAttribute('aria-label', '그다음 안내 · ' + $('#nextAfter').textContent + ' ' + fmtDist(gap));
       const k2 = turnKind(g2);
       const isVia = g2.t === 87 || /경유지/.test(g2.s || '');
       const isGoal = !isVia && (k2 === 'goal' || k2 === 'via');
@@ -5132,15 +5210,11 @@
     const remain = nav.remain != null ? nav.remain : nav.total;
     const remMs = nav.route.duration * (remain / Math.max(1, nav.total));
     renderTunnel();
-    // 가까운 것이 위로: 터널(진입·출구까지)이 그다음 칸(지금 안내 지점 + 그 뒤 거리)보다 가까우면 터널 줄을 그다음 칸 위로
-    {
-      const tr = $('#tunnelRow'), ta = !tr.hidden ? tunnelAhead() : null;
-      const chipAt = restMain ? nav.dg : g2 && nav.dg != null ? nav.dg + Math.max(0, nav.cum[Math.min(g2.i, nav.cum.length - 1)] - nav.cum[Math.min(g.i, nav.cum.length - 1)]) : Infinity;
-      if (tnMain) tr.hidden = true;   // v118: 안내 줄이 터널을 보여 주면 작은 터널 줄은 숨김
-      const up = !!(ta && !tr.hidden && !nn.hidden && ta.d < chipAt);
-      if (up && tr.nextElementSibling !== nn) nn.parentNode.insertBefore(tr, nn);
-      else if (!up && nn.nextElementSibling && nn.nextElementSibling !== tr && tr.nextElementSibling === nn) nn.parentNode.insertBefore(tr, nn.nextElementSibling);
-    }
+    if (tnMain) $('#tunnelRow').hidden = true;   // v118: 안내 줄이 터널을 보여 주면 작은 터널 줄은 숨김
+    // 가까운 것이 위로 (v109 터널 줄 → v158 모든 줄): 그다음 안내·터널·휴게소·주차장 입구 줄을 차에서부터 잰 거리 순서로
+    $('#restCard')._d = rs ? rs.d : Infinity;
+    $('#parkGoal')._d = remain;
+    orderByDist([[nn], [$('#tunnelRow')], [$('#restCard')], [$('#parkGoal')]]);
     $('#navRemain').textContent = fmtDist(remain);
     $('#navTime').textContent = fmtMin(remMs);
     $('#navEta').textContent = hhmm(new Date(Date.now() + remMs)) + ' 도착';   // 오른쪽 막대·경로 카드와 같은 순서
@@ -6920,6 +6994,7 @@
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
+      orderByDist, orderAlerts, afterWord,
     };
   }
 })();

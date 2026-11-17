@@ -2823,7 +2823,8 @@
     { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored; 7-10 lanes fit the drawer as square tiles", fn: s77 },
     { id: 'S78', name: "S78 mainline junction (v133): keep-left/right where the route stays on the same expressway section and goes straight is shown as straight ('신갈분기점에서 직진 · 서울 방면', main-straight junction scene, straight sign); a fork onto another expressway stays a fork", fn: s78 },
     { id: 'S79', name: 'S79 rest areas (v133): distance to where the entry ramp leaves the mainline (OSM), not the rest-area centre; within 3 km and no turn within 1 km the top row becomes the rest area (blue), next row = the guidance after it', fn: s79 },
-    { id: 'S93', name: "S93 U-turn picks the approach camera (v157, 송파IC 진출램프 끝 유턴: we showed 위례중앙로 50, Naver and the road show 30): after the highway exit guide a section still named '수도권제1순환고속도로' no longer hides the ramp's signal+speed 30, the card 80 m before the U-turn reads 30, and the 50 on the road we turn into is dropped; with equal limits both stay", fn: s93 },
+    { id: 'S94', name: "S94 closer rows on top (v158, 이배재터널 안 '370m 터널 출구까지' above '↗ 230m' looked upside down — 230m was measured from the left turn, 2.0 km from the car): card rows (tunnel, rest, next guide, parking entrance), drawer cards (lanes, junction, camera, section, hi-pass) and small chips are ordered by distance from the car; the next row keeps Naver's distance from the guide above but says so ('230m 좌회전 후', '830m 터널 지나'); rows within 25 m keep their place, the order changes only once on a 1 km sweep, hidden rows go back to HTML order", fn: s94 },
+    { id: 'S93', name:"S93 U-turn picks the approach camera (v157, 송파IC 진출램프 끝 유턴: we showed 위례중앙로 50, Naver and the road show 30): after the highway exit guide a section still named '수도권제1순환고속도로' no longer hides the ramp's signal+speed 30, the card 80 m before the U-turn reads 30, and the 50 on the road we turn into is dropped; with equal limits both stay", fn: s93 },
     { id: 'S92', name: "S92 split-then-merge (v156, 수도권1순환 북행 '분기도로 진입' showed '직진'): a direction-less fork on the mainline reads '분기 후 합류' like Naver, with the JC icon whose two arrows go round both sides of the island (symmetric, two arrowheads) and no junction picture; a keep-left on the same mainline is still '직진'", fn: s92 },
     { id: 'S91', name: "S91 highway fork lanes (v153, 신갈분기점 '차선표기'): the next fork cross-section within 1 km shows its lanes in the drawer; the lanes that lead to the branch the route really takes are blue (exit → only the exit lane, main → the through lanes without the bus lane); nothing when neither branch is on the route; real data/forks.json loads", fn: s91 },
     { id: 'S85', name: "S85 hi-pass lanes only for the direction you are driving (v142, driver '가는 방향이 있어 확실히 있는 거야?'): the real 경부·수도권제1순환 route both ways (서울TG exit 1-4,14-16 / entry 1-4,9; 성남TG 상행 1 2 3 8 9 11 / 하행 1 2 3 6 7 9), ring road near-sideways heading = common lanes only, same name for a closed and an open office (대동·서영암·가락) = no lanes", fn: s85 },
@@ -4294,9 +4295,10 @@
       r.markers = (t.getMap().restMk || []).length;
       // v132: 안내 카드 안, 터널 줄 밑 '안내 종료' 줄 바로 위 파란 줄. 그다음 휴게소 이름이 길어도 거리는 카드 안에 보인다
       { const el = document.getElementById('restCard'), nx = document.getElementById('restNext');
-        // v145: 그 사이에 도착 가까이에서만 보이는 주차장 입구 줄(#parkGoal)
-        const nx2 = el.nextElementSibling && el.nextElementSibling.id === 'parkGoal' ? el.nextElementSibling.nextElementSibling : el.nextElementSibling;
-        r.place = el.parentElement.id === 'navPanel' && el.previousElementSibling.id === 'tunnelRow' && nx2.classList.contains('navmeta');
+        // v158: 카드 안 줄은 차에서부터 가까운 순서 — 휴게소(50m)가 그다음 칸(우회전, 차에서 550m)보다 위, 맨 밑은 '안내 종료' 줄
+        r.order = [...document.getElementById('navPanel').children].filter((e) => !e.hidden && getComputedStyle(e).display !== 'none')
+          .map((e) => e.id || e.className.split(' ')[0]).join('>');
+        r.place = el.parentElement.id === 'navPanel' && r.order === 'navdest>turn>restCard>nextTurn>navmeta';
         r.blue = getComputedStyle(el).backgroundColor === 'rgb(29, 79, 184)';
         const sp = nx.querySelector('span'); const keep = sp.textContent; sp.textContent = '다음 서울하이패스센터쉼터아주아주긴이름';
         const pr = document.getElementById('navPanel').getBoundingClientRect(), db = nx.querySelector('b').getBoundingClientRect(), nb = document.getElementById('restDist').getBoundingClientRect();
@@ -4708,6 +4710,116 @@
     const ok = a.ramp && a.ramp.limit === '30' && a.at80 === '30' && !a.road && a.onRoute.ramp && !a.onRoute.road && a.drops >= 1 &&
       b.onRoute.ramp && b.onRoute.road && b.drops === 0;
     return { pass: !!ok, detail: 'U-turn at ' + r0(U) + ' m ' + JSON.stringify(r) };
+  }
+
+  // S94: 가까운 것이 위로 (v158, 2026-11-17 20:04 이배재터널 안 서행: '1.8km 좌회전' 밑 '370m 이배재터널 출구까지', 그 밑 '↗ 230m' —
+  //      운전자 '우리 가까운 순서가 위로 올라오기로 했는데 … 전체적으로 확인해볼래'. 230m 는 좌회전 지점부터 잰 거리(차에서 2.0km)였다).
+  //      북쪽 2.6km 고속도로 구간: 1.8km 좌회전 · 2,030m 1시 방향 · 2.6km 도착, 300~970m 터널, 1.9km 오른쪽 휴게소.
+  //      (a) 터널 안 600m: 카드 줄 순서 터널(370m) > 휴게소(1.3km) > 그다음(↗ '230m 좌회전 후', 차에서 1.43km)
+  //      (b) 200 → 1,250m 를 10m 씩: 줄 순서가 바뀌는 건 터널을 나올 때 한 번뿐 (오르내림 없음)
+  //      (c) 위 안내가 직진이라 터널이 안내 줄에 오르면 그다음 칸은 터널 출구부터: '830m 터널 지나' (차에서 1.2km 라 휴게소 1.3km 보다 위)
+  //      (d) 같은 함수: 25m 안으로 비슷하면 자리를 그대로, 넘게 차이 나면 바꾸고, 숨은 칸은 밑으로 (가짜 칸 세 개)
+  //      (e) 서랍: 단속(200m)이 하이패스(800m)보다 위, 하이패스가 더 가까우면 하이패스가 위, 다 숨으면 처음(HTML) 순서로
+  async function s94() {
+    const t = T(), r = {};
+    const P = [];
+    for (let k = 0; k <= 260; k++) { const p = dest(NAV_ORIGIN, 0, 10 * k); P.push({ lat: round6(p.lat), lng: round6(p.lng) }); }
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const total = cum[cum.length - 1];
+    const ms = (m) => r0(m / 20 * 1000);
+    const mkR = (straightFirst) => {
+      const gl = [
+        { i: 180, t: 2, s: "이배재사거리에서 '성남시청' 방면으로 좌회전" },
+        { i: 203, t: 14, s: "'시청' 방면으로 1시 방향" },
+        { i: 260, t: 88, s: '목적지' },
+      ];
+      if (straightFirst) gl.unshift({ i: 120, t: 1, s: '직진' });
+      let prev = 0;
+      const guide = gl.map((g) => { const x = Object.assign({ d: r0(cum[g.i] - prev), ms: ms(cum[g.i] - prev) }, g); prev = cum[g.i]; return x; });
+      return { route: { distance: r0(total), duration: ms(total), tollFare: 0, fuelPrice: 160, path: P.map((p) => [p.lng, p.lat]), guide,
+        sections: [{ i: 0, n: 261, name: '테스트고속도로', speed: 80, cong: 1 }] },
+        P, cum, total, dest: { name: '테스트 목적지', addr: '', lat: P[260].lat, lng: P[260].lng } };
+    };
+    const north = (m) => dest(NAV_ORIGIN, 0, m);
+    const enc = (pts) => {
+      const q = pts.map((x) => [Math.round(x.lat * 1e5), Math.round(x.lng * 1e5)]);
+      const row = [0, 1, q[0][0], q[0][1]];
+      for (let k = 1; k < q.length; k++) row.push(q[k][0] - q[k - 1][0], q[k][1] - q[k - 1][1]);
+      return row;
+    };
+    const cardOrder = () => [...document.getElementById('navPanel').children].filter((e) => !e.hidden && getComputedStyle(e).display !== 'none')
+      .map((e) => e.id || e.className.split(' ')[0]).join('>');
+    const drawerOrder = (all) => [...document.querySelector('#camDrawer .cd-in').children].filter((e) => all || !e.hidden).map((e) => e.id).join('>');
+    const prevT = t.prefs.tunnels, prevR = t.prefs.rest;
+    try {
+      t.prefs.tunnels = true; t.prefs.rest = true;
+      t.setTunnelData({ v: 1, scale: 1e5, names: ['이배재터널'], w: [enc([north(300), north(600), north(970)])] });
+      const RS = dest(north(1900), 90, 90);
+      t.setRestData({ count: 1, items: [[RS.lat, RS.lng, '테스트휴게소', '', '테스트선']] });
+      let R = mkR(false);
+      softReset();
+      await planAndStart(R);
+      const go = (s) => { const a = pointAt(R, s); feed(a.p, 20, a.h); t.renderNav(); };
+      for (let s = 100; s <= 600; s += 20) go(s);
+      r.a = { order: cardOrder(), main: text('#turnDist') + ' ' + text('#turnText'), tunnel: text('#tunnelDist') + ' ' + text('#tunnelText'),
+        rest: text('#restName') + ' ' + text('#restDist'), next: text('#nextDist') + ' ' + text('#nextAfter') };
+      t.endNav(); softReset();
+      // (b) 줄 순서가 바뀌는 횟수
+      await planAndStart(R);
+      const seen = [];
+      for (let s = 200; s <= 1250; s += 10) { go(s); const o = cardOrder(); if (seen[seen.length - 1] !== o) seen.push(o); }
+      r.b = seen;
+      t.endNav(); softReset();
+      // (c) 위 안내가 직진 → 터널이 안내 줄, 그다음 칸은 터널 출구부터
+      R = mkR(true);
+      await planAndStart(R);
+      for (let s = 100; s <= 600; s += 20) go(s);
+      r.c = { order: cardOrder(), main: text('#turnDist') + ' ' + text('#turnText'), next: text('#nextDist') + ' ' + text('#nextAfter') };
+      t.endNav(); softReset();
+    } finally {
+      t.prefs.tunnels = prevT; t.prefs.rest = prevR;
+      t.setTunnelData(null);
+      await t.loadTunnels();
+      try { const j = await (await realFetch(new URL('../data/rest.json', location.href).href, { cache: 'no-store' })).json(); t.setRestData(j); } catch (e) { /* 다음 실행 때 */ }
+      softReset();
+    }
+    // (d) 거리 비슷함·숨김
+    {
+      const box = document.createElement('div');
+      const mk = (id, d) => { const e = document.createElement('div'); e.id = 'x' + id; e._d = d; box.appendChild(e); return e; };
+      const A = mk('A', 100), B = mk('B', 300), C = mk('C', 500), G = [[A], [B], [C]];
+      const ord = () => [...box.children].map((e) => (e.hidden ? '-' : '') + e.id.slice(1)).join('');
+      const step = () => { t.orderByDist(G); return ord(); };
+      r.d = [step()];
+      C._d = 290; r.d.push(step());          // 10m 차이: 그대로 ABC
+      C._d = 260; r.d.push(step());          // 40m 차이: ACB
+      B._d = 250; r.d.push(step());          // 10m 차이: 그대로 ACB
+      A.hidden = true; r.d.push(step());     // 숨은 칸은 밑으로: CB-A
+      A.hidden = false; A._d = 20; r.d.push(step());   // 다시 보이며 가장 가까움: ACB
+    }
+    // (e) 서랍 칸 (길안내 없이 거리만 넣어서)
+    {
+      const cam = document.getElementById('camCard'), toll = document.getElementById('tollCard');
+      const keep = [cam.hidden, toll.hidden];
+      try {
+        cam.hidden = false; toll.hidden = false;
+        cam._d = 200; toll._d = 800; t.orderAlerts(); r.e1 = drawerOrder();
+        cam._d = 900; toll._d = 300; t.orderAlerts(); r.e2 = drawerOrder();
+      } finally {
+        cam.hidden = keep[0]; toll.hidden = keep[1];
+        t.orderAlerts();
+        r.e3 = drawerOrder(true);
+      }
+    }
+    const a = r.a || {}, c = r.c || {};
+    const ok = a.order === 'navdest>turn>tunnelRow>restCard>nextTurn>navmeta' && /^1\.2km 이배재사거리에서 좌회전/.test(a.main) &&
+      /^3[6-8]0m 이배재터널 출구까지$/.test(a.tunnel) && /^테스트휴게소 1\.[23]km$/.test(a.rest) && a.next === '230m 좌회전 후' &&
+      r.b.length === 2 && r.b[0] === 'navdest>turn>tunnelRow>restCard>nextTurn>navmeta' && r.b[1] === 'navdest>turn>restCard>nextTurn>navmeta' &&
+      c.order === 'navdest>turn>nextTurn>restCard>navmeta' && /^3[6-8]0m 이배재터널 출구까지$/.test(c.main) && /^8[2-4]0m 터널 지나$/.test(c.next) &&
+      r.d.join(',') === 'ABC,ABC,ACB,ACB,CB-A,ACB' &&
+      r.e1 === 'camCard>tollCard' && r.e2 === 'tollCard>camCard' && r.e3 === 'laneRow>juncCard>camCard>mySpeed>zoneBadge>secCard>tollCard';
+    return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
   // S85: 하이패스 차로는 지금 가는 방향 것만 (v142, 2026-11-16 20:30 성남TG 남행에서 운전자 '하이패스 없는데 왜 자꾸 하이패스
