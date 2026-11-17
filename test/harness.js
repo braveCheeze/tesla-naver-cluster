@@ -2823,6 +2823,7 @@
     { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored; 7-10 lanes fit the drawer as square tiles", fn: s77 },
     { id: 'S78', name: "S78 mainline junction (v133): keep-left/right where the route stays on the same expressway section and goes straight is shown as straight ('신갈분기점에서 직진 · 서울 방면', main-straight junction scene, straight sign); a fork onto another expressway stays a fork", fn: s78 },
     { id: 'S79', name: 'S79 rest areas (v133): distance to where the entry ramp leaves the mainline (OSM), not the rest-area centre; within 3 km and no turn within 1 km the top row becomes the rest area (blue), next row = the guidance after it', fn: s79 },
+    { id: 'S92', name: "S92 split-then-merge (v156, 수도권1순환 북행 '분기도로 진입' showed '직진'): a direction-less fork on the mainline reads '분기 후 합류' like Naver, with the JC icon whose two arrows go round both sides of the island (symmetric, two arrowheads) and no junction picture; a keep-left on the same mainline is still '직진'", fn: s92 },
     { id: 'S91', name: "S91 highway fork lanes (v153, 신갈분기점 '차선표기'): the next fork cross-section within 1 km shows its lanes in the drawer; the lanes that lead to the branch the route really takes are blue (exit → only the exit lane, main → the through lanes without the bus lane); nothing when neither branch is on the route; real data/forks.json loads", fn: s91 },
     { id: 'S85', name: "S85 hi-pass lanes only for the direction you are driving (v142, driver '가는 방향이 있어 확실히 있는 거야?'): the real 경부·수도권제1순환 route both ways (서울TG exit 1-4,14-16 / entry 1-4,9; 성남TG 상행 1 2 3 8 9 11 / 하행 1 2 3 6 7 9), ring road near-sideways heading = common lanes only, same name for a closed and an open office (대동·서영암·가락) = no lanes", fn: s85 },
     { id: 'S84', name: "S84 hi-pass lane row never cut off (v142, 성남TG 하행 1 2 3 – 6 7 – 9 ran past the card): few cells stay beside the badge, many go under a centred badge, centred, and wrap or shrink so every number shows (4, 9, 12, 14, 16 cells; toll next and toll second)", fn: s84 },
@@ -4598,6 +4599,66 @@
       !r.none.shown &&
       r.real.loaded && r.real.rows > 300 && r.real.bus > 20 && r.real.exit > 100;
     return { pass: ok, detail: JSON.stringify(r) + (ok ? ' ✓' : ' ✗') };
+  }
+
+  // S92: 분기 후 합류 (v156, 2026-11-17 주행 중 수도권1순환 북행 — 서하남IC 출구 2.4km 앞 '분기도로 진입'(54, 방향 없음):
+  //      네이버 '6.2km 분기 후 합류…' + 섬 양옆으로 갈라졌다 합쳐지는 그림, 우리는 '6.0km 직진'). 북쪽으로 곧은 4km 고속도로,
+  //      2km 지점 54 (고속도로 구간이 앞뒤로 이어져 본선 그대로) → 글은 '분기 후 합류', 그림은 jc(두 갈래 화살표가 좌우 대칭), 분기점 그림 없음.
+  //      같은 곳의 '왼쪽 도로 주행'(41)은 S78 처럼 그대로 직진
+  async function s92() {
+    const t = T(), r = {};
+    const raw = [];
+    for (let k = 0; k <= 40; k++) raw.push(dest(NAV_ORIGIN, 0, 100 * k));
+    const path = raw.map((p) => [round6(p.lng), round6(p.lat)]);
+    const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const total = cum[cum.length - 1];
+    const mk = (g20) => ({
+      route: { distance: r0(total), duration: r0(total / 25 * 1000), tollFare: 0, fuelPrice: 300, path,
+        guide: [{ i: 3, t: 66, s: "송파IC에서 '구리' 방면으로 오른쪽 고속도로 진입", d: r0(cum[3]), ms: 10000 },
+                Object.assign({ i: 20, d: r0(cum[20] - cum[3]), ms: 60000 }, g20),
+                { i: 30, t: 67, s: "서하남IC에서 '강동, 서하남' 방면으로 오른쪽 고속도로 출구", d: r0(cum[30] - cum[20]), ms: 60000 },
+                { i: 40, t: 88, s: '목적지', d: r0(total - cum[30]), ms: 30000 }],
+        sections: [{ i: 3, n: 30, name: '수도권제1순환고속도로', speed: 80, cong: 1 }] },
+      P, cum, total, dest: { name: '분기 후 합류 테스트', addr: '', lat: P[40].lat, lng: P[40].lng },
+    });
+    const icon = (sel) => { const ti = document.querySelector(sel + ' svg, ' + sel + ' img'); if (!ti) return '';
+      return ti.tagName === 'IMG' ? 'img:' + ti.getAttribute('src').replace(/^.*\/img\/ai\//, '').split('__')[0] : (ti.getAttribute('class') || '').replace(/\s+/g, ' ').trim(); };
+    const run = async (R) => {
+      softReset();
+      await planAndStart(R);
+      for (let s = 20; s <= 1400; s += 20) { const a = pointAt(R, s); feed(a.p, 25, a.h); t.renderNav(); }
+      return { text: text('#turnText'), kind: t.turnKind(t.nav.next), ik: t.iconKind(t.nav.next), icon: icon('#turnIcon'),
+        junc: visible('#juncCard'), next: icon('#nextIcon'), nextDist: text('#nextDist') };
+    };
+    try {
+      r.jc = await run(mk({ t: 54, s: '분기도로 진입' }));
+      t.endNav();
+      r.keep = await run(mk({ t: 41, s: "'구리' 방면으로 왼쪽 도로 주행" }));
+    } finally {
+      t.endNav(); softReset();
+    }
+    // 그림: 흰 화살표가 섬 양옆으로 (흰 부분의 왼쪽 끝과 오른쪽 끝이 가운데 24 를 두고 대칭), 화살촉 두 개
+    const box = document.createElement('div');
+    box.style.cssText = 'position:absolute;left:0;top:0;width:96px;height:96px;opacity:0;pointer-events:none';
+    box.innerHTML = t.icoBase('jc');
+    document.body.appendChild(box);
+    let lo = 99, hi = -99, heads = 0;
+    try {
+      box.querySelectorAll('path').forEach((el) => {
+        if (el.getAttribute('stroke') !== '#fff' && el.getAttribute('fill') !== '#fff') return;
+        const b = el.getBBox(); lo = Math.min(lo, b.x); hi = Math.max(hi, b.x + b.width);
+        if (el.getAttribute('fill') === '#fff') heads += (el.getAttribute('d').match(/z/gi) || []).length;
+      });
+    } finally { box.remove(); }
+    r.svg = { lo: +lo.toFixed(1), hi: +hi.toFixed(1), heads };
+    const a = r.jc, b = r.keep;
+    const ok = a.text === '분기 후 합류' && a.kind === 'jc' && a.ik === 'jc' && (a.icon === 'img:jc' || /\bjc\b/.test(a.icon)) && !a.junc &&
+      /\bramp\b.*\bout\b|img:outr/.test(a.next) && a.nextDist === '1.0km' &&
+      /직진/.test(b.text) && b.kind === 's' &&
+      heads === 2 && lo < 14 && hi > 34 && Math.abs((lo + hi) / 2 - 24) < 0.6;
+    return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
   // S85: 하이패스 차로는 지금 가는 방향 것만 (v142, 2026-11-16 20:30 성남TG 남행에서 운전자 '하이패스 없는데 왜 자꾸 하이패스

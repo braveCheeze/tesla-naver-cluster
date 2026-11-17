@@ -645,6 +645,21 @@ GRADE4 = {
                  'at ground level, not up onto the bridge.'),
 }
 
+# v156 (2026-11-17 운전자 '네이버 지도처럼 아이콘 계산 좀 해줘. 아틀라스 1번 만들어 줘'): 분기 후 합류(네이버 '분기 후 합류', 안내 코드 54
+# 방향 없음). 밑그림 ref/road_jc.png (tools/ref_roads.py jc = 앱의 jc 그림)을 네이버 안내 아이콘처럼 다시 그린다 (--icons jc)
+JC_EDIT = ('Redraw the reference image as a polished flat vector navigation maneuver icon meaning "the road splits, then merges again", '
+           'in the clean bold style of Naver Map maneuver icons. Keep exactly the composition of the reference: one dark charcoal '
+           '(#2B3440) road shaped like a tall hexagon: a straight road comes in from the bottom edge, splits into two equal branches '
+           'that go around a diamond-shaped island in the middle, and the two branches join again into one straight road that leaves '
+           'through the top edge. A thin light grey (#9AA3AD) edge line runs along both outer sides of the road, and the diamond island '
+           'is outlined with the same light grey line and filled with the dark road color. ONE bold solid white Y-shaped arrow: a thick '
+           'stem rises from the bottom edge, splits below the island into two equal branches that run up along both sides of the island, '
+           'and each branch ends in a large sharp triangular arrowhead pointing up and inward toward where the two branches merge again '
+           'above the island. Perfectly left-right symmetric, smooth even line widths, crisp edges, no lane dashes, no shadows, no '
+           'gradients, no text.' + CORP + BG + ' ')
+JCNAVER = {'jc': (('ref/road_jc.png',), JC_EDIT, '')}
+
+
 def _gpt25(model):
     return (model, 0.005, lambda p, imgs, wide=False: {'prompt': p, 'images': imgs, 'size': '1536x1024' if wide else '1024x1024',
                                                        'quality': 'medium', 'background': 'opaque', 'output_format': 'png', 'n': 1})
@@ -832,6 +847,8 @@ def main():
         JOBS.update(FIX5)   # 낮 나가기 2차
     if 'fix4' in a.icons.split(','):
         JOBS.update(FIX4)   # 분기점 그림: 사용자가 X·동그라미 친 곳만 고치기
+    if 'jc' in a.icons.split(','):
+        JOBS.update(JCNAVER)   # 분기 후 합류 (v156)
     if 'junc3' in a.icons.split(','):
         JOBS.update(JUNC3)   # 분기점 그림 14장: 길게 이어진 화살표·은은한 파란 빛
     models = [m for m in (a.models or 'flare,sunburst,flare26,sunburst26').split(',') if m in MODELS]
@@ -841,7 +858,7 @@ def main():
     groups = {'cars': [k for k in JOBS if is_car(k)], 'signs': [k for k in JOBS if is_sign(k)],
               'guide': [k for k in JOBS if not is_car(k) and not is_sign(k)],
               'roads': ROADS, 'rb': RBS, 'redo': ROADS + RBS,
-              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s'], 'fix3': ['outs', 'ins', 'over_r', 'under_s', 'under_r', 'side_r', 'oside_r'], 'grass': RBS, 'junc': sorted(PANO), 'green': list(GREEN_KIND), 'junc2': JV2, 'soft': list(SOFT), 'rbdepth': list(RBDEPTH), 'junc3': list(JUNC3), 'clean': list(CLEAN), 'klbold': ['kl'], 'sharp': ['sharp_r'], 'slbold': ['sl'], 'fix4': list(FIX4), 'fix5': list(FIX5), 'fix6': list(FIX6), 'under3d': list(UNDER3D), 'grade3': list(GRADE3), 'grade4': list(GRADE4), 'mainline': list(MAINLINE)}
+              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s'], 'fix3': ['outs', 'ins', 'over_r', 'under_s', 'under_r', 'side_r', 'oside_r'], 'grass': RBS, 'junc': sorted(PANO), 'green': list(GREEN_KIND), 'junc2': JV2, 'soft': list(SOFT), 'rbdepth': list(RBDEPTH), 'junc3': list(JUNC3), 'clean': list(CLEAN), 'klbold': ['kl'], 'sharp': ['sharp_r'], 'slbold': ['sl'], 'fix4': list(FIX4), 'fix5': list(FIX5), 'fix6': list(FIX6), 'under3d': list(UNDER3D), 'grade3': list(GRADE3), 'grade4': list(GRADE4), 'mainline': list(MAINLINE), 'jc': ['jc']}
     want = []
     for i in a.icons.split(','):
         want += groups.get(i, [i])

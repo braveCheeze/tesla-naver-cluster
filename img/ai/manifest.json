@@ -1,5 +1,5 @@
 {
- "date": "2026-11-16",
+ "date": "2026-11-17",
  "items": [
   {
    "slot": "car_my",
@@ -350,6 +350,70 @@
    "kind": "icon",
    "file": "ins__sunburst26v__2.webp",
    "model": "sunburst26v",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "jc",
+   "kind": "icon",
+   "file": "jc__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "jc",
+   "kind": "icon",
+   "file": "jc__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "jc",
+   "kind": "icon",
+   "file": "jc__flare__1.webp",
+   "model": "flare",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "jc",
+   "kind": "icon",
+   "file": "jc__flare__2.webp",
+   "model": "flare",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "jc",
+   "kind": "icon",
+   "file": "jc__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "jc",
+   "kind": "icon",
+   "file": "jc__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "jc",
+   "kind": "icon",
+   "file": "jc__sunburst__1.webp",
+   "model": "sunburst",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "jc",
+   "kind": "icon",
+   "file": "jc__sunburst__2.webp",
+   "model": "sunburst",
    "n": 2,
    "pink": 0
   },

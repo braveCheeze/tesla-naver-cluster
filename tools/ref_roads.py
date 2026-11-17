@@ -326,8 +326,22 @@ def rb(key):
     return '<svg viewBox="0 0 48 48" class="ti ti-%s rb">%s%s</svg>' % (key, faint, a)
 
 
+# 분기 후 합류 (v156, 2026-11-17 네이버 '분기 후 합류' 그림): 앱의 jc 그림(app.js TURN_ICONS.jc)과 같은 구도 —
+# 길이 마름모 섬을 끼고 두 갈래로 갈라졌다 위에서 다시 합쳐지고, 흰 Y 화살표가 섬 양옆을 돌아 위쪽 합류 지점을 가리킨다
+def jc(key):
+    return ('<svg viewBox="0 0 48 48" class="ti ti-jc">'
+            '<path d="M13 47V39.5L2.5 27v-5L13 9V1h22v8l10.5 13v5L35 39.5V47z" fill="%s" stroke="none"/>'
+            '<path d="M13 47V39.5L2.5 27v-5L13 9V1M35 1v8l10.5 13v5L35 39.5V47" fill="none" stroke="#9aa3ad" stroke-width="1.6" stroke-linejoin="round"/>'
+            '<path d="M24 19 29.5 25.5 24 32 18.5 25.5z" fill="none" stroke="#9aa3ad" stroke-width="1.7" stroke-linejoin="round"/>'
+            '<path d="M24 47V38.5" fill="none" stroke="%s" stroke-width="5.6"/>'
+            '<path d="M24 38.8 12.8 26 16.8 18.6M24 38.8 35.2 26 31.2 18.6" fill="none" stroke="%s" stroke-width="4.4" stroke-linecap="round" stroke-linejoin="round"/>'
+            '<path d="M19.95 12.8 20.23 20.46 13.37 16.74zM28.05 12.8 27.77 20.46 34.63 16.74z" fill="%s" stroke="%s" stroke-width=".8" stroke-linejoin="round"/></svg>'
+            % (DARK, WHITE, WHITE, WHITE, WHITE))
+
+
 def build():
     out = {}
+    out['jc'] = jc('jc')
     for k in ('outr', 'outl', 'inr', 'inl', 'outs', 'ins'):
         out[k] = ramp(k)
     for k in ('over_s', 'over_l', 'over_r'):

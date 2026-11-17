@@ -27,6 +27,7 @@ window.TNC_PICKS = {
   "junc_side_night": "junc_side_night__sunburst26j__2.webp",
   "junc_under_day": "junc_under_day__sunburst26u__3.webp",
   "junc_under_night": "junc_under_night__sunburst26u__3.webp",
+  "jc": "jc__sunburst26e__2.webp",
   "kl": "sl__bold__1.webp",
   "kr": "sr__bold__1.webp",
   "rb_l": "rb_l__sunburst26d__2.webp",
