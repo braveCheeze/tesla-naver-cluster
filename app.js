@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-159'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-160'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -369,16 +369,39 @@
   // 브라우저는 화면을 한 번 터치하기 전까지 소리(경고음·음성)를 막는다.
   // 화면 어디든 처음 터치할 때 조용히 소리를 켠다 (안내 문구는 띄우지 않음, 켜고 끄기는 설정에서)
   let actx = null, audioUnlocked = false;
-  function updateSoundPill() { /* 안내 문구 없음 */ }
-  function unlockAudio() {
+  // v160 (2026-11-20 점검: 새로고침·'새 버전' 뒤에는 화면을 누를 때까지 음성·경고음이 모두 꺼져 있는데 표시가 없었다):
+  // 주차 중에는 예전처럼 아무것도 안 띄우고(2026-11-13 '터치하면 소리가 켜집니다' 문구를 뺐다), 길안내 중이거나 달리기 시작했는데
+  // 아직 소리가 잠겨 있으면 '소리 꺼짐 · 화면을 한 번 누르세요'를 띄운다. 누르면 바로 켜지고 사라진다
+  let soundPill = null;
+  function updateSoundPill() {
+    const want = !audioUnlocked && (prefs.voice || prefs.beep) && (nav.active || (state.speedKmh || 0) >= 5) && !state.demoTimer;
+    if (!want) { if (soundPill) soundPill.hidden = true; return; }
+    if (!soundPill) {
+      soundPill = document.createElement('button');
+      soundPill.className = 'soundpill';
+      soundPill.id = 'soundPill';
+      soundPill.textContent = '소리 꺼짐 · 화면을 한 번 누르세요';
+      soundPill.onclick = () => { unlockAudio(); beep(1, 660); };
+      $('#map').appendChild(soundPill);
+    }
+    soundPill.hidden = false;
+  }
+  function unlockAudio(ev) {
     const C = window.AudioContext || window.webkitAudioContext;
     if (!actx && C) { try { actx = new C(); } catch (e) { actx = null; } }
-    if (actx && actx.state === 'suspended') actx.resume();
+    if (actx && actx.state === 'suspended') { try { actx.resume(); } catch (e) { /* 다음 누름에 */ } }
+    // 터치 화면에서는 pointerdown 이 아직 '사용자 동작'이 아닐 수 있다(손을 뗄 때 인정됨). 떼는 순간에도 다시 부른다
+    const ua = navigator.userActivation;
+    if (ev && ev.type === 'pointerdown' && ua && !ua.hasBeenActive) return;
     audioUnlocked = true;
+    updateSoundPill();
   }
-  document.addEventListener('pointerdown', unlockAudio, { passive: true, capture: true });
+  for (const t of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) document.addEventListener(t, unlockAudio, { passive: true, capture: true });
+  // 예전에 이 사이트에서 소리를 낸 적이 있으면 브라우저가 터치 없이도 경고음을 허락하기도 한다
+  try { const C = window.AudioContext || window.webkitAudioContext; if (C) actx = new C(); } catch (e) { actx = null; }
   function beep(times, freq) {
     if (!prefs.beep || !actx) return;
+    if (actx.state === 'suspended') { try { actx.resume(); } catch (e) { /* 잠김 */ } }
     const t0 = actx.currentTime + 0.02;
     for (let i = 0; i < (times || 1); i++) {
       const o = actx.createOscillator(), g = actx.createGain();
@@ -394,6 +417,7 @@
   // 단속 구간을 무사히 지나면 '띠링' 한 번 (높은 두 음을 짧게 이어서)
   function chime() {
     if (!prefs.beep || !actx) return;
+    if (actx.state === 'suspended') { try { actx.resume(); } catch (e) { /* 잠김 */ } }
     const t0 = actx.currentTime + 0.02;
     [[1318.5, 0], [1760, 0.12]].forEach(([freq, dt]) => {
       const o = actx.createOscillator(), g = actx.createGain(), s = t0 + dt;
@@ -3777,6 +3801,7 @@
     $('#routeCard').hidden = true;
     nav.option = nav.route.option || prefs.routeOpt; // 재탐색·교통 갱신도 고른 옵션으로
     nav.preview = false; nav.active = true;
+    updateSoundPill();
     nav.odo0 = state.odo; // 경로 막대의 출발점 (재탐색해도 유지)
     camState.markerAt = null; camState.peekAt = 0; // 지도 카메라 표시를 경로 위 카메라로 바로 바꾼다
     // 안내 시작 전에 잡혀 있던 카메라가 경로 위가 아니면 바로 내린다
@@ -5673,6 +5698,7 @@
     saveTripNow();       // 화면의 주행 거리·시간·최고 속도 (새 버전으로 바뀌어도 이어서)
     evalCameras(f);
     camMissCheck(f);
+    updateSoundPill();
     refreshCamMarkers(f);
     evalBumps(f);
     evalParking(f);
@@ -5790,9 +5816,14 @@
   document.addEventListener('pointerdown', () => { upd.touchAt = Date.now(); }, { passive: true, capture: true });
   // 주차 중 켜 둔 화면도 새 버전으로: 2분 넘게 서 있고, 2분 넘게 아무것도 안 만졌고, 길안내·검색·설정·경로 고르기가
   // 열려 있지 않으면 10분마다 새 버전을 확인한다. 돌려주는 값은 이유 (테스트용)
+  // v160 (2026-11-20 점검): 길안내 없이 신호를 2분 넘게 기다리면 새로고침돼 소리가 꺼진 채 달리고 구간단속도 사라졌다.
+  // 이 페이지에서 시속 10 넘게 달린 뒤로는 15분 넘게 서 있어야(주차) 바꾼다. 구간단속 안이면 바꾸지 않는다
   function idleUpdate(now, dry) {
+    if (state.speedKmh >= 10) upd.droveAt = now;
     if (state.speedKmh >= 3) { upd.movedAt = now; return 'moving'; }
     if (now - upd.movedAt < 120000) return 'just-stopped';
+    if (upd.droveAt && now - upd.droveAt < 15 * 60000) return 'drove-recently';
+    if (camState.section) return 'section';
     if (now - upd.touchAt < 120000) return 'touched';
     if (nav.active || nav.preview || nav.busy) return 'nav';
     if (['#sheet', '#searchSheet', '#tripSheet', '#routeCard', '#navTray'].some((s) => { const e = $(s); return e && !e.hidden; })) return 'screen-open';
@@ -7005,7 +7036,7 @@
       lanesData, laneState, setLaneData, loadLanes, laneGuide, laneArrowSvg, laneOk, laneTipFor, laneCell,
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, camNoMap, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, camNoMap, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,

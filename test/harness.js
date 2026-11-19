@@ -1012,12 +1012,12 @@
 
   // S33: 주차 중 자동 새 버전 — 2분 넘게 서 있고 2분 넘게 안 만졌고 길안내·검색·설정 화면이 없을 때만 확인, 10분에 한 번
   async function s33() {
-    const t = T(), u = t.upd, saved = { movedAt: u.movedAt, touchAt: u.touchAt, idleAt: u.idleAt };
+    const t = T(), u = t.upd, saved = { movedAt: u.movedAt, touchAt: u.touchAt, idleAt: u.idleAt, droveAt: u.droveAt }, savedSec = t.camState.section;
     const r = {};
     try {
       const T0 = 10 * 3600e3;
-      u.idleAt = 0; u.touchAt = 0;
-      t.state.speedKmh = 40; r.moving = t.idleUpdate(T0, true);
+      u.idleAt = 0; u.touchAt = 0; u.droveAt = 0;
+      t.state.speedKmh = 5; r.moving = t.idleUpdate(T0, true);
       t.state.speedKmh = 0; r.justStopped = t.idleUpdate(T0 + 60000, true);
       u.touchAt = T0 + 100000; r.touched = t.idleUpdate(T0 + 130000, true);
       u.touchAt = 0;
@@ -1027,8 +1027,16 @@
       r.check = t.idleUpdate(T0 + 130000, true);
       r.again = t.idleUpdate(T0 + 190000, true);
       r.later = t.idleUpdate(T0 + 130000 + 10 * 60000 + 1, true);
+      // v160: 시속 10 넘게 달린 뒤 신호대기(3분)에는 안 바꾸고, 15분 넘게 서 있으면(주차) 바꾼다. 구간단속 안이면 안 바꾼다
+      const T1 = T0 + 3600e3;
+      u.idleAt = 0;
+      t.state.speedKmh = 40; t.idleUpdate(T1, true);
+      t.state.speedKmh = 0; r.redLight = t.idleUpdate(T1 + 3 * 60000, true);
+      r.parked = t.idleUpdate(T1 + 16 * 60000, true);
+      u.idleAt = 0; t.camState.section = { test: 1 }; r.section = t.idleUpdate(T1 + 40 * 60000, true); t.camState.section = savedSec;
     } finally {
       Object.assign(u, saved);
+      t.camState.section = savedSec;
       document.getElementById('searchSheet').hidden = true;
       t.nav.preview = false;
     }
@@ -1036,6 +1044,7 @@
     r.url1 = t.updateUrl('2026.11.14-99', { pathname: '/tesla-naver-cluster/', search: '', hash: '' });
     r.url2 = t.updateUrl('2026.11.14-99', { pathname: '/tesla-naver-cluster/', search: '?debug&v=2026.11.14-38', hash: '#x' });
     const want = { moving: 'moving', justStopped: 'just-stopped', touched: 'touched', screen: 'screen-open', nav: 'nav', check: 'check', again: 'waiting', later: 'check',
+      redLight: 'drove-recently', parked: 'check', section: 'section',
       url1: '/tesla-naver-cluster/?v=2026.11.14-99', url2: '/tesla-naver-cluster/?debug=&v=2026.11.14-99#x' };
     const bad = Object.keys(want).filter((k) => r[k] !== want[k]);
     return { pass: bad.length === 0, detail: Object.keys(want).map((k) => k + '=' + r[k] + (r[k] === want[k] ? '' : '✗')).join(', ') };
@@ -2784,7 +2793,7 @@
     { id: 'S30', name: 'S30 trip log with speeding events', fn: s30 },
     { id: 'S31', name: 'S31 weather icons', fn: s31 },
     { id: 'S32', name: 'S32 stopped → north up (labels upright)', fn: s32 },
-    { id: 'S33', name: 'S33 parked & untouched → check for new version', fn: s33 },
+    { id: 'S33', name: 'S33 parked & untouched → check for new version; not at a red light after driving (v160: 15 min since 10+ km/h) or inside a speed section', fn: s33 },
     { id: 'S34', name: 'S34 Tesla mode: camera → my speed → small zone sign, red when over', fn: s34 },
     { id: 'S35', name: 'S35 Gapyeong 계량교 30 camera (data fix): 신호·과속, alerts when over', fn: s35 },
     { id: 'S36', name: 'S36 rear-enforcement camera (가평 포회촌, added): held 60 m past the pole, one direction only', fn: s36 },
@@ -2823,6 +2832,7 @@
     { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored; 7-10 lanes fit the drawer as square tiles", fn: s77 },
     { id: 'S78', name: "S78 mainline junction (v133): keep-left/right where the route stays on the same expressway section and goes straight is shown as straight ('신갈분기점에서 직진 · 서울 방면', main-straight junction scene, straight sign); a fork onto another expressway stays a fork", fn: s78 },
     { id: 'S79', name: 'S79 rest areas (v133): distance to where the entry ramp leaves the mainline (OSM), not the rest-area centre; within 3 km and no turn within 1 km the top row becomes the rest area (blue), next row = the guidance after it', fn: s79 },
+    { id: 'S96', name: "S96 sound-locked notice (v160 audit: after a reload or '새 버전' voice and beeps stay off until the screen is touched, with nothing on screen): parked → nothing (as asked 2026-11-13), driving while locked → '소리 꺼짐 · 화면을 한 번 누르세요', gone on the first touch, not shown when both sounds are off", fn: s96 },
     { id: 'S95', name: "S95 expressway booth limits (v159, 놓침·틀림 reports 11-16~19): the 경기남부 고속도로순찰대 booth list has no limits, so the nearest street camera's 50/60 was used — the 송파IC 10.3k booth never showed (missed twice) and the 판교JC 1.25k booth read '박스형 60' (wrong twice); on a straight 수도권제1순환고속도로 route through each booth at 90 km/h both now show from 500 m+ with the expressway limit 100", fn: s95 },
     { id: 'S94', name: "S94 closer rows on top (v158, 이배재터널 안 '370m 터널 출구까지' above '↗ 230m' looked upside down — 230m was measured from the left turn, 2.0 km from the car): card rows (tunnel, rest, next guide, parking entrance), drawer cards (lanes, junction, camera, section, hi-pass) and small chips are ordered by distance from the car; the next row keeps Naver's distance from the guide above but says so ('230m 좌회전 후', '830m 터널 지나'); rows within 25 m keep their place, the order changes only once on a 1 km sweep, hidden rows go back to HTML order", fn: s94 },
     { id: 'S93', name:"S93 U-turn picks the approach camera (v157, 송파IC 진출램프 끝 유턴: we showed 위례중앙로 50, Naver and the road show 30): after the highway exit guide a section still named '수도권제1순환고속도로' no longer hides the ramp's signal+speed 30, the card 80 m before the U-turn reads 30, and the 50 on the road we turn into is dropped; with equal limits both stay", fn: s93 },
@@ -4711,6 +4721,27 @@
     const ok = a.ramp && a.ramp.limit === '30' && a.at80 === '30' && !a.road && a.onRoute.ramp && !a.onRoute.road && a.drops >= 1 &&
       b.onRoute.ramp && b.onRoute.road && b.drops === 0;
     return { pass: !!ok, detail: 'U-turn at ' + r0(U) + ' m ' + JSON.stringify(r) };
+  }
+
+  // S96: 소리 잠김 표시 (v160, 2026-11-20 점검: 새로고침·'새 버전' 뒤 화면을 누를 때까지 음성·경고음이 모두 꺼져 있는데 표시가 없었다).
+  //      주차 중(길안내 없음·시속 0)에는 안 띄우고, 달리기 시작하면(시속 30) '소리 꺼짐 · 화면을 한 번 누르세요', 손을 떼면 사라진다.
+  //      소리를 둘 다 꺼 두었으면 안 띄운다
+  async function s96() {
+    const t = T(), r = {}, keep = { u: t.sound.unlocked, v: t.prefs.voice, b: t.prefs.beep, k: t.state.speedKmh };
+    const pill = () => { const e = document.getElementById('soundPill'); return e && !e.hidden ? e.textContent : ''; };
+    try {
+      t.prefs.voice = true; t.prefs.beep = true;
+      t.sound.unlocked = false;
+      t.state.speedKmh = 0; t.updateSoundPill(); r.parked = pill();
+      t.state.speedKmh = 30; t.updateSoundPill(); r.driving = pill();
+      document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'touch' }));
+      r.afterTouch = pill(); r.unlocked = t.sound.unlocked;
+      t.sound.unlocked = false; t.prefs.voice = false; t.prefs.beep = false; t.updateSoundPill(); r.soundOff = pill();
+    } finally {
+      t.sound.unlocked = keep.u; t.prefs.voice = keep.v; t.prefs.beep = keep.b; t.state.speedKmh = keep.k; t.updateSoundPill();
+    }
+    const ok = r.parked === '' && /소리 꺼짐/.test(r.driving) && r.afterTouch === '' && r.unlocked === true && r.soundOff === '';
+    return { pass: ok, detail: JSON.stringify(r) };
   }
 
   // S95: 고속도로 박스형 부스의 제한속도 (v159, 2026-11-16~19 놓침·틀림 신고): 경기남부 고속도로순찰대 '이동형 단속 부스' 목록엔 제한속도가 없어
