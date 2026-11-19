@@ -2623,7 +2623,10 @@
     // 고속도로 연결로의 70 이 빠졌다. 이제 카메라 도로(경찰 이름·OSM 이름)가 고속도로이거나 경로 구간과 같은 길이면 남기고, 이름을 모를 때만 예전 규칙
     const hwHere = (isExpwyName(rn) && !pastHwExit(at)) || onHighwayAt(at);
     if (hwHere && !camOnExpwy(c, rn)) return null;
-    if (!camLevelOk(c, at, rn, hwHere)) return null;                // 지하차도·고가로 넘어가는 곳의 지상 카메라 등
+    // v166 (v165 가상 주행: 경로 구간 이름이 비면 고가·지하 카메라 67대가 여전히 빠졌다 — 네이버 경로에 구간 이름이 빠지는 일이 있다, S52 거여동):
+    // 구간 이름이 없으면 카메라가 빠른 길(이름이 고속·순환로·간선이거나 제한 80 이상) 위에 있고 경로와 나란하면(20° 안) 남긴다
+    const fastCam = !specificRoad(rn) && camHasDir(c) && angleDiff(c.eb, bearing(a, b)) <= 20 && (camNames(c).some(isFastRoad) || c[2] >= 80);
+    if (!camLevelOk(c, at, rn, hwHere || fastCam)) return null;                // 지하차도·고가로 넘어가는 곳의 지상 카메라 등
     // 찍는 방향이 이 자리 경로 방향과 50° 안. 교차로에서 꺾는 곳이면 들어오는 쪽(30m 전)·나가는 쪽(30m 뒤) 방향도 본다
     // (가락시장역교차로에서 좌회전: 들어오는 송파대로 북행 카메라). 설치장소 'A→B' 가 안내 문구로 갈리면 그게 먼저:
     // 반대면 빼고, 내 방향이라고 나오면 기하 판단과 달라도 알린다 (2026-11-14 하남 창우로 J2735, 11-15 가천대역 '복정역→성남시청')
@@ -2679,18 +2682,26 @@
         : haversine(camPt(x.c), routePointAt(x.at)) <= 6);
       const appr = near.filter((x) => camHasDir(x.c) && x.at <= T + 5 && angleDiff(x.c.eb, inB) <= CAM_DIR_TOL && onAppr(x));
       if (!appr.length) continue;
-      for (const x of near) {
-        // v165 (2차 점검 E): 예전엔 회전 15m 앞 ~ 40m 뒤의 꺾은 뒤 방향 신호 카메라를 모두 뺐다 — 우회전 뒤 35m 다음 교차로 정지선의
-        // 어린이 30 까지 빠졌다. 이제 꺾는 교차로 안만 뺀다: 좌·우회전은 회전점 15m 앞 ~ 25m 뒤, 유턴은 교차로가 넓어 45m 뒤까지
-        // (송파IC 램프 끝 유턴: 건너편 위례중앙로 동행 50 이 회전점 뒤 20~40m). 어린이·노인 보호구역 카메라는 빼지 않는다
-        const after = turnKind0(g) === 'u' ? 45 : 25;
-        if (!isSignalCam(x.c) || !camHasDir(x.c) || x.at < T - 15 || x.at > T + after || x.c[6] || appr.includes(x)) continue;
-        if (angleDiff(x.c.eb, inB) <= CAM_DIR_TOL || angleDiff(x.c.eb, outB) > CAM_DIR_TOL) continue;
-        if (appr.some((a) => a.c[2] === x.c[2])) continue;          // 제한속도가 같으면 그대로 (헷갈릴 일이 없다)
+      const drop = (x) => {
         list.splice(list.indexOf(x), 1);
         const arr = (m.get(x.c) || []).filter((v) => v !== x.at);
         if (arr.length) m.set(x.c, arr); else m.delete(x.c);
         nav.turnCamDrops = (nav.turnCamDrops || 0) + 1;
+      };
+      for (const x of near.slice()) {
+        if (!isSignalCam(x.c) || !camHasDir(x.c) || x.c[6] || appr.includes(x)) continue;
+        if (appr.some((a) => a.c[2] === x.c[2])) continue;          // 제한속도가 같으면 그대로 (헷갈릴 일이 없다)
+        // v166: 같은 교차로의 다른 진입로 정지선 카메라 — 내 접근 방향과 같은 쪽을 찍지만 길 이름이 접근로와 다르면(램프로 들어가는데
+        // 위례중앙로 서행 50) 뺀다. 차로 위 점으로 같이 지남을 재게 되자 램프 30 을 지난 뒤 이 50 이 마지막 13m 떴다 (네이버는 30 만)
+        if (x.at >= T - 60 && x.at <= T + 5 && angleDiff(x.c.eb, inB) <= CAM_DIR_TOL && specificRoad(apprRoad) &&
+            camNames(x.c).some(specificRoad) && !sameCamRoad(apprRoad, x.c)) { drop(x); continue; }
+        // v165 (2차 점검 E): 예전엔 회전 15m 앞 ~ 40m 뒤의 꺾은 뒤 방향 신호 카메라를 모두 뺐다 — 우회전 뒤 35m 다음 교차로 정지선의
+        // 어린이 30 까지 빠졌다. 이제 꺾는 교차로 안만 뺀다: 좌·우회전은 회전점 15m 앞 ~ 25m 뒤, 유턴은 교차로가 넓어 45m 뒤까지
+        // (송파IC 램프 끝 유턴: 건너편 위례중앙로 동행 50 이 회전점 뒤 20~40m). 어린이·노인 보호구역 카메라는 빼지 않는다
+        const after = turnKind0(g) === 'u' ? 45 : 25;
+        if (x.at < T - 15 || x.at > T + after) continue;
+        if (angleDiff(x.c.eb, inB) <= CAM_DIR_TOL || angleDiff(x.c.eb, outB) > CAM_DIR_TOL) continue;
+        drop(x);
       }
     }
   }
@@ -2708,7 +2719,7 @@
   // 길안내 경로가 나중에 돌아와 지나갈 반대 방향 행(유턴·고리)은 지남으로 치지 않는다
   function passCam(tg, f, now) {
     clearTimeout(camState.sigT); camState.sigT = null;
-    const h = state.heading, cp = { lat: tg.c[0], lng: tg.c[1] }, same = [tg];
+    const h = state.heading, cp = camPt(tg.c), same = [tg];
     let oppEnd = false;
     for (const x of camsNear(tg.c[0], tg.c[1], 60)) {
       if (x.i === tg.i) continue;
@@ -2716,10 +2727,13 @@
       // v165 (2026-11-20 2차 점검: 반대 방향 짝 3,967개가 120초 동안 지남으로 처리돼 유턴해 돌아오면 놓쳤다): 반대 방향 행은 지남으로 치지 않는다
       // (방향을 아는 반대 방향 카메라는 어차피 방향으로 걸러진다)
       if (opp) { if (x.c[4] === 2) oppEnd = true; continue; }
-      const along = h === null || x.d < 1 ? 0 : x.d * Math.cos(toRad(angleDiff(bearing(cp, { lat: x.c[0], lng: x.c[1] }), h)));
-      // 이 카메라보다 앞(진행 방향)에 있으면 아직 안 지났다. 다만 같은 기둥(원래 좌표 15m 안, 같은 방향)의 행은 함께 지난다
-      // (v165: 복합물류로 50·60 한 기둥 — 50 을 지나자 60 이 마지막 몇 m 떴다)
-      if (along > 3 && x.d > 15) continue;
+      // v166 (2026-11-20 v165 가상 주행): 앞뒤·같은 자리는 차로 위 점(신호 카메라는 정지선)으로 잰다. 원래 좌표로 재면
+      // 보개원삼로 50 은 정지선이 51m 앞인 신호 카메라와 '같은 기둥'(13m)으로 묶여 카드가 일찍 사라졌고,
+      // 복합물류로 50·60 은 원래 좌표가 38m 떨어졌지만 차로 위 점이 같아 50 을 지나자 60 이 떴다
+      const xp = camPt(x.c), ld = haversine(cp, xp);
+      const along = h === null || ld < 1 ? 0 : ld * Math.cos(toRad(angleDiff(bearing(cp, xp), h)));
+      // 이 카메라보다 앞(진행 방향)에 있으면 아직 안 지났다. 같은 자리(차로 위 점 12m 안, 같은 방향)의 행은 함께 지난다
+      if (along > 3 && ld > 12) continue;
       camState.passed.set(x.i, now);
       same.push(x);
     }

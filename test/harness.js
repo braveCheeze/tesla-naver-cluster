@@ -2833,6 +2833,7 @@
     { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored; 7-10 lanes fit the drawer as square tiles", fn: s77 },
     { id: 'S78', name: "S78 mainline junction (v133): keep-left/right where the route stays on the same expressway section and goes straight is shown as straight ('신갈분기점에서 직진 · 서울 방면', main-straight junction scene, straight sign); a fork onto another expressway stays a fork", fn: s78 },
     { id: 'S79', name: 'S79 rest areas (v133): distance to where the entry ramp leaves the mainline (OSM), not the rest-area centre; within 3 km and no turn within 1 km the top row becomes the rest area (blue), next row = the guidance after it', fn: s79 },
+    { id: 'S105', name: "S105 after the v165 sweep (v166): rows passed together are judged by lane points — a point 50 is not passed with a signal 50 whose stop line is 51 m earlier (보개원삼로), a 60 sharing the 50's lane point does not show after it (복합물류로); with no route section name an elevated/underground camera on a fast road parallel to the route stays (a street-named section still drops it)", fn: s105 },
     { id: 'S104', name: "S104 camera pick, 2nd audit (v165): road names match across notation (분당-수서간고속화도로 = 분당수서로, 동부간선도로 = 동부간선로; 중앙로 ≠ 중앙고속도로); a route within 15 m of the raw position (stop-line-moved lane point 18.8 m) or within 20 m with the same road name keeps the camera (25 m still dropped, S14); expressway booths typed as ordinary roads stay on an expressway route; an entry-only highway span ends where the section name becomes a street; elevated/underground cameras stay on fast roads; opposite rows aren't passed; curve tangent", fn: s104 },
     { id: 'S103', name: "S103 tunnel cameras (v163 audit 8): on the route, a camera 3.6 km inside a tunnel is alerted from 300 m before the entrance (beyond the 3 km scan), and with GPS lost inside, a 1 s dead-reckoning tick along the route at the last speed counts the distance down and passes it", fn: s103 },
     { id: 'S102', name: "S102 report outbox & camera data retry (v163 audit 9/10): a '놓침' the server did not take reads '저장함' and stays queued, is resent later, '✓ 보냄' only on 200; with no camera data a '단속 카메라 자료 없음 · 다시 받는 중' pill shows while driving and goes once the data loads again", fn: s102 },
@@ -5184,6 +5185,53 @@
       r.e.fast && r.e.inner && !r.e.street && r.e.hwSpan &&
       r.f && r.f.passedA && !r.f.passedOpp && r.g === 125;
     return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S105: v165 가상 주행 뒤 (v166) — 같이 지남은 차로 위 점(정지선)으로 잰다, 구간 이름이 빈 경로의 고가·지하 카메라
+  //  (a) 보개원삼로 50(점)과 정지선이 51m 앞인 신호 50: 신호를 지나도 점 카메라는 제자리까지 남는다
+  //  (b) 복합물류로 50·60 은 원래 좌표 38m 지만 차로 위 점이 같다: 50 을 지나면 60 이 뜨지 않는다
+  //  (c) 구간 이름이 없는 경로에서도 빠른 길(내부순환로 등) 위 고가·지하 카메라가 경로와 나란하면 남는다
+  async function s105() {
+    const t = T(), r = {};
+    const at = (la, ln) => t.cams.rows.find((c) => Math.abs(c[0] - la) < 2e-5 && Math.abs(c[1] - ln) < 2e-5);
+    try {
+      const A = at(37.02239, 127.28875), S = at(37.02251, 127.28875);
+      if (A && S) {
+        let passedAt = null;
+        await driveThrough(lanePt(A), A.eb >= 0 ? A.eb : 189, 500, 60, 50, 3, (s) => {
+          if (passedAt === null && t.camState.passed.has(t.cams.rows.indexOf(A))) passedAt = s;
+        });
+        r.a = { passedAt, laneGap: Math.round(hav(lanePt(A), lanePt(S))) };
+      } else r.a = 'not in data';
+      const B50 = at(37.33512, 126.93686), B60 = at(37.33497, 126.93725);
+      if (B50 && B60) {
+        const shown = [];
+        await driveThrough(lanePt(B50), B50.eb >= 0 ? B50.eb : 101, 500, 80, 50, 4, () => {
+          const tg = t.camState.target, lab = tg ? text('#camLimit') : '';
+          if (shown[shown.length - 1] !== lab) shown.push(lab);
+        });
+        r.b = { shown, laneGap: Math.round(hav(lanePt(B50), lanePt(B60))) };
+      } else r.b = 'not in data';
+      // (c) 고가·지하(층 16) 빠른 길 카메라를 구간 이름 없는 경로로
+      let L = null;
+      for (const c of t.cams.rows) if ((c.lv & 16) && c.eb >= 0 && /내부순환로|강변북로|북부간선/.test(c.on || '')) { L = c; break; }
+      if (L) {
+        const start = dest(lanePt(L), (L.eb + 180) % 360, 1000), P = [];
+        for (let k = 0; k <= 150; k++) { const p = dest(start, L.eb, 10 * k); P.push({ lat: round6(p.lat), lng: round6(p.lng) }); }
+        const cum = [0];
+        for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+        const total = cum[cum.length - 1];
+        const mk = (name) => ({ route: { distance: r0(total), duration: r0(total / 20 * 1000), tollFare: 0, fuelPrice: 0, path: P.map((p) => [p.lng, p.lat]),
+          guide: [{ i: 150, t: 88, s: '목적지', d: r0(total), ms: r0(total / 20 * 1000) }], sections: name === null ? [] : [{ i: 0, n: 151, name, speed: 60, cong: 1 }] },
+          P, cum, total, dest: { name: '테스트', addr: '', lat: P[150].lat, lng: P[150].lng } });
+        const onR = async (name) => { await resetApp(); softReset(); await planAndStart(mk(name)); t.ensureRouteCams(); const ok = t.nav.routeCams.has(L); t.endNav(); return ok; };
+        r.c = { name: L.on, lim: L[2], noSection: await onR(null), street: await onR('테스트골목길') };
+      } else r.c = 'none in data';
+    } finally { await resetApp(); softReset(); }
+    const okA = r.a === 'not in data' || (r.a.passedAt !== null && r.a.passedAt >= -8);
+    const okB = r.b === 'not in data' || r.b.laneGap > 12 || !r.b.shown.join(',').includes('50,60');
+    const okC = r.c === 'none in data' || (r.c.noSection === true && r.c.street === false);
+    return { pass: okA && okB && okC, detail: JSON.stringify(r) };
   }
 
   // S96: 소리 잠김 표시 (v160, 2026-11-20 점검: 새로고침·'새 버전' 뒤 화면을 누를 때까지 음성·경고음이 모두 꺼져 있는데 표시가 없었다).
