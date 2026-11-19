@@ -2833,7 +2833,7 @@
     { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored; 7-10 lanes fit the drawer as square tiles", fn: s77 },
     { id: 'S78', name: "S78 mainline junction (v133): keep-left/right where the route stays on the same expressway section and goes straight is shown as straight ('신갈분기점에서 직진 · 서울 방면', main-straight junction scene, straight sign); a fork onto another expressway stays a fork", fn: s78 },
     { id: 'S79', name: 'S79 rest areas (v133): distance to where the entry ramp leaves the mainline (OSM), not the rest-area centre; within 3 km and no turn within 1 km the top row becomes the rest area (blue), next row = the guidance after it', fn: s79 },
-    { id: 'S105', name: "S105 after the v165 sweep (v166): rows passed together are judged by lane points — a point 50 is not passed with a signal 50 whose stop line is 51 m earlier (보개원삼로), a 60 sharing the 50's lane point does not show after it (복합물류로); with no route section name an elevated/underground camera on a fast road parallel to the route stays (a street-named section still drops it)", fn: s105 },
+    { id: 'S105', name: "S105 after the v165 sweep (v167): rows passed together are judged by lane points — a point 50 is not passed with a signal 50 whose stop line is 51 m earlier (보개원삼로), a 60 sharing the 50's lane point does not show after it (복합물류로); with no route section name an elevated/underground camera on a fast road parallel to the route stays (a street-named section still drops it)", fn: s105 },
     { id: 'S104', name: "S104 camera pick, 2nd audit (v165): road names match across notation (분당-수서간고속화도로 = 분당수서로, 동부간선도로 = 동부간선로; 중앙로 ≠ 중앙고속도로); a route within 15 m of the raw position (stop-line-moved lane point 18.8 m) or within 20 m with the same road name keeps the camera (25 m still dropped, S14); expressway booths typed as ordinary roads stay on an expressway route; an entry-only highway span ends where the section name becomes a street; elevated/underground cameras stay on fast roads; opposite rows aren't passed; curve tangent", fn: s104 },
     { id: 'S103', name: "S103 tunnel cameras (v163 audit 8): on the route, a camera 3.6 km inside a tunnel is alerted from 300 m before the entrance (beyond the 3 km scan), and with GPS lost inside, a 1 s dead-reckoning tick along the route at the last speed counts the distance down and passes it", fn: s103 },
     { id: 'S102', name: "S102 report outbox & camera data retry (v163 audit 9/10): a '놓침' the server did not take reads '저장함' and stays queued, is resent later, '✓ 보냄' only on 200; with no camera data a '단속 카메라 자료 없음 · 다시 받는 중' pill shows while driving and goes once the data loads again", fn: s102 },
@@ -5187,7 +5187,7 @@
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
-  // S105: v165 가상 주행 뒤 (v166) — 같이 지남은 차로 위 점(정지선)으로 잰다, 구간 이름이 빈 경로의 고가·지하 카메라
+  // S105: v165 가상 주행 뒤 (v167) — 같이 지남은 차로 위 점(정지선)으로 잰다, 구간 이름이 빈 경로의 고가·지하 카메라
   //  (a) 보개원삼로 50(점)과 정지선이 51m 앞인 신호 50: 신호를 지나도 점 카메라는 제자리까지 남는다
   //  (b) 복합물류로 50·60 은 원래 좌표 38m 지만 차로 위 점이 같다: 50 을 지나면 60 이 뜨지 않는다
   //  (c) 구간 이름이 없는 경로에서도 빠른 길(내부순환로 등) 위 고가·지하 카메라가 경로와 나란하면 남는다

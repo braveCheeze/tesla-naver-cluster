@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-166'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-167'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -2623,7 +2623,7 @@
     // 고속도로 연결로의 70 이 빠졌다. 이제 카메라 도로(경찰 이름·OSM 이름)가 고속도로이거나 경로 구간과 같은 길이면 남기고, 이름을 모를 때만 예전 규칙
     const hwHere = (isExpwyName(rn) && !pastHwExit(at)) || onHighwayAt(at);
     if (hwHere && !camOnExpwy(c, rn)) return null;
-    // v166 (v165 가상 주행: 경로 구간 이름이 비면 고가·지하 카메라 67대가 여전히 빠졌다 — 네이버 경로에 구간 이름이 빠지는 일이 있다, S52 거여동):
+    // v167 (v165 가상 주행: 경로 구간 이름이 비면 고가·지하 카메라 67대가 여전히 빠졌다 — 네이버 경로에 구간 이름이 빠지는 일이 있다, S52 거여동):
     // 구간 이름이 없으면 카메라가 빠른 길(이름이 고속·순환로·간선이거나 제한 80 이상) 위에 있고 경로와 나란하면(20° 안) 남긴다
     const fastCam = !specificRoad(rn) && camHasDir(c) && angleDiff(c.eb, bearing(a, b)) <= 20 && (camNames(c).some(isFastRoad) || c[2] >= 80);
     if (!camLevelOk(c, at, rn, hwHere || fastCam)) return null;                // 지하차도·고가로 넘어가는 곳의 지상 카메라 등
@@ -2691,7 +2691,7 @@
       for (const x of near.slice()) {
         if (!isSignalCam(x.c) || !camHasDir(x.c) || x.c[6] || appr.includes(x)) continue;
         if (appr.some((a) => a.c[2] === x.c[2])) continue;          // 제한속도가 같으면 그대로 (헷갈릴 일이 없다)
-        // v166: 같은 교차로의 다른 진입로 정지선 카메라 — 내 접근 방향과 같은 쪽을 찍지만 길 이름이 접근로와 다르면(램프로 들어가는데
+        // v167: 같은 교차로의 다른 진입로 정지선 카메라 — 내 접근 방향과 같은 쪽을 찍지만 길 이름이 접근로와 다르면(램프로 들어가는데
         // 위례중앙로 서행 50) 뺀다. 차로 위 점으로 같이 지남을 재게 되자 램프 30 을 지난 뒤 이 50 이 마지막 13m 떴다 (네이버는 30 만)
         if (x.at >= T - 60 && x.at <= T + 5 && angleDiff(x.c.eb, inB) <= CAM_DIR_TOL && specificRoad(apprRoad) &&
             camNames(x.c).some(specificRoad) && !sameCamRoad(apprRoad, x.c)) { drop(x); continue; }
@@ -2727,7 +2727,7 @@
       // v165 (2026-11-20 2차 점검: 반대 방향 짝 3,967개가 120초 동안 지남으로 처리돼 유턴해 돌아오면 놓쳤다): 반대 방향 행은 지남으로 치지 않는다
       // (방향을 아는 반대 방향 카메라는 어차피 방향으로 걸러진다)
       if (opp) { if (x.c[4] === 2) oppEnd = true; continue; }
-      // v166 (2026-11-20 v165 가상 주행): 앞뒤·같은 자리는 차로 위 점(신호 카메라는 정지선)으로 잰다. 원래 좌표로 재면
+      // v167 (2026-11-20 v165 가상 주행): 앞뒤·같은 자리는 차로 위 점(신호 카메라는 정지선)으로 잰다. 원래 좌표로 재면
       // 보개원삼로 50 은 정지선이 51m 앞인 신호 카메라와 '같은 기둥'(13m)으로 묶여 카드가 일찍 사라졌고,
       // 복합물류로 50·60 은 원래 좌표가 38m 떨어졌지만 차로 위 점이 같아 50 을 지나자 60 이 떴다
       const xp = camPt(x.c), ld = haversine(cp, xp);
