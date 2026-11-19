@@ -135,6 +135,14 @@
   .cam-miss { min-width: 116px; min-height: 52px; padding: 0 20px; border-radius: 14px; font-size: 18px; }
   .cam-miss.sent, .cam-miss.sent:active { background: #1d4fb8; border-color: #fff; }
   .cam-miss[hidden] { display: none; }
+  /* v161: '틀림'으로 의심 표시한 카메라 — 흐리게, 제한속도 '?' */
+  .camcard.doubt { opacity: .55; filter: saturate(.4); }
+  .camcard.doubt .cam-type::after { content: ' · 틀림 표시'; font-weight: 600; opacity: .8; }
+  .camflags ul { list-style: none; margin: 4px 0 8px; padding: 0; }
+  .camflags li { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(127,127,127,.25); font-size: 14px; }
+  .camflags li span { flex: 1; min-width: 0; }
+  .camflags li small { opacity: .7; }
+  .camflags li button { flex: none; min-height: 36px; }
   .camnext b { color: var(--text); font-variant-numeric: tabular-nums; }
   .mini-sign {
     flex: none; width: 34px; height: 34px; border-radius: 50%; background: #fff; border: 4px solid #e53935;
@@ -1796,6 +1804,12 @@
     <label class="check"><input type="checkbox" id="optTraffic"> 실시간 교통 (도로를 막힘 정도로 색칠)</label>
     <label class="check"><input type="checkbox" id="optWeather"> 날씨 표시 (위치는 약 10km 단위로만 보냄)</label>
     <p class="hint">단속 카메라 <b id="camCount">-</b>대 · 기준일 <b id="camDate">-</b> (경찰청 공공데이터)</p>
+    <!-- v161: '틀림'으로 표시한 카메라 (14일 의심·두 번이면 숨김) — 하나씩 또는 모두 되돌리기 -->
+    <div id="camFlagBox" class="camflags" hidden>
+      <p class="hint"><b>'틀림'으로 표시한 단속 카메라</b> · 한 번 누르면 14일 동안 흐리게(소리 없이), 다른 날 또 누르면 숨겨요.</p>
+      <ul id="camFlagList"></ul>
+      <div class="row"><button id="camFlagClear" type="button">모두 되돌리기</button></div>
+    </div>
     <div class="row"><button id="soundTest">소리 테스트</button></div>
 
     <hr>
@@ -1846,8 +1860,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-160"></script>
-<script src="img/ai/picks.js?v=2026.11.16-160"></script>
-<script src="app.js?v=2026.11.16-160"></script>
+<script src="icons.js?v=2026.11.16-161"></script>
+<script src="img/ai/picks.js?v=2026.11.16-161"></script>
+<script src="app.js?v=2026.11.16-161"></script>
 </body>
 </html>

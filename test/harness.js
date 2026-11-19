@@ -2750,10 +2750,11 @@
       const tg = t.camState.target;
       if (tg && sameCam(tg.c, C) && onHit === null) { onHit = r0(1000 - s); onMarkers = m && m.cams ? m.cams.size : -1; }
     }
-    const pass = offHit === null && offMarkers === 0 && freeHit !== null && onHit !== null && onMarkers >= 1 && !!nextTxt && /다음 단속/.test(nextTxt);
+    // v161 (2026-11-20 점검 4): 경로를 2.5초 넘게 벗어나 다른 길을 달리면 그 길의 카메라를 알린다(예전엔 경로 밖이라 끝내 안 알렸다). 지도 표시는 경로 위 카메라만
+    const pass = offHit !== null && offMarkers === 0 && freeHit !== null && onHit !== null && onMarkers >= 1 && !!nextTxt && /다음 단속/.test(nextTxt);
     return {
       pass,
-      detail: '(a) navigating, camera off the route straight ahead: ' + (offHit === null ? 'ignored✓' : 'WRONG alert at ' + offHit + ' m') +
+      detail: '(a) navigating but driving off the route toward a camera: ' + (offHit !== null ? 'alert at ' + offHit + ' m (off route 2.5 s+ → road ahead)✓' : 'MISSED') +
         ', map markers ' + offMarkers + (offMarkers === 0 ? '✓' : '✗') +
         '; (b) same drive without nav: ' + (freeHit !== null ? 'alert at ' + freeHit + ' m✓' : 'MISSED') +
         '; (c) route through camera: ' + (onHit !== null ? 'alert at ' + onHit + ' m, markers ' + onMarkers : 'MISSED') + ', preview "' + (nextTxt || 'none') + '"',
@@ -2778,7 +2779,7 @@
     { id: 'S15', name: 'S15 over-speed beep once a second', fn: s15 },
     { id: 'S16', name: 'S16 Tesla mode layout', fn: s16 },
     { id: 'S17', name: 'S17 alert range by road type', fn: s17 },
-    { id: 'S18', name: 'S18 navigation: route cameras only', fn: s18 },
+    { id: 'S18', name: 'S18 navigation: route cameras on the map; off the route for 2.5 s+ the road actually driven is watched (v161 audit)', fn: s18 },
     { id: 'S19', name: 'S19 latest version from plain link', fn: s19 },
     { id: 'S20', name: 'S20 curved road camera (no nav)', fn: s20 },
     { id: 'S21', name: 'S21 route-number road names', fn: s21 },
@@ -2832,6 +2833,9 @@
     { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored; 7-10 lanes fit the drawer as square tiles", fn: s77 },
     { id: 'S78', name: "S78 mainline junction (v133): keep-left/right where the route stays on the same expressway section and goes straight is shown as straight ('신갈분기점에서 직진 · 서울 방면', main-straight junction scene, straight sign); a fork onto another expressway stays a fork", fn: s78 },
     { id: 'S79', name: 'S79 rest areas (v133): distance to where the entry ramp leaves the mainline (OSM), not the rest-area centre; within 3 km and no turn within 1 km the top row becomes the rest area (blue), next row = the guidance after it', fn: s79 },
+    { id: 'S99', name: "S99 '틀림' (v161 audit + driver 'wrong may be a wrong limit'): a press within 1 s of the card changing is ignored; one press keeps the camera dimmed with limit '?' and no sound (miss button still there); a second press on another day hides it, except child/elder zone cameras; one-time flags expire after 14 days; settings list undoes them", fn: s99 },
+    { id: 'S98', name: "S98 speed sections (v161 audit): a section end that is the next section's start (중부내륙 110) closes and reopens; a new start 56 m before the old end (세종포천/구리포천) is not closed by that end; a stale open section (50) is replaced at the next start (서해안 100); section lengths 1,000× too big are scaled back, 0 = unknown", fn: s98 },
+    { id: 'S97', name: "S97 camera pick & pass (v161 audit, real rows): same spot 80 + child 30 shows 30; 50 with child 30 5 m on shows 30 and passes both; child 30 is kept next to a 60; 50 62 m after a 60 shows from 300 m+; passing a 30 does not mark a camera 20 m further on as passed", fn: s97 },
     { id: 'S96', name: "S96 sound-locked notice (v160 audit: after a reload or '새 버전' voice and beeps stay off until the screen is touched, with nothing on screen): parked → nothing (as asked 2026-11-13), driving while locked → '소리 꺼짐 · 화면을 한 번 누르세요', gone on the first touch, not shown when both sounds are off", fn: s96 },
     { id: 'S95', name: "S95 expressway booth limits (v159, 놓침·틀림 reports 11-16~19): the 경기남부 고속도로순찰대 booth list has no limits, so the nearest street camera's 50/60 was used — the 송파IC 10.3k booth never showed (missed twice) and the 판교JC 1.25k booth read '박스형 60' (wrong twice); on a straight 수도권제1순환고속도로 route through each booth at 90 km/h both now show from 500 m+ with the expressway limit 100", fn: s95 },
     { id: 'S94', name: "S94 closer rows on top (v158, 이배재터널 안 '370m 터널 출구까지' above '↗ 230m' looked upside down — 230m was measured from the left turn, 2.0 km from the car): card rows (tunnel, rest, next guide, parking entrance), drawer cards (lanes, junction, camera, section, hi-pass) and small chips are ordered by distance from the car; the next row keeps Naver's distance from the guide above but says so ('230m 좌회전 후', '830m 터널 지나'); rows within 25 m keep their place, the order changes only once on a 1 km sweep, hidden rows go back to HTML order", fn: s94 },
@@ -4723,6 +4727,172 @@
     return { pass: !!ok, detail: 'U-turn at ' + r0(U) + ' m ' + JSON.stringify(r) };
   }
 
+  // v161 공통: 길안내 없이 카메라 차로 위 점을 지나는 곧은 길을 달린다 (from m 앞 → to m 뒤, step m, kmh). 매 걸음 onStep(s, f)
+  async function driveThrough(pt, h, from, to, kmh, step, onStep) {
+    const t = T();
+    await resetApp(); softReset();
+    t.alertLog.length = 0;
+    const v = kmh / 3.6, dt = step / v * 1000;
+    for (let s = -from; s <= to; s += step) {
+      const p = dest(pt, s < 0 ? (h + 180) % 360 : h, Math.abs(s));
+      const f = feed(p, v, h, { dt, acc: 3 });
+      if (onStep) onStep(s, f);
+    }
+  }
+  const lanePt = (c) => ({ lat: c.sl != null ? c.sl : c[0], lng: c.sg != null ? c.sg : c[1] });
+  const camAt = (lat, lng) => T().cams.rows.find((x) => sameCam(x, { lat, lng }));
+
+  // S97: 단속 카메라 고르기·지남 (v161, 2026-11-20 점검의 실제 행들)
+  //  (a) 대한로 80(#6064)과 어린이 30(#6063)이 같은 자리: 30 을 보여 주고, 지나면 둘 다 지남
+  //  (b) 북한강로 50(#25702) 뒤 5m 에 어린이 30(#25701): 30 을 보여 주고(예전엔 50 을 지나며 30 까지 지남으로 쳐 경고 없음), 지나면 둘 다 지남
+  //  (c) 어린이 30(#17164) 옆 60(#17162): 30 을 지날 때까지 30 (예전엔 11m 뒤 60 으로 바뀌며 30 이 사라짐)
+  //  (d) 중앙로 60(#16985) 뒤 62m 에 50(#16982): 50 이 300m 넘게 앞에서부터 (예전엔 29m 앞에서야)
+  //  (e) passCam: 30 을 지날 때 진행 방향으로 20m 앞에 둔 가짜 60 은 지남이 아니다 — 30 을 다 지나면 60 이 뜬다
+  async function s97() {
+    const t = T(), r = {};
+    const run = async (k, a, b, h, kmh) => {
+      const A = camAt(a[0], a[1]), B = b ? camAt(b[0], b[1]) : null;
+      if (!A || (b && !B)) { r[k] = 'not in data'; return; }
+      const o = { shown: [], firstB: null, lastBefore: null };
+      await driveThrough(lanePt(A), h, 700, 80, kmh, 5, (s) => {
+        const tg = t.camState.target;
+        const lab = tg ? text('#camLimit') : '';
+        if (o.shown[o.shown.length - 1] !== lab) o.shown.push(lab);
+        if (B && tg && tg.c === B && o.firstB === null) o.firstB = Math.round(-s);
+        if (s < 0 && tg) o.lastBefore = lab;
+      });
+      o.passedA = t.camState.passed.has(t.cams.rows.indexOf(A));
+      if (B) o.passedB = t.camState.passed.has(t.cams.rows.indexOf(B));
+      o.voice = t.alertLog.filter((x) => x.kind === 'voice').map((x) => x.text).slice(0, 3);
+      r[k] = o;
+    };
+    await run('a', [35.51725, 128.17371], [35.51725, 128.17371], 157, 60);
+    await run('b', [37.5646, 127.319], [37.5646, 127.31894], 234, 50);
+    await run('c', [37.04209, 127.02696], null, 49, 40);
+    await run('d', [37.01297, 127.23748], [37.01272, 127.2381], 112, 50);
+    // (e) 가짜 60 을 30 의 20m 앞에 하나 붙인다 (행·격자에 넣었다가 뺀다)
+    {
+      const A = camAt(37.04209, 127.02696);
+      if (A) {
+        const lp = lanePt(A), q = dest(lp, 49, 20);
+        const fake = [round6(q.lat), round6(q.lng), 60, 1, 0, 0, 0, -1, 5, 1];
+        fake.eb = 49; fake.e2 = 0; fake.lv = 0; fake.sl = fake[0]; fake.sg = fake[1];
+        const rows = t.cams.rows, fi = rows.length; rows.push(fake);
+        const key = Math.floor(fake[0] / 0.01) + ':' + Math.floor(fake[1] / 0.01);
+        const cell = t.cams.grid.get(key) || []; cell.push(fi); t.cams.grid.set(key, cell);
+        try {
+          const o = { seenFake: null, passedFakeAtA: null };
+          await driveThrough(lp, 49, 500, 60, 40, 3, (s) => {
+            const tg = t.camState.target;
+            if (o.passedFakeAtA === null && t.camState.passed.has(rows.indexOf(A))) o.passedFakeAtA = t.camState.passed.has(fi);
+            if (tg && tg.c === fake && o.seenFake === null) o.seenFake = Math.round(s);
+          });
+          r.e = o;
+        } finally { rows.pop(); cell.pop(); if (!cell.length) t.cams.grid.delete(key); t.camMiss.near.delete(fi); t.camState.passed.delete(fi); }
+      }
+    }
+    await resetApp(); softReset();
+    const ok = r.a.lastBefore === '30' && r.a.passedA && r.a.passedB &&
+      r.b.lastBefore === '30' && r.b.passedA && r.b.passedB &&
+      r.c.lastBefore === '30' &&
+      r.d.firstB !== null && r.d.firstB >= 300 &&
+      r.e && r.e.passedFakeAtA === false && r.e.seenFake !== null && r.e.seenFake > 0 && r.e.seenFake <= 20;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S98: 구간단속 시작·끝 (v161, 2026-11-20 점검)
+  //  (a) 중부내륙 110: 앞 구간 끝(#15907)과 다음 구간 시작(#15906)이 같은 자리 — 열린 구간을 닫고 바로 새 구간을 연다
+  //  (b) 세종포천 시작(#26733) 56m 뒤에 구리포천 끝(#26744): 새 구간이 앞 구간의 끝에 닫히지 않는다
+  //  (c) 끝을 놓쳐 옛 구간(제한 50)이 열린 채로 서해안 100 구간 시작(#714)을 지나면 새 구간(100)
+  //  (d) 구간 길이: 1,000배 큰 값(#2626 15,834,000)은 15.8km, 0 은 모름
+  async function s98() {
+    const t = T(), r = {};
+    const open = (lim) => { t.camState.section = { limit: lim, len: 20000, t0: clock, d0: t.state.odo - 9000 }; };
+    const run = async (k, a, h, kmh, before) => {
+      const A = camAt(a[0], a[1]);
+      if (!A) { r[k] = 'not in data'; return; }
+      const o = {};
+      let opened = false;
+      await driveThrough(lanePt(A), h, 900, 200, kmh, 10, (s) => {
+        if (!opened && s >= -600) { opened = true; if (before) before(); }
+      });
+      const sec = t.camState.section;
+      o.sec = sec ? { limit: sec.limit, done: Math.round(t.state.odo - sec.d0) } : null;
+      o.voice = t.alertLog.filter((x) => /구간단속/.test(x.text)).map((x) => x.text);
+      r[k] = o;
+    };
+    await run('a', [36.87084, 127.91236], 292, 100, () => open(110));
+    await run('b', [37.62497, 127.1179], 50, 90, () => open(100));
+    await run('c', [34.77867, 127.03662], 237, 120, () => open(50));
+    r.d = { big: t.secLen([0, 0, 100, 9, 1, 15834000]), zero: t.secLen([0, 0, 100, 9, 1, 0]), ok: t.secLen([0, 0, 100, 9, 1, 11000]) };
+    await resetApp(); softReset();
+    const ok = r.a.sec && r.a.sec.limit === 110 && r.a.sec.done < 400 && r.a.voice.some((x) => /시작/.test(x)) &&
+      r.b.sec && r.b.sec.limit === 100 && r.b.sec.done < 400 &&
+      r.c.sec && r.c.sec.limit === 100 && r.c.voice.some((x) => /시작/.test(x)) &&
+      r.d.big === 15834 && r.d.zero === 0 && r.d.ok === 11000;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S99: '틀림' (v161, 2026-11-20 점검 + 운전자 '틀림이 속도가 틀린걸수도 있음'). 북한강로 어린이 30(#25701) 쪽으로 달리며
+  //  (a) 카드가 막 바뀐 1초 안의 누름은 무시 (b) 한 번 누르면 숨기지 않고 흐리게·제한 '?'·소리 없음·놓침 버튼은 그대로 보임
+  //  (c) 다른 날 또 누르면 숨김 — 다만 보호구역 카메라는 흐리게만 (d) 보호구역 아닌 카메라는 숨김
+  //  (e) 14일 지난 한 번짜리는 풀림 (f) 설정 목록에 보이고 '되돌리기'로 풀림 (g) 예전 영원히 숨김(tnc.camNo)은 14일 의심으로 옮겨짐
+  async function s99() {
+    const t = T(), r = {};
+    const keepMap = new Map(t.camNoMap), keepOld = t.store.get('camNo');
+    const A = camAt(37.5646, 127.31894), B = camAt(37.5646, 127.319);   // A 어린이 30, B 50
+    if (!A || !B) return { pass: false, detail: 'cameras not in data' };
+    try {
+      t.camNoMap.clear();
+      const lp = lanePt(A);
+      const toward = async (stopAt) => { await driveThrough(lp, 234, 380, -stopAt, 50, 5); };
+      await toward(200);
+      const tg = t.camState.target;
+      r.target = tg ? text('#camLimit') : null;
+      // (a) 카드가 방금 바뀐 것처럼
+      const card = document.getElementById('camCard');
+      card._camAt = Date.now();
+      document.getElementById('camWrong').click();
+      r.a = { ignored: !t.camFlag(A, 234) };
+      card._camAt = Date.now() - 5000;
+      // (b) 한 번 누름
+      document.getElementById('camWrong').click();
+      const tg2 = t.camState.target;
+      r.b = { flag: t.camFlag(tg2 ? tg2.c : A, 234), still: !!tg2, limit: text('#camLimit'), dim: card.classList.contains('doubt'),
+        miss: !document.getElementById('camMissBtn').hidden };
+      t.alertLog.length = 0;
+      for (let k = 0; k < 20; k++) { const p = dest(lp, 54, 190 - k * 5); feed(p, 50 / 3.6, 234, { dt: 360, acc: 3 }); }
+      r.b.sounds = t.alertLog.filter((x) => /단속|경고음|알림음/.test(x.text)).length;
+      // (c) 다른 날 또 → 보호구역이라 흐리게만
+      const e = t.camNoMap.get(A[0] + ',' + A[1]);
+      if (e && e[0]) e[0].days = ['2026-11-1', '2026-11-2'];
+      r.c = t.camFlag(A, 234);
+      // (d) 보호구역 아닌 50 은 다른 날 두 번이면 숨김
+      t.camFlagAdd(B, 234, Date.now() - 3 * 86400e3);
+      r.d = { one: t.camFlag(B, 234), two: t.camFlagAdd(B, 234), userNo: t.camUserNo(B, 234), otherWay: t.camFlag(B, 54) };
+      // (e) 14일 지난 한 번짜리
+      t.camNoMap.set('1,1', [{ h: 0, t0: 0, t1: Date.now() - 15 * 86400e3, days: ['x'], lim: 50, name: 'x' }]);
+      r.e = t.camFlag([1, 1, 50, 1, 0, 0, 0, -1, 5, 1], 0);
+      // (f) 설정 목록
+      t.renderCamFlags();
+      const items = [...document.querySelectorAll('#camFlagList li')];
+      r.f = { box: !document.getElementById('camFlagBox').hidden, n: items.length, first: items[0] ? items[0].textContent : '' };
+      const undo = items.find((li) => /50/.test(li.textContent) && /숨김/.test(li.textContent));
+      if (undo) undo.querySelector('button').click();
+      r.f.afterUndo = t.camFlag(B, 234);
+      // (g) 예전 형식 옮기기: 앱을 다시 띄우지 않고 같은 규칙을 확인할 수 없으므로 저장 형식만 확인
+      r.g = { v2: !!t.store.get('camNo2'), old: t.store.get('camNo') };
+    } finally {
+      t.camNoMap.clear(); keepMap.forEach((v, k) => t.camNoMap.set(k, v));
+      t.store.set('camNo', keepOld);
+      await resetApp(); softReset();
+    }
+    const ok = r.target === '30' && r.a.ignored && r.b.flag === 'doubt' && r.b.still && r.b.limit === '?' && r.b.dim && r.b.miss && r.b.sounds === 0 &&
+      r.c === 'doubt' && r.d.one === 'doubt' && r.d.two === 'hide' && r.d.userNo && r.d.otherWay === null && r.e === null &&
+      r.f.box && r.f.n >= 2 && r.f.afterUndo === null && r.g.v2 && !r.g.old;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
   // S96: 소리 잠김 표시 (v160, 2026-11-20 점검: 새로고침·'새 버전' 뒤 화면을 누를 때까지 음성·경고음이 모두 꺼져 있는데 표시가 없었다).
   //      주차 중(길안내 없음·시속 0)에는 안 띄우고, 달리기 시작하면(시속 30) '소리 꺼짐 · 화면을 한 번 누르세요', 손을 떼면 사라진다.
   //      소리를 둘 다 꺼 두었으면 안 띄운다
@@ -4760,14 +4930,14 @@
         const c = rows.find((x) => sameCam(x, b));
         if (!c) { r[b.k] = 'not in data'; continue; }
         // 틀림 표시: 숨김 → 한 번 풀림(같은 id 로는 다시 안 풂)
-        const key = c[0] + ',' + c[1];
-        t.camNoMap.set(key, [b.h]);
+        const key = c[0] + ',' + c[1], two = () => [{ h: b.h, t0: Date.now(), t1: Date.now(), days: ['d1', 'd2'], lim: 0, name: '' }];
+        t.camNoMap.set(key, two());
         const u = { listed: unflagKeys.has(key), hidden: t.camUserNo(c, b.h) };
         t.store.set('camNoUnflag', '');
         const id = 'S95-' + b.k;
         u.n1 = t.camNoUnflag({ id, keys: [key] });
         u.after = t.camUserNo(c, b.h);
-        t.camNoMap.set(key, [b.h]);
+        t.camNoMap.set(key, two());
         u.n2 = t.camNoUnflag({ id, keys: [key] });
         t.camNoMap.delete(key);
         const lane = { lat: c.sl != null ? c.sl : c[0], lng: c.sg != null ? c.sg : c[1] };
