@@ -134,6 +134,8 @@
      누르면 2.5초 동안 파란 바탕 '✓ 보냄' (그사이 또 눌러도 한 번만 보낸다) */
   .cam-miss { min-width: 116px; min-height: 52px; padding: 0 20px; border-radius: 14px; font-size: 18px; }
   .cam-miss.sent, .cam-miss.sent:active { background: #1d4fb8; border-color: #fff; }
+  .cam-miss.sending { opacity: .7; }
+  .cam-miss.saved, .cam-miss.saved:active { background: #4b5563; border-color: #fff; }
   .cam-miss[hidden] { display: none; }
   /* v161: '틀림'으로 의심 표시한 카메라 — 흐리게, 제한속도 '?' */
   .camcard.doubt { opacity: .55; filter: saturate(.4); }
@@ -302,6 +304,10 @@
     box-shadow: 0 6px 18px rgba(0,0,0,.35);
   }
   #map.navigating .soundpill { top: auto; bottom: 28px; }
+  /* v163: 단속 자료 없음 표시 (소리 꺼짐 표시 밑) */
+  .soundpill.campill { top: 72px; min-height: 36px; font-size: 14px; background: #c62828; color: #fff; cursor: default; display: flex; align-items: center; }
+  #map.navigating .soundpill.campill { top: auto; bottom: 84px; }
+  .soundpill.campill[hidden] { display: none; }
   .attrib {
     position: absolute; right: 8px; bottom: 6px; z-index: 1000; pointer-events: none;
     font-size: 11px; color: #333; background: rgba(255,255,255,.75); padding: 1px 6px; border-radius: 4px;
@@ -1872,8 +1878,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-162"></script>
-<script src="img/ai/picks.js?v=2026.11.16-162"></script>
-<script src="app.js?v=2026.11.16-162"></script>
+<script src="icons.js?v=2026.11.16-163"></script>
+<script src="img/ai/picks.js?v=2026.11.16-163"></script>
+<script src="app.js?v=2026.11.16-163"></script>
 </body>
 </html>

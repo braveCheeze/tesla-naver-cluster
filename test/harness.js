@@ -2833,6 +2833,8 @@
     { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored; 7-10 lanes fit the drawer as square tiles", fn: s77 },
     { id: 'S78', name: "S78 mainline junction (v133): keep-left/right where the route stays on the same expressway section and goes straight is shown as straight ('신갈분기점에서 직진 · 서울 방면', main-straight junction scene, straight sign); a fork onto another expressway stays a fork", fn: s78 },
     { id: 'S79', name: 'S79 rest areas (v133): distance to where the entry ramp leaves the mainline (OSM), not the rest-area centre; within 3 km and no turn within 1 km the top row becomes the rest area (blue), next row = the guidance after it', fn: s79 },
+    { id: 'S103', name: "S103 tunnel cameras (v163 audit 8): on the route, a camera 3.6 km inside a tunnel is alerted from 300 m before the entrance (beyond the 3 km scan), and with GPS lost inside, a 1 s dead-reckoning tick along the route at the last speed counts the distance down and passes it", fn: s103 },
+    { id: 'S102', name: "S102 report outbox & camera data retry (v163 audit 9/10): a '놓침' the server did not take reads '저장함' and stays queued, is resent later, '✓ 보냄' only on 200; with no camera data a '단속 카메라 자료 없음 · 다시 받는 중' pill shows while driving and goes once the data loads again", fn: s102 },
     { id: 'S100', name: "S100 road colour guide lines (v162, 운전자 '녹색 분홍색 안내선'): within 1 km of a highway fork whose painted line the route really follows, the card shows '분홍색 유도선 따라가기' in that colour; the main line, both branches or neither → nothing; gone after the branch end; real data keeps 경부 북행 신갈분기점 (녹색 인천·분홍 원주) but drops 하행 (좌우가 실제 갈래와 반대); real routes 서울TG→판교분기점(구리) and 팔당→하남분기점(판교·서하남) show 분홍색", fn: s100 },
     { id: 'S99', name: "S99 '틀림' (v161 audit + driver 'wrong may be a wrong limit'): a press within 1 s of the card changing is ignored; one press keeps the camera dimmed with limit '?' and no sound (miss button still there); a second press on another day hides it, except child/elder zone cameras; one-time flags expire after 14 days; settings list undoes them", fn: s99 },
     { id: 'S98', name: "S98 speed sections (v161 audit): a section end that is the next section's start (중부내륙 110) closes and reopens; a new start 56 m before the old end (세종포천/구리포천) is not closed by that end; a stale open section (50) is replaced at the next start (서해안 100); section lengths 1,000× too big are scaled back, 0 = unknown", fn: s98 },
@@ -3671,6 +3673,8 @@
       const rc = b.getBoundingClientRect();
       r.size = Math.round(rc.width) + 'x' + Math.round(rc.height);
       b.click();
+      // v163: 서버가 받았다고 할 때 '✓ 보냄' (시험 페이지는 보내지 않아 바로 답이 온다)
+      await waitFor(() => !b.classList.contains('sending') && /놓친 단속/.test(toastEl.hidden ? '' : toastEl.textContent), 2000, 10);
       r.text1 = b.textContent; r.blue = getComputedStyle(b).backgroundColor === 'rgb(29, 79, 184)';
       r.toast1 = !toastEl.hidden && /놓친 단속/.test(toastEl.textContent);
       toastEl.hidden = true;
@@ -3679,7 +3683,7 @@
       await new Promise((res) => setTimeout(res, 2700));
       r.text3 = b.textContent; r.sentAfter = b.classList.contains('sent');
     } finally {
-      clearTimeout(b._sentT); b.classList.remove('sent'); b.textContent = '놓침'; b.hidden = prevHidden; toastEl.hidden = true;
+      clearTimeout(b._sentT); b.classList.remove('sent', 'saved', 'sending'); b.textContent = '놓침'; b.hidden = prevHidden; toastEl.hidden = true;
     }
     const [w, h] = r.size.split('x').map(Number);
     const ok = w >= 116 && h >= 52 && r.text1 === '✓ 보냄' && r.blue && r.toast1 && !r.toast2 && r.text3 === '놓침' && !r.sentAfter;
@@ -4931,7 +4935,7 @@
   //  (e) 14일 지난 한 번짜리는 풀림 (f) 설정 목록에 보이고 '되돌리기'로 풀림 (g) 예전 영원히 숨김(tnc.camNo)은 14일 의심으로 옮겨짐
   async function s99() {
     const t = T(), r = {};
-    const keepMap = new Map(t.camNoMap), keepOld = t.store.get('camNo');
+    const keepMap = new Map(t.camNoMap), keepOld = t.store.get('camNo'), keepRaw = t.store.get('camNo2');
     const A = camAt(37.5646, 127.31894), B = camAt(37.5646, 127.319);   // A 어린이 30, B 50
     if (!A || !B) return { pass: false, detail: 'cameras not in data' };
     try {
@@ -4976,12 +4980,124 @@
       r.g = { v2: !!t.store.get('camNo2'), old: t.store.get('camNo') };
     } finally {
       t.camNoMap.clear(); keepMap.forEach((v, k) => t.camNoMap.set(k, v));
-      t.store.set('camNo', keepOld);
+      t.store.set('camNo', keepOld); t.store.set('camNo2', keepRaw);   // 저장소에 쓴 표시도 되돌린다 (다음에 열 때 다시 읽힌다)
       await resetApp(); softReset();
     }
     const ok = r.target === '30' && r.a.ignored && r.b.flag === 'doubt' && r.b.still && r.b.limit === '?' && r.b.dim && r.b.miss && r.b.sounds === 0 &&
       r.c === 'doubt' && r.d.one === 'doubt' && r.d.two === 'hide' && r.d.userNo && r.d.otherWay === null && r.e === null &&
       r.f.box && r.f.n >= 2 && r.f.afterUndo === null && r.g.v2 && !r.g.old;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S102: 신고 보낼 함·단속 자료 다시 받기 (v163, 2026-11-20 점검 9·10)
+  //  (a) 서버가 못 받으면 '놓침'은 '저장함'이고 함에 남는다 (b) 연결되면 다시 보내 함이 빈다, 받았을 때만 '✓ 보냄'
+  //  (c) 카메라 자료를 못 받으면 주행 중 '단속 카메라 자료 없음 · 다시 받는 중', 다시 받으면 사라지고 행 수가 돌아온다
+  async function s102() {
+    const t = T(), r = {}, ob = t.outbox, keepPost = ob.post, keepBox = t.store.get('outbox');
+    const btn = document.getElementById('camMissBtn');
+    const keep = { loaded: t.cams.loaded, mobile: t.cams.mobile, n: t.cams.rows.length };
+    const realF = window.fetch;
+    try {
+      ob.inTest = true; t.store.set('outbox', null);
+      ob.post = async () => ({ ok: false });
+      btn.click();
+      await waitFor(() => !btn.classList.contains('sending'), 2000, 20);
+      r.a = { label: btn.textContent, saved: btn.classList.contains('saved'), box: JSON.parse(t.store.get('outbox') || '[]').length };
+      let posted = 0;
+      ob.post = async () => { posted++; return { ok: true }; };
+      r.b = { flush: await t.outboxFlush(), box: JSON.parse(t.store.get('outbox') || '[]').length, posted };
+      await new Promise((res) => setTimeout(res, 2700));   // 앞 표시가 사라지길 기다림
+      btn.click();
+      await waitFor(() => !btn.classList.contains('sending'), 2000, 20);
+      r.b.label = btn.textContent; r.b.saved = btn.classList.contains('saved');
+      // (c) 자료 못 받음 → 표시 → 다시 받음
+      window.fetch = (u, o) => (/data\/(cameras|mobile)\.json/.test(String(u)) ? Promise.resolve(new Response('no', { status: 503 })) : realF(u, o));
+      t.cams.loaded = false; t.cams.mobile = 0;
+      await t.loadCameras();
+      t.state.speedKmh = 30; t.renderCamStatus();
+      const pill = () => { const e = document.getElementById('camStatus'); return e && !e.hidden ? e.textContent : ''; };
+      r.c = { failed: t.cams.failed, pill: pill(), timer: !!t.camLoad.timer };
+      window.fetch = realF;
+      await t.loadCameras();
+      t.renderCamStatus();
+      r.c.after = { failed: t.cams.failed, loaded: t.cams.loaded, pill: pill(), rows: t.cams.rows.length === keep.n, tries: t.camLoad.tries };
+    } finally {
+      window.fetch = realF;
+      clearTimeout(t.camLoad.timer); t.camLoad.tries = 0;
+      if (!t.cams.loaded) await t.loadCameras();
+      ob.post = keepPost; ob.inTest = false; t.store.set('outbox', keepBox);
+      clearTimeout(btn._sentT); btn.classList.remove('sent', 'saved', 'sending'); btn.textContent = '놓침';
+      const te = document.getElementById('toast'); if (te) te.hidden = true;
+      t.state.speedKmh = 0; t.renderCamStatus();
+      await resetApp(); softReset();
+    }
+    const ok = r.a.label === '저장함' && r.a.saved && r.a.box === 1 && r.b.flush === true && r.b.box === 0 && r.b.posted === 1 &&
+      r.b.label === '✓ 보냄' && !r.b.saved && r.c.failed && /자료 없음/.test(r.c.pill) && r.c.timer &&
+      !r.c.after.failed && r.c.after.loaded && r.c.after.pill === '' && r.c.after.rows && r.c.after.tries === 0;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S103: 터널 안 단속 카메라 (v163, 2026-11-20 점검 8: 터널 안 카메라 58대 중 12대가 경고 거리보다 깊고, 터널 안에서는 GPS 가 끊긴다).
+  //  북쪽 6km 경로, 1,000~5,000m 터널, 4,600m 에 과속 80 (입구에서 3.6km 안). 입구 300m 앞(700m)부터 알리고,
+  //  1,000m 에서 GPS 가 끊긴 뒤 1초마다 마지막 속도(시속 60)로 경로를 따라 나아가 거리가 줄고, 카메라를 지나면 지남으로 친다
+  async function s103() {
+    const t = T(), r = {};
+    const P = [];
+    for (let k = 0; k <= 600; k++) { const p = dest(NAV_ORIGIN, 0, 10 * k); P.push({ lat: round6(p.lat), lng: round6(p.lng) }); }
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const total = cum[cum.length - 1];
+    const R = { route: { distance: r0(total), duration: r0(total / 17 * 1000), tollFare: 0, fuelPrice: 0, path: P.map((p) => [p.lng, p.lat]),
+      guide: [{ i: 600, t: 88, s: '목적지', d: r0(total), ms: r0(total / 17 * 1000) }], sections: [{ i: 0, n: 601, name: '테스트터널로', speed: 60, cong: 1 }] },
+      P, cum, total, dest: { name: '테스트', addr: '', lat: P[600].lat, lng: P[600].lng } };
+    const enc = (pts) => { const q = pts.map((x) => [Math.round(x.lat * 1e5), Math.round(x.lng * 1e5)]); const row = [0, 1, q[0][0], q[0][1]];
+      for (let k = 1; k < q.length; k++) row.push(q[k][0] - q[k - 1][0], q[k][1] - q[k - 1][1]); return row; };
+    const north = (m) => dest(NAV_ORIGIN, 0, m);
+    const cp = north(4600);
+    const fake = [round6(cp.lat), round6(cp.lng), 80, 1, 0, 0, 0, -1, 3, 1];
+    fake.eb = 0; fake.e2 = 0; fake.lv = 0; fake.sl = fake[0]; fake.sg = fake[1];
+    const rows = t.cams.rows, fi = rows.length;
+    const key = Math.floor(fake[0] / 0.01) + ':' + Math.floor(fake[1] / 0.01);
+    const cell = t.cams.grid.get(key) || [];
+    const prevT = t.prefs.tunnels;
+    try {
+      rows.push(fake); cell.push(fi); t.cams.grid.set(key, cell);
+      t.prefs.tunnels = true;
+      t.setTunnelData({ v: 1, scale: 1e5, names: ['테스트터널'], w: [enc([north(1000), north(3000), north(5000)])] });
+      await resetApp(); softReset();
+      await planAndStart(R);
+      let first = null;
+      for (let s = 0; s <= 1000; s += 20) {
+        const a = pointAt(R, s);
+        feed(a.p, 60 / 3.6, a.h, { dt: 1200 });
+        const tg = t.camState.target;
+        if (tg && tg.c === fake && first === null) first = s;
+      }
+      r.first = first;
+      const tg0 = t.camState.target;
+      r.atEntrance = tg0 && tg0.c === fake ? { dist: text('#camDist'), limit: text('#camLimit') } : null;
+      // GPS 끊김: 1초마다 (실제 시계를 앞으로 돌린 것처럼)
+      const base = Date.now();
+      const dists = [];
+      let passedAt = null;
+      for (let k = 2; k <= 260; k += 2) {
+        t.tunnelCamTick(base + k * 1000);
+        const tg = t.camState.target;
+        if (k % 20 === 0) dists.push(tg && tg.c === fake ? Math.round(tg.r) : null);
+        if (passedAt === null && t.camState.passed.has(fi)) passedAt = k;
+      }
+      r.dists = dists; r.passedAt = passedAt;
+    } finally {
+      t.endNav();
+      rows.pop(); cell.pop(); if (!cell.length) t.cams.grid.delete(key);
+      t.camMiss.near.delete(fi); t.camState.passed.delete(fi);
+      t.prefs.tunnels = prevT; t.setTunnelData(null); await t.loadTunnels();
+      await resetApp(); softReset();
+    }
+    // 입구 300m 앞(700m) 무렵부터 경고, 끊긴 뒤 거리가 줄고, 약 216초(3,600m ÷ 16.7m/s) 무렵 지남
+    const dec = r.dists.filter((x) => x !== null);
+    const ok = r.first !== null && r.first <= 760 && r.atEntrance && r.atEntrance.limit === '80' &&
+      dec.length >= 3 && dec.every((x, k) => k === 0 || x < dec[k - 1]) && r.passedAt !== null && r.passedAt >= 200 && r.passedAt <= 240;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
@@ -5016,7 +5132,7 @@
     const r = {};
     const mob = await (await realFetch(new URL('../data/mobile.json', location.href).href, { cache: 'no-store' })).json();
     const unflagKeys = new Set((mob.unflag && mob.unflag.keys) || []);
-    const keepNo = new Map(t.camNoMap), keepFlag = t.store.get('camNoUnflag');
+    const keepNo = new Map(t.camNoMap), keepFlag = t.store.get('camNoUnflag'), keepRaw = t.store.get('camNo2');
     try {
       for (const b of B) {
         const c = rows.find((x) => sameCam(x, b));
@@ -5059,7 +5175,7 @@
         r[b.k] = o;
       }
     } finally {
-      t.camNoMap.clear(); keepNo.forEach((v, k) => t.camNoMap.set(k, v));
+      t.camNoMap.clear(); keepNo.forEach((v, k) => t.camNoMap.set(k, v)); t.store.set('camNo2', keepRaw);
       t.store.set('camNoUnflag', keepFlag || '');
       await resetApp(); softReset();
     }

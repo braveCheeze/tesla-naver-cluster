@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-162'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-163'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -80,18 +80,57 @@
     }
   } catch (e) { /* 저장소 막힘 등: 그대로 진행 */ }
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
+  function eventBody(type, data) {
+    let ctx = {};
+    try { ctx = tele.ctx ? tele.ctx() : {}; } catch (e) { /* 초기화 전 오류 */ }
+    return Object.assign({
+      type, sid: tele.sid, v: APP_VERSION, at: Date.now(), page: location.host + location.pathname + location.search.slice(0, 40),
+      ua: navigator.userAgent.slice(0, 180),
+    }, ctx, data || {});
+  }
+  // v163 (2026-11-20 점검 9): 운전자가 누른 '놓침'·'틀림'은 꼭 닿게 한다. 예전엔 한 번만 보내고 실패를 삼켰고, 결과와 상관없이 '✓ 보냄',
+  // 한 페이지에서 40건이 넘으면 말없이 멈췄다. 이제 보낼 함(tnc.outbox, 최대 30건)에 넣고 서버가 받았다고(200) 할 때만 뺀다.
+  // 못 보낸 것은 다음 신고·1분마다·연결이 돌아오면·다음에 앱을 열 때 다시 보낸다
+  const OUTBOX_MAX = 30;
+  const outbox = {
+    busy: false,
+    load() { try { return JSON.parse(store.get('outbox') || '[]'); } catch (e) { return []; } },
+    save(a) { store.set('outbox', a.length ? JSON.stringify(a.slice(-OUTBOX_MAX)) : null); },
+    post: (body) => fetch(proxyUrl() + '/event', { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }),
+  };
+  async function outboxFlush() {
+    if (outbox.busy || botLike) return null;
+    if (!outbox.load().length) return null;
+    outbox.busy = true;
+    let last = null;
+    try {
+      for (const body of outbox.load()) {
+        let ok = false;
+        try { const r = await outbox.post(body); ok = !!(r && r.ok); } catch (e) { ok = false; }
+        if (!ok) { last = false; break; }
+        outbox.save(outbox.load().filter((x) => x.qid !== body.qid));
+        last = true;
+      }
+    } finally { outbox.busy = false; }
+    return last;
+  }
+  // 돌려주는 값: true 보냄 · false 못 보내 함에 남김 · null (보내지 않는 환경)
+  async function reportSure(type, data) {
+    if (botLike || (testPage && !outbox.inTest)) return null;
+    const body = eventBody(type, data);
+    body.qid = tele.sid + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    const a = outbox.load(); a.push(body); outbox.save(a);
+    const r = await outboxFlush();
+    return outbox.load().some((x) => x.qid === body.qid) ? false : r !== false;
+  }
+  window.addEventListener('online', () => { outboxFlush(); });
   function report(type, data) {
     if (testPage || botLike || tele.sent >= 40) return; // 검색엔진 로봇·자동화 접속은 보고하지 않음
     const key = type + '|' + (data && data.msg);
     if (tele.seen.has(key)) return; // 같은 내용은 세션당 한 번만
     tele.seen.add(key);
     tele.sent++;
-    let ctx = {};
-    try { ctx = tele.ctx ? tele.ctx() : {}; } catch (e) { /* 초기화 전 오류 */ }
-    const body = Object.assign({
-      type, sid: tele.sid, v: APP_VERSION, at: Date.now(), page: location.host + location.pathname + location.search.slice(0, 40),
-      ua: navigator.userAgent.slice(0, 180),
-    }, ctx, data || {});
+    const body = eventBody(type, data);
     try {
       fetch(proxyUrl() + '/event', {
         method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' }, keepalive: true,
@@ -2174,10 +2213,16 @@
     $('#tunnelText').textContent = a.inside ? name + ' 출구까지' : name + ' 입구까지' + (a.t.len >= 1000 ? ' · 길이 ' + fmtDist(a.t.len) : '');
     $('#tunnelBar').style.width = a.inside ? Math.round(Math.max(0, Math.min(1, a.p)) * 100) + '%' : '0';
   }
+  // v163 (2026-11-20 점검 10): 카메라 자료를 못 받으면 다시 받지 않았고, 박스형·이동식(mobile.json)을 못 받아도 아무 표시가 없었다.
+  // 10초·30초·1분·2분·5분 뒤 다시 받는다. 카메라는 있고 박스형만 빠졌으면 경고 중·구간단속 중이 아닐 때 다시 받는다
+  const camLoad = { tries: 0, timer: 0 };
   async function loadCameras() {
+    clearTimeout(camLoad.timer);
+    let ok = false, mobileOk = false;
     try {
       // 버전을 붙여 새 버전과 함께 바뀐 카메라 데이터를 바로 받는다 (브라우저 10분 캐시 우회)
       const [r, rm] = await Promise.all([fetch('data/cameras.json?v=' + APP_VERSION), fetch('data/mobile.json?v=' + APP_VERSION).catch(() => null)]);
+      if (!r.ok) throw new Error('cameras ' + r.status);
       const j = await r.json();
       // 박스형(단속 부스)·이동식 과속 단속 (v112, tools/build_mobile.py): 행 모양이 같아 그대로 붙인다. 도로 이름은 모름(-1)
       try {
@@ -2194,9 +2239,12 @@
           jd.length = base;
           j.dirs = jd.concat(m.dirs || []);
           cams.mobile = m.rows.length;
+          mobileOk = true;
           try { camNoUnflag(m.unflag); } catch (e) { /* 다음에 */ }
         }
       } catch (e) { /* 박스형 목록 없이 */ }
+      // 다시 받다가 박스형만 실패했으면 이미 가진 자료(박스형 포함)를 그대로 둔다
+      if (!mobileOk && cams.loaded && cams.mobile) throw new Error('keep');
       // v123: 카메라가 찍는 진행 방향·층·그 차로 위 점 (tools/osm_cams.py)
       const dirs = j.dirs || [];
       j.rows.forEach((c, i) => {
@@ -2215,9 +2263,40 @@
       const ar = new Map(), an = j.arrowNames || [], al = j.arrows || [];
       for (let k = 0; k + 2 < al.length; k += 3) if (j.rows[al[k]]) ar.set(j.rows[al[k]], [an[al[k + 1]], an[al[k + 2]]]);
       cams.rows = j.rows; cams.grid = g; cams.date = j.date; cams.roads = j.roads || []; cams.arrows = ar; cams.loaded = true;
+      ok = true;
+      nav.routeCams = null;   // 길안내 중이면 경로 위 카메라를 새 자료로 다시 찾는다
     } catch (e) {
-      toast('단속 카메라 데이터를 불러오지 못했습니다.', 'bad', 5000);
+      if (!cams.loaded && !camLoad.tries) toast('단속 카메라 자료를 받지 못했어요. 잠시 뒤 다시 받아요.', 'bad', 5000);
     }
+    cams.failed = !ok && !cams.loaded;
+    cams.mobileMissing = cams.loaded && !mobileOk && !cams.mobile;
+    if (cams.loaded && cams.mobile) camLoad.tries = 0;   // 카메라·박스형 둘 다 있다 (이번에 받았거나 이미 가진 것)
+    else if (camLoad.tries < 30) {
+      camLoad.tries++;
+      camLoad.timer = setTimeout(retryCameras, [10, 30, 60, 120, 300][Math.min(camLoad.tries - 1, 4)] * 1000);
+    }
+    renderCamStatus();
+  }
+  function retryCameras() {
+    if (testPage && !camLoad.allowInTest) return;
+    // 카메라는 있고 박스형만 빠졌으면 경고 중·구간단속 중에는 자료를 바꾸지 않는다
+    if (cams.loaded && (camState.target || camState.section)) { camLoad.timer = setTimeout(retryCameras, 30000); return; }
+    loadCameras();
+  }
+  // 단속 자료가 없을 때 주행 중이면 작은 표시 (소리 꺼짐 표시와 같은 모양, 그 밑)
+  let camStatusEl = null;
+  function renderCamStatus() {
+    const txt = !prefs.cams ? '' : cams.failed ? '단속 카메라 자료 없음 · 다시 받는 중' : cams.mobileMissing ? '박스형·이동식 단속 자료 빠짐 · 다시 받는 중' : '';
+    const want = !!txt && (nav.active || (state.speedKmh || 0) >= 5);
+    if (!want) { if (camStatusEl) camStatusEl.hidden = true; return; }
+    if (!camStatusEl) {
+      camStatusEl = document.createElement('div');
+      camStatusEl.className = 'soundpill campill';
+      camStatusEl.id = 'camStatus';
+      $('#map').appendChild(camStatusEl);
+    }
+    camStatusEl.textContent = txt;
+    camStatusEl.hidden = false;
   }
   function camsNear(lat, lng, radius) {
     const out = [];
@@ -2590,6 +2669,27 @@
     }
     return d;
   }
+  // v163 (2026-11-20 점검 8): 터널 안에서는 GPS 가 끊겨 카메라를 못 알렸다(터널 안 카메라 58대 중 12대가 경고 거리보다 깊다:
+  // 녹사평대로 50 1.6km, 강남순환로 80 4.9km, 영동 100 3.2km). 길안내 경로에서 터널 안 카메라는 터널 입구 300m 앞부터 알리고,
+  // 터널 안에서 위치가 안 오면 마지막 속도로 경로를 따라 나아간 자리로 거리·지남을 잰다
+  // 경로 위 at 자리를 덮는 터널 구간 { s0, s1 } (60m 안으로 이어진 터널 토막은 하나로 합친다: 긴 터널은 OSM 길이 여러 토막이다)
+  function routeTunnelAt(at) {
+    if (!(nav.active && nav.pts) || !ensureRouteTunnels()) return null;
+    const list = nav.routeTunnels.slice().sort((x, y) => x.s0 - y.s0);
+    let cur = null;
+    for (const t of list) {
+      if (cur && t.s0 <= cur.s1 + 60) { cur.s1 = Math.max(cur.s1, t.s1); continue; }
+      if (cur && at >= cur.s0 - 1 && at <= cur.s1 + 1) return cur;
+      cur = { s0: t.s0, s1: t.s1, name: t.name };
+    }
+    return cur && at >= cur.s0 - 1 && at <= cur.s1 + 1 ? cur : null;
+  }
+  function camRange(c, r) {
+    const base = alertRange(c);
+    if (!Number.isFinite(r) || !routeTrusted()) return base;
+    const at = nav.along + r, tn = routeTunnelAt(at);
+    return tn && at - tn.s0 > base - 300 ? Math.max(base, at - tn.s0 + 300) : base;
+  }
   // 경고 카드의 거리 (v123)
   function camShownDist(tg) { return tg.r != null && Number.isFinite(tg.r) ? tg.r : tg.d; }
   // 길안내 경로를 따라 이 카메라를 지난 거리(m, 앞이면 음수). 가장 가까운 경로 위 자리가 200m 안일 때만, 아니면 null
@@ -2694,7 +2794,7 @@
     const f = state.fix, t0 = f ? f.t : Date.now(), tg = camState.target;
     const near = f ? camsNear(f.lat, f.lng, 400).sort((x, y) => x.d - y.d).slice(0, 12)
       .map((it) => ({ i: it.i, lat: it.c[0], lng: it.c[1], lim: it.c[2], kind: it.c[3], eb: it.c.eb, d: Math.round(it.d) })) : [];
-    report('warn', {
+    return reportSure('warn', {
       msg: 'user ' + kind + (tg ? ' camera ' + tg.i : '') + ' @' + Math.round(t0 / 1000), user: kind,
       cam: tg ? tg.i : null, camEb: tg ? tg.c.eb : null, camLabel: tg ? camLabel(tg.c) : null, near, navOn: !!nav.active,
       heading: state.heading === null ? null : Math.round(state.heading), kmhNow: Math.round(state.speedKmh || 0),
@@ -2764,7 +2864,7 @@
           camState.target = tg = null;
           passedChime();
         }
-      } else if (Math.min(d, tg.r) > alertRange(tg.c) + 300) {
+      } else if (Math.min(d, tg.r) > camRange(tg.c, tg.r) + 300) {
         camState.target = tg = null;
       } else if (moving && d > 150 && !isAhead(f, tg.c, d, true)) {
         // 방향을 틀어 벗어남. v161: 위치가 1초에 10번 오면 세 번이 0.3초라 카드가 깜빡였다 — 1.5초 넘게 벗어나 있으면 내린다
@@ -2798,11 +2898,21 @@
         if (it.c[4] === 1 && camState.section && !camHasDir(it.c)) continue;
         // 연 지 500m 안의 구간 끝 카메라는 앞 구간의 끝이다: '구간단속 시작' 바로 뒤에 '구간단속 끝' 카드를 띄우지 않는다
         if (it.c[4] === 2 && camState.section && state.odo - camState.section.d0 < 500) continue;
-        if (it.d > alertRange(it.c) + 400) continue;
+        if (it.d > alertRange(it.c) + 400 && !(routeTrusted() && nav.routeCams && nav.routeCams.has(it.c))) continue;
         const r = camDist(f, it.c);
-        if (r > alertRange(it.c)) continue; // 도로 종류별 경고 거리 밖
+        if (r > camRange(it.c, r)) continue; // 도로 종류별 경고 거리 밖 (터널 안 카메라는 입구 300m 앞부터)
         if (!isAhead(f, it.c, it.d)) continue;
         cand.push({ i: it.i, c: it.c, r, d: haversine(f, camPt(it.c)) });
+      }
+      // 3km 보다 깊은 터널 안 카메라는 주변 찾기(3km)에 안 잡힌다: 경로 위 카메라 목록에서 더한다
+      if (routeTrusted() && ensureRouteCams()) {
+        for (const x of nav.routeCamList) {
+          const r = x.at - nav.along;
+          if (r < 0 || r > 6000) continue;
+          if (r <= CAM_SCAN || cand.some((y) => y.i === x.i) || camState.passed.has(x.i) || (tg && x.i === tg.i)) continue;
+          if (!camWanted(x.c) || camUserNo(x.c, state.heading) || !routeTunnelAt(x.at) || r > camRange(x.c, r)) continue;
+          cand.push({ i: x.i, c: x.c, r, d: haversine(f, camPt(x.c)) });
+        }
       }
       const want = pickCam(cand);
       const cur = tg && !tg.after ? cand.find((x) => x.i === tg.i) : null;
@@ -6023,6 +6133,7 @@
     evalCameras(f);
     camMissCheck(f);
     updateSoundPill();
+    if (cams.failed || cams.mobileMissing) renderCamStatus();
     refreshCamMarkers(f);
     evalBumps(f);
     evalParking(f);
@@ -6263,6 +6374,7 @@
     // 서 있을 때는 GPS 가 드문드문 와도 북쪽 위 전환이 늦지 않게 시계로도 본다
     if (state.fix && !state.demoTimer) checkStopNorth(state.fix.t + (Date.now() - lastFixWall));
     if (!state.demoTimer && !testPage) idleUpdate(Date.now());
+    if (!testPage && Date.now() - (outbox.tryAt || 0) > 60000) { outbox.tryAt = Date.now(); if (store.get('outbox')) outboxFlush(); }
     if (!testPage && Date.now() - (upd.peekAt || 0) > 2 * 60000) { upd.peekAt = Date.now(); peekVersion(); }
     maybeResume();
     $('#clock').textContent = hhmm(now);
@@ -6278,6 +6390,23 @@
     }
     if (nav.active) renderNav(); else checkTripCover();
     if (camState.section) renderSection();
+    tunnelCamTick();
+  }
+  // v163: 터널 안에서 1.5초 넘게 위치가 안 오면, 마지막 속도로 경로를 따라 나아간 자리(터널 출구 + 30m 까지)로 단속 카메라를 본다.
+  // 다음 GPS 가 오면 그 위치로 돌아간다 (길안내 경로 위에서 달리던 때만, 10분까지)
+  function tunnelCamTick(nowWall) {
+    const now = nowWall || Date.now(), lag = (now - lastFixWall) / 1000;
+    if (!nav.active || !nav.pts || !state.fix || !nav.onRoute || state.demoTimer || !prefs.cams) return false;
+    if (lag < 1.5 || lag > 600 || state.speedKmh < 10) return false;   // 긴 터널(4.9km)을 시속 60 으로 지나면 5분 (터널 출구 + 30m 에서 멈춘다)
+    const tn = routeTunnelAt(nav.along) || routeTunnelAt(nav.along + 50);
+    if (!tn) return false;
+    const keep = nav.along, along = Math.min(tn.s1 + 30, keep + state.speedKmh / 3.6 * lag);
+    if (along <= keep + 1) return false;
+    const p = routePointAt(along);
+    const f = { lat: p.lat, lng: p.lng, t: state.fix.t + lag * 1000, acc: 50, dr: true };
+    nav.along = along;
+    try { evalCameras(f); } finally { nav.along = keep; }
+    return true;
   }
 
   // ---------- 따라가기 ----------
@@ -7008,12 +7137,16 @@
     $('#camMissBtn').onclick = (ev) => {
       ev.stopPropagation();
       const b = $('#camMissBtn');
-      if (b.classList.contains('sent')) return;
-      userReport('missed');
-      b.classList.add('sent'); b.textContent = '✓ 보냄';
+      if (b.classList.contains('sent') || b.classList.contains('sending')) return;
+      b.classList.add('sending'); b.textContent = '보내는 중…';
       clearTimeout(b._sentT);
-      b._sentT = setTimeout(() => { b.classList.remove('sent'); b.textContent = '놓침'; }, MISS_SENT_MS);
-      toast('놓친 단속 위치를 보냈어요.', '', 3000);
+      // v163: 서버가 받았을 때만 파란 '✓ 보냄'. 못 보냈으면 '저장함'(연결되면 보냄)
+      Promise.resolve(userReport('missed')).then((ok) => {
+        b.classList.remove('sending');
+        if (ok === false) { b.classList.add('sent', 'saved'); b.textContent = '저장함'; toast('연결이 안 돼 저장해 두었어요. 연결되면 보낼게요.', '', 3500); }
+        else { b.classList.add('sent'); b.textContent = '✓ 보냄'; toast('놓친 단속 위치를 보냈어요.', '', 3000); }
+        b._sentT = setTimeout(() => { b.classList.remove('sent', 'saved'); b.textContent = '놓침'; }, MISS_SENT_MS);
+      });
     };
 
   function applyTesla() {
@@ -7409,7 +7542,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,
