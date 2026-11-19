@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-161'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-162'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -3862,7 +3862,7 @@
     nav.routeBumps = null; bumpState.markerKey = '';
     nav.routeSigns = null; tollState.numsKey = '';
     nav.routeTunnels = null;
-    nav.laneCache = null; nav.laneStraight = null; nav.forkList = null; laneState.key = '';
+    nav.laneCache = null; nav.laneStraight = null; nav.forkList = null; nav.clList = null; laneState.key = '';
     nav.lastTraffic = state.fix ? state.fix.t : Date.now();
     if (!keepAlerts) { nav.said = {}; nav.gap = 10000; }
     nav.remain = nav.total; nav.next = null; nav.dg = null;
@@ -4032,6 +4032,7 @@
     nav.arrowKey = null;
     nav.routeRest = null; restState.key = '';
     $('#restCard').hidden = true;
+    nav.clList = null; $('#colorRow').hidden = true;
     if (mapA && mapA.setRests) mapA.setRests([]);
     $('#routeCard').hidden = true;
     $('#map').classList.remove('navigating');
@@ -5011,6 +5012,109 @@
     }
     return null;
   }
+  // ---------- 노면 색깔 유도선 (v162, 2026-11-19 운전자 '고속도로나 우회전 좌회전 빠질때 보통 녹색 분홍색 안내선 있는거 알지?') ----------
+  // data/colorlines.json (tools/build_colorlines.py): 한국도로공사 노면색깔유도선 현황(2026-08, 색)과 재도색 현황(2024-06, 선 위 방면 글자)을
+  // OSM 갈래 모양으로 확인한 고속도로 분기점·나들목만 들어 있다 (글자 좌우가 실제 갈래 좌우와 반대인 줄은 빠짐: 경부 하행 신갈분기점).
+  // 줄마다 색 선이 갈라지기 시작하는 본선 점·진행 방향과 갈래들(색, 끝점 — 다른 갈래에서 60m 넘게 떨어진 첫 점).
+  // 길안내 경로가 그 점을 같은 방향(30°)으로 25m 안에 지나고, 갈래 끝점 하나만 25m 안에 지나면 그 갈래 색을 1km 앞부터
+  // 안내 카드 밑 줄에 '분홍색 유도선 따라가기'로 (끝점을 지나면 사라짐). 경로가 어느 갈래에도 안 가면(본선 그대로) 안 보인다 — 틀린 색보다 없는 편
+  const clData = { loaded: false, rows: [], grid: new Map() };
+  const CL_SHOW = 1000, CL_SIDE = 25, CL_END = 25, CL_AHEAD = 3000;
+  const CL_COLORS = { p: { name: '분홍색', css: '#ff4fa3' }, g: { name: '녹색', css: '#16a34a' }, lg: { name: '연한 녹색', css: '#7ed957' } };
+  function setColorLines(j) {
+    clData.loaded = false; clData.grid = new Map(); clData.rows = []; nav.clList = null;
+    if (!j || !Array.isArray(j.rows)) return;
+    clData.rows = j.rows.map((r) => ({ lat: +r[0], lng: +r[1], h: +r[2], name: String(r[4] || ''),
+      br: (r[3] || []).map((b) => ({ c: String(b[0]), lat: +b[1], lng: +b[2] })) }))
+      .filter((r) => r.br.length && r.br.every((b) => CL_COLORS[b.c]));
+    clData.rows.forEach((r, k) => {
+      const key = Math.floor(r.lat * 100) + ':' + Math.floor(r.lng * 100);
+      let c = clData.grid.get(key);
+      if (!c) clData.grid.set(key, c = []);
+      c.push(k);
+    });
+    clData.loaded = true;
+  }
+  async function loadColorLines() {
+    try {
+      const r = await fetch('data/colorlines.json?v=' + APP_VERSION);
+      if (r.ok) setColorLines(await r.json());
+    } catch (e) { /* 유도선 자료가 없으면 줄 없이 */ }
+  }
+  // 경로 위 유도선 자리들 (경로가 바뀔 때 한 번): [{ at, end, c, name, k }] at 순서
+  function ensureRouteColorLines() {
+    if (nav.clList) return nav.clList;
+    const out = [];
+    if (!clData.loaded || !nav.pts || nav.pts.length < 2) return out;
+    const pts = nav.pts, cum = nav.cum, last = pts.length - 1;
+    const best = new Map();
+    for (let i = 0; i < last; i++) {
+      const a = pts[i], b = pts[i + 1], len = cum[i + 1] - cum[i];
+      if (len <= 0) continue;
+      const brg = bearing(a, b);
+      const cells = new Set();
+      const steps = Math.max(1, Math.ceil(len / 400));
+      for (let q = 0; q <= steps; q++) {
+        const la = a.lat + (b.lat - a.lat) * q / steps, ln = a.lng + (b.lng - a.lng) * q / steps;
+        for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) cells.add((Math.floor(la * 100) + y) + ':' + (Math.floor(ln * 100) + x));
+      }
+      for (const c of cells) for (const k of clData.grid.get(c) || []) {
+        const r = clData.rows[k];
+        if (angleDiff(r.h, brg) > 30) continue;
+        const pr = projectSeg(r, a, b);
+        if (pr.dist > CL_SIDE || (pr.t <= 0 && i > 0) || (pr.t >= 1 && i < last - 1)) continue;
+        const o = best.get(k);
+        if (!o || pr.dist < o.side) best.set(k, { at: cum[i] + pr.t * len, side: pr.dist });
+      }
+    }
+    // 갈래 끝점이 경로(그 점 뒤 CL_AHEAD m 안) 25m 안이면 그곳의 경로 거리
+    const passAt = (e, from) => {
+      let hit = null;
+      for (let i = 0; i < last; i++) {
+        if (cum[i + 1] < from || cum[i] > from + CL_AHEAD) continue;
+        const pr = projectSeg(e, pts[i], pts[i + 1]);
+        if (pr.dist <= CL_END && (!hit || pr.dist < hit.dist)) hit = { dist: pr.dist, at: cum[i] + pr.t * (cum[i + 1] - cum[i]) };
+      }
+      return hit;
+    };
+    for (const [k, o] of best) {
+      const r = clData.rows[k];
+      const hits = r.br.map((b) => ({ b, h: passAt(b, o.at) })).filter((x) => x.h && x.h.at > o.at);
+      if (hits.length !== 1) continue;                // 어느 갈래에도 안 감(본선 그대로) 또는 둘 다 닿음 → 모름
+      out.push({ at: o.at, end: hits[0].h.at, c: hits[0].b.c, name: r.name, k });
+    }
+    out.sort((u, v) => u.at - v.at);
+    nav.clList = out;
+    return out;
+  }
+  function colorLineAhead() {
+    if (!nav.active || !nav.pts) return null;
+    for (const x of ensureRouteColorLines()) {
+      if (x.end <= nav.along) continue;              // 갈래 끝을 지났음
+      const d = x.at - nav.along;
+      return d <= CL_SHOW ? Object.assign({ d }, x) : null;
+    }
+    return null;
+  }
+  function renderColorLine() {
+    const el = $('#colorRow'), a = colorLineAhead();
+    el.hidden = !a;
+    if (!a) { el._d = Infinity; return; }
+    const col = CL_COLORS[a.c];
+    // 지금 안내(분기점·나들목 출구)가 바로 이 갈림이면 거리는 위 안내 줄에 있다 — 여기 거리(색 선이 갈라지는 곳까지)까지 쓰면 숫자가 둘이라
+    // 헷갈린다 (서울TG→판교분기점: 위 '150m 오른쪽 방향', 색 선은 출구 뒤 320m 에서 갈라짐). 그때는 거리 없이, 순서는 안내 지점 거리로
+    const same = nav.dg != null && a.d - nav.dg > -200 && a.d - nav.dg < 600;
+    el._d = same ? nav.dg : Math.max(0, a.d);   // 줄 순서 (v158)
+    if (el.dataset.c !== a.c) {
+      el.dataset.c = a.c;
+      el.style.setProperty('--cl', col.css);
+      $('#colorText').innerHTML = '<em>' + col.name + '</em> 유도선 따라가기';
+    }
+    el.dataset.name = a.name;
+    const ds = !same && a.d > 15 ? fmtDist(a.d) : '';
+    $('#colorDist').textContent = ds;
+    el.setAttribute('aria-label', '노면 색깔 유도선 · ' + col.name + ' 유도선 따라가기' + (a.name ? ' · ' + a.name : '') + (ds ? ' · ' + ds : ''));
+  }
   // 버스전용차로 (v139, 2026-11-16 사용자 '우리도 이런거 있음 좋겠다' — 네이버처럼 버스 칸): 자료의 차로 글자 끝 'B'
   // (tools/build_lanes.py: 정밀도로지도 버스전용차선 504). 갈 차로에서 빼되, 그 방향이 버스전용차로에만 있으면(바깥 버스전용차로에서
   // 우회전 — 점선 구간에서 들어가 돈다) 그 차로를 갈 차로로 둔다
@@ -5458,10 +5562,11 @@
     const remMs = nav.route.duration * (remain / Math.max(1, nav.total));
     renderTunnel();
     if (tnMain) $('#tunnelRow').hidden = true;   // v118: 안내 줄이 터널을 보여 주면 작은 터널 줄은 숨김
+    renderColorLine();                           // v162 노면 색깔 유도선
     // 가까운 것이 위로 (v109 터널 줄 → v158 모든 줄): 그다음 안내·터널·휴게소·주차장 입구 줄을 차에서부터 잰 거리 순서로
     $('#restCard')._d = rs ? rs.d : Infinity;
     $('#parkGoal')._d = remain;
-    orderByDist([[nn], [$('#tunnelRow')], [$('#restCard')], [$('#parkGoal')]]);
+    orderByDist([[nn], [$('#colorRow')], [$('#tunnelRow')], [$('#restCard')], [$('#parkGoal')]]);
     $('#navRemain').textContent = fmtDist(remain);
     $('#navTime').textContent = fmtMin(remMs);
     $('#navEta').textContent = hhmm(new Date(Date.now() + remMs)) + ' 도착';   // 오른쪽 막대·경로 카드와 같은 순서
@@ -7272,6 +7377,7 @@
   loadSigns();
   loadLanes();
   loadForks();
+  loadColorLines();
   loadHipass();
   loadTunnels();
   startGps();
@@ -7301,6 +7407,7 @@
       saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassKey, hipassNums, hipassLayout, laneNums, laneStripHtml, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, icoBase, pickImg, iconPicks: ICON_PICKS, tollParts, arrowSpan, routeStyle: ROUTE_STYLE, trafficPal, roundRoute, setCarIcon, carIcons: CAR_ICONS, parking, parkState, setParkingData, loadParking, evalParking, rest, setRestData, loadRest, ensureRouteRest, renderRest, placeBase, findParking, renderTurnArrow,
       lanesData, laneState, setLaneData, loadLanes, laneGuide, laneArrowSvg, laneOk, laneTipFor, laneCell,
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
+      clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
       tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },

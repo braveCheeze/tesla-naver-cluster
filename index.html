@@ -1279,6 +1279,16 @@
   #app.tesla .tunnelrow { border-top: 1px solid var(--nv-line); color: var(--nv-fg); }
   #app.tesla .tunnelrow #tunnelText { color: var(--nv-sub); opacity: 1; }
   #app.tesla .tn-bar i { background: var(--nv-green); }
+  /* v162 노면 색깔 유도선 줄: 터널 줄과 같은 모양, 아이콘 자리에 바닥 선 색 띠 (--cl) */
+  .colorrow { display: flex; align-items: center; gap: 8px; padding: 5px 14px; border-top: 1px solid rgba(255,255,255,.08); font-variant-numeric: tabular-nums; }
+  .colorrow .cl-sw { width: 26px; height: 26px; flex: none; display: flex; align-items: center; justify-content: center; }
+  .colorrow .cl-sw i { display: block; width: 12px; height: 26px; border-radius: 6px; background: var(--cl, #ff4fa3); transform: skewX(-14deg);
+    box-shadow: 0 0 0 1.5px rgba(255,255,255,.85), 0 0 0 2.5px rgba(0,0,0,.18); }
+  .colorrow b { font-size: 19px; font-weight: 800; flex: none; }
+  .colorrow b:empty { display: none; }
+  .colorrow .cl-text { min-width: 0; font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .colorrow .cl-text em { font-style: normal; color: var(--cl, #ff4fa3); }
+  #app.tesla .colorrow { border-top: 1px solid var(--nv-line); color: var(--nv-fg); }
   /* v118: 직진 지하차도 진입은 안내 줄에 터널 아이콘 (선 굵기 규칙이 아치에 묻지 않게), 터널 안 직진이면 터널 줄이 맨 위 */
   .turnicon svg.tunnel { stroke: none; }
   body:has(#app.tesla):has(#map.night) .turnicon img.tn-ai { filter: none; }
@@ -1673,6 +1683,8 @@
         </div>
       </div>
       <div id="nextTurn" class="nextturn" hidden aria-label="그다음 안내"><span id="nextIcon" class="nexticon"></span><span id="nextDist"></span><span id="nextAfter" class="nextafter"></span></div>
+      <!-- v162 (2026-11-19 운전자 '녹색 분홍색 안내선'): 고속도로 분기점·나들목 바닥 색깔 유도선. 갈라지기 1km 앞부터 '분홍색 유도선 따라가기' -->
+      <div id="colorRow" class="colorrow" hidden aria-label="노면 색깔 유도선"><span class="cl-sw" aria-hidden="true"><i></i></span><b id="colorDist"></b><span id="colorText" class="cl-text"></span></div>
       <!-- 터널: 3km 앞부터 '남한터널 진입 · 길이 1.2km', 안에서는 '출구까지 799m' + 지나온 만큼 초록 막대 -->
       <div id="tunnelRow" class="tunnelrow" hidden aria-label="터널 안내"><span id="tunnelIcon" class="tn-icon" aria-hidden="true"></span><b id="tunnelDist">-</b><span id="tunnelText"></span><span class="tn-bar" aria-hidden="true"><i id="tunnelBar"></i></span></div>
       <!-- v132 (2026-11-16 요청): 고속도로 휴게소는 안내 카드 안 파란 줄 (지도 위 글자는 지도 글씨와 겹쳐 잘 안 보였다).
@@ -1860,8 +1872,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-161"></script>
-<script src="img/ai/picks.js?v=2026.11.16-161"></script>
-<script src="app.js?v=2026.11.16-161"></script>
+<script src="icons.js?v=2026.11.16-162"></script>
+<script src="img/ai/picks.js?v=2026.11.16-162"></script>
+<script src="app.js?v=2026.11.16-162"></script>
 </body>
 </html>

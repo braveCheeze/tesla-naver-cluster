@@ -2833,6 +2833,7 @@
     { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored; 7-10 lanes fit the drawer as square tiles", fn: s77 },
     { id: 'S78', name: "S78 mainline junction (v133): keep-left/right where the route stays on the same expressway section and goes straight is shown as straight ('신갈분기점에서 직진 · 서울 방면', main-straight junction scene, straight sign); a fork onto another expressway stays a fork", fn: s78 },
     { id: 'S79', name: 'S79 rest areas (v133): distance to where the entry ramp leaves the mainline (OSM), not the rest-area centre; within 3 km and no turn within 1 km the top row becomes the rest area (blue), next row = the guidance after it', fn: s79 },
+    { id: 'S100', name: "S100 road colour guide lines (v162, 운전자 '녹색 분홍색 안내선'): within 1 km of a highway fork whose painted line the route really follows, the card shows '분홍색 유도선 따라가기' in that colour; the main line, both branches or neither → nothing; gone after the branch end; real data keeps 경부 북행 신갈분기점 (녹색 인천·분홍 원주) but drops 하행 (좌우가 실제 갈래와 반대); real routes 서울TG→판교분기점(구리) and 팔당→하남분기점(판교·서하남) show 분홍색", fn: s100 },
     { id: 'S99', name: "S99 '틀림' (v161 audit + driver 'wrong may be a wrong limit'): a press within 1 s of the card changing is ignored; one press keeps the camera dimmed with limit '?' and no sound (miss button still there); a second press on another day hides it, except child/elder zone cameras; one-time flags expire after 14 days; settings list undoes them", fn: s99 },
     { id: 'S98', name: "S98 speed sections (v161 audit): a section end that is the next section's start (중부내륙 110) closes and reopens; a new start 56 m before the old end (세종포천/구리포천) is not closed by that end; a stale open section (50) is replaced at the next start (서해안 100); section lengths 1,000× too big are scaled back, 0 = unknown", fn: s98 },
     { id: 'S97', name: "S97 camera pick & pass (v161 audit, real rows): same spot 80 + child 30 shows 30; 50 with child 30 5 m on shows 30 and passes both; child 30 is kept next to a 60; 50 62 m after a 60 shows from 300 m+; passing a 30 does not mark a camera 20 m further on as passed", fn: s97 },
@@ -4616,6 +4617,97 @@
       r.main.shown && r.main.go === '2,3,4' && r.main.move === 'S' &&
       !r.none.shown &&
       r.real.loaded && r.real.rows > 300 && r.real.bus > 20 && r.real.exit > 100;
+    return { pass: ok, detail: JSON.stringify(r) + (ok ? ' ✓' : ' ✗') };
+  }
+
+  // S100: 노면 색깔 유도선 (v162, 2026-11-19 운전자 '고속도로나 우회전 좌회전 빠질때 보통 녹색 분홍색 안내선 … API 있는지').
+  //      data/colorlines.json = 한국도로공사 노면색깔유도선 현황·재도색 현황을 OSM 갈래 모양으로 확인한 것 (tools/build_colorlines.py).
+  //      시험 경로(북쪽 600m → 우회전 480m) 북쪽 300m 에 유도선 자리 하나, 갈래 둘(분홍 끝점·녹색 끝점):
+  //      (a) 분홍 끝점이 경로 위(우회전 뒤 200m), 녹색은 경로 밖(직진 800m) → '분홍색 유도선 따라가기' + 거리, 색 띠 분홍
+  //      (b) 분홍 끝점을 지나면 줄 없음  (c) 녹색이 경로 위 → '녹색'  (d) 둘 다 경로 밖(본선 그대로) → 없음  (e) 둘 다 경로 위 → 모름, 없음
+  //      (f) 실제 자료: 경부 북행 신갈분기점(녹색 = 왼쪽 인천, 분홍 = 오른쪽 원주)은 있고, 하행(자료는 좌 인천·우 원주인데 실제 하행은 왼쪽이 원주)은 없다
+  //      (g) 실제 경로 route-seoultg-n (서울TG → 판교분기점 '일산, 구리' → '구리, 성남' 직진): 판교나들목은 본선 그대로라 없고, 판교분기점 분홍(구리),
+  //          1.3km 앞에서는 아직 없고 600m 앞에서 보인다 (위 안내 줄이 바로 그 분기점이라 거리 숫자는 안 씀)   (h) 실제 경로 route-paldang-hanamic-s (하남분기점 '수도권제1순환선, 판교, 서하남'): 분홍
+  async function s100() {
+    const t = T(), R = buildNavRoute();
+    R.route = JSON.parse(JSON.stringify(R.route));
+    R.route.guide = R.route.guide.filter((g) => g.t !== 1);
+    const turn = R.P[5], spot = dest(NAV_ORIGIN, 0, 300);
+    const onA = dest(turn, 90, 200), onB = dest(turn, 90, 400), off = dest(turn, 0, 800), side = dest(turn, 270, 500);
+    const data = (pEnd, gEnd) => t.setColorLines({ v: 1, rows: [[spot.lat, spot.lng, 0, [['g', gEnd.lat, gEnd.lng], ['p', pEnd.lat, pEnd.lng]], '시험분기점']] });
+    const el = () => document.getElementById('colorRow');
+    const row = () => ({ shown: visible('#colorRow'), c: el().dataset.c || '', name: el().dataset.name || '', text: text('#colorText'), dist: text('#colorDist'),
+      cl: el().style.getPropertyValue('--cl') });
+    const go = (RR, m) => { const a = pointAt(RR, m); feed(a.p, 25, a.h); t.renderNav(); };
+    const drive = async (pEnd, gEnd, upto) => {
+      data(pEnd, gEnd);
+      softReset();
+      await planAndStart(R);
+      for (let m = 15; m <= upto; m += 15) go(R, m);
+      return row();
+    };
+    const realRoute = async (file, name) => {
+      const fx = await (await realFetch(harnessDir + 'fixtures/' + file, { cache: 'no-store' })).json();
+      const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0];
+      for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + hav(P[k - 1], P[k]));
+      return { route: fx, P, cum, total: cum[cum.length - 1], dest: { name, addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    };
+    const r = {};
+    try {
+      r.pink = await drive(onA, off, 150);
+      for (let m = 165; m <= 840; m += 15) go(R, m);
+      r.passed = row();
+      t.endNav();
+      r.green = await drive(off, onA, 150);
+      t.endNav();
+      r.mainline = await drive(off, side, 150);
+      t.endNav();
+      r.both = await drive(onA, onB, 150);
+      t.endNav();
+      // 실제 자료
+      t.setColorLines(null);
+      await t.loadColorLines();
+      const cd = t.clData;
+      const near = (row, lat, lng, m) => hav(row, { lat, lng }) <= m;
+      const sgN = cd.rows.find((x) => x.name === '신갈분기점' && near(x, 37.28315, 127.10385, 300) && Math.abs(((x.h - 0) + 540) % 360 - 180) <= 20);
+      r.real = { loaded: cd.loaded, rows: cd.rows.length,
+        singalN: sgN ? sgN.br.map((b) => b.c).join('') + (sgN.br.length === 2 && sgN.br.find((b) => b.c === 'g').lng < sgN.br.find((b) => b.c === 'p').lng ? ':g-west' : ':?') : '',
+        singalS: cd.rows.filter((x) => x.name === '신갈분기점' && near(x, 37.2954, 127.1036, 1500) && Math.abs(((x.h - 180) + 540) % 360 - 180) <= 30).length };
+      // 실제 경로 (g) 서울TG → 판교분기점
+      softReset();
+      const SR = await realRoute('route-seoultg-n.json', '판교분기점');
+      await planAndStart(SR);
+      const list = t.ensureRouteColorLines().map((x) => x.name + ':' + x.c);
+      const pg = t.ensureRouteColorLines().find((x) => x.name === '판교분기점');
+      r.seoulTg = { list: list.join(',') };
+      if (pg) {
+        for (let m = 50; m <= pg.at - 1300; m += 50) go(SR, m);
+        r.seoulTg.far = row().shown;
+        for (let m = pg.at - 1250; m <= pg.at - 600; m += 25) go(SR, m);
+        r.seoulTg.near = row();
+      }
+      t.endNav();
+      // (h) 팔당 → 하남IC → 하남분기점
+      softReset();
+      const HR = await realRoute('route-paldang-hanamic-s.json', '성남시청');
+      await planAndStart(HR);
+      r.hanam = t.ensureRouteColorLines().map((x) => x.name + ':' + x.c).join(',');
+      t.endNav();
+    } finally {
+      t.setColorLines(null);
+      await t.loadColorLines();
+      softReset();
+    }
+    const ok = r.pink.shown && r.pink.c === 'p' && r.pink.text === '분홍색 유도선 따라가기' && /m$/.test(r.pink.dist) && distM(r.pink.dist) >= 100 && distM(r.pink.dist) <= 200 &&
+      /ff4fa3/i.test(r.pink.cl) && r.pink.name === '시험분기점' &&
+      !r.passed.shown &&
+      r.green.shown && r.green.c === 'g' && r.green.text === '녹색 유도선 따라가기' &&
+      !r.mainline.shown && !r.both.shown &&
+      r.real.loaded && r.real.rows > 150 && r.real.singalN === 'gp:g-west' && r.real.singalS === 0 &&
+      r.seoulTg.list.indexOf('판교분기점:p') >= 0 && r.seoulTg.list.indexOf('판교나들목') < 0 &&
+      r.seoulTg.far === false && r.seoulTg.near && r.seoulTg.near.shown && r.seoulTg.near.c === 'p' && r.seoulTg.near.name === '판교분기점' && r.seoulTg.near.dist === '' &&
+      /^하남:p/.test(r.hanam);
     return { pass: ok, detail: JSON.stringify(r) + (ok ? ' ✓' : ' ✗') };
   }
 
