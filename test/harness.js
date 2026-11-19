@@ -5345,6 +5345,9 @@
       const sp2 = near(37.50804, 127.17323, 30, (c) => c[2] === 100 && c[4] === 2)[0];
       r.sejongEnd = sp2 ? { rtype: sp2[8], eb: sp2.eb } : 'none';
       r.mobileLv = rows.slice(rows.length - (t.cams.mobile || 0)).filter((c) => c.lv).length;
+      // 7. v168 (v167 가상 주행): 포천 산정호수로 어린이 60 자리의 유령 80(의정부 J4981 기록이 좌표·주소를 베낌), 부인터사거리 60 자리의
+      //    예전 기록 80(F7376 2025-06, 같은 자리 새 기록 60) 이 없다 — 1km 앞부터 80 으로 알리던 곳
+      r.ghost80 = near(38.07141, 127.30083, 20, (c) => c[2] === 80).length + near(37.80533, 127.13137, 20, (c) => c[2] === 80).length;
     } finally {
       await resetApp(); softReset();
     }
@@ -5356,7 +5359,7 @@
       r.seaGone && r.ghost120 === 0 && r.kaepo >= 1 &&
       r.gyeongbuSeoul === 1 && r.bundangSuseo !== 'none' && r.bundangSuseo !== 1 && /세종포천/.test(r.sejongPocheon) && r.typo === '호국로' &&
       r.beonyeong !== 'none' && r.beonyeong !== 'motorway lane' && r.ggb33.old === 0 && r.ggb33.now >= 1 &&
-      r.sejongEnd !== 'none' && r.sejongEnd.rtype === 1 && r.sejongEnd.eb >= 0 && r.mobileLv === 0;
+      r.sejongEnd !== 'none' && r.sejongEnd.rtype === 1 && r.sejongEnd.eb >= 0 && r.mobileLv === 0 && r.ghost80 === 0;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
   const isBoxRow = (c) => ((c[10] | 0) & 2) === 2;

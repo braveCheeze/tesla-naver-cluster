@@ -32,6 +32,7 @@ v164 (2026-11-19 자료 점검):
 import csv
 import io
 import json
+import math
 import re
 import sys
 from collections import Counter
@@ -53,6 +54,44 @@ for v in _by_id.values():
         _stale.update(id(x) for x in v if x[20] < newest)
 rows = [r for r in rows if id(r) not in _stale]
 print('older records of the same camera number dropped:', len(_stale))
+# v168: 번호는 달라도 예전 기록(2026년 전)이 15m 안의 새 기록(2026-10 이후)과 제한속도가 다르면 바뀐 카메라로 보고 예전 것을 뺀다
+# (포천 F7376 '포천로 고장촌삼거리 80' 2025-06 이 같은 자리 H4402·J4053 '호국로 부인터사거리 60' 2026-10 과 겹쳐 1km 앞부터 80 으로 알렸다. 전국 4건)
+def _ll(r):
+    try:
+        return float(r[9]), float(r[10])
+    except ValueError:
+        return None
+
+
+def _lim(r):
+    try:
+        return int(float(r[13] or 0))
+    except ValueError:
+        return 0
+
+
+def _speedish(r):
+    return any((c.strip().lstrip('0') or '0') in ('1', '2', '99') for c in r[12].replace(' ', '').split('+'))
+_g = {}
+for r in rows:
+    p_ = _ll(r)
+    if p_:
+        _g.setdefault((int(p_[0] / 0.0005), int(p_[1] / 0.0005)), []).append(r)
+_superseded = set()
+for r in rows:
+    p_ = _ll(r)
+    if not p_ or not r[20] or r[20] >= '2026' or not _speedish(r):
+        continue
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            for o in _g.get((int(p_[0] / 0.0005) + dy, int(p_[1] / 0.0005) + dx), ()):
+                q_ = _ll(o)
+                if o is r or o[20] < '2026-10' or not _speedish(o) or _lim(o) == _lim(r) or o[0].strip() == r[0].strip():
+                    continue
+                if math.hypot((q_[0] - p_[0]) * 110540, (q_[1] - p_[1]) * 88000) <= 15:
+                    _superseded.add(id(r))
+rows = [r for r in rows if id(r) not in _superseded]
+print('older records replaced by a newer camera at the same spot (different limit) dropped:', len(_superseded))
 
 
 # 설치장소의 방향 표시: '(A→B)', 'A->B', 'A⇒B', 'A▶B'
@@ -127,6 +166,9 @@ FIXES = {
     # 세종포천고속도로라 앱의 도로 이름 비교에서 '다른 길'이 된다
     'J8397': {'road': '세종포천고속도로'}, 'J8398': {'road': '세종포천고속도로'},
     'J8399': {'road': '세종포천고속도로'}, 'J8400': {'road': '세종포천고속도로'},
+    # 2026-11-20 v167 가상 주행: 의정부시 '서부로 낙낙교차로' 80 (J4981) 의 좌표·주소가 포천 영북면 운천리 산145-3 의 어린이보호구역 60
+    # (J5011 아이파크입구 백송초교) 것을 그대로 베낀 것이라, 포천 산정호수로 60 자리에 유령 80 이 있었다. 진짜 자리를 몰라 뺀다
+    'J4981': {'drop': True},
 }
 fixed = Counter()
 
@@ -238,6 +280,10 @@ for r in rows:
         kind = 3
         skipped['(info) signal→signal+speed'] += 1
     fix = FIXES.get(r[0].strip())
+    if fix and fix.get('drop'):
+        fixed[r[0].strip()] += 1
+        skipped['(info) dropped by FIXES'] += 1
+        continue
     if fix:
         kind = fix.get('kind', kind)
         limit = fix.get('limit', limit)
