@@ -177,6 +177,7 @@ alts = [[None] * len(d['rows']) for d in datasets]
 conf = [[0.0] * len(d['rows']) for d in datasets]
 hwcls = [[''] * len(d['rows']) for d in datasets]   # 붙인 길의 종류 (m 고속도로 본선 · ml 연결로 · t 국도 간선 · tl). cam_fill.py 가 쓰고 지운다
 HWY_R = 80.0      # v164: 고속국도 카메라는 이 안의 고속도로 본선(motorway)에 붙인다
+HWY_R_MOBILE = 200.0   # v165: 이동식·부스(좌표가 거칠다. 경기북부 PDF·충북 목록)는 200m 안 본선
 FAR_R = 85.0      # v164: 45m 안에 길이 없을 때 같은 이름 길을 찾는 거리 (칸 하나가 약 88~110m 라 둘레 칸 안)
 
 
@@ -187,17 +188,25 @@ def name_no(nm):
     return name_idx[nm]
 
 
-def prep(lat, lng, rname, hwy):
+def prep(lat, lng, rname, hwy, slow=False, mobile=False):
     """후보 길과 고를 무리(pool). 고속국도 카메라는 80m 안 고속도로 본선이 있으면 그것만 (v164: 서해안 256.8k J2284/J2283 이
     78m 옆 길에, 경부 166.1k H1880/H1879 가 53m 옆 길에 붙어 있었다. 본선이 45m 밖이면 옆 국도·마을길에 붙었다)"""
     if hwy:
-        cs = [c for c in candidates(lat, lng, HWY_R) if ways[c['wi']][3] == 'motorway']
+        cs = [c for c in candidates(lat, lng, HWY_R_MOBILE if mobile else HWY_R) if ways[c['wi']][3] == 'motorway']
         if cs:
             stats['highway: on motorway'] += 1
         else:
             cs = candidates(lat, lng)
     else:
         cs = candidates(lat, lng)
+    if slow and not hwy:
+        # v165: 제한 70 이하 일반도로 카메라는 고속도로 본선에 붙이지 않는다 (다른 길이 있으면). 원본 '신기대로 50' 이 위
+        # 수도권제1순환고속도로에, '번영로 50' 이 영동고속도로에 붙어 일반도로 경로에서 안 떴다
+        non_mw = [c for c in cs if ways[c['wi']][3] != 'motorway']
+        if len(non_mw) < len(cs):
+            # 본선만 있으면 비운다: 아래에서 85m 안 같은 이름 길을 찾고, 없으면 '길 없음'(방향 모름)이 본선보다 낫다
+            cs = non_mw
+            stats['slow street camera: motorway mainline skipped'] += 1
     rn = norm_name(rname) if rname else ''
 
     def tag(cs_):
@@ -259,9 +268,9 @@ def finish(lat, lng, cs, best, brg, both):
             level_bits(cs, best), name_no(ways[best['wi']][2])]
 
 
-def snap(lat, lng, rname, hwy):
+def snap(lat, lng, rname, hwy, slow=False, mobile=False):
     """한 카메라: [방위, 양방향, 위도 차, 경도 차, 층, 길 이름 번호], 믿음(짝에서 어느 쪽 기하를 따를지), 통계 이름"""
-    cs, pool, by_name = prep(lat, lng, rname, hwy)
+    cs, pool, by_name = prep(lat, lng, rname, hwy, slow, mobile)
     if not cs:
         LAST_HW[0] = ''
         return [-1, 0, 0, 0, 0, -1], 0.0, 'no road'
@@ -296,10 +305,10 @@ def snap(lat, lng, rname, hwy):
     return finish(lat, lng, cs, best, brg, both), cf, st
 
 
-def snap_dir(lat, lng, rname, hwy, want):
+def snap_dir(lat, lng, rname, hwy, want, slow=False, mobile=False):
     """찍는 방향이 want 인 차로에 붙인 결과 (그 방향으로 달릴 수 있는 길: 일방통행은 그 방향, 양방향은 어느 쪽이든, 60° 안).
     짝의 반대쪽 카메라, 그리고 osm_arrows.py 가 설치장소 글로 방향을 뒤집을 때 쓴다(분리된 큰길은 건너편 차로로 옮겨야 한다)"""
-    cs, pool, _ = prep(lat, lng, rname, hwy)
+    cs, pool, _ = prep(lat, lng, rname, hwy, slow, mobile)
     for group in (pool, cs):
         opts = []
         for c in group:
@@ -316,13 +325,15 @@ def snap_dir(lat, lng, rname, hwy, want):
 rname_of = {}
 for di, ri, lat, lng, rname, kind in cams:
     rname_of[(di, ri)] = rname
-    hwy = datasets[di]['rows'][ri][8] == 1
-    res, cf, st = snap(lat, lng, rname, hwy)
+    row_ = datasets[di]['rows'][ri]
+    hwy = row_[8] == 1
+    slow = 0 < row_[2] <= 70 and not re.search('고속', rname or '')
+    res, cf, st = snap(lat, lng, rname, hwy, slow, di == 1)
     results[di][ri], conf[di][ri] = res, cf
     hwcls[di][ri] = LAST_HW[0]
     stats[st] += 1
     if res[0] >= 0:
-        alts[di][ri] = snap_dir(lat, lng, rname, hwy, (res[0] + 180) % 360)
+        alts[di][ri] = snap_dir(lat, lng, rname, hwy, (res[0] + 180) % 360, slow, di == 1)
 
 
 def angd(a, b):
@@ -363,7 +374,8 @@ for di, d in enumerate(datasets):
         A[1] = 0
         want = (A[0] + 180) % 360
         c = rows_[oth]
-        r2 = snap_dir(c[0], c[1], rname_of[(di, oth)], c[8] == 1, want)
+        r2 = snap_dir(c[0], c[1], rname_of[(di, oth)], c[8] == 1, want,
+                      0 < c[2] <= 70 and not re.search('고속', rname_of[(di, oth)] or ''), di == 1)
         if r2 is not None:
             hwcls[di][oth] = LAST_HW[0]
         if r2 is None:
@@ -377,6 +389,34 @@ for di, d in enumerate(datasets):
         alts[di][anc] = list(r2)
         pair_stats['same pole' if same_pole else 'registered 1/2 pair'] += 1
 stats.update({'pair: ' + k: v for k, v in pair_stats.items()})
+
+# v165 구간단속 카메라인데 차도에 못 붙어 방향이 없는 것: 짝(시점↔종점, 같은 제한, 30km 안)의 방향으로 시점→종점 방위를 준다
+# (세종포천고속도로 구간 끝 100: 방향이 없어 시작을 못 본 경로에서 건너뛰었다)
+rows0 = datasets[0]['rows']
+secs = [i for i, c in enumerate(rows0) if c[4] in (1, 2)]
+for i in secs:
+    if results[0][i][0] >= 0:
+        continue
+    c = rows0[i]
+    best = None
+    for k in secs:
+        o = rows0[k]
+        if o[4] != 3 - c[4] or o[2] != c[2]:
+            continue
+        dd = math.hypot((o[0] - c[0]) * KY, (o[1] - c[1]) * kx(c[0]))
+        if 150 < dd <= 30000 and (best is None or dd < best[0]):
+            best = (dd, o)
+    if best:
+        a_, b_ = (c, best[1]) if c[4] == 1 else (best[1], c)
+        eb = (math.degrees(math.atan2((b_[1] - a_[1]) * kx(a_[0]), (b_[0] - a_[0]) * KY)) + 360) % 360
+        results[0][i] = [int(round(eb)) % 360, 0, 0, 0, 0, -1]
+        stats['section camera without road: bearing from its partner'] += 1
+# v165 이동식·부스는 층(고가·지하차도 옆) 표시를 하지 않는다: 좌표가 거칠어(수십 m) OSM 층 판단이 맞지 않고, 표시가 있으면 앱이
+# 지상 경로에서 뺀다 (경기북부 한류월드IC·킨텍스IC·이산포IC·강매IC 고가아래 부스가 이름 없는 연결로 고가에 붙어 빠졌다)
+for r in results[1] + alts[1]:
+    if r and r[4]:
+        r[4] = 0
+        stats['mobile: level flags cleared'] += 1
 
 for di, d in enumerate(datasets):
     d['dirs'] = results[di]

@@ -285,6 +285,11 @@ for r in rows:
     if rtype == 1 and not re.search(r'고속|순환|선$', name) and not re.search(r'고속도로|고속국도|\d+(\.\d+)?\s*[kK]', r[11]):
         rtype = 5
         skipped['(info) expressway code on a city road → 5'] += 1
+    # v165: 도로명이 '…고속도로'(도시고속도로·구고속도로 아님)이고 제한 80 이상인데 도로종류가 시도·기타로 적힌 것은 고속국도
+    # (세종포천고속도로 구간 끝 100·대전당진고속도로 110: 3km 가 아니라 1km 앞에서 알렸고, osm_cams 가 고속도로 본선에 붙이지 않았다)
+    if rtype != 1 and limit >= 80 and re.search(r'고속도로$', name) and not re.search(r'도시고속|^구고속', name):
+        rtype = 1
+        skipped['(info) expressway name, limit 80+ → 1'] += 1
     direction = {'1': 1, '2': 2, '3': 3}.get(norm(r[6]), 0)
     # 과속 전용 카메라는 설치장소에 '(A→B)'처럼 방향이 적혀 있으면, 방향 코드가 '양방향(3)'이어도 한 방향만 찍는다.
     # (2026-11-14 주행: 양서면 북한강로 '골용진 입구(용늪삼거리→양평수난구조대)' J2675 는 코드가 양방향이라

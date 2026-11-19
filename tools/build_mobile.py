@@ -281,6 +281,23 @@ for rel in ('seoul/seoul.json', 'gw/points.json', 'jn/points.json', 'cb/points.j
         for q in json.load(open(p, encoding='utf-8'))['points']:
             pts.append({k: q[k] for k in ('src', 'id', 'lat', 'lng', 'text', 'booth', 'limit', 'school')})
 
+# v165: 좌표가 설치장소 글의 주소와 크게 다른 부스는 그 주소 자리로 (tools/geo_fix_mobile.py → tools/mobile_coords_fix.json).
+# 경기북부 PDF 'GGB-33 서울양양고속도로 19.8K (양평군 서종면 문호리 586-5)' 의 좌표가 광주시(25km 밖)였다. 글이 그대로일 때만 쓴다
+if '--dump-points' in sys.argv:
+    with open(sys.argv[sys.argv.index('--dump-points') + 1], 'w', encoding='utf-8') as fh:
+        json.dump(pts, fh, ensure_ascii=False)
+    sys.exit(0)
+try:
+    MFIX = json.load(open(os.path.join(ROOT, 'tools', 'mobile_coords_fix.json'), encoding='utf-8'))['fix']
+except (OSError, ValueError, KeyError):
+    MFIX = {}
+_mfixed = 0
+for p_ in pts:
+    f_ = MFIX.get(p_['src'] + '|' + p_['id'])
+    if f_ and f_.get('text') == p_['text'][:80]:
+        p_['lat'], p_['lng'] = f_['lat'], f_['lng']
+        _mfixed += 1
+
 # 고정 카메라 (cameras.json): 중복 빼기·제한속도 빌리기
 cam = json.load(open(os.path.join(ROOT, 'data', 'cameras.json'), encoding='utf-8'))
 fixed = cam['rows']
@@ -457,4 +474,4 @@ except (OSError, ValueError):
     pass
 with open(OUT, 'w', encoding='utf-8') as fh:
     json.dump(out, fh, ensure_ascii=False, separators=(',', ':'))
-print(json.dumps(dict(stats, kept=len(rows), by=by, one_way=len(arrows) // 3), ensure_ascii=False))
+print(json.dumps(dict(stats, kept=len(rows), by=by, one_way=len(arrows) // 3, coords_from_address=_mfixed), ensure_ascii=False))

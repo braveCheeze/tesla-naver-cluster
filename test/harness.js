@@ -2841,7 +2841,7 @@
     { id: 'S98', name: "S98 speed sections (v161 audit): a section end that is the next section's start (중부내륙 110) closes and reopens; a new start 56 m before the old end (세종포천/구리포천) is not closed by that end; a stale open section (50) is replaced at the next start (서해안 100); section lengths 1,000× too big are scaled back, 0 = unknown", fn: s98 },
     { id: 'S97', name: "S97 camera pick & pass (v161 audit, real rows): same spot 80 + child 30 shows 30; 50 with child 30 5 m on shows 30 and passes both; child 30 is kept next to a 60; 50 62 m after a 60 shows from 300 m+; passing a 30 does not mark a camera 20 m further on as passed", fn: s97 },
     { id: 'S96', name: "S96 sound-locked notice (v160 audit: after a reload or '새 버전' voice and beeps stay off until the screen is touched, with nothing on screen): parked → nothing (as asked 2026-11-13), driving while locked → '소리 꺼짐 · 화면을 한 번 누르세요', gone on the first touch, not shown when both sounds are off", fn: s96 },
-    { id: 'S101', name: "S101 camera data v164 (2026-11-19 data audit, driver '과속단속만 완벽하면 이제 그냥 네비임', '서울 경기 전역을 일단 한번 해봐바'): a pole with a camera for each direction is two rows that point opposite ways on their own lanes and each alerts only its own direction (경수대로 어바인퍼스트 앞 60 both ways, was one row = one direction); lane-split records of one carriageway are not paired (영동고속도로 51.2km 1,2·3,4·5차로); the 수도권제1순환 23.5k booth is 100 on the expressway, not '어린이보호구역 50' (PDF table glued to it); 경부선 307.6 booth (no 'k') is an expressway 100; a school-zone booth is 30; GGB rear cameras read '후면'; section lengths are not 1000× too long; older records of the same camera number are gone (권선초교 J6049's old copy sat in the sea at 125.70) and misplaced ones moved to their address (세종포천 120 ×4 off 긴밭뜰삼거리 50, 개포동역 K0377); changed spots are in unflag", fn: s101 },
+    { id: 'S101', name: "S101 camera data v164/v166 (2026-11-19 data audit, driver '과속단속만 완벽하면 이제 그냥 네비임', '서울 경기 전역을 일단 한번 해봐바'): a pole with a camera for each direction is two rows that point opposite ways on their own lanes and each alerts only its own direction (경수대로 어바인퍼스트 앞 60 both ways, was one row = one direction); lane-split records of one carriageway are not paired (영동고속도로 51.2km 1,2·3,4·5차로); the 수도권제1순환 23.5k booth is 100 on the expressway, not '어린이보호구역 50' (PDF table glued to it); 경부선 307.6 booth (no 'k') is an expressway 100; a school-zone booth is 30; GGB rear cameras read '후면'; section lengths are not 1000× too long; older records of the same camera number are gone (권선초교 J6049's old copy sat in the sea at 125.70) and misplaced ones moved to their address (세종포천 120 ×4 off 긴밭뜰삼거리 50, 개포동역 K0377); changed spots are in unflag; v166: 50s on city roads off the expressway mainline, the 서울양양 19.8K booth at its address, the 세종포천 section end with a direction, no level flags on mobile spots", fn: s101 },
     { id: 'S95', name: "S95 expressway booth limits (v159, 놓침·틀림 reports 11-16~19): the 경기남부 고속도로순찰대 booth list has no limits, so the nearest street camera's 50/60 was used — the 송파IC 10.3k booth never showed (missed twice) and the 판교JC 1.25k booth read '박스형 60' (wrong twice); on a straight 수도권제1순환고속도로 route through each booth at 90 km/h both now show from 500 m+ with the expressway limit 100", fn: s95 },
     { id: 'S94', name: "S94 closer rows on top (v158, 이배재터널 안 '370m 터널 출구까지' above '↗ 230m' looked upside down — 230m was measured from the left turn, 2.0 km from the car): card rows (tunnel, rest, next guide, parking entrance), drawer cards (lanes, junction, camera, section, hi-pass) and small chips are ordered by distance from the car; the next row keeps Naver's distance from the guide above but says so ('230m 좌회전 후', '830m 터널 지나'); rows within 25 m keep their place, the order changes only once on a 1 km sweep, hidden rows go back to HTML order", fn: s94 },
     { id: 'S93', name:"S93 U-turn picks the approach camera (v157, 송파IC 진출램프 끝 유턴: we showed 위례중앙로 50, Naver and the road show 30): after the highway exit guide a section still named '수도권제1순환고속도로' no longer hides the ramp's signal+speed 30, the card 80 m before the U-turn reads 30, and the 50 on the road we turn into is dropped; with equal limits both stay", fn: s93 },
@@ -5287,6 +5287,16 @@
       const sp = near(37.26291, 127.25048, 30, (c) => c[2] === 110)[0];
       r.sejongPocheon = sp ? roadOf(sp) : 'none';
       r.typo = rows.some((c) => roadOf(c) === '호극로') ? 'still 호극로' : rows.some((c) => roadOf(c) === '호국로') ? '호국로' : 'none';
+      // 6. v166 (2026-11-20 v165 가상 주행): 일반도로 50 카메라는 고속도로 본선에 붙지 않는다(번영로 50 이 영동고속도로 위에 있었다:
+      //    차로 위 점이 본선 쪽이면 번영로 경로에서 15m 밖), 경기북부 부스 GGB-33(서울양양 19.8K)은 광주 진토길이 아니라 양평 서종면,
+      //    세종포천 구간 끝 100 은 고속국도이고 방향이 있다, 이동식은 층 표시가 없다(IC 고가 부스가 지상 경로에서 빠졌다)
+      const by = near(37.32915, 126.93012, 30, (c) => c[2] === 50)[0];
+      // v164 자료의 차로 위 점(영동고속도로 본선 위) 37.32877,126.93027 에서 떨어졌는지
+      r.beonyeong = by ? (by.eb < 0 ? 'no road' : hav({ lat: by.sl, lng: by.sg }, { lat: 37.32877, lng: 126.93027 }) > 30 ? 'street' : 'motorway lane') : 'none';
+      r.ggb33 = { old: near(37.380274, 127.214705, 300, (c) => c[2] === 100).length, now: near(37.633843, 127.362978, 300, (c) => c[2] === 100).length };
+      const sp2 = near(37.50804, 127.17323, 30, (c) => c[2] === 100 && c[4] === 2)[0];
+      r.sejongEnd = sp2 ? { rtype: sp2[8], eb: sp2.eb } : 'none';
+      r.mobileLv = rows.slice(rows.length - (t.cams.mobile || 0)).filter((c) => c.lv).length;
     } finally {
       await resetApp(); softReset();
     }
@@ -5296,7 +5306,9 @@
       r.cb2 !== 'none' && r.cb2.lim >= 100 && r.cb2.rtype === 1 && r.school !== 'none' && r.school.lim === 30 && r.school.zone === 2 &&
       r.rear === true && Array.isArray(r.secLen) && r.secLen.every((x) => x > 1000 && x < 20000) &&
       r.seaGone && r.ghost120 === 0 && r.kaepo >= 1 &&
-      r.gyeongbuSeoul === 1 && r.bundangSuseo !== 'none' && r.bundangSuseo !== 1 && /세종포천/.test(r.sejongPocheon) && r.typo === '호국로';
+      r.gyeongbuSeoul === 1 && r.bundangSuseo !== 'none' && r.bundangSuseo !== 1 && /세종포천/.test(r.sejongPocheon) && r.typo === '호국로' &&
+      r.beonyeong !== 'none' && r.beonyeong !== 'motorway lane' && r.ggb33.old === 0 && r.ggb33.now >= 1 &&
+      r.sejongEnd !== 'none' && r.sejongEnd.rtype === 1 && r.sejongEnd.eb >= 0 && r.mobileLv === 0;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
   const isBoxRow = (c) => ((c[10] | 0) & 2) === 2;
