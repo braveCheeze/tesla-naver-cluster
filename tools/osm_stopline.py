@@ -75,6 +75,24 @@ for i in targets:
 print('signal cameras with a direction', len(targets))
 
 
+def seg_in_cells(pts, cells, cell=CELL):
+    """길(점 열)의 선분 중 하나라도 cells 의 칸을 지나는지 (선분의 둘레 상자로 본다)"""
+    for la, lo in pts:
+        if (int(math.floor(la / cell)), int(math.floor(lo / cell))) in cells:
+            return True
+    for k in range(len(pts) - 1):
+        (la1, lo1), (la2, lo2) = pts[k], pts[k + 1]
+        y0, y1 = int(math.floor(min(la1, la2) / cell)), int(math.floor(max(la1, la2) / cell))
+        x0, x1 = int(math.floor(min(lo1, lo2) / cell)), int(math.floor(max(lo1, lo2) / cell))
+        if y0 == y1 and x0 == x1:
+            continue
+        for cy in range(y0, y1 + 1):
+            for cx in range(x0, x1 + 1):
+                if (cy, cx) in cells:
+                    return True
+    return False
+
+
 class H(osmium.SimpleHandler):
     def __init__(self):
         super().__init__()
@@ -96,8 +114,8 @@ class H(osmium.SimpleHandler):
             nodes = [(n.ref, n.lat, n.lon) for n in w.nodes]
         except osmium.InvalidLocationError:
             return
-        if len(nodes) < 2 or not any((int(math.floor(la / CELL)), int(math.floor(lo / CELL))) in cells for _, la, lo in nodes):
-            return
+        if len(nodes) < 2 or not seg_in_cells([(la, lo) for _, la, lo in nodes], cells):
+            return   # v164: 노드가 아니라 선분으로 (osm_cams.py 와 같은 이유)
         ow = w.tags.get('oneway', '')
         oneway = 1 if ow in ('yes', '1', 'true') else -1 if ow == '-1' else 0
         if hw in ('motorway', 'motorway_link') and ow != 'no':

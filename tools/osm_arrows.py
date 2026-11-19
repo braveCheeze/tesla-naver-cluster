@@ -100,7 +100,9 @@ print('names found in OSM', len(h.pts))
 def find(name, lat, lng, maxd=6000):
     best = None
     KX = kx(lat)
-    for v in variants(name):
+    # v164: 이름 변형은 정해진 순서로(긴 것 = 더 구체적인 것 먼저). 예전엔 set 순서였는데 파이썬 문자열 해시가 실행마다 달라서
+    # 다시 돌릴 때마다 찾는 지명이 바뀌어 방향이 뒤집히는 카메라가 있었다 (H9873·H8894·J5819·J6308/J6307·G3164 등 15대)
+    for v in sorted(variants(name), key=lambda x: (-len(x), x)):
         for (la, lo) in h.pts.get(v, ()):
             d = math.hypot((la - lat) * KY, (lo - lng) * KX)
             if d <= maxd and (best is None or d < best[0]):
@@ -122,6 +124,33 @@ def angd(a, b):
 
 
 st = Counter()
+# v164: osm_cams.py 가 행마다 남긴 '반대 방향 차로' 결과(dirsAlt). 글로 방향을 뒤집을 때 방위만 돌리면 분리된 큰길·고속도로는
+# 차로 위 점이 건너편(반대 방향) 차로에 남아 경로선에서 15m 넘게 떨어져 안 울렸다. 이제 그 방향 차로 결과로 바꾼다
+alt_of = [d.get('dirsAlt') or [None] * len(d['rows']) for d in datasets]
+twin = {}
+for di, d in enumerate(datasets):
+    pl = d.get('pairs') or []
+    for k in range(0, len(pl) - 1, 2):
+        twin[(di, pl[k])] = pl[k + 1]
+        twin[(di, pl[k + 1])] = pl[k]
+by_text = set()   # 글이 방향을 정했거나(보정·가운데) 기하를 확인한 행
+
+
+def set_dir(di, ri, want):
+    """행의 찍는 방향을 want 로: 지금 방위와 60° 안이면 방위만, 아니면 반대 방향 차로 결과(dirsAlt)로 바꾼다"""
+    dr = datasets[di]['dirs'][ri]
+    if angd(dr[0], want) > 60:
+        alt = alt_of[di][ri]
+        if alt and alt[0] >= 0 and angd(alt[0], want) <= 60:
+            old = list(dr)
+            dr[:] = list(alt)
+            dr[1] = 0
+            alt_of[di][ri] = old
+            st['(lane) moved to the other carriageway/side'] += 1
+            return
+    dr[0], dr[1] = int(round(want)) % 360, 0
+
+
 for di, ri, A, B in cam_arrows:
     d = datasets[di]
     c = d['rows'][ri]
@@ -148,20 +177,40 @@ for di, ri, A, B in cam_arrows:
     off = angd(cand, v)
     if dr[1]:   # 기하로는 양방향(길 가운데): 글이 길 방향과 60° 안으로 맞으면 그 방향으로
         if off <= 60:
-            dr[0], dr[1] = int(round(cand)) % 360, 0
+            set_dir(di, ri, cand)
+            by_text.add((di, ri))
             st['centre → text direction'] += 1
         else:
             st['centre, text off-axis'] += 1
         continue
     if cand == axis:
+        by_text.add((di, ri))
         st['geometry confirmed'] += 1
     elif strong and off <= 45:
-        dr[0] = int(round(cand)) % 360
+        set_dir(di, ri, cand)
+        by_text.add((di, ri))
         st['geometry corrected by text'] += 1
     else:
         st['conflict kept (weak text)'] += 1
 
+# v164 짝(한 기둥의 반대 방향 카메라 두 대)은 늘 서로 반대: 글이 한쪽만 정했으면 다른 쪽을 그 반대로 (osm_cams.py 가 반대로 붙여 두었으니
+# 글이 한쪽을 뒤집으면 둘이 같은 방향이 된다)
+for (di, i), j in sorted(twin.items()):
+    if i > j:
+        continue
+    a, b = datasets[di]['dirs'][i], datasets[di]['dirs'][j]
+    if a[0] < 0 or b[0] < 0 or angd(a[0], b[0]) >= 120:
+        continue
+    ti, tj = (di, i) in by_text, (di, j) in by_text
+    if ti == tj:
+        st['pair: same way, text can not tell' if not ti else 'pair: both texts say the same way'] += 1
+        continue
+    win, lose = (i, j) if ti else (j, i)
+    set_dir(di, lose, (datasets[di]['dirs'][win][0] + 180) % 360)
+    st['pair: twin turned opposite after text'] += 1
+
 for di, d in enumerate(datasets):
+    d.pop('dirsAlt', None)   # 앱은 쓰지 않는다 (osm_cams.py 가 이 단계에 넘기려고 남긴 것)
     with open(FILES[di], 'w', encoding='utf-8') as fh:
         json.dump(d, fh, ensure_ascii=False, separators=(',', ':'))
 print(dict(st))

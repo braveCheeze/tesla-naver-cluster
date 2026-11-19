@@ -2840,6 +2840,7 @@
     { id: 'S98', name: "S98 speed sections (v161 audit): a section end that is the next section's start (중부내륙 110) closes and reopens; a new start 56 m before the old end (세종포천/구리포천) is not closed by that end; a stale open section (50) is replaced at the next start (서해안 100); section lengths 1,000× too big are scaled back, 0 = unknown", fn: s98 },
     { id: 'S97', name: "S97 camera pick & pass (v161 audit, real rows): same spot 80 + child 30 shows 30; 50 with child 30 5 m on shows 30 and passes both; child 30 is kept next to a 60; 50 62 m after a 60 shows from 300 m+; passing a 30 does not mark a camera 20 m further on as passed", fn: s97 },
     { id: 'S96', name: "S96 sound-locked notice (v160 audit: after a reload or '새 버전' voice and beeps stay off until the screen is touched, with nothing on screen): parked → nothing (as asked 2026-11-13), driving while locked → '소리 꺼짐 · 화면을 한 번 누르세요', gone on the first touch, not shown when both sounds are off", fn: s96 },
+    { id: 'S101', name: "S101 camera data v164 (2026-11-19 data audit, driver '과속단속만 완벽하면 이제 그냥 네비임', '서울 경기 전역을 일단 한번 해봐바'): a pole with a camera for each direction is two rows that point opposite ways on their own lanes and each alerts only its own direction (경수대로 어바인퍼스트 앞 60 both ways, was one row = one direction); lane-split records of one carriageway are not paired (영동고속도로 51.2km 1,2·3,4·5차로); the 수도권제1순환 23.5k booth is 100 on the expressway, not '어린이보호구역 50' (PDF table glued to it); 경부선 307.6 booth (no 'k') is an expressway 100; a school-zone booth is 30; GGB rear cameras read '후면'; section lengths are not 1000× too long; older records of the same camera number are gone (권선초교 J6049's old copy sat in the sea at 125.70) and misplaced ones moved to their address (세종포천 120 ×4 off 긴밭뜰삼거리 50, 개포동역 K0377); changed spots are in unflag", fn: s101 },
     { id: 'S95', name: "S95 expressway booth limits (v159, 놓침·틀림 reports 11-16~19): the 경기남부 고속도로순찰대 booth list has no limits, so the nearest street camera's 50/60 was used — the 송파IC 10.3k booth never showed (missed twice) and the 판교JC 1.25k booth read '박스형 60' (wrong twice); on a straight 수도권제1순환고속도로 route through each booth at 90 km/h both now show from 500 m+ with the expressway limit 100", fn: s95 },
     { id: 'S94', name: "S94 closer rows on top (v158, 이배재터널 안 '370m 터널 출구까지' above '↗ 230m' looked upside down — 230m was measured from the left turn, 2.0 km from the car): card rows (tunnel, rest, next guide, parking entrance), drawer cards (lanes, junction, camera, section, hi-pass) and small chips are ordered by distance from the car; the next row keeps Naver's distance from the guide above but says so ('230m 좌회전 후', '830m 터널 지나'); rows within 25 m keep their place, the order changes only once on a 1 km sweep, hidden rows go back to HTML order", fn: s94 },
     { id: 'S93', name:"S93 U-turn picks the approach camera (v157, 송파IC 진출램프 끝 유턴: we showed 위례중앙로 50, Naver and the road show 30): after the highway exit guide a section still named '수도권제1순환고속도로' no longer hides the ramp's signal+speed 30, the card 80 m before the U-turn reads 30, and the 50 on the road we turn into is dropped; with equal limits both stay", fn: s93 },
@@ -5121,6 +5122,100 @@
     const ok = r.parked === '' && /소리 꺼짐/.test(r.driving) && r.afterTouch === '' && r.unlocked === true && r.soundOff === '';
     return { pass: ok, detail: JSON.stringify(r) };
   }
+  // S101: 단속 카메라 자료 v164 (2026-11-19 자료 점검. 운전자 '과속단속만 완벽하면 이제 그냥 네비임', '서울 경기 전역을 일단 한번 해봐바').
+  //  - 한 기둥에 두 방향 카메라: 예전엔 한 행으로 합쳐 OSM 방향이 하나라 반대 방향은 영영 안 울렸다(1,599행 중 1,298행). 이제 두 행, 서로 반대 방향,
+  //    각자 제 차로 점. 경수대로 어바인퍼스트 앞 60(서울→수원 / 수원→서울)을 두 방향으로 지나면 각 방향에서 그 방향 행이 뜬다
+  //  - 차로만 다른 한 방향 기록(영동고속도로 51.2km 시점 1,2·3,4·5차로, 방향 코드가 1·2 로 섞임)은 짝으로 만들지 않는다
+  //  - 자료 값: 수도권제1순환 23.5k 부스(PDF 표가 붙어 '어린이보호구역 50' 이던 것) 100·고속국도, 충북 '경부선 307.6' 부스 100·고속국도,
+  //    송추초 정문 어린이보호구역 부스 30, 경기북부 후면 카메라(성모병원입구사거리 J4057) 후면, 녹색로 구간 길이 3.6km(3,625km 아님),
+  //    바뀐 자리는 mobile.json unflag 에 있다
+  async function s101() {
+    const t = T(), rows = t.cams.rows, r = {};
+    const near = (lat, lng, m, f) => rows.filter((c) => hav({ lat, lng }, { lat: c[0], lng: c[1] }) <= m && (!f || f(c)));
+    const angd = (a, b) => Math.abs(((a - b) % 360 + 540) % 360 - 180);
+    const mob = await (await realFetch(new URL('../data/mobile.json', location.href).href, { cache: 'no-store' })).json();
+    const unflag = new Set((mob.unflag && mob.unflag.keys) || []);
+    // 차로 위 점을 지나는 곧은 2.4km 경로(카메라 1.4km 앞에서 시작)를 시속 kmh 로: 처음 뜬 거리·카메라·제한
+    async function drive(c, h, road, kmh) {
+      const lane = { lat: c.sl != null ? c.sl : c[0], lng: c.sg != null ? c.sg : c[1] };
+      const start = dest(lane, (h + 180) % 360, 1400);
+      const P = [];
+      for (let k = 0; k <= 240; k++) { const p = dest(start, h, 10 * k); P.push({ lat: round6(p.lat), lng: round6(p.lng) }); }
+      const cum = [0];
+      for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+      const total = cum[cum.length - 1];
+      const R = { route: { distance: r0(total), duration: r0(total / 15 * 1000), tollFare: 0, fuelPrice: 0, path: P.map((p) => [p.lng, p.lat]),
+        guide: [{ i: 240, t: 88, s: '목적지', d: r0(total), ms: r0(total / 15 * 1000) }],
+        sections: [{ i: 0, n: 241, name: road, speed: kmh, cong: 1 }] },
+        P, cum, total, dest: { name: '테스트', addr: '', lat: P[240].lat, lng: P[240].lng } };
+      await resetApp(); softReset();
+      await planAndStart(R);
+      const o = { first: null, cam: null, limit: null };
+      try {
+        for (let s = 0; s <= 1390; s += 20) {
+          const a = pointAt(R, s);
+          feed(a.p, kmh / 3.6, a.h, { dt: 20 / (kmh / 3.6) * 1000 });
+          const tg = t.camState.target;
+          if (tg && o.first === null && hav(lane, { lat: tg.c[0], lng: tg.c[1] }) < 80) { o.first = r0(1400 - s); o.cam = tg.c; o.limit = text('#camLimit'); o.label = text('#camType'); }
+        }
+      } finally { t.endNav(); }
+      return o;
+    }
+    try {
+      // 1. 경수대로 어바인퍼스트 앞 60: 두 행, 서로 반대, 각 방향에서 제 행
+      const two = near(37.3745, 126.9585, 150, (c) => c[2] === 60 && c.eb >= 0 && !c.e2);
+      const pair = [];
+      for (const a of two) for (const b of two) if (a !== b && angd(a.eb, b.eb) >= 150 && hav({ lat: a[0], lng: a[1] }, { lat: b[0], lng: b[1] }) < 30) pair.push([a, b]);
+      r.pairRows = two.length; r.pairFound = pair.length > 0;
+      if (pair.length) {
+        const [a, b] = pair[0];
+        const da = await drive(a, a.eb, '경수대로', 50), db = await drive(b, b.eb, '경수대로', 50);
+        r.dirA = { first: da.first, own: da.cam === a, limit: da.limit };
+        r.dirB = { first: db.first, own: db.cam === b, limit: db.limit };
+      }
+      // 2. 차로만 다른 한 방향 기록은 짝이 아니다 (영동고속도로 51.2km 시점)
+      const lanes = near(37.262, 127.198, 80, (c) => c[2] === 100 && c[3] === 9 && c.eb >= 0);
+      r.laneRows = lanes.length;
+      r.laneSameWay = lanes.length >= 1 && lanes.every((c) => angd(c.eb, lanes[0].eb) < 60);
+      // 3. 자료 값
+      const g1 = near(37.560956, 127.174292, 20, (c) => isBoxRow(c))[0];
+      r.ggb1 = g1 ? { lim: g1[2], zone: g1[6], rtype: g1[8], unflag: unflag.has(g1[0] + ',' + g1[1]) } : 'none';
+      const cb2 = near(36.65214, 127.373223, 20)[0];
+      r.cb2 = cb2 ? { lim: cb2[2], rtype: cb2[8] } : 'none';
+      const school = near(37.715797, 126.971141, 20)[0];
+      r.school = school ? { lim: school[2], zone: school[6] } : 'none';
+      const rear = near(37.7565, 127.0798, 60, (c) => c[2] === 50);
+      r.rear = rear.length ? rear.some((c) => ((c[10] | 0) & 1) === 1) : 'none';
+      const sec = near(34.736, 126.51, 300, (c) => c[4] === 1 && c[2] === 80);
+      r.secLen = sec.length ? sec.map((c) => c[5]) : 'none';
+      // 4. 좌표: 같은 관리번호의 예전 기록은 빼고(권선초교 J6049 예전 기록은 경도 125.70 = 바다), 엉뚱한 좌표는 주소 자리로
+      //    (세종포천고속도로 120 네 대가 긴밭뜰삼거리 50 자리에 → 용인 원삼면, 강남 개포동역 K0377 이 바다에 → 개포로 416)
+      r.seaGone = near(37.2625045, 125.7021377, 2000).length === 0;
+      r.ghost120 = near(37.3444581, 127.2519161, 80, (c) => c[2] === 120).length;
+      r.kaepo = near(37.487982, 127.065552, 120).length;
+      // 5. 도로 종류·이름 (2026-11-20 서울·경기 가상 주행 점검): 경부고속도로 서울 구간 80 은 고속국도(3km 앞부터), 원본이 '고속국도'인
+      //    분당수서로 60 은 일반도로, 세종포천 위 '평택시흥고속도로' 2대는 세종포천, 오타 '호극로'는 '호국로'
+      const roadOf = (c) => (t.cams.roads && c[7] >= 0 ? t.cams.roads[c[7]] : '') || '';
+      const gb = near(37.48256, 127.02654, 30, (c) => c[2] === 80)[0];
+      r.gyeongbuSeoul = gb ? gb[8] : 'none';
+      const bd = near(37.37226, 127.10391, 30, (c) => c[2] === 60)[0];
+      r.bundangSuseo = bd ? bd[8] : 'none';
+      const sp = near(37.26291, 127.25048, 30, (c) => c[2] === 110)[0];
+      r.sejongPocheon = sp ? roadOf(sp) : 'none';
+      r.typo = rows.some((c) => roadOf(c) === '호극로') ? 'still 호극로' : rows.some((c) => roadOf(c) === '호국로') ? '호국로' : 'none';
+    } finally {
+      await resetApp(); softReset();
+    }
+    const okDir = (o) => o && o.own && o.first >= 250 && o.limit === '60';
+    const ok = r.pairFound && okDir(r.dirA) && okDir(r.dirB) && r.laneRows >= 1 && r.laneSameWay &&
+      r.ggb1 !== 'none' && r.ggb1.lim === 100 && r.ggb1.zone === 0 && r.ggb1.rtype === 1 && r.ggb1.unflag &&
+      r.cb2 !== 'none' && r.cb2.lim >= 100 && r.cb2.rtype === 1 && r.school !== 'none' && r.school.lim === 30 && r.school.zone === 2 &&
+      r.rear === true && Array.isArray(r.secLen) && r.secLen.every((x) => x > 1000 && x < 20000) &&
+      r.seaGone && r.ghost120 === 0 && r.kaepo >= 1 &&
+      r.gyeongbuSeoul === 1 && r.bundangSuseo !== 'none' && r.bundangSuseo !== 1 && /세종포천/.test(r.sejongPocheon) && r.typo === '호국로';
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+  const isBoxRow = (c) => ((c[10] | 0) & 2) === 2;
 
   // S95: 고속도로 박스형 부스의 제한속도 (v159, 2026-11-16~19 놓침·틀림 신고): 경기남부 고속도로순찰대 '이동형 단속 부스' 목록엔 제한속도가 없어
   //      옆 일반도로 고정 카메라 값(50·60)이 들어갔다. 송파IC 10.3k(퇴계원방향)는 앞 93m 에서도 안 떴고(놓침 2번), 판교JC 1.25k 는 '박스형 60'(틀림 2번).

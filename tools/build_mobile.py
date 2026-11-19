@@ -40,6 +40,11 @@
 - unflag: 예전 파일과 같은 자리인데 제한속도·종류가 바뀐 지점 목록. 앱이 운전자의 예전 '틀림'(그 방향 숨김)을 한 번 푼다
 - 중복: 서로 30m 안이면 하나로, 고정 카메라 30m 안이면 뺀다(이미 있음), 직접 넣은 U0002(팔당) 120m 안이면 뺀다(경기북부 109번이 95m)
 - 방향: 설치장소의 '(A→B)'·'A→B방향' → 한 방향(dir 1) + arrows(앱이 안내 문구와 맞춰 반대 방향을 거른다), 없으면 양방향
+  v164: 같은 자리를 반대 방향으로 따로 적은 두 줄과 '(A↔B)' 는 방향마다 한 행으로 두고 pairs 로 묶는다(osm_cams 가 서로 반대 방향 차로에 붙인다)
+- v164 고속도로 지점: '○○고속도로 12.3k'·'○○선 106.3k'·'경부선 307.6'(단위 없음) 으로 시작하거나 '○○고속도로 (방향) 26.5km' 가 든 것만
+  ('경인고속입구'·'해안문 1.1km지점' 같은 일반도로는 아니다). 고속도로 본선 위인데 글로 몰랐던 곳은 cam_fill.py 가 OSM 으로 고친다
+- v164 어린이보호구역 지점(원본에 제한 없음): 300m 안 보호구역 고정 카메라 값, 없으면 30 (예전엔 보호구역이 아닌 카메라 값 50~80)
+- v164 경기북부 PDF: 이동식 목록 머리줄('설치장소 … 경도 위도') 다음부터 읽는다 (고정식 표가 부스 1번에 붙어 'GGB-1384 어린이보호구역 50')
 - 도로 이름은 원본에 주소뿐이라 모름(-1): 앱은 이름이 다르지 않은 것으로 본다
 """
 import csv
@@ -65,7 +70,10 @@ def arrow_ends(place):
     m = ARROW_PAREN.findall(place)
     seg = m[-1] if m else place
     if '↔' in seg:
-        return 'both'
+        # v164: 'A↔B' 는 한 자리에서 두 방향을 찍는다 → ('both', A, B). 아래에서 방향마다 한 행(짝)으로 만든다
+        parts = [re.sub(r'(방면|방향|쪽|진행)$', '', re.sub(r'\s+', '', x).lower()) for x in seg.split('↔')]
+        parts = [re.sub(r'^.*\s', '', e) for e in parts]
+        return ('both',) + tuple(parts) if len(parts) == 2 and all(len(e) >= 2 for e in parts) else 'both'
     parts = ARROW_SPLIT.split(seg)
     if len(parts) != 2:
         return None
@@ -154,10 +162,17 @@ if os.path.exists(p):
     pdf = PdfReader(p)
     COORD = re.compile(r'(12[4-9]\.\d+?)\s*(3[3-8]\.\d{3,})\s*$')
     buf = ''
+    # v164: 이동식 목록은 머리줄 '연번 설치장소(약칭) 관할서 경도 위도' 다음부터. 예전엔 57쪽(고정식 '다기능 장비리스트' 끝)부터 읽어서
+    # 그 표의 줄들(연번으로 시작, 좌표 없음)이 다음 쪽 부스 1번 줄에 붙었다: 부스 1번(수도권제1순환고속도로 23.5k)이 'GGB-1384' 가 되고
+    # 글에 '어람초교 어린이보호구역'이 섞여 고속도로 위 '어린이보호구역 50' 이 됐다
+    started = False
     for pg in range(56, len(pdf.pages)):
         for line in (pdf.pages[pg].extract_text() or '').splitlines():
             line = line.strip()
             if not line:
+                continue
+            if not started:
+                started = '설치장소' in line and '경도' in line and '위도' in line
                 continue
             buf = (buf + ' ' + line).strip() if buf else line
             m = COORD.search(buf)
@@ -293,6 +308,13 @@ fixed_roads = cam.get('roads') or []
 # 설치장소가 '○○고속도로 12.3k'·'○○선 106.3k' 처럼 노선 이름 + 이정으로 시작하면 같은 고속도로 고정 카메라(15km 안, 제한 80 이상)의 값,
 # 없으면 가까운 고속국도 카메라(3km 안), 그것도 없으면 100.
 HWY_HEAD = re.compile(r'^\s*([가-힣A-Za-z0-9]+?(?:고속도로|고속국도|선))\s*(?:\([^)]*\))?\s*(?:제\d지선\s*)?(?:[가-힣]+방향\s*)?\d+(?:\.\d+)?\s*(?:km|k|K)')
+# v164: 단위 없는 이정 '경부선 307.6(상행)-청주 흥덕 강내 학천리' (충북경찰청 목록 74곳). v159 식은 k 단위가 있어야 해서 못 잡아
+# 도로 종류 4·제한 0(65곳) 또는 옆 길 값 50~70(9곳)이 되었고, 앱의 '고속도로 위 70 이하 일반도로 카메라 빼기'에 걸려 안 떴다 (CB-2·CB-4·CB-18·CB-52)
+HWY_HEAD2 = re.compile(r'^\s*([가-힣]{2,}(?:선|고속도로|고속국도))\s*(?:\([^)]*\)\s*)?\d+\.\d+\s*(?:\(|$|-|\s)')
+
+
+def hwy_head(text):
+    return HWY_HEAD.match(text) or HWY_HEAD2.match(text)
 
 
 def hwy_key(name):
@@ -315,42 +337,23 @@ def hwy_limit(lat, lng, name):
 
 
 U0002 = (37.53968, 127.25632)
-rows, arrows, names, name_idx = [], [], [], {}
-stats = {'in': len(pts), 'dup_self': 0, 'dup_fixed': 0, 'dup_manual': 0, 'no_limit': 0, 'hwy_limit': 0}
+rows, arrows, names, name_idx, pairs = [], [], [], {}, []
+stats = {'in': len(pts), 'dup_self': 0, 'dup_fixed': 0, 'dup_manual': 0, 'no_limit': 0, 'hwy_limit': 0, 'school_limit': 0,
+         'pairs_reversed': 0, 'pairs_two_way': 0}
 kept = []
-stats['merged_both_ways'] = 0
-for p_ in pts:
-    dup = next((q for q in kept if hav((p_['lat'], p_['lng']), (q['lat'], q['lng'])) < 30), None)
-    if dup is not None:
-        # 같은 자리를 반대 방향으로 따로 적은 줄('(A→B)'·'(B→A)')은 버리지 않고 남긴 줄을 양방향으로 (한 방향만 남으면 반대쪽에서 안 뜬다)
-        e1, e2 = arrow_ends(p_['text']), arrow_ends(dup['text'])
-        if isinstance(e1, tuple) and isinstance(e2, tuple) and e1 == e2[::-1] and rows[dup['_row']][9] == 1:
-            rows[dup['_row']][9] = 3
-            arrows = [v for k in range(0, len(arrows), 3) if arrows[k] != dup['_row'] for v in arrows[k:k + 3]]
-            stats['merged_both_ways'] += 1
-        stats['dup_self'] += 1
-        continue
-    if any(d < 30 and c[3] in (1, 3) for d, c in near_fixed(p_['lat'], p_['lng'], 30)):
-        stats['dup_fixed'] += 1
-        continue
-    if hav((p_['lat'], p_['lng']), U0002) < 120:
-        stats['dup_manual'] += 1
-        continue
-    hwy = '고속' in p_['text'] or bool(re.search(r'\d+(\.\d+)?\s*k', p_['text']))
-    limit = p_['limit']
-    xw = HWY_HEAD.match(p_['text'])
-    if not limit and xw:
-        limit = hwy_limit(p_['lat'], p_['lng'], xw.group(1))
-        stats['hwy_limit'] += 1
-    if not limit:
-        cand = [c for d, c in near_fixed(p_['lat'], p_['lng'], 2000 if hwy else 600) if c[3] in (1, 3) and c[2] > 0 and c[6] == 0]
-        limit = cand[0][2] if cand else (30 if p_['school'] else 0)
-    if not limit:
-        stats['no_limit'] += 1
-    p_['_row'] = len(rows)
-    kept.append(p_)
-    ends = arrow_ends(p_['text'])
-    one = isinstance(ends, tuple)
+# v164: 고속도로 지점 = 설치장소가 '○○고속도로 12.3k'·'○○선 106.3k'·'경부선 307.6' 로 시작하거나 '○○고속도로 (방향) 26.5km' 가 들어 있는 것.
+# 예전 규칙('고속'이 들어 있거나 숫자 뒤 k)은 '경인고속입구'(선유로 30, SEOUL-179)·'해안문 1.1km지점'(아산로 50, 울산북부-8) 같은
+# 일반도로 13곳을 고속도로로 보았다
+HWY_IN = re.compile(r'(?:고속도로|고속국도)\s*(?:\([^)]*\)\s*)?(?:[가-힣]+방향\s*)?\d+(?:\.\d+)?\s*(?:km|k|K)')
+
+
+def one_way(e):
+    return isinstance(e, tuple) and e[0] != 'both'
+
+
+def add_row(p_, limit, hwy, ends):
+    global arrows
+    one = one_way(ends)
     row = [round(p_['lat'], 6), round(p_['lng'], 6), int(limit), 1 if p_['booth'] else 8, 0, 0, 2 if p_['school'] else 0, -1,
            1 if hwy else 4, 1 if one else 3, 2 if p_['booth'] else 0]
     if one:
@@ -360,6 +363,67 @@ for p_ in pts:
                 names.append(e)
         arrows += [len(rows), name_idx[ends[0]], name_idx[ends[1]]]
     rows.append(row)
+    return len(rows) - 1
+
+
+def limit_for(p_):
+    xw = hwy_head(p_['text'])
+    hwy = bool(xw) or bool(HWY_IN.search(p_['text']))
+    limit = p_['limit']
+    if not limit and xw:
+        limit = hwy_limit(p_['lat'], p_['lng'], xw.group(1))
+        stats['hwy_limit'] += 1
+    if not limit and p_['school'] and not hwy:
+        # v164: 어린이보호구역 지점은 둘레 보호구역 고정 카메라(300m 안) 값, 없으면 30. 예전엔 보호구역이 아닌 고정 카메라 값만 빌려 와서
+        # 보호구역 95곳이 50~80 이었다 (송추초 정문 GGB-151 50, 새별초교 광주광산-7 60)
+        zc = [c for d, c in near_fixed(p_['lat'], p_['lng'], 300) if c[3] in (1, 3) and c[2] > 0 and c[6] == 2]
+        limit = zc[0][2] if zc else 30
+        stats['school_limit'] += 1
+    if not limit:
+        cand = [c for d, c in near_fixed(p_['lat'], p_['lng'], 2000 if hwy else 600) if c[3] in (1, 3) and c[2] > 0 and c[6] == 0
+                and (c[8] == 1) == hwy]
+        limit = cand[0][2] if cand else 0
+    if not limit:
+        stats['no_limit'] += 1
+    return limit, hwy
+
+
+for p_ in pts:
+    dup = next((q for q in kept if hav((p_['lat'], p_['lng']), (q['lat'], q['lng'])) < 30), None)
+    if dup is not None:
+        # 같은 자리를 반대 방향으로 따로 적은 줄('(A→B)'·'(B→A)'): v151 은 남긴 줄을 양방향(3) 하나로 합쳤는데 OSM 방향이 하나뿐이라
+        # 94곳 중 51곳은 반대 방향이 안 떴다(부산해운대-47 등). v164: 방향마다 한 행으로 두고 짝(pairs)으로 묶는다
+        e1, e2 = arrow_ends(p_['text']), dup['_ends']
+        if one_way(e1) and one_way(e2) and e1 == e2[::-1] and dup.get('_twin') is None:
+            limit, hwy = limit_for(p_)
+            r = add_row(p_, limit, hwy, e1)
+            pairs += [dup['_row'], r]
+            dup['_twin'] = r
+            p_['_row'], p_['_ends'], p_['_twin'] = r, e1, dup['_row']
+            kept.append(p_)
+            stats['pairs_reversed'] += 1
+            continue
+        stats['dup_self'] += 1
+        continue
+    if any(d < 30 and c[3] in (1, 3) for d, c in near_fixed(p_['lat'], p_['lng'], 30)):
+        stats['dup_fixed'] += 1
+        continue
+    if hav((p_['lat'], p_['lng']), U0002) < 120:
+        stats['dup_manual'] += 1
+        continue
+    limit, hwy = limit_for(p_)
+    ends = arrow_ends(p_['text'])
+    p_['_ends'] = ends
+    if isinstance(ends, tuple) and ends[0] == 'both':
+        # 'A↔B': 한 자리에서 두 방향을 찍는다 → 방향마다 한 행 (짝)
+        r1 = add_row(p_, limit, hwy, (ends[1], ends[2]))
+        r2 = add_row(p_, limit, hwy, (ends[2], ends[1]))
+        pairs += [r1, r2]
+        p_['_row'], p_['_twin'] = r1, r2
+        stats['pairs_two_way'] += 1
+    else:
+        p_['_row'] = add_row(p_, limit, hwy, ends)
+    kept.append(p_)
 
 by = {}
 for p_ in kept:
@@ -378,7 +442,7 @@ out = {'v': 1, 'date': date.today().isoformat(), 'count': len(rows), 'fields': c
                    'dg': '대구 중부·동부·남부·성서·달서·달성경찰서 이동식 단속 사전 예고장소 (2026-04~07, 주소를 좌표로 바꾼 것)',
                    'usa': '울산 울주·남부경찰서 이동식 단속 지점 (2025-08·2026-10, 주소를 좌표로 바꾼 것)',
                    'cb': '충북경찰청 이동식 단속 카메라 설치장소 (data.go.kr 15141314, 2025-05-14 수정, 주소와 1km 넘게 다른 좌표는 뺌)'},
-       'rows': rows, 'arrowNames': names, 'arrows': arrows}
+       'rows': rows, 'arrowNames': names, 'arrows': arrows, 'pairs': pairs}
 # v159: 예전 파일과 같은 자리인데 제한속도·종류가 바뀐 지점은 운전자가 예전에 누른 '틀림'(이 방향 숨김)을 앱이 한 번 푼다.
 # 틀린 값 때문에 누른 틀림이라 고친 뒤에도 계속 숨기면 그대로 놓친다 (2026-11-18 송파IC 10.3k)
 try:
