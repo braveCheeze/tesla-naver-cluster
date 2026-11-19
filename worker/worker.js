@@ -143,9 +143,31 @@ export default {
       if (url.pathname === '/events') {
         if (!env.LOGS) return json({ items: [] }, 200, cors);
         const since = Number(p.get('since')) || 0;
-        // 최신 기록부터 (목록 한 번). since 보다 새 것만, 최대 50개를 시간순으로
-        const listed = await env.LOGS.list({ prefix: 'evr:', limit: 1000 });
-        let keys = listed.keys.map((k) => k.name).filter((n) => EVR_BASE - Number(n.split(':')[1]) > since).slice(0, 50).reverse();
+        // v161 (2026-11-20): 예전엔 최신 50건만 줘서 그보다 오래된 놓침·틀림 신고를 볼 수 없었다.
+        // before=<ms> 를 주면 그 시각보다 오래된 것 중 최신부터 limit 개(기본 50, 최대 200)를 시간순으로 준다(목록을 최대 10쪽까지 넘김).
+        // 답의 oldest 를 다음 before 로 주면 더 예전으로 간다. before 가 없으면 예전과 똑같다(최신 50건, since 보다 새 것만)
+        const before = Number(p.get('before')) || 0;
+        const lim = Math.min(200, Math.max(1, Number(p.get('limit')) || 50));
+        const tOf = (n) => EVR_BASE - Number(n.split(':')[1]);
+        let keys;
+        if (before) {
+          keys = [];
+          let cur;
+          for (let page = 0; page < 10 && keys.length < lim; page++) {
+            const l = await env.LOGS.list({ prefix: 'evr:', limit: 1000, cursor: cur });
+            for (const k of l.keys) {
+              const t = tOf(k.name);
+              if (t < before && t > since) { keys.push(k.name); if (keys.length >= lim) break; }
+            }
+            if (l.list_complete || !l.cursor) break;
+            cur = l.cursor;
+          }
+          keys.reverse();
+        } else {
+          // 최신 기록부터 (목록 한 번). since 보다 새 것만, 최대 limit(기본 50)개를 시간순으로
+          const listed = await env.LOGS.list({ prefix: 'evr:', limit: 1000 });
+          keys = listed.keys.map((k) => k.name).filter((n) => tOf(n) > since).slice(0, lim).reverse();
+        }
         // 예전 형식('evt:') 기록: legacy=1 일 때만 끝까지 넘겨 가며 찾는다 (목록 호출이 여러 번 들어 평소엔 안 씀. 7일 뒤 모두 사라짐)
         if (p.get('legacy') === '1') {
           let cursor, old = [];
@@ -157,10 +179,12 @@ export default {
           }
           keys = old.sort().slice(-50).concat(keys).slice(-50);
         }
-        const items = (await Promise.all(keys.map((k) => env.LOGS.get(k)))).filter(Boolean).map((v) => {
+        let items = (await Promise.all(keys.map((k) => env.LOGS.get(k)))).filter(Boolean).map((v) => {
           try { return JSON.parse(v); } catch (e) { return { raw: v }; }
         }).sort((a, b) => (a.serverAt || 0) - (b.serverAt || 0));
-        return json({ items }, 200, cors);
+        const oldest = items.length ? items[0].serverAt || null : null;
+        if (p.get('user') === '1') items = items.filter((e) => e.user);   // 운전자가 누른 '놓침'·'틀림'만
+        return json(before ? { items, oldest } : { items }, 200, cors);
       }
 
       if (url.pathname === '/log') {
