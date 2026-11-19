@@ -2823,6 +2823,7 @@
     { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored; 7-10 lanes fit the drawer as square tiles", fn: s77 },
     { id: 'S78', name: "S78 mainline junction (v133): keep-left/right where the route stays on the same expressway section and goes straight is shown as straight ('신갈분기점에서 직진 · 서울 방면', main-straight junction scene, straight sign); a fork onto another expressway stays a fork", fn: s78 },
     { id: 'S79', name: 'S79 rest areas (v133): distance to where the entry ramp leaves the mainline (OSM), not the rest-area centre; within 3 km and no turn within 1 km the top row becomes the rest area (blue), next row = the guidance after it', fn: s79 },
+    { id: 'S95', name: "S95 expressway booth limits (v159, 놓침·틀림 reports 11-16~19): the 경기남부 고속도로순찰대 booth list has no limits, so the nearest street camera's 50/60 was used — the 송파IC 10.3k booth never showed (missed twice) and the 판교JC 1.25k booth read '박스형 60' (wrong twice); on a straight 수도권제1순환고속도로 route through each booth at 90 km/h both now show from 500 m+ with the expressway limit 100", fn: s95 },
     { id: 'S94', name: "S94 closer rows on top (v158, 이배재터널 안 '370m 터널 출구까지' above '↗ 230m' looked upside down — 230m was measured from the left turn, 2.0 km from the car): card rows (tunnel, rest, next guide, parking entrance), drawer cards (lanes, junction, camera, section, hi-pass) and small chips are ordered by distance from the car; the next row keeps Naver's distance from the guide above but says so ('230m 좌회전 후', '830m 터널 지나'); rows within 25 m keep their place, the order changes only once on a 1 km sweep, hidden rows go back to HTML order", fn: s94 },
     { id: 'S93', name:"S93 U-turn picks the approach camera (v157, 송파IC 진출램프 끝 유턴: we showed 위례중앙로 50, Naver and the road show 30): after the highway exit guide a section still named '수도권제1순환고속도로' no longer hides the ramp's signal+speed 30, the card 80 m before the U-turn reads 30, and the 50 on the road we turn into is dropped; with equal limits both stay", fn: s93 },
     { id: 'S92', name: "S92 split-then-merge (v156, 수도권1순환 북행 '분기도로 진입' showed '직진'): a direction-less fork on the mainline reads '분기 후 합류' like Naver, with the JC icon whose two arrows go round both sides of the island (symmetric, two arrowheads) and no junction picture; a keep-left on the same mainline is still '직진'", fn: s92 },
@@ -4710,6 +4711,68 @@
     const ok = a.ramp && a.ramp.limit === '30' && a.at80 === '30' && !a.road && a.onRoute.ramp && !a.onRoute.road && a.drops >= 1 &&
       b.onRoute.ramp && b.onRoute.road && b.drops === 0;
     return { pass: !!ok, detail: 'U-turn at ' + r0(U) + ' m ' + JSON.stringify(r) };
+  }
+
+  // S95: 고속도로 박스형 부스의 제한속도 (v159, 2026-11-16~19 놓침·틀림 신고): 경기남부 고속도로순찰대 '이동형 단속 부스' 목록엔 제한속도가 없어
+  //      옆 일반도로 고정 카메라 값(50·60)이 들어갔다. 송파IC 10.3k(퇴계원방향)는 앞 93m 에서도 안 떴고(놓침 2번), 판교JC 1.25k 는 '박스형 60'(틀림 2번).
+  //      부스 자리를 지나는 곧은 2.4km 수도권제1순환고속도로 경로(부스 1.4km)를 시속 90 으로: 두 부스 다 뜨고 제한속도는 고속도로 값(100)
+  //      예전 값 때문에 누른 '틀림'(그 방향 숨김)이 남아 있으면 고쳐도 놓친다: mobile.json unflag 에 두 부스가 있고, 앱이 한 번만 풀고, 풀린 뒤 다시 뜬다
+  async function s95() {
+    const t = T(), rows = t.cams.rows;
+    const B = [{ k: 'songpa', lat: 37.478647, lng: 127.134273, h: 31 }, { k: 'pangyo', lat: 37.407853, lng: 127.108583, h: 269 }];
+    const r = {};
+    const mob = await (await realFetch(new URL('../data/mobile.json', location.href).href, { cache: 'no-store' })).json();
+    const unflagKeys = new Set((mob.unflag && mob.unflag.keys) || []);
+    const keepNo = new Map(t.camNoMap), keepFlag = t.store.get('camNoUnflag');
+    try {
+      for (const b of B) {
+        const c = rows.find((x) => sameCam(x, b));
+        if (!c) { r[b.k] = 'not in data'; continue; }
+        // 틀림 표시: 숨김 → 한 번 풀림(같은 id 로는 다시 안 풂)
+        const key = c[0] + ',' + c[1];
+        t.camNoMap.set(key, [b.h]);
+        const u = { listed: unflagKeys.has(key), hidden: t.camUserNo(c, b.h) };
+        t.store.set('camNoUnflag', '');
+        const id = 'S95-' + b.k;
+        u.n1 = t.camNoUnflag({ id, keys: [key] });
+        u.after = t.camUserNo(c, b.h);
+        t.camNoMap.set(key, [b.h]);
+        u.n2 = t.camNoUnflag({ id, keys: [key] });
+        t.camNoMap.delete(key);
+        const lane = { lat: c.sl != null ? c.sl : c[0], lng: c.sg != null ? c.sg : c[1] };
+        const start = dest(lane, (b.h + 180) % 360, 1400);
+        const P = [];
+        for (let k = 0; k <= 240; k++) { const p = dest(start, b.h, 10 * k); P.push({ lat: round6(p.lat), lng: round6(p.lng) }); }
+        const cum = [0];
+        for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+        const total = cum[cum.length - 1];
+        const R = { route: { distance: r0(total), duration: r0(total / 25 * 1000), tollFare: 0, fuelPrice: 0, path: P.map((p) => [p.lng, p.lat]),
+          guide: [{ i: 240, t: 88, s: '목적지', d: r0(total), ms: r0(total / 25 * 1000) }],
+          sections: [{ i: 0, n: 241, name: '수도권제1순환고속도로', speed: 90, cong: 1 }] },
+          P, cum, total, dest: { name: '테스트', addr: '', lat: P[240].lat, lng: P[240].lng } };
+        await resetApp(); softReset();
+        await planAndStart(R);
+        const o = { lim: c[2], dir: c[9], first: null, limit: null, unflag: u };
+        try {
+          t.ensureRouteCams();
+          o.onRoute = t.nav.routeCams.has(c);
+          for (let s = 0; s <= 1390; s += 20) {
+            const a = pointAt(R, s);
+            feed(a.p, 90 / 3.6, a.h, { dt: 800 });
+            const tg = t.camState.target;
+            if (tg && tg.c === c && o.first === null) { o.first = r0(1400 - s); o.limit = text('#camLimit'); o.label = text('#camType'); }
+          }
+        } finally { t.endNav(); }
+        r[b.k] = o;
+      }
+    } finally {
+      t.camNoMap.clear(); keepNo.forEach((v, k) => t.camNoMap.set(k, v));
+      t.store.set('camNoUnflag', keepFlag || '');
+      await resetApp(); softReset();
+    }
+    const ok = B.every((b) => { const o = r[b.k], u = o && o.unflag;
+      return o && o.onRoute && o.first >= 500 && o.limit === '100' && u.listed && u.hidden && u.n1 === 1 && !u.after && u.n2 === 0; });
+    return { pass: ok, detail: JSON.stringify(r) };
   }
 
   // S94: 가까운 것이 위로 (v158, 2026-11-17 20:04 이배재터널 안 서행: '1.8km 좌회전' 밑 '370m 이배재터널 출구까지', 그 밑 '↗ 230m' —

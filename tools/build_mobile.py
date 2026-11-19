@@ -35,6 +35,9 @@
 규칙
 - 부스(경기북부 전부, 부산 'O') → 과속단속 + 박스형(flags 2). 부스 없는 이동식(경남, 부산 'X') → 이동식단속(kind 8, 파란색)
 - 제한속도: 원본 값, 없으면 가까운 고정 과속 카메라(일반도로 600m·고속도로 2km 안)의 제한속도, 그것도 없으면 0(모름: 앱은 '?' 로 보여 주고 과속 판단·음성 숫자는 뺀다)
+  v159: 설치장소가 '○○고속도로 12.3k'·'○○선 106.3k' 로 시작하는 고속도로 지점은 같은 고속도로 고정 카메라(15km 안, 80 이상) 값, 없으면 100
+  (예전 규칙은 옆 일반도로 값 50·60 을 빌려 왔다: 판교JC 1.25k '박스형 60' 틀림, 송파IC 10.3k 50 놓침)
+- unflag: 예전 파일과 같은 자리인데 제한속도·종류가 바뀐 지점 목록. 앱이 운전자의 예전 '틀림'(그 방향 숨김)을 한 번 푼다
 - 중복: 서로 30m 안이면 하나로, 고정 카메라 30m 안이면 뺀다(이미 있음), 직접 넣은 U0002(팔당) 120m 안이면 뺀다(경기북부 109번이 95m)
 - 방향: 설치장소의 '(A→B)'·'A→B방향' → 한 방향(dir 1) + arrows(앱이 안내 문구와 맞춰 반대 방향을 거른다), 없으면 양방향
 - 도로 이름은 원본에 주소뿐이라 모름(-1): 앱은 이름이 다르지 않은 것으로 본다
@@ -284,9 +287,36 @@ def near_fixed(lat, lng, radius):
     return sorted(out, key=lambda x: x[0])
 
 
+fixed_roads = cam.get('roads') or []
+# v159 (2026-11-16~19 놓침·틀림 신고): 고속도로 위 부스·이동식 지점의 제한속도. 원본에 값이 없으면 예전엔 가까운 고정 카메라(2km 안)를 빌려서
+# 옆·아래 일반도로 값(30~70)이 들어갔다(판교JC 1.25k '박스형 60', 송파IC 10.3k 50 → 앱은 고속도로 위 저속 카메라로 보고 틀림·놓침).
+# 설치장소가 '○○고속도로 12.3k'·'○○선 106.3k' 처럼 노선 이름 + 이정으로 시작하면 같은 고속도로 고정 카메라(15km 안, 제한 80 이상)의 값,
+# 없으면 가까운 고속국도 카메라(3km 안), 그것도 없으면 100.
+HWY_HEAD = re.compile(r'^\s*([가-힣A-Za-z0-9]+?(?:고속도로|고속국도|선))\s*(?:\([^)]*\))?\s*(?:제\d지선\s*)?(?:[가-힣]+방향\s*)?\d+(?:\.\d+)?\s*(?:km|k|K)')
+
+
+def hwy_key(name):
+    s = re.sub(r'\(.*?\)', '', re.sub(r'\s+', '', name or ''))
+    s = s.replace('서울외곽순환', '수도권제1순환')
+    s = re.sub(r'(고속도로|고속국도|선)$', '', s)
+    return re.sub(r'제(?=\d)', '', s)
+
+
+def hwy_limit(lat, lng, name):
+    key = hwy_key(name)
+    near = [(d, c) for d, c in near_fixed(lat, lng, 15000) if c[8] == 1 and c[2] >= 80]
+    for d, c in near:
+        if c[7] >= 0 and c[7] < len(fixed_roads) and hwy_key(fixed_roads[c[7]]) == key:
+            return c[2]
+    for d, c in near:
+        if d <= 3000:
+            return c[2]
+    return 100
+
+
 U0002 = (37.53968, 127.25632)
 rows, arrows, names, name_idx = [], [], [], {}
-stats = {'in': len(pts), 'dup_self': 0, 'dup_fixed': 0, 'dup_manual': 0, 'no_limit': 0}
+stats = {'in': len(pts), 'dup_self': 0, 'dup_fixed': 0, 'dup_manual': 0, 'no_limit': 0, 'hwy_limit': 0}
 kept = []
 stats['merged_both_ways'] = 0
 for p_ in pts:
@@ -308,6 +338,10 @@ for p_ in pts:
         continue
     hwy = '고속' in p_['text'] or bool(re.search(r'\d+(\.\d+)?\s*k', p_['text']))
     limit = p_['limit']
+    xw = HWY_HEAD.match(p_['text'])
+    if not limit and xw:
+        limit = hwy_limit(p_['lat'], p_['lng'], xw.group(1))
+        stats['hwy_limit'] += 1
     if not limit:
         cand = [c for d, c in near_fixed(p_['lat'], p_['lng'], 2000 if hwy else 600) if c[3] in (1, 3) and c[2] > 0 and c[6] == 0]
         limit = cand[0][2] if cand else (30 if p_['school'] else 0)
@@ -345,6 +379,18 @@ out = {'v': 1, 'date': date.today().isoformat(), 'count': len(rows), 'fields': c
                    'usa': '울산 울주·남부경찰서 이동식 단속 지점 (2025-08·2026-10, 주소를 좌표로 바꾼 것)',
                    'cb': '충북경찰청 이동식 단속 카메라 설치장소 (data.go.kr 15141314, 2025-05-14 수정, 주소와 1km 넘게 다른 좌표는 뺌)'},
        'rows': rows, 'arrowNames': names, 'arrows': arrows}
+# v159: 예전 파일과 같은 자리인데 제한속도·종류가 바뀐 지점은 운전자가 예전에 누른 '틀림'(이 방향 숨김)을 앱이 한 번 푼다.
+# 틀린 값 때문에 누른 틀림이라 고친 뒤에도 계속 숨기면 그대로 놓친다 (2026-11-18 송파IC 10.3k)
+try:
+    old = json.load(open(OUT, encoding='utf-8'))
+    was = {(r[0], r[1]): (r[2], r[3]) for r in old.get('rows', [])}
+    keys = ['%s,%s' % (json.dumps(r[0]), json.dumps(r[1])) for r in rows if (r[0], r[1]) in was and was[(r[0], r[1])] != (r[2], r[3])]
+    if keys:
+        out['unflag'] = {'id': out['date'] + '-' + str(len(keys)), 'keys': keys}
+    elif old.get('unflag'):
+        out['unflag'] = old['unflag']
+except (OSError, ValueError):
+    pass
 with open(OUT, 'w', encoding='utf-8') as fh:
     json.dump(out, fh, ensure_ascii=False, separators=(',', ':'))
 print(json.dumps(dict(stats, kept=len(rows), by=by, one_way=len(arrows) // 3), ensure_ascii=False))

@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-158'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-159'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -2149,6 +2149,7 @@
           jd.length = base;
           j.dirs = jd.concat(m.dirs || []);
           cams.mobile = m.rows.length;
+          try { camNoUnflag(m.unflag); } catch (e) { /* 다음에 */ }
         }
       } catch (e) { /* 박스형 목록 없이 */ }
       // v123: 카메라가 찍는 진행 방향·층·그 차로 위 점 (tools/osm_cams.py)
@@ -2511,6 +2512,21 @@
   function camUserNo(c, h) {
     const a = camNoMap.get(c[0] + ',' + c[1]);
     return !!a && a.some((x) => x === null || h === null || angleDiff(x, h) <= 45);
+  }
+  function saveCamNo() {
+    const list = [];
+    camNoMap.forEach((hs, key) => hs.forEach((x) => list.push([key, x])));
+    store.set('camNo', JSON.stringify(list.slice(-300)));
+  }
+  // v159: 자료를 고친 지점(mobile.json unflag: 제한속도·종류가 바뀐 자리)은 예전에 누른 '틀림'을 한 번 푼다.
+  // 판교JC·송파IC 고속도로 부스가 옆 일반도로 값(60·50)이라 틀림을 눌렀고, 고친 뒤에도 숨어 있으면 그대로 놓친다 (2026-11-18 송파IC)
+  function camNoUnflag(u) {
+    if (!u || !u.id || !Array.isArray(u.keys) || store.get('camNoUnflag') === u.id) return 0;
+    let n = 0;
+    for (const k of u.keys) if (camNoMap.delete(k)) n++;
+    if (n) saveCamNo();
+    store.set('camNoUnflag', u.id);
+    return n;
   }
   function userReport(kind) {
     const f = state.fix, t0 = f ? f.t : Date.now(), tg = camState.target;
@@ -6620,9 +6636,7 @@
         const k = tg.c[0] + ',' + tg.c[1], h = state.heading === null ? null : Math.round(state.heading);
         if (!camNoMap.has(k)) camNoMap.set(k, []);
         camNoMap.get(k).push(h);
-        const list = [];
-        camNoMap.forEach((hs, key) => hs.forEach((x) => list.push([key, x])));
-        store.set('camNo', JSON.stringify(list.slice(-300)));
+        saveCamNo();
         camState.passed.set(tg.i, state.fix ? state.fix.t : Date.now());
         camState.target = null;
         renderCam();
@@ -6991,7 +7005,7 @@
       lanesData, laneState, setLaneData, loadLanes, laneGuide, laneArrowSvg, laneOk, laneTipFor, laneCell,
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, hdgFix, fixLog, ensureRouteCams,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, camNoMap, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,
