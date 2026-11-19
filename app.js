@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-164'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-165'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -2215,7 +2215,6 @@
   }
   // v163 (2026-11-20 점검 10): 카메라 자료를 못 받으면 다시 받지 않았고, 박스형·이동식(mobile.json)을 못 받아도 아무 표시가 없었다.
   // 10초·30초·1분·2분·5분 뒤 다시 받는다. 카메라는 있고 박스형만 빠졌으면 경고 중·구간단속 중이 아닐 때 다시 받는다
-  const camLoad = { tries: 0, timer: 0 };
   async function loadCameras() {
     clearTimeout(camLoad.timer);
     let ok = false, mobileOk = false;
@@ -2237,7 +2236,10 @@
           j.arrows = (j.arrows || []).concat(add);
           const jd = j.dirs || [];
           jd.length = base;
-          j.dirs = jd.concat(m.dirs || []);
+          // v165: 박스형의 OSM 길 이름 번호는 mobile.json 의 osmNames 기준이다 — 합친 표의 번호로 옮긴다
+          const no = (j.osmNames || []).length;
+          j.osmNames = (j.osmNames || []).concat(m.osmNames || []);
+          j.dirs = jd.concat((m.dirs || []).map((d) => (d && d[5] >= 0 ? d.slice(0, 5).concat([d[5] + no], d.slice(6)) : d)));
           cams.mobile = m.rows.length;
           mobileOk = true;
           try { camNoUnflag(m.unflag); } catch (e) { /* 다음에 */ }
@@ -2246,10 +2248,11 @@
       // 다시 받다가 박스형만 실패했으면 이미 가진 자료(박스형 포함)를 그대로 둔다
       if (!mobileOk && cams.loaded && cams.mobile) throw new Error('keep');
       // v123: 카메라가 찍는 진행 방향·층·그 차로 위 점 (tools/osm_cams.py)
-      const dirs = j.dirs || [];
+      const dirs = j.dirs || [], onames = j.osmNames || [];
       j.rows.forEach((c, i) => {
         const d = dirs[i];
         c.eb = d ? d[0] : -1; c.e2 = d ? d[1] : 0; c.lv = d ? d[4] : 0;
+        c.on = d && d[5] >= 0 ? onames[d[5]] || '' : '';   // v165: 카메라가 붙은 OSM 길 이름 (박스형은 경찰 자료에 도로 이름이 없다)
         c.sl = d ? c[0] + d[2] / 1e5 : c[0]; c.sg = d ? c[1] + d[3] / 1e5 : c[1];
       });
       const g = new Map();
@@ -2277,6 +2280,7 @@
     }
     renderCamStatus();
   }
+  const camLoad = { tries: 0, timer: 0 };   // (loadCameras 는 부팅 끝에 불리므로 여기 선언해도 된다)
   function retryCameras() {
     if (testPage && !camLoad.allowInTest) return;
     // 카메라는 있고 박스형만 빠졌으면 경고 중·구간단속 중에는 자료를 바꾸지 않는다
@@ -2361,11 +2365,38 @@
   }
   const camRoad = (c) => (cams.roads && c[7] >= 0 ? cams.roads[c[7]] : '') || '';
   // v157: '서울외곽순환고속도로'(경찰청 카메라 자료의 옛 이름)는 '수도권제1순환고속도로'(2020년 바뀐 이름, 네이버 경로 구간)와 같은 길
-  const roadKey = (s) => String(s || '').replace(/\s+/g, '').replace('서울외곽순환', '수도권제1순환').replace(/고속도로$/, '고속');
-  // 두 도로 이름이 같은 도로를 가리키는지 (한쪽이 다른 쪽을 포함하면 같다고 본다)
+  // v165 (2026-11-20 2차 점검 C): 표기 차이를 맞춘다 — 경찰 '분당-수서간고속화도로'·'분당-수서간도시고속화도로', 네이버 '분당수서간도시고속화도로',
+  // 도로명 '분당수서로' / '동부간선도로' 대 '동부간선로' / '구리-포천고속도로' / '수도권제1순환' 대 '수도권1순환' / '고속국도'
+  const roadKey = (s) => {
+    let k = String(s || '').replace(/[\s\-·ㆍ.]/g, '').replace(/\([^)]*\)/g, '').replace('서울외곽순환', '수도권제1순환').replace(/제(?=\d)/g, '');
+    k = k.replace(/고속국도/g, '고속도로').replace(/간(?=(도시)?고속)/, '');
+    if (/(도시고속화도로|고속화도로|도시고속도로)$/.test(k)) return k.replace(/(도시고속화도로|고속화도로|도시고속도로)$/, '고속화');
+    if (/고속도로$/.test(k)) return k.replace(/고속도로$/, '고속');
+    return k.replace(/도로$/, '로');
+  };
+  // 두 도로 이름이 같은 도로를 가리키는지 (한쪽이 다른 쪽을 포함하면 같다고 본다). 도시고속화도로는 그 도로명('분당수서로')과도 같다
   function sameRoad(a, b) {
     const x = roadKey(a), y = roadKey(b);
-    return !!x && !!y && (x.indexOf(y) >= 0 || y.indexOf(x) >= 0);
+    if (!x || !y) return false;
+    if (x.indexOf(y) >= 0 || y.indexOf(x) >= 0) return true;
+    const x2 = x.replace(/고속화$/, '로'), y2 = y.replace(/고속화$/, '로');
+    return x2 === y2;
+  }
+  // 카메라의 두 이름(경찰 자료 도로 이름·OSM 길 이름) 중 하나라도 같으면 같은 도로
+  const camNames = (c) => [camRoad(c), c.on || ''].filter(Boolean);
+  const sameCamRoad = (rn, c) => camNames(c).some((n) => sameRoad(rn, n));
+  // 둘 다 구체적인 이름이 있는데 카메라의 어느 이름과도 다르면 다른 도로
+  const camRoadDiffers = (rn, c) => specificRoad(rn) && camNames(c).some(specificRoad) && !sameCamRoad(rn, c);
+  // 고속국도(도시고속도로·고속화도로 빼고)인지
+  const isExpwyName = (n) => /고속도로|고속국도/.test(n || '') && !/도시고속|고속화/.test(n || '');
+  // 빠른 길(고속도로·도시고속도로·고속화도로·자동차전용 순환·간선로): 고가·지하 구분 안내가 없는 곳
+  const isFastRoad = (n) => /고속|순환로|간선|강변북로|올림픽대로|자동차전용/.test(n || '');
+  // 이 카메라가 고속도로(경로가 달리는 그 고속도로 rn 포함) 위인지. 이름을 모르면 예전 규칙(고속국도이거나 제한 80 이상)
+  function camOnExpwy(c, rn) {
+    if (c[8] === 1) return true;
+    const ns = camNames(c).filter(specificRoad);
+    if (ns.length) return ns.some((n) => isExpwyName(n) || (rn && sameRoad(rn, n)));
+    return c[2] > 70;
   }
   // '19번 국도', '국도1', '국지도70', '지방도333', '국도 제3호선', '고속도로' 처럼 노선 번호·종류만 있는 이름은
   // 실제 도로명(북한강로 등)과 비교할 수 없다 (같은 길이어도 이름이 달라 진짜 카메라를 숨기게 됨)
@@ -2412,12 +2443,14 @@
     const pa = routePointAt(Math.max(0, s0)), pb = routePointAt(Math.min(nav.total, s1));
     return pa && pb && haversine(pa, pb) > 3 ? bearing(pa, pb) : null;
   }
-  function camLevelOk(c, at) {
+  function camLevelOk(c, at, rn, hw) {
     const lv = c.lv | 0;
     if (!(lv & 28)) return true;
     const sep = gradeSepNear(at);
     if ((lv & 12) && sep) return false;
-    if ((lv & 16) && !sep) return false;
+    // v165 (2026-11-20 전 카메라 가상 주행: 고가·지하 카메라 63대가 길안내 중에 모두 빠졌다 — 수도권1순환·평택시흥·내부순환로·강변북로 구간단속 등).
+    // 네이버는 고속도로·도시고속도로 본선에서 고가·지하차도 안내를 주지 않는다. 경로 구간이 빠른 길이거나 카메라 길 이름이 구간과 같으면 남긴다
+    if ((lv & 16) && !sep) return !!hw || (!!rn && (isFastRoad(rn) || sameCamRoad(rn, c)));
     return true;
   }
   // 굽은 길: 최근 주행 궤적이 휜 정도(곡률 k, 1m 당 라디안, + 는 오른쪽으로 굽음)로 앞길을 원호로 보고,
@@ -2460,15 +2493,36 @@
     // 길안내 중에는 안내하는 경로 위의 카메라만 (잠깐 경로를 벗어나도 다른 길 카메라는 알리지 않는다).
     // v161 (2026-11-20 점검): 경로를 2.5초 넘게 벗어나 있으면(다른 길로 듦·재탐색 실패·재탐색 대기) 경로 위치가 멈춰 있어
     // 실제로 달리는 길의 카메라를 하나도 못 알렸다 — 그때는 길안내가 없을 때처럼 진행 방향 앞에서 고른다
-    if (nav.active && nav.pts && routeTrusted()) return camOnRouteAhead(c);
-    // 길안내가 없으면 진행 방향 앞(굽은 길이면 휘는 대로 예측한 앞길)의 내 도로 카메라
+    if (nav.active && nav.pts && routeTrusted()) {
+      if (camOnRouteAhead(c)) return true;
+      // v165 (2차 점검): 다시 찾은 경로는 차보다 최대 60m 앞에서 시작한다 — 그 사이 카메라는 새 경로에도 없으니 진행 방향으로 본다
+      return !!nav.rerouted && nav.along < 80 && freeAhead(f, c, keep);
+    }
+    return freeAhead(f, c, keep);
+  }
+  // 길안내 없이: 진행 방향 앞(굽은 길이면 휘는 대로 예측한 앞길)의 내 도로 카메라
+  function freeAhead(f, c, keep) {
     if (state.heading === null) return false;
     // v123: 카메라 차로 위 점이 예측한 앞길 옆 15m 안(멀수록 방향 오차만큼 조금 더)이고, 찍는 방향이 그 앞길 방향과 50° 안
     const p = camPt(c), dp = haversine(f, p), pb = pathBearing(dp);
     const dif = angleDiff(bearing(f, p), pb);
     if (dif > 60 && dp > 40) return false;
-    if (dp * Math.sin(toRad(Math.min(dif, 90))) > CAM_TOL + dp * (keep ? 0.03 : 0.02)) return false;
-    return camDirOk(c, pb);
+    // v165 (2차 점검 D): 옆 허용폭은 거리의 2%(유지 3%)만큼 넓히되 40m 까지 (3km 에서 75m 까지 넓어져 81m 옆 경부 '구간단속 끝'이 깜빡였다.
+    // 15m 까지로 줄이면 굽은 고속도로에서 구간 시작을 638m 앞에서야 잡았다 — S27)
+    const side = dp * Math.sin(toRad(Math.min(dif, 90)));
+    if (side > CAM_TOL + Math.min(40, dp * (keep ? 0.03 : 0.02))) return false;
+    // (지금 달리는 도로 이름으로 거르기는 하지 않는다: 고속도로 위에서도 역지오코딩이 옆 일반도로 이름을 주곤 해서, 굽은 고속도로의
+    //  구간단속 시작을 638m 앞에서야 잡았다 — S27. 경찰 표기도 역지오코딩과 자주 다르다)
+    // 고속도로 본선(시속 60 넘게)을 달리는 중이면 고속도로 카메라가 아닌 것(앞길에서 6m 넘게 비켜난 것)은 뺀다 (수도권1순환 위에서 밑 문정로 어린이 30)
+    if (isExpwyName(road.name) && state.speedKmh >= 60 && side > 6 && !camOnExpwy(c, road.name)) return false;
+    // v165 (2차 점검 G): 굽은 길은 그 자리의 진행 방향(현 방향 + 거리 × 곡률)으로도 본다 (100° 넘게 돈 고리 길 뒤의 카메라가 버려졌다)
+    return camDirOk(c, pb) || camDirOk(c, pathTangent(dp));
+  }
+  function pathTangent(d) {
+    if (state.heading === null) return null;
+    const k = curv.k;
+    if (!k || d > 800) return state.heading;
+    return (state.heading + Math.max(-180, Math.min(180, toDeg(k * d))) + 360) % 360;
   }
   // 경로 선분 i 위의 카메라인지 보고, 맞으면 경로 위 거리(m)를 돌려준다 (v123 규칙: 위 CAM_TOL·CAM_DIR_TOL·camLevelOk).
   // 설치장소에 'A→B'가 적힌 한 방향 카메라: 길안내 경로의 앞뒤 안내 문구로 방향을 가른다 (-1 반대 방향, 1 내 방향, 0 모름).
@@ -2520,7 +2574,17 @@
       if (HW_IN.has(g.t)) { if (start === null) start = s; seen = true; }
       else if (HW_OUT.has(g.t)) { if (start !== null || !seen) spans.push([start === null ? 0 : start, s]); start = null; seen = true; }
     }
-    if (start !== null) spans.push([start, nav.total]);
+    if (start !== null) {
+      // v165 (2026-11-20 2차 점검 H): 진입 안내만 있고 출구 안내가 없으면(경부→한남대교, 서해안→서부간선처럼 이어지는 곳) 목적지까지 고속도로로 봐서
+      // 그 뒤 일반도로 카메라가 모두 빠졌다. 경로 구간 이름이 고속도로가 아닌 구체적인 도로 이름으로 바뀌는 곳에서 끝낸다
+      let end = nav.total;
+      for (const sec of (nav.route && nav.route.sections) || []) {
+        const s0 = nav.cum[Math.min(sec.i, last)];
+        if (s0 <= start + 50) continue;
+        if (specificRoad(sec.name) && !isExpwyName(sec.name)) { end = s0; break; }
+      }
+      spans.push([start, end]);
+    }
     nav.hwSpans = spans; nav.hwSpansFor = nav.route;
     return spans;
   }
@@ -2540,15 +2604,26 @@
   }
   function camAtSeg(c, i) {
     const p = camPt(c), a = nav.pts[i], b = nav.pts[i + 1];
-    const pr = projectSeg(p, a, b);
-    if (pr.dist > CAM_TOL) return null;                     // 카메라 차로 위 점이 경로선 옆 15m 안
-    const rn = routeRoadAt(i), cn = camRoad(c);
-    if (pr.dist > 6 && roadsDiffer(rn, cn)) return null;
+    let pr = projectSeg(p, a, b);
+    const rn = routeRoadAt(i);
+    // 카메라 차로 위 점이 경로선 옆 15m 안. v165 (2026-11-20 2차 점검 B): 원래 좌표가 15m 안이거나(v138 에서 정지선으로 옮긴 신호 카메라:
+    // 용구대로 60 #20115 원래 3.3m·차로 위 점 18.8m), 도로 이름이 같으면 20m 까지(송파대로 북행 가락시장역 50 #23719, 18.2m).
+    // 25m 는 여전히 뺀다(2026-11-15 요청 '오차범위 줄이고', S14). 경로 위 자리는 그대로 차로 위 점(정지선)으로 잰다
+    let near = pr.dist;
+    if (pr.dist > CAM_TOL) {
+      const raw = projectSeg({ lat: c[0], lng: c[1] }, a, b);
+      if (raw.dist <= CAM_TOL) near = raw.dist;
+      else if (!(pr.dist <= 20 && sameCamRoad(rn, c))) return null;
+    }
+    if (near > 6 && camRoadDiffers(rn, c)) return null;
     const at = nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]);
-    // 고속도로 구간이면 옆·아래 일반도로의 저속 카메라(제한 70 이하, 고속국도 아님)는 제외. 구간 이름이 고속도로이거나,
-    // 이름이 없어도 안내상 고속도로 진입~출구 사이면 고속도로 ('분당수서고속화도로' 같은 고속화도로는 고속도로가 아니다)
-    if (((/고속도로|고속국도/.test(rn) && !pastHwExit(at)) || onHighwayAt(at)) && c[8] !== 1 && c[2] <= 70) return null;
-    if (!camLevelOk(c, at)) return null;                    // 지하차도·고가로 넘어가는 곳의 지상 카메라 등
+    // 고속도로 구간이면 옆·아래 일반도로 카메라는 뺀다. 구간 이름이 고속국도이거나, 이름이 없어도 안내상 고속도로 진입~출구 사이면 고속도로
+    // ('분당수서고속화도로'·'갑천도시고속도로' 같은 고속화·도시고속도로는 고속도로가 아니다).
+    // v165 (2차 점검 A·H): 예전엔 '제한 70 이하이고 고속국도 아님'으로 빼서, 도로 종류를 글자로 정한 고속도로 박스형 57곳(제한 0·50·60·70)과
+    // 고속도로 연결로의 70 이 빠졌다. 이제 카메라 도로(경찰 이름·OSM 이름)가 고속도로이거나 경로 구간과 같은 길이면 남기고, 이름을 모를 때만 예전 규칙
+    const hwHere = (isExpwyName(rn) && !pastHwExit(at)) || onHighwayAt(at);
+    if (hwHere && !camOnExpwy(c, rn)) return null;
+    if (!camLevelOk(c, at, rn, hwHere)) return null;                // 지하차도·고가로 넘어가는 곳의 지상 카메라 등
     // 찍는 방향이 이 자리 경로 방향과 50° 안. 교차로에서 꺾는 곳이면 들어오는 쪽(30m 전)·나가는 쪽(30m 뒤) 방향도 본다
     // (가락시장역교차로에서 좌회전: 들어오는 송파대로 북행 카메라). 설치장소 'A→B' 가 안내 문구로 갈리면 그게 먼저:
     // 반대면 빼고, 내 방향이라고 나오면 기하 판단과 달라도 알린다 (2026-11-14 하남 창우로 J2735, 11-15 가천대역 '복정역→성남시청')
@@ -2596,10 +2671,20 @@
       if (near.length < 2) continue;
       const inB = routeBearingAt(T - 40, T - 3), outB = routeBearingAt(T + 3, T + 40);
       if (inB === null || outB === null) continue;
-      const appr = near.filter((x) => camHasDir(x.c) && x.at <= T + 5 && angleDiff(x.c.eb, inB) <= CAM_DIR_TOL);
+      // v165: 접근로 카메라는 경로선 6m 안이거나 접근로 구간과 같은 길이어야 한다 (2026-11-20 카메라 자료 세션: 위례중앙로 50 이 두 행으로
+      // 갈리자 서행 쪽 행이 램프 30 의 '접근로 카메라'로 잡혀 꺾어 들어갈 길의 동행 50 이 남았다)
+      const apprRoad = routeRoadAt(Math.max(0, routeSegAt(T - 25)));
+      // 이름을 알면 이름으로(서행 위례중앙로 50 은 경로선에서 6m 였지만 접근로는 수도권제1순환 램프다), 모르면 경로선 6m 안
+      const onAppr = (x) => (specificRoad(apprRoad) && camNames(x.c).some(specificRoad) ? sameCamRoad(apprRoad, x.c)
+        : haversine(camPt(x.c), routePointAt(x.at)) <= 6);
+      const appr = near.filter((x) => camHasDir(x.c) && x.at <= T + 5 && angleDiff(x.c.eb, inB) <= CAM_DIR_TOL && onAppr(x));
       if (!appr.length) continue;
       for (const x of near) {
-        if (!isSignalCam(x.c) || !camHasDir(x.c) || x.at < T - 15 || appr.includes(x)) continue;
+        // v165 (2차 점검 E): 예전엔 회전 15m 앞 ~ 40m 뒤의 꺾은 뒤 방향 신호 카메라를 모두 뺐다 — 우회전 뒤 35m 다음 교차로 정지선의
+        // 어린이 30 까지 빠졌다. 이제 꺾는 교차로 안만 뺀다: 좌·우회전은 회전점 15m 앞 ~ 25m 뒤, 유턴은 교차로가 넓어 45m 뒤까지
+        // (송파IC 램프 끝 유턴: 건너편 위례중앙로 동행 50 이 회전점 뒤 20~40m). 어린이·노인 보호구역 카메라는 빼지 않는다
+        const after = turnKind0(g) === 'u' ? 45 : 25;
+        if (!isSignalCam(x.c) || !camHasDir(x.c) || x.at < T - 15 || x.at > T + after || x.c[6] || appr.includes(x)) continue;
         if (angleDiff(x.c.eb, inB) <= CAM_DIR_TOL || angleDiff(x.c.eb, outB) > CAM_DIR_TOL) continue;
         if (appr.some((a) => a.c[2] === x.c[2])) continue;          // 제한속도가 같으면 그대로 (헷갈릴 일이 없다)
         list.splice(list.indexOf(x), 1);
@@ -2628,14 +2713,13 @@
     for (const x of camsNear(tg.c[0], tg.c[1], 60)) {
       if (x.i === tg.i) continue;
       const opp = camHasDir(x.c) && h !== null && angleDiff(x.c.eb, h) > 90;
-      if (opp) {
-        if (x.c[4] === 2) oppEnd = true;
-        if (nav.active && routeTrusted() && camOnRouteAhead(x.c) && camRouteAt(x.c) - nav.along > 30) continue;
-        camState.passed.set(x.i, now);
-        continue;
-      }
+      // v165 (2026-11-20 2차 점검: 반대 방향 짝 3,967개가 120초 동안 지남으로 처리돼 유턴해 돌아오면 놓쳤다): 반대 방향 행은 지남으로 치지 않는다
+      // (방향을 아는 반대 방향 카메라는 어차피 방향으로 걸러진다)
+      if (opp) { if (x.c[4] === 2) oppEnd = true; continue; }
       const along = h === null || x.d < 1 ? 0 : x.d * Math.cos(toRad(angleDiff(bearing(cp, { lat: x.c[0], lng: x.c[1] }), h)));
-      if (along > 3) continue;                                  // 이 카메라보다 앞(진행 방향)에 있다: 아직 안 지났다
+      // 이 카메라보다 앞(진행 방향)에 있으면 아직 안 지났다. 다만 같은 기둥(원래 좌표 15m 안, 같은 방향)의 행은 함께 지난다
+      // (v165: 복합물류로 50·60 한 기둥 — 50 을 지나자 60 이 마지막 몇 m 떴다)
+      if (along > 3 && x.d > 15) continue;
       camState.passed.set(x.i, now);
       same.push(x);
     }
@@ -2647,6 +2731,15 @@
     if (sec && secDone >= 500 && (same.some((x) => x.c[4] === 2) || (oppEnd && !start))) endSection(!!start);
     if (start) startSection(start.c, f);
     tg.after = true; // 카메라 좌표 오차를 감안해 지나간 뒤 CAM_HOLD m (후면 단속은 REAR_HOLD m, 신호는 0) 까지 경고를 유지한다
+  }
+  // 경로 거리 s 가 놓인 선분 번호
+  function routeSegAt(s) {
+    const C = nav.cum;
+    if (!C || C.length < 2) return 0;
+    let lo = 0, hi = C.length - 1;
+    s = Math.max(0, Math.min(s, C[hi]));
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (C[m] <= s) lo = m; else hi = m; }
+    return lo;
   }
   // 남은 길안내 경로에서 이 카메라의 가장 가까운 앞 위치(경로 거리, m). 경로를 못 믿거나 경로 위가 아니면 null
   function camRouteAt(c) {
@@ -2674,7 +2767,7 @@
   // 터널 안에서 위치가 안 오면 마지막 속도로 경로를 따라 나아간 자리로 거리·지남을 잰다
   // 경로 위 at 자리를 덮는 터널 구간 { s0, s1 } (60m 안으로 이어진 터널 토막은 하나로 합친다: 긴 터널은 OSM 길이 여러 토막이다)
   function routeTunnelAt(at) {
-    if (!(nav.active && nav.pts) || !ensureRouteTunnels()) return null;
+    if (typeof tunnels === 'undefined' || !(nav.active && nav.pts) || !ensureRouteTunnels()) return null;   // (점검 도구처럼 터널 자료가 없는 곳)
     const list = nav.routeTunnels.slice().sort((x, y) => x.s0 - y.s0);
     let cur = null;
     for (const t of list) {
@@ -7542,7 +7635,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,

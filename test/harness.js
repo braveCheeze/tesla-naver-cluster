@@ -2833,6 +2833,7 @@
     { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored; 7-10 lanes fit the drawer as square tiles", fn: s77 },
     { id: 'S78', name: "S78 mainline junction (v133): keep-left/right where the route stays on the same expressway section and goes straight is shown as straight ('신갈분기점에서 직진 · 서울 방면', main-straight junction scene, straight sign); a fork onto another expressway stays a fork", fn: s78 },
     { id: 'S79', name: 'S79 rest areas (v133): distance to where the entry ramp leaves the mainline (OSM), not the rest-area centre; within 3 km and no turn within 1 km the top row becomes the rest area (blue), next row = the guidance after it', fn: s79 },
+    { id: 'S104', name: "S104 camera pick, 2nd audit (v165): road names match across notation (분당-수서간고속화도로 = 분당수서로, 동부간선도로 = 동부간선로; 중앙로 ≠ 중앙고속도로); a route within 15 m of the raw position (stop-line-moved lane point 18.8 m) or within 20 m with the same road name keeps the camera (25 m still dropped, S14); expressway booths typed as ordinary roads stay on an expressway route; an entry-only highway span ends where the section name becomes a street; elevated/underground cameras stay on fast roads; opposite rows aren't passed; curve tangent", fn: s104 },
     { id: 'S103', name: "S103 tunnel cameras (v163 audit 8): on the route, a camera 3.6 km inside a tunnel is alerted from 300 m before the entrance (beyond the 3 km scan), and with GPS lost inside, a 1 s dead-reckoning tick along the route at the last speed counts the distance down and passes it", fn: s103 },
     { id: 'S102', name: "S102 report outbox & camera data retry (v163 audit 9/10): a '놓침' the server did not take reads '저장함' and stays queued, is resent later, '✓ 보냄' only on 200; with no camera data a '단속 카메라 자료 없음 · 다시 받는 중' pill shows while driving and goes once the data loads again", fn: s102 },
     { id: 'S100', name: "S100 road colour guide lines (v162, 운전자 '녹색 분홍색 안내선'): within 1 km of a highway fork whose painted line the route really follows, the card shows '분홍색 유도선 따라가기' in that colour; the main line, both branches or neither → nothing; gone after the branch end; real data keeps 경부 북행 신갈분기점 (녹색 인천·분홍 원주) but drops 하행 (좌우가 실제 갈래와 반대); real routes 서울TG→판교분기점(구리) and 팔당→하남분기점(판교·서하남) show 분홍색", fn: s100 },
@@ -5099,6 +5100,89 @@
     const dec = r.dists.filter((x) => x !== null);
     const ok = r.first !== null && r.first <= 760 && r.atEntrance && r.atEntrance.limit === '80' &&
       dec.length >= 3 && dec.every((x, k) => k === 0 || x < dec[k - 1]) && r.passedAt !== null && r.passedAt >= 200 && r.passedAt <= 240;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S104: 카메라 고르기 2차 점검 (v165, 2026-11-20 — 실제 네이버 경로 21개·서울경기 전 카메라 가상 주행)
+  //  (a) 도로 이름 표기 맞추기 (b) 경로 옆 15m 예외: 원래 좌표 15m 안(용구대로 60 #20115, 정지선으로 옮긴 차로 위 점 18.8m)·같은 이름 30m
+  //  (c) 고속도로 위 박스형(도로 종류가 일반으로 들어간 행)이 고속도로 경로에서 빠지지 않는다 (d) 진입 안내만 있는 고속도로 구간은 일반도로 이름에서 끝난다
+  //  (e) 빠른 길 구간에서는 고가·지하 표시 카메라를 남긴다 (f) 반대 방향 행은 지남으로 치지 않는다 (g) 굽은 길의 그 자리 방향
+  async function s104() {
+    const t = T(), r = {};
+    r.a = {
+      bundang: t.sameRoad('분당-수서간고속화도로', '분당수서간도시고속화도로'), bundangName: t.sameRoad('분당수서로', '분당-수서간도시고속화도로'),
+      dongbu: t.sameRoad('동부간선도로', '동부간선로'), ring: t.sameRoad('서울외곽순환고속도로', '수도권1순환고속도로'),
+      notCentral: !t.sameRoad('중앙로', '중앙고속도로'), notSongpa: !t.sameRoad('송파대로', '송파로'),
+    };
+    const routeThrough = (pt, h, name, side) => {
+      const off = side ? dest(pt, (h + 270) % 360, side) : pt;   // 경로선을 왼쪽으로 side m 옮긴다
+      const start = dest(off, (h + 180) % 360, 1000), P = [];
+      for (let k = 0; k <= 150; k++) { const p = dest(start, h, 10 * k); P.push({ lat: round6(p.lat), lng: round6(p.lng) }); }
+      const cum = [0];
+      for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+      const total = cum[cum.length - 1];
+      return { route: { distance: r0(total), duration: r0(total / 20 * 1000), tollFare: 0, fuelPrice: 0, path: P.map((p) => [p.lng, p.lat]),
+        guide: [{ i: 150, t: 88, s: '목적지', d: r0(total), ms: r0(total / 20 * 1000) }], sections: [{ i: 0, n: 151, name, speed: 60, cong: 1 }] },
+        P, cum, total, dest: { name: '테스트', addr: '', lat: P[150].lat, lng: P[150].lng } };
+    };
+    const onRoute = async (c, R) => { await resetApp(); softReset(); await planAndStart(R); t.ensureRouteCams(); const ok = t.nav.routeCams.has(c); t.endNav(); return ok; };
+    try {
+      // (b) 원래 좌표 15m 안: 경로선을 원래 좌표로 (차로 위 점에서 18.8m)
+      const Y = t.cams.rows.find((c) => Math.abs(c[0] - 37.30088) < 2e-5 && Math.abs(c[1] - 127.10645) < 2e-5 && c[2] === 60) ||
+        t.cams.rows[20115];
+      const yb = Y && Y.eb >= 0 ? Y.eb : 0;
+      r.b = { lane: Y ? Math.round(hav({ lat: Y[0], lng: Y[1] }, lanePt(Y))) : null };
+      r.b.raw = Y ? await onRoute(Y, routeThrough({ lat: Y[0], lng: Y[1] }, yb, '용구대로')) : null;
+      // 같은 이름이면 차로 위 점에서 18m 떨어진 경로도, 다른 이름이면 아니다 (원래 좌표와 차로 위 점이 같은 카메라로: 대한로 어린이 30)
+      const K = camAt(35.51725, 128.17371) && t.cams.rows.find((c) => sameCam(c, { lat: 35.51725, lng: 128.17371 }) && c[2] === 30);
+      if (K) {
+        r.b.same22 = await onRoute(K, routeThrough(lanePt(K), K.eb, '대한로', 18));
+        r.b.other22 = await onRoute(K, routeThrough(lanePt(K), K.eb, '다른길', 18));
+      }
+      // (c) 박스형: OSM 길 이름이 고속도로인데 도로 종류가 일반·제한 70 이하로 들어간 행
+      const base = t.cams.rows.length - (t.cams.mobile || 0);
+      let M = null;
+      for (let i = base; i < t.cams.rows.length; i++) { const c = t.cams.rows[i]; if (/중부고속도로|경부고속도로/.test(c.on || '') && c[8] !== 1 && c[2] <= 70 && c.eb >= 0) { M = c; break; } }
+      r.c = M ? { name: M.on, lim: M[2], rtype: M[8], on: await onRoute(M, routeThrough(lanePt(M), M.eb, M.on)) } : 'none in data';
+      // (d) 고속도로 진입 안내만 있고 출구가 없다: 구간 이름이 '한남대로'로 바뀌면 거기서 끝
+      {
+        const R = routeThrough(NAV_ORIGIN, 0, '경부고속도로');
+        R.route.guide = [{ i: 10, t: 50, s: '고속도로 진입', d: 100, ms: 5000 }, { i: 150, t: 88, s: '목적지', d: 1400, ms: 70000 }];
+        R.route.sections = [{ i: 0, n: 80, name: '경부고속도로', speed: 90, cong: 1 }, { i: 80, n: 71, name: '한남대로', speed: 40, cong: 1 }];
+        await resetApp(); softReset(); await planAndStart(R);
+        r.d = { spans: JSON.stringify(t.highwaySpans().map((x) => x.map(Math.round))), at500: t.onHighwayAt(500), at1200: t.onHighwayAt(1200) };
+        t.endNav();
+      }
+      // (e) 고가·지하 카메라(층 16): 빠른 길이면 남기고 일반 길이면 뺀다 (지하·고가 안내 없음)
+      const L16 = [0, 0, 100, 9, 0, 0, 0, -1, 5, 1]; L16.lv = 16;
+      r.e = { fast: t.camLevelOk(L16, 500, '수도권제1순환고속도로', false), inner: t.camLevelOk(L16, 500, '내부순환로', false),
+        street: t.camLevelOk(L16, 500, '문정로', false), hwSpan: t.camLevelOk(L16, 500, '', true) };
+      // (f) 반대 방향 행은 지남으로 치지 않는다: 북한강로 50(#25702)을 지날 때 같은 자리에 반대 방향 가짜 행
+      {
+        const A = camAt(37.5646, 127.319);
+        if (A) {
+          const fake = [A[0], A[1], 50, 3, 0, 0, 0, -1, 5, 1]; fake.eb = (A.eb + 180) % 360; fake.e2 = 0; fake.lv = 0; fake.sl = A[0]; fake.sg = A[1];
+          const rows = t.cams.rows, fi = rows.length; rows.push(fake);
+          const key = Math.floor(fake[0] / 0.01) + ':' + Math.floor(fake[1] / 0.01), cell = t.cams.grid.get(key) || []; cell.push(fi); t.cams.grid.set(key, cell);
+          try {
+            await driveThrough(lanePt(A), A.eb, 300, 60, 50, 5);
+            r.f = { passedA: t.camState.passed.has(rows.indexOf(A)), passedOpp: t.camState.passed.has(fi) };
+          } finally { rows.pop(); cell.pop(); if (!cell.length) t.cams.grid.delete(key); t.camMiss.near.delete(fi); t.camState.passed.delete(fi); }
+        }
+      }
+      // (g) 굽은 길: 오른쪽으로 1m 당 0.01 rad 굽으면 200m 앞의 진행 방향은 +115°
+      {
+        const keepK = t.curv.k, keepH = t.state.heading;
+        t.curv.k = 0.01; t.state.heading = 10;
+        r.g = Math.round(t.pathTangent(200));
+        t.curv.k = keepK; t.state.heading = keepH;
+      }
+    } finally { await resetApp(); softReset(); }
+    const ok = Object.values(r.a).every(Boolean) && r.b.raw === true && (r.b.same22 === undefined || (r.b.same22 && !r.b.other22)) &&
+      (r.c === 'none in data' || r.c.on === true) &&
+      r.d.at500 === true && r.d.at1200 === false &&
+      r.e.fast && r.e.inner && !r.e.street && r.e.hwSpan &&
+      r.f && r.f.passedA && !r.f.passedOpp && r.g === 125;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
