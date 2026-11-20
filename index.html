@@ -315,6 +315,9 @@
   }
   #map.drive .attrib { display: block; }
   #map.night .attrib { color: #ddd; background: rgba(0,0,0,.55); }
+  /* v173: 우리 자료 출처(OSM·공공데이터) — 평면 지도에서 네이버 출처 표시 바로 오른쪽 (위치·글꼴은 앱이 네이버 표시에 맞춘다) */
+  .attrib-own { position: absolute; z-index: 1000; pointer-events: none; white-space: nowrap; font-size: 11px; color: #444; }
+  .attrib-own[hidden] { display: none; }
 
   .diagbox {
     position: absolute; left: 16px; bottom: 44px; z-index: 1040; max-width: calc(100% - 120px);
@@ -1201,7 +1204,6 @@
   .facts li > span { color: var(--muted); }
   .facts li b { text-align: right; font-weight: 700; }
   .facts .ver { -webkit-user-select: none; user-select: none; cursor: default; }
-  .set-group .src { font-size: 12.5px; line-height: 1.6; }
   .set-group.dev { box-shadow: inset 0 0 0 1px rgba(229, 72, 77, .35); }
   .set-group.dev h3 { color: #e5484d; }
   .set-group.dev .opt-link { margin-top: 14px; }
@@ -1831,7 +1833,8 @@
 
 <div id="sheet" class="sheet" hidden>
   <!-- v172 (2026-11-20 운전자 빨간 펜): 설정을 묶음 카드 + 큰 스위치로. 네이버 Client ID 칸은 없앰(서버 키를 씀),
-       서버 주소·진단·데모·아이콘 관리·소리 테스트·운영자 토큰은 '정보'의 버전 글자를 5번 누르면 열리는 개발자 메뉴로 -->
+       서버 주소·진단·데모·아이콘 관리·소리 테스트·운영자 토큰은 '정보'의 버전 글자를 5번 누르면 열리는 개발자 메뉴로.
+       v173: 자료별 출처 문단은 뺐다(운전자 '악용한다고') — OSM(ODbL)·공공데이터 이름만 지도 출처 표시 옆에 -->
   <div class="sheet-card settings" role="dialog" aria-label="설정">
     <h2>설정</h2>
 
@@ -1905,8 +1908,8 @@
       </div>
     </section>
 
-    <section class="set-group info" aria-label="정보·출처">
-      <h3>정보·출처</h3>
+    <section class="set-group info" aria-label="정보">
+      <h3>정보</h3>
       <label class="tgl"><span>놓침·틀림 위치 보내기</span><input type="checkbox" id="optShare"><i aria-hidden="true"></i></label>
       <p class="hint">놓침·틀림을 누르면 그 자리 위치(근처 단속 카메라와 진행 방향)가 서버로 보내져 자료를 고치는 데 써요. 지나온 길은 보내지 않아요. 끄면 이 차에만 기록해요.</p>
       <ul class="facts">
@@ -1914,7 +1917,6 @@
         <li><span>날씨</span><b>위치는 약 10km 단위로만 보냄</b></li>
         <li><span>버전</span><b id="verText" class="ver">-</b></li>
       </ul>
-      <p class="hint src">단속 카메라: 경찰청 · 과속방지턱·주의 표지: 공공데이터포털(전국 표준데이터, 자료를 낸 지자체) · 차로 안내: 국토지리정보원 정밀도로지도 · 터널·도로 모양: © OpenStreetMap 기여자(ODbL) · 하이패스 차로: 한국도로공사 · 날씨: Open-Meteo · 지도·길찾기: NAVER</p>
     </section>
 
     <section id="devMenu" class="set-group dev" aria-label="개발자 메뉴" hidden>
@@ -1950,8 +1952,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-172"></script>
-<script src="img/ai/picks.js?v=2026.11.16-172"></script>
-<script src="app.js?v=2026.11.16-172"></script>
+<script src="icons.js?v=2026.11.16-173"></script>
+<script src="img/ai/picks.js?v=2026.11.16-173"></script>
+<script src="app.js?v=2026.11.16-173"></script>
 </body>
 </html>

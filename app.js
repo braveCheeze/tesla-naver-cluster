@@ -59,7 +59,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-172'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-173'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -1402,6 +1402,7 @@
       }
     }
     if (snap) { void host.offsetWidth; host.classList.remove('snap'); }
+    placeCredit();   // v173: 주행 화면 ↔ 평면 지도
     return jumped;
   }
   let layoutQueued = 0;
@@ -1422,9 +1423,36 @@
     updateAttrib();
   }
   // 주행 화면(지도를 돌린 화면)에서는 네이버 출처 표시가 화면 밖으로 밀리므로 같은 문구를 따로 띄운다
+  // v173 (2026-11-20 운전자 '출처 빼라니까 악용한다고'): 설정의 자료별 출처 문단은 뺐다. 다만 OpenStreetMap 자료(터널·도로 모양)는
+  // ODbL 이라 공개 화면에 출처가 있어야 하고, 공공데이터(공공누리)도 출처를 적는 게 원칙이라 지도 출처 표시 옆에 이름만 짧게 붙인다
+  // (어떤 기능에 쓰는지는 적지 않는다). 네이버 출처 표시(약관)는 건드리지 않는다
+  const OWN_CREDIT = '/© OpenStreetMap /공공데이터포털';
+  const credit = document.createElement('div');
+  credit.className = 'attrib-own';
+  credit.textContent = OWN_CREDIT;
+  credit.hidden = true;
+  $('#map').appendChild(credit);
   function updateAttrib() {
-    attrib.textContent = mapA === NaverAdapter ? '© NAVER Corp. /국토교통부' + (prefs.traffic ? ' /경찰청(UTIC)' : '')
-      : (mapA ? '© OpenStreetMap contributors' : '');
+    attrib.textContent = mapA === NaverAdapter ? '© NAVER Corp. /국토교통부' + (prefs.traffic ? ' /경찰청(UTIC)' : '') + ' ' + OWN_CREDIT
+      : (mapA ? '© OpenStreetMap contributors /공공데이터포털' : '');
+    placeCredit();
+  }
+  // 평면 지도(주행 화면이 아닐 때)에는 네이버 지도가 왼쪽 아래에 그리는 출처 표시 바로 오른쪽에 같은 글꼴·크기·색으로 둔다.
+  // 주행 화면에서는 네이버 표시가 화면 밖이라 위 attrib 한 줄에 함께 들어 있다
+  function placeCredit() {
+    const m = $('#map');
+    const nat = m && !view.drive && mapA === NaverAdapter ? m.querySelector('.map_copyright') : null;
+    if (!nat || !nat.offsetWidth) { credit.hidden = true; return; }
+    const mr = m.getBoundingClientRect(), nr = nat.getBoundingClientRect();
+    let right = 0;
+    for (const c of nat.querySelectorAll('*')) { const r = c.getBoundingClientRect(); if (r.width > 0 && r.height > 0 && r.bottom > nr.top) right = Math.max(right, r.right); }
+    if (!right) right = nr.right;
+    const cs = getComputedStyle(nat);
+    credit.style.left = Math.round(right - mr.left + 3) + 'px';
+    credit.style.bottom = Math.round(mr.bottom - nr.bottom) + 'px';
+    credit.style.height = cs.height; credit.style.lineHeight = cs.lineHeight;
+    credit.style.fontSize = cs.fontSize; credit.style.fontFamily = cs.fontFamily; credit.style.color = cs.color;
+    credit.hidden = false;
   }
 
   let fallbackStarted = false;
@@ -6799,6 +6827,7 @@
     $('#clock').textContent = hhmm(now);
     $('#dateText').textContent = (now.getMonth() + 1) + '월 ' + now.getDate() + '일 (' + '일월화수목금토'[now.getDay()] + ')';
     mapWatchdog();
+    if (now.getSeconds() % 2 === 0) placeCredit();   // v173: 네이버 출처 표시 길이가 바뀌면(교통·다크 지도) 따라간다
     // 달리는 중 5초 넘게 위치가 안 오면 (터널 등) 속도를 흐리게 하고 알린다.
     // 멈춰 있으면 브라우저가 위치를 잘 안 보내므로 1분까지 기다린다.
     const silentMs = Date.now() - lastFixWall;
@@ -7723,7 +7752,7 @@
     $('.settings').scrollTop = 0;
     if (devMenuOn()) checkProxy();
   };
-  // v172: 개발자 메뉴 — '정보·출처'의 버전 글자를 5번 톡 누르면 열린다(이 기기에 기억). 메뉴 맨 아래 '개발자 메뉴 숨기기'로 닫는다.
+  // v172: 개발자 메뉴 — '정보'의 버전 글자를 5번 톡 누르면 열린다(이 기기에 기억). 메뉴 맨 아래 '개발자 메뉴 숨기기'로 닫는다.
   // 서버 주소·진단·데모·아이콘 관리·소리 테스트·운영자 토큰. 공개 사용자는 토큰이 없으니 열어도 해가 없다
   const devTap = { n: 0, at: 0 };
   const devMenuOn = () => store.get('dev') === '1' || params.has('debug');
@@ -8074,7 +8103,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,

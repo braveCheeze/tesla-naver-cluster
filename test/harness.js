@@ -2836,7 +2836,7 @@
     { id: 'S78', name: "S78 mainline junction (v133): keep-left/right where the route stays on the same expressway section and goes straight is shown as straight ('신갈분기점에서 직진 · 서울 방면', main-straight junction scene, straight sign); a fork onto another expressway stays a fork", fn: s78 },
     { id: 'S79', name: 'S79 rest areas (v133): distance to where the entry ramp leaves the mainline (OSM), not the rest-area centre; within 3 km and no turn within 1 km the top row becomes the rest area (blue), next row = the guidance after it', fn: s79 },
     { id: 'S109', name: "S109 tunnel dark map (v172, driver: 'dark mode in a tunnel, back on exit, stays dark at night'): with night map 'auto', driving into a named tunnel turns the map dark at once, leaving it keeps it dark until 4 s outside and 8 s in total, then light again; GPS lost 100 m before the entrance at speed counts as inside, standing there does not; a parallel road 30 m beside the tunnel, an unnamed tunnel way and 'always light' never darken; on a guided route the route's tunnel stretch darkens", fn: s109 },
-    { id: 'S110', name: "S110 public-release privacy (v172 security review): without the operator token a '놓침' report carries nearby camera points and heading but no trace or speed, the token adds the trace and the Authorization header; with '놓침·틀림 위치 보내기' off nothing is sent and the button reads '✓ 저장'; diagnostic upload needs the token; settings have no Naver Client ID or tunnel switch, the server address, diagnostics, demo, sound test and icon admin sit in the developer menu, and every switch is a big toggle", fn: s110 },
+    { id: 'S110', name: "S110 public-release privacy (v172 security review): without the operator token a '놓침' report carries nearby camera points and heading but no trace or speed, the token adds the trace and the Authorization header; with '놓침·틀림 위치 보내기' off nothing is sent and the button reads '✓ 저장'; diagnostic upload needs the token; settings have no Naver Client ID or tunnel switch and no per-source credits (v173: OSM and 공공데이터포털 sit beside the map's Naver credit), the server address, diagnostics, demo, sound test and icon admin sit in the developer menu, and every switch is a big toggle", fn: s110 },
     { id: 'S108', name: "S108 '놓침' diagnosis (v171, driver: 'fix it right away when I press 놓침'): pressing after passing a camera hidden by '틀림' unhides it, a camera written for the other direction becomes two-way on this car, a camera 30 m beside the route is taken onto the route — each alerts on the next pass; with no camera nearby a reported spot is saved; settings list undoes a fix; shared fixes (/fixes) apply a direction fix and add a reported spot", fn: s108 },
     { id: 'S107', name: "S107 off-route near turns (v170, driver: rerouted to straight before turning at roundabouts and right exits): a right exit whose route line cuts the corner 100 m early, driven on the outer lane, causes no reroute; missing that exit reroutes within 200 m past it; one extra lap of a 25 m roundabout before the 3 o'clock exit causes no reroute", fn: s107 },
     { id: 'S106', name: "S106 reported spots (v169, driver: '놓침 spots never get updated'): '놓침' saves the spot on this car ~2.5 s back along the trace, the next pass in the same direction shows '내가 신고한 단속 지점' (limit ?) from 500 m, not the other way; settings list shows '이 차에서만 알림' and deleting stops it; spots the driver reported on two days (data/driver_spots.json) alert every user", fn: s106 },
@@ -5600,7 +5600,10 @@
         dev: ['proxyInput', 'proxyTest', 'diagToggle', 'diagUpload', 'demoBtn', 'resetTrip', 'soundTest', 'iconAdmin', 'adminInput'].every(inDev),
         plainChecks: document.querySelectorAll('#sheet input[type=checkbox]:not(.tgl input)').length,
         toggles: labels.length, paren: labels.filter((x) => /\(/.test(x) && x !== '차로 안내(회전·직진)'),
-        share: !!$('#optShare'), ver: !!$('#verText'), groups: [...document.querySelectorAll('#sheet .set-group h3')].map((x) => x.textContent).join('/') };
+        share: !!$('#optShare'), ver: !!$('#verText'),
+        // v173: 설정에는 자료별 출처가 없고(운전자 '악용한다고'), 지도 출처 표시에 OSM·공공데이터 이름만
+        srcText: /경찰청|국토지리정보원|한국도로공사|Open-Meteo|ODbL/.test(document.querySelector('#sheet .set-group.info').textContent),
+        credit: /OpenStreetMap/.test(($('#map .attrib') || {}).textContent || '') && /OpenStreetMap/.test(($('#map .attrib-own') || {}).textContent || ''), groups: [...document.querySelectorAll('#sheet .set-group h3')].map((x) => x.textContent).join('/') };
     } finally {
       ob.post = keepPost; ob.inTest = false; t.store.set('outbox', keepBox);
       t.store.set('adminToken', keepTok); t.prefs.share = keepShare;
@@ -5611,7 +5614,7 @@
     const ok = r.pub.sent >= 1 && !r.pub.trace && !r.pub.kmh && r.pub.heading === 0 && r.pub.near && !r.pub.auth &&
       r.op.trace && r.op.auth && r.off.ret === null && r.off.sent === 0 && r.off.label === '✓ 저장' && /운영자 토큰/.test(r.diagMsg) &&
       !r.ui.key && !r.ui.tunnelSw && r.ui.dev && r.ui.plainChecks === 0 && r.ui.toggles >= 16 && !r.ui.paren.length && r.ui.share && r.ui.ver &&
-      r.ui.groups === '소리/단속·경고/길안내 화면/지도/경로/내 신고/정보·출처/개발자 메뉴';
+      r.ui.groups === '소리/단속·경고/길안내 화면/지도/경로/내 신고/정보/개발자 메뉴' && !r.ui.srcText && r.ui.credit;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
