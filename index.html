@@ -1204,6 +1204,7 @@
   .facts li > span { color: var(--muted); }
   .facts li b { text-align: right; font-weight: 700; }
   .facts .ver { -webkit-user-select: none; user-select: none; cursor: default; }
+  .set-group .warnline { color: #e5484d; font-weight: 700; margin: 4px 0 6px; }
   .set-group.dev { box-shadow: inset 0 0 0 1px rgba(229, 72, 77, .35); }
   .set-group.dev h3 { color: #e5484d; }
   .set-group.dev .opt-link { margin-top: 14px; }
@@ -1842,6 +1843,7 @@
       <h3>소리</h3>
       <label class="tgl"><span>음성 안내</span><input type="checkbox" id="optVoice"><i aria-hidden="true"></i></label>
       <label class="tgl"><span>경고음</span><input type="checkbox" id="optBeep"><i aria-hidden="true"></i></label>
+      <p id="voiceState" class="hint warnline" hidden></p>
     </section>
 
     <section class="set-group" aria-label="단속·경고">
@@ -1952,8 +1954,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-173"></script>
-<script src="img/ai/picks.js?v=2026.11.16-173"></script>
-<script src="app.js?v=2026.11.16-173"></script>
+<script src="icons.js?v=2026.11.16-174"></script>
+<script src="img/ai/picks.js?v=2026.11.16-174"></script>
+<script src="app.js?v=2026.11.16-174"></script>
 </body>
 </html>

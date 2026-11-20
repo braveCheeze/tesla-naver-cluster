@@ -59,7 +59,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-173'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-174'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -486,13 +486,47 @@
   let voicesSettled = false; // 음성 목록이 늦게 오는 기기 대비: 2.5초 뒤에도 비어 있으면 음성 없음으로 본다
   if (hasTTS) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
   setTimeout(() => { voicesSettled = true; pickVoice(); }, 2500);
+  // v174 (2026-11-20 카페 시험자 '설정 값에서는 체크가 되어 있는데 안내 멘트가 나오지 않습니다'):
+  // 예전엔 한국어 음성이 없으면 말없이 경고음만 냈고(이유는 설정의 소리 테스트에서만), 말하라고 했는데 소리가 안 나는 브라우저
+  // (음성 목록은 있지만 시작이 안 됨)는 알아채지 못해 경고음도 없었다. 이제 4초 안에 말이 시작되지 않으면(말하는 중도 아니면) 그 안내는 경고음으로 대신하고,
+  // 두 번 이어지면 이 화면에서는 경고음으로만 안내한다. 이유는 한 번 짧게 알리고 설정 '소리'에 남긴다(위치 없이 서버에도 한 번)
+  const tts = { started: 0, failed: 0, broken: false, noticed: false };
+  function ttsStatus() {
+    if (!hasTTS) return 'none';
+    if (tts.broken) return 'broken';
+    if (koVoice) return 'ok';
+    return voicesSettled || speechSynthesis.getVoices().length ? 'noko' : 'wait';
+  }
+  const TTS_WHY = {
+    none: '이 브라우저에는 음성 기능이 없어 경고음으로 안내해요.',
+    noko: '이 브라우저에는 한국어 음성이 없어 경고음으로 안내해요.',
+    broken: '이 브라우저에서 음성이 나오지 않아 경고음으로 안내해요.',
+  };
+  function ttsNotice() {
+    const st = ttsStatus();
+    if (!TTS_WHY[st] || tts.noticed || !prefs.voice) return;
+    tts.noticed = true;
+    toast(TTS_WHY[st], '', 5000);
+    let n = 0, langs = '';
+    try { const vs = hasTTS ? speechSynthesis.getVoices() : []; n = vs.length; langs = [...new Set(vs.map((v) => v.lang))].slice(0, 8).join(','); } catch (e) { /* 없음 */ }
+    report('info', { msg: 'tts unavailable: ' + st, voices: n, langs });
+    renderVoiceState();
+  }
+  function renderVoiceState() {
+    const el = document.getElementById('voiceState');
+    if (!el) return;
+    const why = TTS_WHY[ttsStatus()];
+    el.hidden = !why;
+    el.textContent = why || '';
+  }
   // v161 (2026-11-20 점검): 급한 회전 안내(urgent)가 말하던·기다리던 단속 카메라 안내를 끊고 다시 말하지 않았다.
   // 끊긴 카메라 안내는 급한 안내가 끝난 뒤 그 카메라가 아직 앞에 있으면 한 번 다시 말한다
   const camVoice = { text: '', i: null, at: 0, done: true, retried: false };
   function speak(text, urgent, onFail, onEnd) {
-    if (!prefs.voice || !hasTTS || !audioUnlocked) return false;
+    if (!prefs.voice || !audioUnlocked) return false;
+    if (!hasTTS || tts.broken) { ttsNotice(); return false; }
     // 한국어 음성이 없는 기기에서 외국어 음성으로 읽으면 알아들을 수 없으므로 경고음으로 대신한다
-    if (!koVoice && (voicesSettled || speechSynthesis.getVoices().length)) return false;
+    if (!koVoice && (voicesSettled || speechSynthesis.getVoices().length)) { ttsNotice(); return false; }
     try {
       let resay = false;
       if (urgent) {
@@ -511,7 +545,22 @@
           if (tg && tg.i === camVoice.i && !tg.after) { camVoice.retried = true; speak(camVoice.text, false, null, () => { camVoice.done = true; }); }
         }
       };
+      // v174: 말이 시작됐는지 본다. 앞 안내가 아직 말하는 중이면(차례 기다림) 세지 않는다
+      const ok1 = () => { if (!u._st) { u._st = true; tts.started++; tts.failed = 0; } };
+      u.onstart = ok1;
+      const end0 = u.onend;
+      u.onend = (e) => { ok1(); if (end0) end0(e); };   // 시작 알림이 없는 브라우저도 끝남은 성공으로 본다
+      const err0 = u.onerror;
+      u.onerror = (e) => { u._err = true; if (err0) err0(e); };
+      try { if (speechSynthesis.paused) speechSynthesis.resume(); } catch (e) { /* 없음 */ }
       speechSynthesis.speak(u);
+      setTimeout(() => {
+        if (u._st || u._err || speechSynthesis.speaking) return;   // 말하는 중이면(시작 알림이 없어도) 나오는 것
+        tts.failed++;
+        try { speechSynthesis.cancel(); } catch (e) { /* 없음 */ }
+        if (onFail) onFail();
+        if (tts.failed >= 2 && !tts.started) { tts.broken = true; ttsNotice(); }
+      }, 4000);
       return true;
     } catch (e) { return false; }
   }
@@ -4915,6 +4964,18 @@
     }
     const wrongWay = !inRb && skew > (inPlaza || zone ? 100 : 50);   // 회전교차로 안에서는 한 바퀴 더 돌면 방향이 거꾸로다: 거리로만
     nav.onRoute = best.dist <= offLimit && !wrongWay;
+    // v174 (2026-11-20 카페 시험자 '제가 가고 있는 길이 아닌 다른 길에 자동차 아이콘이 표시된 적이 있습니다'):
+    // 화면의 내 차를 경로선에 붙이는 기준이 이탈 판정(보통 30~50m, 회전 구간 60m, 톨게이트 100m)과 같아서, 30m 안쪽의 나란한 길·
+    // 진출로 옆 본선·고가 옆길을 달려도 아이콘이 경로 위에 그려졌다. 이탈 판정(재탐색)은 그대로 두고, 그리기만 가까울 때 붙인다:
+    // 경로선 14m 안 + 방향 30° 안이면 붙이고, 붙어 있다가 22m 넘게 멀어지거나 방향이 40° 넘게 벌어지면(10m 넘게 떨어졌을 때) 실제 위치로
+    {
+      const segHdg = nav.cum[best.seg + 1] - nav.cum[best.seg] > 3 && best.dist < Infinity ? bearing(pts[best.seg], pts[best.seg + 1]) : null;
+      const sk = segHdg !== null && state.heading !== null && state.speedKmh > 10 ? angleDiff(segHdg, state.heading) : 0;
+      if (!nav.onRoute) nav.snap = false;
+      else if (nav.snap) { if (best.dist > 22 || (inRb ? false : sk > 40 && best.dist > 10)) nav.snap = false; }
+      else if (best.dist <= 14 && (inRb || sk <= 30)) nav.snap = true;
+      nav.snapD = best.dist;
+    }
     if (!nav.onRoute) { if (!nav.offAt) nav.offAt = f.t; } else nav.offAt = 0;   // v161: 경로 밖으로 나간 시각 (단속 카메라 고르기)
     if (nav.onRoute) {
       nav.seg = best.seg;
@@ -6151,11 +6212,13 @@
     else return;
     if (z !== cur) { zoomCtl.last = f.t; mapA.setZoom(z); }
   }
-  // +/- 버튼을 누르면 30초 동안 자동 줌을 멈춘다
+  // +/- 버튼·두 손가락·휠로 바꾼 배율은 2분 동안 자동 줌(속도·도착 300m)이 덮어쓰지 않는다.
+  // v174 (2026-11-20 카페 시험자 '목적지 설정 후에는 인·아웃이 제대로 안 됩니다'): 예전엔 30초 뒤 자동 줌이 17 로 되돌렸다
+  const MANUAL_ZOOM_MS = 120000;
   function manualZoom(d) {
     if (!mapA) return;
     mapA.zoomBy(d);
-    zoomCtl.manualUntil = (state.fix ? state.fix.t : Date.now()) + 30000;
+    zoomCtl.manualUntil = (state.fix ? state.fix.t : Date.now()) + MANUAL_ZOOM_MS;
   }
 
   // ---------- 현재 도로 이름 ----------
@@ -6283,7 +6346,7 @@
     motion.fix = { lat: f.lat, lng: f.lng, t: performance.now() };
     motion.v = state.speedKmh / 3.6;
     motion.hdg = state.heading;
-    motion.snap = !!(nav.active && nav.pts && nav.onRoute);
+    motion.snap = !!(nav.active && nav.pts && nav.onRoute && nav.snap);   // v174: 경로선 가까이일 때만
     motion.along = nav.along;
     const p = (motion.snap && routePointAt(nav.along)) || f;
     if (jump || !motion.cur || haversine(motion.cur, p) > 150) {
@@ -6931,8 +6994,8 @@
   const NOT_MAP = '.btn, .searchbtn, .navpanel, .routecard, .toast, #diagBox, .ctrls, .topctrls, .badge, .soundpill, .navtray, .updbtn, .backme';
   function userMapGesture() {
     gesture.used = true;
-    // 손으로 바꾼 배율은 30초 동안 자동 줌이 덮어쓰지 않게 한다
-    zoomCtl.manualUntil = (state.fix ? state.fix.t : Date.now()) + 30000;
+    // 손으로 바꾼 배율은 2분 동안 자동 줌이 덮어쓰지 않게 한다 (v174)
+    zoomCtl.manualUntil = (state.fix ? state.fix.t : Date.now()) + MANUAL_ZOOM_MS;
   }
   // 화면 좌표 → 돌리고 기울인 지도 캔버스 안의 좌표. CSS 변환을 거꾸로 풀어 손가락 아래 지점이 손가락을 그대로 따라오게 한다
   function canvasPoint(sx, sy) {
@@ -6986,10 +7049,11 @@
     if (!p) return;
     p.x = e.clientX; p.y = e.clientY;
     if (gesture.pointers.size >= 2) {
-      // 앱이 확대할 때(주행 화면·따라가는 중): 두 손가락 간격이 1.35배 벌어지거나 줄면 내 차를 가운데 둔 채 한 단계씩
+      // 앱이 확대할 때(주행 화면·따라가는 중): 두 손가락 간격이 1.22배 벌어지거나 줄면 내 차를 가운데 둔 채 한 단계씩
+      // (v174: 1.35배는 테슬라 화면에서 손가락을 꽤 벌려야 해서 안 되는 것처럼 느껴졌다)
       if (gesture.own && gesture.pinch && mapA) {
         const d = pinchDist(), r = d / gesture.pinch;
-        if (r > 1.35 || r < 0.74) { mapA.zoomBy(r > 1 ? 1 : -1); gesture.pinch = d; }
+        if (r > 1.22 || r < 0.82) { mapA.zoomBy(r > 1 ? 1 : -1); gesture.pinch = d; userMapGesture(); }
       }
       return;
     }
@@ -7745,6 +7809,7 @@
     renderCamFlags();
     renderMySpots();
     $('#optShare').checked = prefs.share;
+    renderVoiceState();
     $('#verText').textContent = APP_VERSION;
     renderDevMenu();
     updateDemoBtn();
@@ -8059,7 +8124,7 @@
   updateSoundPill();
   renderHupBtn();
   showChrome(); // 처음 3초 동안 버튼을 보여 준 뒤 숨긴다
-  setTimeout(() => report('session', { msg: 'open', debug: params.has('debug'), scheme: (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light', night: nightMode() }), 6000); // 지도·GPS 상태가 잡힌 뒤 접속 기록
+  setTimeout(() => report('session', { msg: 'open', tts: ttsStatus(), debug: params.has('debug'), scheme: (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light', night: nightMode() }), 6000); // 지도·GPS 상태가 잡힌 뒤 접속 기록
   render();
   tickClock();
   setInterval(tickClock, 1000);
@@ -8089,8 +8154,23 @@
   document.addEventListener('visibilitychange', () => {
     // 화면이 오래(5분 넘게) 가려졌다가 다시 보이면 새 버전을 확인한다 (길안내 중·주행 중이면 하지 않음)
     if (document.visibilityState === 'hidden') upd.hiddenAt = Date.now();
-    else if (upd.hiddenAt && Date.now() - upd.hiddenAt > 5 * 60000) checkForUpdate('visible');
+    else {
+      if (upd.hiddenAt && Date.now() - upd.hiddenAt > 5 * 60000) checkForUpdate('visible');
+      resumeVisible();
+    }
   });
+  // v174 (2026-11-20 카페 시험자 '후진 이후 브라우저를 다시 눌러야 하는데'): 후진하면 테슬라가 후방 카메라를 띄우고, 다시 앞으로 가면
+  // 테슬라 지도로 돌아간다(차 소프트웨어 동작이라 웹페이지가 바꿀 수 없음). 브라우저를 다시 눌렀을 때 바로 이어지게:
+  // 멈춘 소리(오디오·음성 줄)를 풀고, 위치가 3초 넘게 안 왔으면 위치 받기를 다시 걸고, 지도 크기·배치를 다시 맞춘다. 길안내는 그대로
+  function resumeVisible() {
+    try { if (actx && actx.state === 'suspended') actx.resume(); } catch (e) { /* 다음 누름에 */ }
+    try { if (hasTTS && speechSynthesis.paused) speechSynthesis.resume(); } catch (e) { /* 없음 */ }
+    if (!state.demoTimer && !testPage && Date.now() - lastFixWall > 3000) { try { startGps(); } catch (e) { /* 다음 시계에 */ } }
+    queueLayout();
+    mapCheckTick = 4; mapWatchdog();
+    if (nav.active) renderNav();
+  }
+  window.addEventListener('pageshow', (e) => { if (e.persisted) resumeVisible(); });
   // ?debug 일 때만 내부 상태를 콘솔에서 볼 수 있게 연다 (테스트용)
   if (params.has('debug')) {
     window.__tnc = {
@@ -8103,7 +8183,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,

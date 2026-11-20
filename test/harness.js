@@ -2835,6 +2835,7 @@
     { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored; 7-10 lanes fit the drawer as square tiles", fn: s77 },
     { id: 'S78', name: "S78 mainline junction (v133): keep-left/right where the route stays on the same expressway section and goes straight is shown as straight ('신갈분기점에서 직진 · 서울 방면', main-straight junction scene, straight sign); a fork onto another expressway stays a fork", fn: s78 },
     { id: 'S79', name: 'S79 rest areas (v133): distance to where the entry ramp leaves the mainline (OSM), not the rest-area centre; within 3 km and no turn within 1 km the top row becomes the rest area (blue), next row = the guidance after it', fn: s79 },
+    { id: 'S111', name: "S111 cafe tester feedback (v174): on a guided route the car icon stays on the route line within 14 m but a parallel road 25 m beside it (still 'on route' for rerouting) and the straight road 40 m beside an exit stretch show the real position, and it snaps back once on the route again; a pinch or +/- zoom holds for 2 minutes against the speed and arrival auto zoom; a voice engine that never starts is reported in settings '소리' and falls back to beeps; coming back from a hidden page (reverse camera) keeps guidance", fn: s111 },
     { id: 'S109', name: "S109 tunnel dark map (v172, driver: 'dark mode in a tunnel, back on exit, stays dark at night'): with night map 'auto', driving into a named tunnel turns the map dark at once, leaving it keeps it dark until 4 s outside and 8 s in total, then light again; GPS lost 100 m before the entrance at speed counts as inside, standing there does not; a parallel road 30 m beside the tunnel, an unnamed tunnel way and 'always light' never darken; on a guided route the route's tunnel stretch darkens", fn: s109 },
     { id: 'S110', name: "S110 public-release privacy (v172 security review): without the operator token a '놓침' report carries nearby camera points and heading but no trace or speed, the token adds the trace and the Authorization header; with '놓침·틀림 위치 보내기' off nothing is sent and the button reads '✓ 저장'; diagnostic upload needs the token; settings have no Naver Client ID or tunnel switch and no per-source credits (v173: OSM and 공공데이터포털 sit beside the map's Naver credit), the server address, diagnostics, demo, sound test and icon admin sit in the developer menu, and every switch is a big toggle", fn: s110 },
     { id: 'S108', name: "S108 '놓침' diagnosis (v171, driver: 'fix it right away when I press 놓침'): pressing after passing a camera hidden by '틀림' unhides it, a camera written for the other direction becomes two-way on this car, a camera 30 m beside the route is taken onto the route — each alerts on the next pass; with no camera nearby a reported spot is saved; settings list undoes a fix; shared fixes (/fixes) apply a direction fix and add a reported spot", fn: s108 },
@@ -5463,6 +5464,75 @@
       r.d.before === false && /경로 밖으로/.test(r.d.msg) && r.d.after === true &&
       r.e.fixes >= 2 && r.e.e2After === 0 &&
       r.f.ok && r.f.e2 === 1 && r.f.shared === 1 && r.f.userRow;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S111: 카페 시험자 피드백 (v174, 2026-11-20)
+  async function s111() {
+    const t = T(), r = {}, R = buildNavRoute();
+    const keepBroken = t.tts.broken, keepNoticed = t.tts.noticed, keepVoice = t.prefs.voice;
+    try {
+      await planAndStart(R);
+      // 화면의 내 차가 가는 곳: 붙었으면 경로 위 점, 아니면 GPS 점 (motion.cur 는 그쪽으로 부드럽게 따라간다)
+      const me = () => (t.motion.snap ? t.routePointAt(t.nav.along) : t.motion.fix);
+      const go = (m, side, v) => { const a = pointAt(R, m); const q = side ? dest(a.p, a.h + 90, side) : a.p; feed(q, v == null ? 15 : v, a.h); return { a, q }; };
+      // (a) 경로 위 → 붙음
+      for (let m = 60; m <= 200; m += 20) go(m, 6);
+      const on = go(220, 6);
+      r.near = { onRoute: t.nav.onRoute, snap: t.nav.snap, toLine: Math.round(hav(me(), on.a.p)) };
+      // (b) 25m 옆 나란한 길: 이탈 판정 전(경로 위로 봄)이어도 아이콘은 실제 자리
+      let par = null;
+      for (let m = 240; m <= 300; m += 20) par = go(m, 25);
+      r.parallel = { onRoute: t.nav.onRoute, snap: t.nav.snap, toReal: Math.round(hav(me(), par.q)), toLine: Math.round(hav(me(), par.a.p)) };
+      // 다시 경로 위로 → 붙음
+      let back = null;
+      for (let m = 320; m <= 380; m += 20) back = go(m, 3);
+      r.back = { snap: t.nav.snap, toLine: Math.round(hav(me(), back.a.p)) };
+      // (c) 회전 구간(우회전 600m 앞 300m 안): 40m 옆 — 이탈 허용 60m 라 경로 위로 보지만 아이콘은 실제 자리
+      let ex = null;
+      for (let m = 440; m <= 500; m += 20) ex = go(m, 40);
+      r.exit = { onRoute: t.nav.onRoute, snap: t.nav.snap, toReal: Math.round(hav(me(), ex.q)) };
+      // (d) 확대: 손으로 바꾸면 2분 동안 자동 줌이 덮어쓰지 않는다
+      for (let m = 520; m <= 560; m += 20) go(m, 0);
+      const m0 = t.getMap();
+      t.zoomCtl.manualUntil = 0; t.zoomCtl.last = 0;
+      // (화면이 숨겨져 있으면 지도 확대 애니메이션이 끝나지 않으므로 배율 값 대신 '언제까지 손 배율' 과 자동 줌 호출을 본다)
+      const f0 = t.state.fix.t;
+      t.manualZoom(-1);
+      const z1 = t.zoomCtl.manualUntil - f0;
+      const calls = [], setZ = m0.setZoom;
+      m0.setZoom = function (z) { calls.push(z); return setZ.call(this, z); };
+      try {
+        // 자동 줌이 바꿀 값이 지금 배율과 다르게: 지금 17 이면 시속 120(→16), 아니면 시속 40(→17)
+        const want = Math.round(m0.getZoom()) === 17 ? 16 : 17;
+        t.state.speedKmh = want === 16 ? 120 : 40;
+        r.want = want;
+        t.autoZoom({ ...t.state.fix, t: f0 + 60000 });
+        const at60 = calls.slice();
+        t.autoZoom({ ...t.state.fix, t: f0 + 121000 });
+        r.zoom = { manual: z1, at60s: at60, at121s: calls.slice(at60.length), hold: t.MANUAL_ZOOM_MS };
+      } finally { m0.setZoom = setZ; }
+      // (e) 음성이 안 나오는 브라우저: 설정 '소리'에 이유, 경고음으로
+      t.prefs.voice = true; t.tts.broken = true; t.tts.noticed = true;
+      t.renderVoiceState();
+      const vs = document.getElementById('voiceState');
+      r.voice = { shown: !vs.hidden, text: vs.textContent, status: t.ttsStatus() };
+      // (f) 화면 복귀
+      t.resumeVisible();
+      r.resume = { nav: t.nav.active, panel: visible('#navPanel') };
+      t.endNav();
+    } finally {
+      t.tts.broken = keepBroken; t.tts.noticed = keepNoticed; t.prefs.voice = keepVoice; t.renderVoiceState();
+      t.zoomCtl.manualUntil = 0;
+      await resetApp();
+    }
+    const ok = r.near.onRoute && r.near.snap && r.near.toLine <= 3 &&
+      r.parallel.onRoute && !r.parallel.snap && r.parallel.toReal <= 6 && r.parallel.toLine >= 18 &&
+      r.back.snap && r.back.toLine <= 3 &&
+      r.exit.onRoute && !r.exit.snap && r.exit.toReal <= 6 &&
+      r.zoom.manual === 120000 && !r.zoom.at60s.length && r.zoom.at121s[0] === r.want && r.zoom.hold === 120000 &&
+      r.voice.shown && /음성이 나오지 않아/.test(r.voice.text) && r.voice.status === 'broken' &&
+      r.resume.nav && r.resume.panel;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
