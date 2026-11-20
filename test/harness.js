@@ -2835,6 +2835,7 @@
     { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored; 7-10 lanes fit the drawer as square tiles", fn: s77 },
     { id: 'S78', name: "S78 mainline junction (v133): keep-left/right where the route stays on the same expressway section and goes straight is shown as straight ('신갈분기점에서 직진 · 서울 방면', main-straight junction scene, straight sign); a fork onto another expressway stays a fork", fn: s78 },
     { id: 'S79', name: 'S79 rest areas (v133): distance to where the entry ramp leaves the mainline (OSM), not the rest-area centre; within 3 km and no turn within 1 km the top row becomes the rest area (blue), next row = the guidance after it', fn: s79 },
+    { id: 'S116', name: "S116 map fallback badge (v182): when the Naver map could not be loaded the badge says '네이버 지도를 불러오지 못했어요 · 누르면 다시 시도' (not the old '설정에서 네이버 키 입력'), stays visible when the buttons hide, and a tap reloads only when parked — while guided or moving it says to stop first", fn: s116 },
     { id: 'S115', name: "S115 no false off-route (v181, driver: 'I never left the route but it keeps saying off-route now and then'): a 5-minute traffic refresh whose new route starts on a parallel road 45 m away (Naver snapping the start to the wrong road) is not applied and driving on raises no reroute; a refresh on the same road is applied; a car still behind a reroute's start (slowed in traffic) is on route, not off; a real turn-off still reroutes within about 3 s / 30 m; each reroute leaves a location-free reason record", fn: s115 },
     { id: 'S114', name: "S114 unknown limits (v179, driver: 'don't show speed cameras with ?'): a speed camera with limit 0 is never alerted or drawn, the same camera with 60 is; a signal-only camera follows the setting and shows '신호'; a reported spot takes the limit of a same-road, same-direction camera (1.5 km), else 100 on an expressway, else stays hidden and the settings list says '제한속도 모름이라 숨김' — and shows once a camera appears", fn: s114 },
     { id: 'S113', name: "S113 '내 위치로' (v177, driver: 'it doesn't seem to work well'): pressing the real button (what is under its centre) puts the map on my car at once (no animation needed) and gives back the auto zoom — after looking ahead, after a pinch zoom, while guided, in route preview (the corner locate button), after GPS stops and after the page comes back; with no position yet it says so", fn: s113 },
@@ -5512,6 +5513,38 @@
       r.d.before === false && /경로 밖으로/.test(r.d.msg) && r.d.after === true &&
       r.e.fixes >= 2 && r.e.e2After === 0 &&
       r.f.ok && r.f.e2 === 1 && r.f.shared === 1 && r.f.userRow;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S116: 지도 못 불러옴 띠 (v182)
+  async function s116() {
+    const t = T(), r = {}, el = document.getElementById('source');
+    const keep = { text: el.textContent, hidden: el.hidden, warn: el.classList.contains('warn'), reload: t.pageCtl.reload };
+    let reloads = 0;
+    try {
+      t.pageCtl.reload = () => { reloads++; };
+      const leaflet = !(t.getMap() && 'initDark' in t.getMap());
+      r.leaflet = leaflet;
+      if (leaflet) r.text = el.textContent;   // 이 하네스가 네이버 지도를 못 받아 기본 지도로 떴으면 새 문구
+      el.textContent = '네이버 지도를 불러오지 못했어요 · 누르면 다시 시도'; el.classList.add('warn'); el.hidden = false;
+      document.getElementById('map').classList.add('chrome-hidden');
+      r.visibleHidden = getComputedStyle(el).opacity === '1' && getComputedStyle(el).pointerEvents !== 'none';
+      document.getElementById('map').classList.remove('chrome-hidden');
+      // 길안내 중이면 다시 불러오지 않는다
+      const R = buildNavRoute();
+      await planAndStart(R);
+      el.click();
+      r.navToast = text('#toast'); r.navReloads = reloads;
+      t.endNav();
+      t.state.speedKmh = 0;
+      el.click();
+      r.parkedReloads = reloads;
+    } finally {
+      t.pageCtl.reload = keep.reload;
+      el.textContent = keep.text; el.hidden = keep.hidden; el.classList.toggle('warn', keep.warn);
+      await resetApp();
+    }
+    const ok = (!r.leaflet || /누르면 다시 시도/.test(r.text)) && r.visibleHidden && /멈춘 뒤 눌러/.test(r.navToast) && r.navReloads === 0 && r.parkedReloads === 1;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

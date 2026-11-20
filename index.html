@@ -252,7 +252,9 @@
     background: rgba(17, 20, 24, .85); color: var(--muted);
     max-width: calc(100% - 260px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .badge.warn { color: var(--warn); }
+  .badge.warn { color: var(--warn); cursor: pointer; }
+  /* v182: 네이버 지도를 못 불러왔다는 띠는 버튼이 숨어도 보이게 (누르면 다시 시도) */
+  #map.chrome-hidden .badge.warn { opacity: 1; pointer-events: auto; }
   #map.navigating .badge { display: none; }
 
   .toast {
@@ -1956,8 +1958,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-181"></script>
-<script src="img/ai/picks.js?v=2026.11.16-181"></script>
-<script src="app.js?v=2026.11.16-181"></script>
+<script src="icons.js?v=2026.11.16-182"></script>
+<script src="img/ai/picks.js?v=2026.11.16-182"></script>
+<script src="app.js?v=2026.11.16-182"></script>
 </body>
 </html>
