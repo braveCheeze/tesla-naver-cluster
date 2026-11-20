@@ -2835,6 +2835,7 @@
     { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored; 7-10 lanes fit the drawer as square tiles", fn: s77 },
     { id: 'S78', name: "S78 mainline junction (v133): keep-left/right where the route stays on the same expressway section and goes straight is shown as straight ('신갈분기점에서 직진 · 서울 방면', main-straight junction scene, straight sign); a fork onto another expressway stays a fork", fn: s78 },
     { id: 'S79', name: 'S79 rest areas (v133): distance to where the entry ramp leaves the mainline (OSM), not the rest-area centre; within 3 km and no turn within 1 km the top row becomes the rest area (blue), next row = the guidance after it', fn: s79 },
+    { id: 'S113', name: "S113 '내 위치로' (v177, driver: 'it doesn't seem to work well'): pressing the real button (what is under its centre) puts the map on my car at once (no animation needed) and gives back the auto zoom — after looking ahead, after a pinch zoom, while guided, in route preview (the corner locate button), after GPS stops and after the page comes back; with no position yet it says so", fn: s113 },
     { id: 'S112', name: "S112 crowd fixes (v175, driver: 'auto-apply spots 3+ drivers reported, AI checks them again'): from /fixes, a fix marked src 'auto' (3+ drivers, not yet confirmed) still changes the camera but its card says '사용자 제보', an auto spot shows '사용자 제보 단속 지점' with limit '?', a confirmed spot (src 'op' or an old server without src) shows '운전자 신고 단속 지점'; my own reported spot at an auto spot reads '여러 운전자 신고로 반영됨(확인 전)'", fn: s112 },
     { id: 'S111', name: "S111 cafe tester feedback (v174): on a guided route the car icon stays on the route line within 14 m but a parallel road 25 m beside it (still 'on route' for rerouting) and the straight road 40 m beside an exit stretch show the real position, and it snaps back once on the route again; a pinch or +/- zoom holds for 2 minutes against the speed and arrival auto zoom; a voice engine that never starts is reported in settings '소리' and falls back to beeps; coming back from a hidden page (reverse camera) keeps guidance", fn: s111 },
     { id: 'S109', name: "S109 tunnel dark map (v172, driver: 'dark mode in a tunnel, back on exit, stays dark at night'): with night map 'auto', driving into a named tunnel turns the map dark at once, leaving it keeps it dark until 4 s outside and 8 s in total, then light again; GPS lost 100 m before the entrance at speed counts as inside, standing there does not; a parallel road 30 m beside the tunnel, an unnamed tunnel way and 'always light' never darken; on a guided route the route's tunnel stretch darkens", fn: s109 },
@@ -5479,6 +5480,76 @@
       r.d.before === false && /경로 밖으로/.test(r.d.msg) && r.d.after === true &&
       r.e.fixes >= 2 && r.e.e2After === 0 &&
       r.f.ok && r.f.e2 === 1 && r.f.shared === 1 && r.f.userRow;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S113: '내 위치로' (v177, 2026-11-20 운전자 '내 위치로 작동이 잘 안 먹는 거 같애서')
+  async function s113() {
+    const t = T(), r = {}, R = buildNavRoute();
+    const m = () => t.getMap();
+    await waitFor(() => t.getMap(), 10000);
+    const meNow = () => t.motion.cur || t.state.fix;
+    const away = () => { const me = meNow(); m().center(me.lat + 0.0027, me.lng + 0.002, true); };
+    const calls = [];
+    const setZ = m().setZoom;
+    m().setZoom = function (z) { calls.push(z); return setZ.call(this, z); };
+    const press = (id) => {
+      const b = document.getElementById(id), rc = b.getBoundingClientRect(), shown = !b.hidden && rc.width > 0;   // 누르기 전에
+      const x = rc.left + rc.width / 2, y = rc.top + rc.height / 2;
+      const top = document.elementFromPoint(x, y);
+      const byHarness = !!(top && top.closest && top.closest('[id^="harness"], [class*="harness"]'));
+      const el = top && top.closest && top.closest('#' + id) ? top : b;
+      const ev = (type) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, pointerType: 'touch', pointerId: 9, isPrimary: true }));
+      const c0 = calls.length;
+      ev('pointerdown'); ev('pointerup'); el.click();
+      const me = meNow();
+      return { shown, covered: !!top && !(top.closest && top.closest('#' + id)) && !byHarness,
+        off: me ? Math.round(hav(m().getCenter(), me)) : null, following: t.state.following, manual: t.zoomCtl.manualUntil, zoomCalls: calls.slice(c0) };
+    };
+    try {
+      // (a) 앞길 보기(끌기) 뒤
+      await resetApp();
+      let pos = TRIP_ORIGIN;
+      for (let k = 0; k < 8; k++) { pos = dest(pos, 80, 12); feed(pos, 12, 80); }
+      t.setFollowing(false, true, true); away();
+      r.peek = press('backMe');
+      // (b) 두 손가락 확대 뒤 (손 배율 2분) — 누르면 자동 배율로
+      t.manualZoom(1); t.setFollowing(false, true, true); away();
+      const manual0 = t.zoomCtl.manualUntil > 0;
+      r.pinch = Object.assign(press('backMe'), { manual0 });
+      // (c) 길안내 중
+      softReset();
+      await planAndStart(R);
+      for (let s2 = 30; s2 <= 150; s2 += 15) { const a = pointAt(R, s2); feed(a.p, 12, a.h); }
+      t.setFollowing(false, true, true); away();
+      r.nav = press('backMe');
+      // (d) GPS 끊김 뒤 (위치가 더 안 온다) · (e) 화면이 가려졌다 돌아온 뒤
+      t.setFollowing(false, true, true); away();
+      r.gpsLost = press('backMe');
+      t.resumeVisible(); t.setFollowing(false, true, true); away();
+      r.resumed = press('backMe');
+      t.endNav();
+      // (f) 경로 미리보기 중: 아래 '내 위치로' 는 없고 오른쪽 위치 버튼
+      softReset();
+      stub.canned['/route'] = { alternatives: [Object.assign({ option: 'traoptimal' }, R.route)] };
+      feed(R.P[0], 0, null);
+      await t.planRoute(R.dest, false);
+      away();
+      r.preview = Object.assign(press('locate'), { preview: t.nav.preview, backMeHidden: document.getElementById('backMe').hidden });
+      t.endNav();
+      // (g) 위치를 아직 모를 때
+      t.state.fix = null;
+      t.motion.cur = null;
+      document.getElementById('toast').hidden = true;
+      document.getElementById('locate').click();
+      r.noFix = { toast: text('#toast'), following: t.state.following };
+    } finally {
+      m().setZoom = setZ;
+      await resetApp();
+    }
+    const good = (x) => x && x.following && x.off !== null && x.off <= 5 && x.manual === 0 && !x.covered;
+    const ok = good(r.peek) && r.peek.shown && good(r.pinch) && r.pinch.manual0 && good(r.nav) && r.nav.shown && good(r.gpsLost) && good(r.resumed) &&
+      good(r.preview) && r.preview.preview && r.preview.backMeHidden && /아직 내 위치를 몰라요/.test(r.noFix.toast);
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
