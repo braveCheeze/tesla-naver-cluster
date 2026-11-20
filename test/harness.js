@@ -2835,8 +2835,9 @@
     { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored; 7-10 lanes fit the drawer as square tiles", fn: s77 },
     { id: 'S78', name: "S78 mainline junction (v133): keep-left/right where the route stays on the same expressway section and goes straight is shown as straight ('신갈분기점에서 직진 · 서울 방면', main-straight junction scene, straight sign); a fork onto another expressway stays a fork", fn: s78 },
     { id: 'S79', name: 'S79 rest areas (v133): distance to where the entry ramp leaves the mainline (OSM), not the rest-area centre; within 3 km and no turn within 1 km the top row becomes the rest area (blue), next row = the guidance after it', fn: s79 },
+    { id: 'S114', name: "S114 unknown limits (v179, driver: 'don't show speed cameras with ?'): a speed camera with limit 0 is never alerted or drawn, the same camera with 60 is; a signal-only camera follows the setting and shows '신호'; a reported spot takes the limit of a same-road, same-direction camera (1.5 km), else 100 on an expressway, else stays hidden and the settings list says '제한속도 모름이라 숨김' — and shows once a camera appears", fn: s114 },
     { id: 'S113', name: "S113 '내 위치로' (v177, driver: 'it doesn't seem to work well'): pressing the real button (what is under its centre) puts the map on my car at once (no animation needed) and gives back the auto zoom — after looking ahead, after a pinch zoom, while guided, in route preview (the corner locate button), after GPS stops and after the page comes back; with no position yet it says so", fn: s113 },
-    { id: 'S112', name: "S112 crowd fixes (v175, driver: 'auto-apply spots 3+ drivers reported, AI checks them again'): from /fixes, a fix marked src 'auto' (3+ drivers, not yet confirmed) still changes the camera but its card says '사용자 제보', an auto spot shows '사용자 제보 단속 지점' with limit '?', a confirmed spot (src 'op' or an old server without src) shows '운전자 신고 단속 지점'; my own reported spot at an auto spot reads '여러 운전자 신고로 반영됨(확인 전)'", fn: s112 },
+    { id: 'S112', name: "S112 crowd fixes (v175, driver: 'auto-apply spots 3+ drivers reported, AI checks them again'): from /fixes, a fix marked src 'auto' (3+ drivers, not yet confirmed) still changes the camera but its card says '사용자 제보', an auto spot shows '사용자 제보 단속 지점' with the limit of a nearby same-direction camera (v179), a confirmed spot (src 'op' or an old server without src) shows '운전자 신고 단속 지점'; my own reported spot at an auto spot reads '여러 운전자 신고로 반영됨(확인 전)'", fn: s112 },
     { id: 'S111', name: "S111 cafe tester feedback (v174): on a guided route the car icon stays on the route line within 14 m but a parallel road 25 m beside it (still 'on route' for rerouting) and the straight road 40 m beside an exit stretch show the real position, and it snaps back once on the route again; a pinch or +/- zoom holds for 2 minutes against the speed and arrival auto zoom; a voice engine that never starts is reported in settings '소리' and falls back to beeps; coming back from a hidden page (reverse camera) keeps guidance", fn: s111 },
     { id: 'S109', name: "S109 tunnel dark map (v172, driver: 'dark mode in a tunnel, back on exit, stays dark at night'): with night map 'auto', driving into a named tunnel turns the map dark at once, leaving it keeps it dark until 4 s outside and 8 s in total, then light again; GPS lost 100 m before the entrance at speed counts as inside, standing there does not; a parallel road 30 m beside the tunnel, an unnamed tunnel way and 'always light' never darken; on a guided route the route's tunnel stretch darkens", fn: s109 },
     { id: 'S110', name: "S110 public-release privacy (v172 security review): without the operator token a '놓침' report carries nearby camera points and heading but no trace or speed, the token adds the trace and the Authorization header; with '놓침·틀림 위치 보내기' off nothing is sent and the button reads '✓ 저장'; diagnostic upload needs the token; settings have no Naver Client ID or tunnel switch and no per-source credits (v173: OSM and 공공데이터포털 sit beside the map's Naver credit), the server address, diagnostics, demo, sound test and icon admin sit in the developer menu, and every switch is a big toggle", fn: s110 },
@@ -5265,10 +5266,14 @@
 
   // S106: 신고한 단속 지점 (v169, 2026-11-20 운전자 '놓침 몇 개 눌렀는데 거긴 항상 업데이트가 안 되더라')
   //  (a) 북쪽으로 시속 60 으로 달리다 '놓침' → 이 기기에 저장, 자리는 누른 곳보다 약 2.5초(40m) 전
-  //  (b) 다음에 같은 방향으로 지나면 500m 안에서 '내가 신고한 단속 지점'(제한 ?) (c) 반대 방향으로는 안 뜬다
+  //  (b) 다음에 같은 방향으로 지나면 500m 안에서 '내가 신고한 단속 지점' (v179: 제한속도를 근처 같은 방향 카메라에서 채웠을 때만, 못 채우면 숨김) (c) 반대 방향으로는 안 뜬다
   //  (d) 설정 목록에 '이 차에서만 알림'으로 보이고 지우면 안 뜬다 (e) 운전자가 두 번 넘게 누른 자리(data/driver_spots.json)는 모든 사용자에게 뜬다
   async function s106() {
     const t = T(), r = {}, keepRaw = t.store.get('mySpots'), keepArr = t.mySpots.slice();
+    let fakeCam = null, fakeI = -1;
+    const keepDrv6 = t.driverSpots.rows.slice(), keepSh6 = t.sharedSpots.slice();
+    // 가짜 카메라는 사용자 행(신고 지점) 앞에 넣어야 한다: 사용자 행을 모두 뺀 뒤 넣고 다시 붙인다
+    const userRowsOff = () => { t.mySpots.length = 0; t.driverSpots.rows.length = 0; t.sharedSpots.length = 0; t.applyUserSpots(); };
     const O = dest(NAV_ORIGIN, 90, 30000);   // 카메라가 없는 곳
     const pressAt = dest(O, 0, 1000);
     try {
@@ -5278,14 +5283,29 @@
       await waitFor(() => !document.getElementById('camMissBtn').classList.contains('sending'), 2000, 10);
       const m = t.mySpots[0];
       r.a = m ? { n: t.mySpots.length, back: Math.round(hav(m, pressAt)), h: m.h, status: t.mySpotStatus(m), stored: !!t.store.get('mySpots') } : null;
+      r.a.toast = text('#toast');
       const btn = document.getElementById('camMissBtn'); clearTimeout(btn._sentT); btn.classList.remove('sent', 'saved', 'sending'); btn.textContent = '놓침';
-      // (b) 같은 방향
+      // (b) v178: 근처에 카메라가 없어 제한속도를 모르면 숨김 → 같은 방향 카메라(70)를 200m 뒤에 두면 채워져 보인다
       let first = null, label = '', limit = '';
       if (m) {
+        r.a.lim0 = m.lim || 0;
+        const F = dest(m, 180, 200);
+        fakeCam = [round6(F.lat), round6(F.lng), 70, 1, 0, 0, 0, -1, 4, 1];
+        fakeCam.eb = 0; fakeCam.e2 = 0; fakeCam.lv = 0; fakeCam.sl = fakeCam[0]; fakeCam.sg = fakeCam[1]; fakeCam.on = m.rn || '';   // 신고한 길과 같은 이름
+        const keepSpots = t.mySpots.slice();
+        userRowsOff();
+        fakeI = t.cams.rows.length; t.cams.rows.push(fakeCam);
+        const fk = Math.floor(fakeCam[0] / 0.01) + ':' + Math.floor(fakeCam[1] / 0.01);
+        if (!t.cams.grid.has(fk)) t.cams.grid.set(fk, []); t.cams.grid.get(fk).push(fakeI);
+        t.cams.userBase = null;
+        keepSpots.forEach((x) => t.mySpots.push(x)); keepDrv6.forEach((x) => t.driverSpots.rows.push(x)); keepSh6.forEach((x) => t.sharedSpots.push(x));
+        t.applyUserSpots();
+        r.a.lim1 = m.lim;
         await driveThrough(m, 0, 900, 60, 60, 10, (s) => {
           const tg = t.camState.target;
           if (tg && t.isUserSpot(tg.c) && first === null) { first = -s; label = text('#camType'); limit = text('#camLimit'); }
         });
+        // 가짜 카메라를 지나기 전에 신고 지점이 먼저 보일 수는 없다(200m 뒤) — 첫 표시 거리는 신고 지점 기준
         r.b = { first, label, limit };
         // (c) 반대 방향
         let opp = false;
@@ -5300,22 +5320,33 @@
         await driveThrough(m, 0, 900, 60, 60, 10, () => { const tg = t.camState.target; if (tg && t.isUserSpot(tg.c)) after = true; });
         r.d.afterDelete = after; r.d.left = t.mySpots.length;
       }
-      // (e) 모든 사용자: 강동대로 둔촌동 북서행
+      // (e) 모든 사용자: 강동대로 둔촌동 북서행 — v178: 제한속도를 채웠으면 보이고, 못 채웠으면 숨김
       const D = t.driverSpots.rows.find((x) => Math.abs(x[0] - 37.51902) < 1e-4);
       if (D) {
         let seen = '';
+        const lim = t.spotLimit({ lat: D[0], lng: D[1], h: D[2] }, '');
         await driveThrough({ lat: D[0], lng: D[1] }, D[2], 800, 40, 50, 10, () => { const tg = t.camState.target; if (tg && t.isUserSpot(tg.c) && !seen) seen = text('#camType'); });
-        r.e = { rows: t.driverSpots.rows.length, seen };
+        r.e = { rows: t.driverSpots.rows.length, seen, lim };
       } else r.e = 'no driver spots';
     } finally {
+      if (fakeI >= 0) {
+        userRowsOff();
+        const fk = Math.floor(fakeCam[0] / 0.01) + ':' + Math.floor(fakeCam[1] / 0.01), a = t.cams.grid.get(fk);
+        if (a) { const j = a.indexOf(fakeI); if (j >= 0) a.splice(j, 1); }
+        t.camState.passed.delete(fakeI); t.camMiss.near.delete(fakeI);
+        t.cams.rows.length = fakeI; t.cams.userBase = null;
+      }
+      t.driverSpots.rows.length = 0; keepDrv6.forEach((x) => t.driverSpots.rows.push(x));
+      t.sharedSpots.length = 0; keepSh6.forEach((x) => t.sharedSpots.push(x));
       t.mySpots.length = 0; keepArr.forEach((x) => t.mySpots.push(x));
       t.store.set('mySpots', keepRaw); t.applyUserSpots();
       await resetApp(); softReset();
     }
-    const ok = r.a && r.a.n === 1 && r.a.back >= 25 && r.a.back <= 75 && r.a.stored && r.a.status === 'mine' &&
-      r.b.first !== null && r.b.first <= 520 && /내가 신고한 단속 지점/.test(r.b.label) && r.b.limit === '?' && !r.c.opp &&
+    const ok = r.a && r.a.n === 1 && r.a.back >= 25 && r.a.back <= 75 && r.a.stored && r.a.status === 'nolimit' && /제한속도를 몰라/.test(r.a.toast) &&
+      r.a.lim0 === 0 && r.a.lim1 === 70 &&
+      r.b.first !== null && r.b.first <= 520 && /내가 신고한 단속 지점/.test(r.b.label) && r.b.limit === '70' && !r.c.opp &&
       r.d.box && /이 차에서만 알림/.test(r.d.text) && !r.d.afterDelete && r.d.left === 0 &&
-      r.e.rows >= 5 && /운전자 신고 단속 지점/.test(r.e.seen);
+      r.e.rows >= 5 && (r.e.lim > 0 ? /운전자 신고 단속 지점/.test(r.e.seen) : !r.e.seen);
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
@@ -5483,6 +5514,69 @@
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
+  // S114: 제한속도 모름 (v179, 2026-11-20 운전자 '물음표 나오는 과속단속은 안 나오게 해 주라. 차라리 그게 더 헷갈린다')
+  async function s114() {
+    const t = T(), r = {};
+    const O = dest(NAV_ORIGIN, 90, 52000), at = (y) => dest(O, 0, y);
+    const keep = { mine: t.mySpots.slice(), mineRaw: t.store.get('mySpots'), sig: t.prefs.signalCams, drv: t.driverSpots.rows.slice(), shared: t.sharedSpots.slice() };
+    const fakes = [];
+    let base0 = null;
+    const add = (c) => { const i = t.cams.rows.length; t.cams.rows.push(c); fakes.push(i); const k = Math.floor(c[0] / 0.01) + ':' + Math.floor(c[1] / 0.01); if (!t.cams.grid.has(k)) t.cams.grid.set(k, []); t.cams.grid.get(k).push(i); return c; };
+    const mk = (p, lim, kind, name) => { const c = [round6(p.lat), round6(p.lng), lim, kind, 0, 0, 0, -1, 4, 1]; c.eb = 0; c.e2 = 0; c.lv = 0; c.sl = c[0]; c.sg = c[1]; c.on = name || ''; return c; };
+    const pass = async (c) => { let seen = null; await driveThrough({ lat: c[0], lng: c[1] }, 0, 600, 0, 60, 16.7, () => { const tg = t.camState.target; if (tg && tg.c === c && !seen) seen = { limit: text('#camLimit'), type: text('#camType') }; }); return seen; };
+    try {
+      t.mySpots.length = 0; t.driverSpots.rows.length = 0; t.sharedSpots.length = 0; t.applyUserSpots();
+      base0 = t.cams.rows.length;
+      const Z = add(mk(at(2000), 0, 1)), S = add(mk(at(4000), 0, 2)), Y = add(mk(at(6000), 70, 1, '시험대로'));
+      t.cams.userBase = null; t.applyUserSpots();
+      // (a) 제한 0 과속 카메라
+      r.zero = { wanted: t.camWanted(Z), seen: await pass(Z) };
+      Z[2] = 60;
+      r.filled = { wanted: t.camWanted(Z), seen: await pass(Z) };
+      // (b) 신호 전용
+      t.prefs.signalCams = false;
+      r.sigOff = { seen: await pass(S) };
+      t.prefs.signalCams = true;
+      r.sigOn = { seen: await pass(S) };
+      t.prefs.signalCams = keep.sig;
+      // (c) 신고 지점 제한속도 채우기
+      const P = at(6800);
+      r.fill = { sameRoad: t.spotLimit({ lat: P.lat, lng: P.lng, h: 0 }, '시험대로'), otherRoad: t.spotLimit({ lat: P.lat, lng: P.lng, h: 0 }, '다른로'),
+        noName: t.spotLimit({ lat: P.lat, lng: P.lng, h: 0 }, ''), opposite: t.spotLimit({ lat: P.lat, lng: P.lng, h: 180 }, '시험대로'),
+        expwy: t.spotLimit({ lat: at(20000).lat, lng: at(20000).lng, h: 0 }, '시험고속도로'), unknown: t.spotLimit({ lat: at(20000).lat, lng: at(20000).lng, h: 0 }, '골목길') };
+      // (d) 제한을 모르는 신고 지점: 숨김 + 목록 표시 → 근처에 카메라가 생기면 보임
+      const Q = at(12000);
+      t.mySpots.push({ lat: Q.lat, lng: Q.lng, h: 0, t: Date.now(), days: ['x'], kmh: 50, lim: 0, rn: '' });
+      t.applyUserSpots();
+      const row = () => t.cams.rows.slice(t.cams.userBase).find((c) => Math.abs(c[0] - Q.lat) < 1e-5);
+      t.renderMySpots();
+      r.hidden = { wanted: t.camWanted(row()), status: t.mySpotStatus(t.mySpots[0]), list: (document.querySelector('#mySpotList') || {}).textContent || '' };
+      // 근처(200m 뒤) 같은 방향 카메라 55 를 넣는다 (사용자 행 앞에 넣으려고 사용자 행을 다시 만든다)
+      t.mySpots.length = 0; t.applyUserSpots();
+      add(mk(at(11800), 55, 1));
+      t.cams.userBase = null;
+      t.mySpots.push({ lat: Q.lat, lng: Q.lng, h: 0, t: Date.now(), days: ['x'], kmh: 50, lim: 0, rn: '' });
+      t.applyUserSpots();
+      r.shown = { wanted: t.camWanted(row()), lim: row()[2], saved: t.mySpots[0].lim, status: t.mySpotStatus(t.mySpots[0]) };
+    } finally {
+      t.prefs.signalCams = keep.sig;
+      t.mySpots.length = 0; t.driverSpots.rows.length = 0; t.sharedSpots.length = 0; t.applyUserSpots();
+      if (base0 !== null) {
+        for (const i of fakes.slice().reverse()) { const c = t.cams.rows[i]; if (!c) continue; const k = Math.floor(c[0] / 0.01) + ':' + Math.floor(c[1] / 0.01); const a = t.cams.grid.get(k); if (a) { const j = a.indexOf(i); if (j >= 0) a.splice(j, 1); } t.camMiss.near.delete(i); t.camState.passed.delete(i); t.camState.saidById.delete(i); }
+        t.cams.rows.length = base0; t.cams.userBase = null;
+      }
+      keep.mine.forEach((x) => t.mySpots.push(x)); keep.drv.forEach((x) => t.driverSpots.rows.push(x)); keep.shared.forEach((x) => t.sharedSpots.push(x));
+      t.store.set('mySpots', keep.mineRaw); t.applyUserSpots();
+      await resetApp();
+    }
+    const ok = !r.zero.wanted && !r.zero.seen && r.filled.wanted && r.filled.seen && r.filled.seen.limit === '60' &&
+      !r.sigOff.seen && r.sigOn.seen && r.sigOn.seen.limit === '신호' &&
+      r.fill.sameRoad === 70 && r.fill.otherRoad === 0 && r.fill.noName === 0 && r.fill.opposite === 0 && r.fill.expwy === 100 && r.fill.unknown === 0 &&
+      !r.hidden.wanted && r.hidden.status === 'nolimit' && /제한속도 모름이라 숨김/.test(r.hidden.list) &&
+      r.shown.wanted && r.shown.lim === 55 && r.shown.saved === 55 && r.shown.status !== 'nolimit';
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
   // S113: '내 위치로' (v177, 2026-11-20 운전자 '내 위치로 작동이 잘 안 먹는 거 같애서')
   async function s113() {
     const t = T(), r = {}, R = buildNavRoute();
@@ -5572,6 +5666,12 @@
       { const i = t.cams.rows.length; t.cams.rows.push(B); fakes.push(i); const k = Math.floor(B[0] / 0.01) + ':' + Math.floor(B[1] / 0.01); if (!t.cams.grid.has(k)) t.cams.grid.set(k, []); t.cams.grid.get(k).push(i); }
       t.cams.userBase = null; t.applyUserSpots();
       const A = at(0, 6000), C = at(0, 9000), D = at(0, 12000);
+      // v178: 신고 지점은 근처(300m) 같은 방향 카메라의 제한속도를 받아야 보인다 — 각 지점 200m 뒤에 둔다
+      for (const [y, lim] of [[5800, 80], [8800, 70], [11800, 50]]) {
+        const F = [round6(at(0, y).lat), round6(at(0, y).lng), lim, 1, 0, 0, 0, -1, 4, 1]; F.eb = 0; F.e2 = 0; F.lv = 0; F.sl = F[0]; F.sg = F[1]; F.on = '';
+        const i = t.cams.rows.length; t.cams.rows.push(F); fakes.push(i); const k = Math.floor(F[0] / 0.01) + ':' + Math.floor(F[1] / 0.01); if (!t.cams.grid.has(k)) t.cams.grid.set(k, []); t.cams.grid.get(k).push(i);
+      }
+      t.cams.userBase = null; t.applyUserSpots();
       window.fetch = (u, o) => (/\/fixes(\?|$)/.test(String(u)) ? Promise.resolve(new Response(JSON.stringify({ v: 1, items: [
         { kind: 'dir', k: B[0] + ',' + B[1], lat: B[0], lng: B[1], h: 0, src: 'auto' },
         { kind: 'spot', lat: A.lat, lng: A.lng, h: 0, src: 'auto' },
@@ -5604,7 +5704,7 @@
     }
     const ok = r.load && r.fix.e2 === 1 && r.fix.crowd &&
       r.cam && r.cam.crowd && r.cam.limit === '60' &&
-      r.auto && r.auto.type === '사용자 제보 단속 지점' && r.auto.limit === '?' && !r.auto.crowd &&
+      r.auto && r.auto.type === '사용자 제보 단속 지점' && r.auto.limit === '80' && !r.auto.crowd &&
       r.op && r.op.type === '운전자 신고 단속 지점' && r.old && r.old.type === '운전자 신고 단속 지점' &&
       r.status === 'crowd';
     return { pass: !!ok, detail: JSON.stringify(r) };
