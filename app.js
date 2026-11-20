@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-169'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-170'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -4634,6 +4634,25 @@
     nav.tollZonesFor = nav.route;
     return nav.tollZones;
   }
+  // v170 (2026-11-20 운전자 '회전교차로나 우회전 고속도로 나갈 때 이탈이 잘 되는 느낌 … 직진 차로로 갑자기 회전하기 전에 경로가 바뀌어버려'):
+  // 네이버 경로선은 진출로·회전교차로·우회전에서 모서리를 질러 간다. 아직 본선 바깥 차로에 있는 차가 경로선에서 18m 넘게 떨어지고 방향이
+  // 45°쯤 달라 보여 1~2초 만에 '경로 이탈' → 차 60m 앞(직진 쪽)에서 다시 찾아 회전 없는 직진 경로로 바뀌었다.
+  // 회전·진출·갈림길 안내 300m 앞 ~ 120m 뒤(회전교차로는 250m 뒤까지)는 허용폭을 60m 로 넓히고, 거꾸로 가는 것(100° 넘게)만 바로 보고,
+  // 회전교차로 안에서는 방향과 관계없이 원 둘레 어디든 경로 위로 본다. 이탈은 시간(2초·회전 구간 4초)과 거리(20m·회전 구간 50m) 둘 다 이어질 때만
+  const TURN_ZONE_SKIP = new Set(['s', 'goal', 'via', 'toll', 'rest', 'ferry']);
+  function turnZones() {
+    if (nav.tzFor === nav.route && nav.tz) return nav.tz;
+    const z = [], last = nav.cum.length - 1;
+    for (const g of nav.guides || []) {
+      const k = turnKind0(g);
+      if (!k || TURN_ZONE_SKIP.has(k)) continue;
+      const T = nav.cum[Math.min(g.i, last)], rb = /^rb_/.test(k);
+      z.push([T - 300, T + (rb ? 250 : 120), rb]);
+    }
+    nav.tz = z; nav.tzFor = nav.route;
+    return z;
+  }
+  const turnZoneAt = (at) => turnZones().find(([a, b]) => at >= a && at <= b) || null;
   function navUpdate(f) {
     if (!nav.active || !nav.pts || !f) return;
     // 경유지 근처(150m)를 지나면 목록에서 뺀다 (이후 재탐색이 경유지로 되돌아가지 않게)
@@ -4643,8 +4662,9 @@
     }
     const pts = nav.pts;
     let best = { dist: Infinity, seg: nav.seg, t: 0 };
-    // 달리는 방향과 반대인 구간(유턴 뒤 맞은편 차로 등)에는 붙지 않는다
-    const useHeading = state.heading !== null && state.speedKmh > 10;
+    const zone = turnZoneAt(nav.along), inRb = !!(zone && zone[2]);
+    // 달리는 방향과 반대인 구간(유턴 뒤 맞은편 차로 등)에는 붙지 않는다. v170: 회전교차로 안에서는 둘레 어느 쪽이든 붙는다
+    const useHeading = state.heading !== null && state.speedKmh > 10 && !inRb;
     const scan = (from, to) => {
       for (let i = from; i <= to; i++) {
         if (useHeading && nav.cum[i + 1] - nav.cum[i] > 3 &&
@@ -4663,13 +4683,13 @@
     // 50m 넘게 떨어져 달리고, 차로를 고르느라 방향도 비스듬하다. 톨게이트 안내 지점 600m 앞 ~ 600m 뒤는 100m 까지 경로 위로 보고,
     // 방향은 100° 넘게 다를 때만(되돌아가는 길) 다른 길로 본다
     const inPlaza = tollZones().some(([a, b]) => nav.along >= a && nav.along <= b);
-    const offLimit = inPlaza ? 100 : Math.min(50, Math.max(30, (f.acc || 10) * 2));
+    const offLimit = inPlaza ? 100 : zone ? 60 : Math.min(50, Math.max(30, (f.acc || 10) * 2));
     // 가장 가까운 경로 구간과 달리는 방향이 50° 넘게 다르고 18m 넘게 떨어졌으면 다른 길로 들어선 것 (30m 를 기다리지 않는다)
     let skew = 0;
     if (useHeading && best.dist > 18 && best.dist < Infinity && nav.cum[best.seg + 1] - nav.cum[best.seg] > 3) {
       skew = angleDiff(bearing(pts[best.seg], pts[best.seg + 1]), state.heading);
     }
-    const wrongWay = skew > (inPlaza ? 100 : 50);
+    const wrongWay = !inRb && skew > (inPlaza || zone ? 100 : 50);   // 회전교차로 안에서는 한 바퀴 더 돌면 방향이 거꾸로다: 거리로만
     nav.onRoute = best.dist <= offLimit && !wrongWay;
     if (!nav.onRoute) { if (!nav.offAt) nav.offAt = f.t; } else nav.offAt = 0;   // v161: 경로 밖으로 나간 시각 (단속 카메라 고르기)
     if (nav.onRoute) {
@@ -4681,13 +4701,17 @@
                (nav.onCount > 0 || nav.rerouted || f.t - (nav.setAt || 0) > 20000)) {
       // 출발점이 도로에서 떨어진 곳(주차장 등)이면 경로에 한 번 올라탄 뒤부터 센다.
       // 다만 20초가 지나도 경로에 못 올라탔다면(엉뚱한 경로) 그때부터는 센다
-      if (!nav.off) nav.offSince = f.t;
+      if (!nav.off) { nav.offSince = f.t; nav.offOdo = state.odo; }
       nav.off++;
     }
     // 확실히 다른 길(80m 넘게 벗어남·다른 방향)이면 2번, 아니면 3번 연속 확인되면 다시 찾는다.
     // v135: 테슬라 GPS 는 1초에 10번 와서 3번 연속이 0.3초였다 — 벗어난 채로 1초(확실히 다른 길)·2초가 지나야 한다 (1초에 한 번이면 예전과 같다)
-    const need = best.dist > 80 || wrongWay ? 2 : 3;
-    const offLong = nav.off > 0 && f.t - (nav.offSince || f.t) >= (need - 1) * 1000;
+    // v170: 시간과 거리 둘 다 — 확실히 다른 길이면 1초·10m(예전과 같이 빠르게), 보통 2초·20m, 회전 구간은 4초·50m
+    // (회전 전 바깥 차로에서 서둘러 판정하지 않게. 회전 구간의 '확실히 다른 길'은 80m 넘게 벗어나거나 100° 넘게 거꾸로일 때만)
+    const sure = best.dist > 80 || wrongWay;
+    const need = sure ? 2 : 3;
+    const offMs = sure ? 1000 : zone ? 4000 : 2000, offM = sure ? 10 : zone ? 50 : 20;
+    const offLong = nav.off > 0 && f.t - (nav.offSince || f.t) >= offMs && state.odo - (nav.offOdo || state.odo) >= offM;
     // 다시 찾은 경로에 한 번도 못 올라탔으면(답이 오는 사이 차가 경로 시작점을 지나쳤으면) 간격을 기다리지 않고 한 번 바로 다시 찾는다
     const quick = nav.quickLeft > 0 && nav.rerouted && nav.onCount === 0 && f.t - (nav.setAt || 0) > 2500;
     if (nav.off >= need && offLong && !nav.busy && (quick || f.t - nav.lastReroute > nav.gap)) {
@@ -7778,7 +7802,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,

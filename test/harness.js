@@ -2833,6 +2833,7 @@
     { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored; 7-10 lanes fit the drawer as square tiles", fn: s77 },
     { id: 'S78', name: "S78 mainline junction (v133): keep-left/right where the route stays on the same expressway section and goes straight is shown as straight ('신갈분기점에서 직진 · 서울 방면', main-straight junction scene, straight sign); a fork onto another expressway stays a fork", fn: s78 },
     { id: 'S79', name: 'S79 rest areas (v133): distance to where the entry ramp leaves the mainline (OSM), not the rest-area centre; within 3 km and no turn within 1 km the top row becomes the rest area (blue), next row = the guidance after it', fn: s79 },
+    { id: 'S107', name: "S107 off-route near turns (v170, driver: rerouted to straight before turning at roundabouts and right exits): a right exit whose route line cuts the corner 100 m early, driven on the outer lane, causes no reroute; missing that exit reroutes within 200 m past it; one extra lap of a 25 m roundabout before the 3 o'clock exit causes no reroute", fn: s107 },
     { id: 'S106', name: "S106 reported spots (v169, driver: '놓침 spots never get updated'): '놓침' saves the spot on this car ~2.5 s back along the trace, the next pass in the same direction shows '내가 신고한 단속 지점' (limit ?) from 500 m, not the other way; settings list shows '이 차에서만 알림' and deleting stops it; spots the driver reported on two days (data/driver_spots.json) alert every user", fn: s106 },
     { id: 'S105', name: "S105 after the v165 sweep (v167): rows passed together are judged by lane points — a point 50 is not passed with a signal 50 whose stop line is 51 m earlier (보개원삼로), a 60 sharing the 50's lane point does not show after it (복합물류로); with no route section name an elevated/underground camera on a fast road parallel to the route stays (a street-named section still drops it)", fn: s105 },
     { id: 'S104', name: "S104 camera pick, 2nd audit (v165): road names match across notation (분당-수서간고속화도로 = 분당수서로, 동부간선도로 = 동부간선로; 중앙로 ≠ 중앙고속도로); a route within 15 m of the raw position (stop-line-moved lane point 18.8 m) or within 20 m with the same road name keeps the camera (25 m still dropped, S14); expressway booths typed as ordinary roads stay on an expressway route; an entry-only highway span ends where the section name becomes a street; elevated/underground cameras stay on fast roads; opposite rows aren't passed; curve tangent", fn: s104 },
@@ -5294,6 +5295,72 @@
       r.d.box && /이 차에서만 알림/.test(r.d.text) && !r.d.afterDelete && r.d.left === 0 &&
       r.e.rows >= 5 && /운전자 신고 단속 지점/.test(r.e.seen);
     return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S107: 회전 앞 경로 이탈 (v170, 2026-11-20 운전자 '회전교차로나 우회전 고속도로 나갈 때 이탈이 잘 되는 느낌 … 직진 차로로 갑자기 경로가 바뀌어버려').
+  //  (a) 우회전 진출: 네이버 경로선은 실제 갈림(1,000m)보다 100m 앞(900m)에서 대각선으로 질러 간다. 차는 오른쪽 바깥 차로(5m)로 곧장 가다
+  //      1,000m 에서 오른쪽으로 꺾는다 → 재탐색이 없어야 한다 (예전엔 950m 쯤 경로선 32m·방향 45° 로 2초 만에 이탈)
+  //  (b) 같은 경로에서 진출로를 지나쳐 곧장 가면 → 갈림을 지나 200m 안에 재탐색 (c) 회전교차로(반지름 25m)를 한 바퀴 더 돌고 3시 방향으로 나가도 재탐색 없음
+  async function s107() {
+    const t = T(), r = {};
+    const at = (x, y) => dest(dest(NAV_ORIGIN, 90, x), 0, y);   // 동쪽 x m, 북쪽 y m
+    const mkRoute = (pts, guide) => {
+      const P = pts.map((p) => ({ lat: round6(p.lat), lng: round6(p.lng) }));
+      const cum = [0];
+      for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+      const total = cum[cum.length - 1];
+      guide.push({ i: P.length - 1, t: 88, s: '목적지', d: 0, ms: 0 });
+      return { route: { distance: r0(total), duration: r0(total / 14 * 1000), tollFare: 0, fuelPrice: 0, path: P.map((p) => [p.lng, p.lat]), guide,
+        sections: [{ i: 0, n: P.length, name: '', speed: 50, cong: 1 }] }, P, cum, total, dest: { name: '테스트', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    };
+    const reroutes = (c0) => stub.count('/route', c0);
+    const drive = async (R, path) => {
+      await resetApp(); softReset();
+      await planAndStart(R);
+      const c0 = stub.calls.length;
+      let firstAt = null;
+      for (const [p, h, label] of path) {
+        feed(p, 50 / 3.6, h, { dt: 1000, acc: 3 });
+        if (firstAt === null && reroutes(c0) > 0) firstAt = label;
+        await waitFor(() => !t.nav.busy, 1000, 10);
+      }
+      t.endNav();
+      return { reroutes: reroutes(c0), firstAt };
+    };
+    try {
+      // (a)(b) 우회전 진출 — 경로선: 북쪽 900m, 대각선으로 (100, 1000), 동쪽 300m
+      const pts = [];
+      for (let y = 0; y <= 900; y += 10) pts.push(at(0, y));
+      for (let k = 1; k <= 10; k++) pts.push(at(10 * k, 900 + 10 * k));
+      for (let x = 110; x <= 400; x += 10) pts.push(at(x, 1000));
+      const gi = 90;   // 900m 점
+      const R = mkRoute(pts, [{ i: gi, t: 3, s: "'테스트IC' 방면으로 오른쪽 출구", d: 900, ms: 60000 }]);
+      const pathA = [];
+      for (let y = 300; y <= 1000; y += 14) pathA.push([at(5, y), 0, 'y' + y]);
+      for (let x = 19; x <= 300; x += 14) pathA.push([at(x, 1000), 90, 'x' + x]);
+      r.a = await drive(R, pathA);
+      const pathB = [];
+      for (let y = 300; y <= 1400; y += 14) pathB.push([at(5, y), 0, y]);
+      r.b = await drive(mkRoute(pts.slice(), [{ i: gi, t: 3, s: "'테스트IC' 방면으로 오른쪽 출구", d: 900, ms: 60000 }]), pathB);
+      // (c) 회전교차로: 남쪽에서 북쪽으로 800m, 반지름 25m 원(중심 (0, 825)), 3시 방향(동쪽)으로 나가 300m
+      const C = { x: 0, y: 825 }, Rr = 25;
+      const rpts = [];
+      for (let y = 0; y <= 800; y += 10) rpts.push(at(0, y));
+      for (let a = -90; a <= 0; a += 15) rpts.push(at(C.x + Rr * Math.cos(a * Math.PI / 180), C.y + Rr * Math.sin(a * Math.PI / 180)));   // 반시계(동쪽으로) 1/4 바퀴
+      for (let x = 35; x <= 330; x += 10) rpts.push(at(x, C.y));
+      const Rc = mkRoute(rpts, [{ i: 80, t: 94, s: '회전교차로에서 3시 방향', d: 800, ms: 60000 }]);
+      const pathC = [];
+      for (let y = 300; y <= 800; y += 14) pathC.push([at(0, y), 0, 'y' + y]);
+      for (let a = -90; a <= 360; a += 12) {   // 1과 1/4 바퀴
+        const rad = a * Math.PI / 180;
+        pathC.push([at(C.x + Rr * Math.cos(rad), C.y + Rr * Math.sin(rad)), ((360 - a) % 360 + 360) % 360, 'a' + a]);   // 반시계로 돌 때 진행 방향
+      }
+      for (let x = 35; x <= 300; x += 14) pathC.push([at(x, C.y), 90, 'x' + x]);
+      r.c = await drive(Rc, pathC);
+    } finally { await resetApp(); softReset(); }
+    const bAt = r.b.firstAt;
+    const ok = r.a.reroutes === 0 && r.b.reroutes >= 1 && typeof bAt === 'number' && bAt > 1000 && bAt <= 1200 && r.c.reroutes === 0;
+    return { pass: ok, detail: JSON.stringify(r) };
   }
 
   // S96: 소리 잠김 표시 (v160, 2026-11-20 점검: 새로고침·'새 버전' 뒤 화면을 누를 때까지 음성·경고음이 모두 꺼져 있는데 표시가 없었다).
