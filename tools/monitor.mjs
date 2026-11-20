@@ -3,6 +3,9 @@
 // 최대 3시간 돌고 끝난다.
 const BASE = 'https://tesla-nav.cy6789.workers.dev';
 const ORIGIN = 'https://bravecheeze.github.io';
+// v172: /events 는 운영자 토큰이 있어야 읽힌다. 이 PC 의 환경 변수 TNC_ADMIN_TOKEN 에서 읽는다 (값은 출력·기록하지 않는다)
+const TOKEN = process.env.TNC_ADMIN_TOKEN || '';
+if (!TOKEN) { console.log('환경 변수 TNC_ADMIN_TOKEN 이 없습니다 (setx TNC_ADMIN_TOKEN … 뒤 새 터미널)'); process.exit(2); }
 const BOT = /bot|crawler|spider|preview|headless/i;
 let since = Date.now() - 30 * 1000;
 const started = Date.now();
@@ -14,7 +17,8 @@ const fmt = (e) => `${new Date(e.serverAt).toLocaleTimeString('ko-KR', { hour12:
   (e.src ? ` src=${e.src}` : '') + (e.stack ? `\n    stack: ${String(e.stack).split('\n').slice(0, 4).join(' | ')}` : '');
 
 async function poll() {
-  const r = await fetch(`${BASE}/events?since=${since}`, { headers: { Origin: ORIGIN } });
+  const r = await fetch(`${BASE}/events?since=${since}`, { headers: { Origin: ORIGIN, Authorization: 'Bearer ' + TOKEN } });
+  if (r.status === 401) throw new Error('운영자 토큰이 맞지 않습니다 (TNC_ADMIN_TOKEN 과 Worker Secret ADMIN_TOKEN 확인)');
   const j = await r.json();
   const items = (j.items || []).filter((e) => e.serverAt > since);
   if (items.length) since = Math.max(...items.map((e) => e.serverAt));

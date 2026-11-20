@@ -7,6 +7,10 @@
 //   EX_KEY              (선택) 한국도로공사 고속도로 공공데이터 포털(data.ex.co.kr) 인증키 — 하이패스 차로 번호
 // 를 Secret 으로 넣는다.
 // 진단 기록 저장(선택): Bindings 에 KV namespace 를 변수명 LOGS 로 연결한다. 기록은 30일 뒤 자동 삭제.
+//   ADMIN_TOKEN         (2026-11-20 공개 전 보안 점검) 운영자 토큰. 32자 넘는 아무 글자. 이 값을 'Authorization: Bearer <값>' 으로 보낼 때만
+//                       /events·/log 읽기, 진단 기록 올리기, 운영자 고침(바로 모든 사용자 적용), 놓침 궤적 저장을 허락한다.
+//                       값은 운전자가 직접 만들어 대시보드 Secret 과 운전자 PC 환경 변수 TNC_ADMIN_TOKEN, 운전자 차 앱(개발자 메뉴)에만 넣는다.
+// 요청 제한(선택): Bindings 에 Rate Limiting 을 변수명 RL 로(예: 60초에 120번) 연결하면 함께 쓴다. 없으면 메모리 기준으로만 막는다.
 
 const ALLOWED_ORIGINS = [
   'https://bravecheeze.github.io',
@@ -21,6 +25,43 @@ const ROUTE_GAP_MS = 15000;
 // 접속 기록 키: 최신이 KV 목록 맨 앞에 오도록 (EVR_BASE - 시각) 으로 저장한다
 const EVR_BASE = 9e15;
 const routeHits = new Map();
+// v172 (2026-11-20 공개 전 보안 점검): 경로마다 접속지(IP)별 1분 창 제한 + 하루 상한(이 Worker 인스턴스 기준, 어림).
+// Origin 은 위조할 수 있으므로 유료 API(네이버 클라우드)와 KV 쓰기를 이것으로 지킨다
+const LIMITS = { '/route': 20, '/geocode': 30, '/reverse': 60, '/search': 30, '/hipass': 30, '/weather': 20, '/config': 30,
+  '/event': 30, '/log': 3, '/fix': 10, '/fixes': 10, '/events': 30 };
+const PAID = new Set(['/route', '/geocode', '/reverse', '/search']);
+const KV_WRITE = new Set(['/event', '/fix']);
+const DAY_CAP = { paid: 20000, kv: 900 };
+const hits = new Map();
+const day = { d: '', paid: 0, kv: 0 };
+function overLimit(ip, path) {
+  const lim = LIMITS[path];
+  if (!lim) return false;
+  const now = Date.now(), k = path + '|' + ip;
+  let h = hits.get(k);
+  if (!h || now - h.t > 60000) { h = { t: now, n: 0 }; hits.set(k, h); if (hits.size > 20000) hits.clear(); }
+  return ++h.n > lim;
+}
+function overDay(path) {
+  const d = new Date().toISOString().slice(0, 10);
+  if (day.d !== d) { day.d = d; day.paid = 0; day.kv = 0; }
+  if (PAID.has(path)) return ++day.paid > DAY_CAP.paid;
+  if (KV_WRITE.has(path)) return ++day.kv > DAY_CAP.kv;
+  return false;
+}
+// 바깥 API 오류는 상태와 짧은 글만 돌려준다 (응답 전체를 그대로 내보내지 않게)
+function brief(d) {
+  if (!d || typeof d !== 'object') return '';
+  const e = d.error && typeof d.error === 'object' ? d.error : d;
+  return String(e.message || e.errorMessage || d.message || d.errorMessage || '').slice(0, 120);
+}
+// 같은 길이 비교로 토큰을 맞춰 본다 (글자마다 시간이 달라지지 않게)
+function sameToken(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  let x = 0;
+  for (let i = 0; i < a.length; i++) x |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return x === 0;
+}
 // 하이패스 차로 목록 (전국 영업소, 실시간). 5분 동안 메모리에 두고 다시 받는다
 const hipassCache = { list: null, at: 0 };
 const HIPASS_API = 'https://data.ex.co.kr/openapi/trafficOprgPrcd/tolofHipasCrgwOpclPrssList';
@@ -50,7 +91,7 @@ export default {
     const cors = {
       'Access-Control-Allow-Origin': allowed ? origin : ALLOWED_ORIGINS[0],
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       'Vary': 'Origin',
     };
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
@@ -61,6 +102,19 @@ export default {
     const isEventPost = req.method === 'POST' && url.pathname === '/event';
     const isFixPost = req.method === 'POST' && url.pathname === '/fix';
     if (req.method !== 'GET' && !isLogPost && !isEventPost && !isFixPost) return json({ error: 'method' }, 405, cors);
+    // v172: 접속지(IP)별 횟수 제한 → 하루 상한 → 운영자 토큰 순서 (토큰 맞히기 시도도 횟수 제한에 걸린다)
+    const ip = req.headers.get('CF-Connecting-IP') || 'x';
+    if (overLimit(ip, url.pathname)) return json({ error: 'rate limited', retryAfter: 60 }, 429, cors);
+    if (env.RL && env.RL.limit && url.pathname !== '/health') {
+      try { const r0 = await env.RL.limit({ key: ip }); if (r0 && r0.success === false) return json({ error: 'rate limited', retryAfter: 60 }, 429, cors); } catch (e) { /* 바인딩 없음 */ }
+    }
+    const bearer = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
+    const isAdmin = !!env.ADMIN_TOKEN && String(env.ADMIN_TOKEN).length >= 16 && sameToken(bearer, String(env.ADMIN_TOKEN));
+    // 남의 신고·진단 기록을 읽거나 진단 기록을 올리는 것은 운영자만 (Origin 은 위조할 수 있다)
+    if ((url.pathname === '/events' || url.pathname === '/log') && !isAdmin) {
+      return json({ error: 'unauthorized' }, 401, cors);
+    }
+    if (!isAdmin && overDay(url.pathname)) return json({ error: 'daily limit', retryAfter: 3600 }, 429, cors);
 
     if (url.pathname === '/health') {
       return json({
@@ -110,7 +164,7 @@ export default {
           const r = await upstream(HIPASS_API + '?key=' + encodeURIComponent(env.EX_KEY) + '&type=json', HIPASS_HEADERS);
           const rows = r.data && (r.data.lcsTrafficLists || r.data.list);
           if (!r.ok || !Array.isArray(rows)) {
-            if (!hipassCache.list) return json({ error: 'upstream', status: r.status, code: r.data && r.data.code, message: r.data && r.data.message }, 502, cors);
+            if (!hipassCache.list) return json({ error: 'upstream', status: r.status, code: r.data && r.data.code, message: brief(r.data) }, 502, cors);
           } else {
             hipassCache.list = rows; hipassCache.at = now;
           }
@@ -126,7 +180,8 @@ export default {
       // v171 단속 카메라 고침 목록 (2026-11-20 운전자 '놓침을 누르면 … 바로 반영될 수 있었으면'):
       // 앱이 '놓침' 진단으로 찾은 고침(방향·경로 위로 보기·신호 전용 알림·틀림 풀기·새 신고 지점)을 기기 번호와 함께 보낸다.
       // 저장은 KV 한 값 'fixes:v1' = [{ kind, k, lat, lng, h, devs: [기기 번호…] }] (카메라 점·방향·종류만, 신고 시각·궤적 없음, 90일).
-      // GET /fixes 는 서로 다른 기기 2대 넘게 보냈거나 운영자 기기(환경 변수 OPERATOR_DEVS, 쉼표로)가 보낸 것만 준다 — 장난·실수로 엉뚱한 카메라가 생기지 않게
+      // v172 (공개 전 보안 점검): GET /fixes 는 운영자 토큰(ADMIN_TOKEN)으로 보낸 고침만 준다. 다른 사람이 보낸 것은 후보로만 쌓고
+      // (기기 번호는 앱이 만드는 값이라 기기 2대도 한 사람이 꾸밀 수 있다), 운영자가 GET /fixes?all=1 (토큰)로 보고 같은 고침을 토큰으로 보내면 반영된다
       if (url.pathname === '/fix' && isFixPost) {
         if (!env.LOGS) return json({ ok: false }, 200, cors);
         const text = await req.text();
@@ -136,6 +191,7 @@ export default {
         const dev = String((b && b.dev) || '');
         if (!/^[a-z0-9]{8,24}$/.test(dev) || !Array.isArray(b.items)) return json({ error: 'bad fix' }, 400, cors);
         const KINDS = new Set(['dir', 'route', 'signal', 'flag', 'spot']);
+        const KEY = /^-?\d{1,3}(\.\d{1,8})?,-?\d{1,3}(\.\d{1,8})?$/;
         let list = [];
         try { list = JSON.parse((await env.LOGS.get('fixes:v1')) || '[]'); } catch (e) { list = []; }
         let added = 0;
@@ -143,9 +199,18 @@ export default {
           const lat = +it.lat, lng = +it.lng, h = it.h == null ? null : Math.round(+it.h) % 360;
           if (!KINDS.has(it.kind) || !(lat > 33 && lat < 39 && lng > 124 && lng < 132)) continue;
           const k = it.kind === 'spot' ? lat.toFixed(4) + ',' + lng.toFixed(4) + ',' + (h == null ? 'x' : Math.round(h / 45) % 8) : String(it.k || '').slice(0, 40);
-          if (!k) continue;
+          if (!k || (it.kind !== 'spot' && !KEY.test(k))) continue;
           let e = list.find((x) => x.kind === it.kind && x.k === k);
-          if (!e) { if (list.length >= 2000) continue; e = { kind: it.kind, k, lat: +lat.toFixed(6), lng: +lng.toFixed(6), h, devs: [] }; list.push(e); }
+          if (!e) {
+            if (list.length >= 2000) {
+              // 가득 차면 운영자 고침은 가장 오래된 후보를 밀어내고 넣는다. 후보는 더 받지 않는다
+              const old = isAdmin ? list.findIndex((x) => !x.op) : -1;
+              if (old < 0) continue;
+              list.splice(old, 1);
+            }
+            e = { kind: it.kind, k, lat: +lat.toFixed(6), lng: +lng.toFixed(6), h, devs: [] }; list.push(e);
+          }
+          if (isAdmin && !e.op) { e.op = true; added++; }   // v172: 운영자 토큰이 있을 때만 바로 모든 사용자에게
           if (!e.devs.includes(dev) && e.devs.length < 10) { e.devs.push(dev); added++; }
         }
         if (added) await env.LOGS.put('fixes:v1', JSON.stringify(list), { expirationTtl: 60 * 60 * 24 * 90 });
@@ -155,8 +220,11 @@ export default {
         if (!env.LOGS) return json({ v: 1, items: [] }, 200, cors);
         let list = [];
         try { list = JSON.parse((await env.LOGS.get('fixes:v1')) || '[]'); } catch (e) { list = []; }
-        const ops = String(env.OPERATOR_DEVS || '').split(',').map((x) => x.trim()).filter(Boolean);
-        const items = list.filter((e) => e.devs.length >= 2 || e.devs.some((d) => ops.includes(d)))
+        // v172: 운영자 토큰으로 보낸 것(op)만 모든 사용자에게. 운영자는 ?all=1 로 후보(보낸 기기 수 n)까지 본다
+        if (isAdmin && p.get('all') === '1') {
+          return json({ v: 1, items: list.map((e) => ({ kind: e.kind, k: e.k, lat: e.lat, lng: e.lng, h: e.h, op: !!e.op, n: e.devs.length })) }, 200, cors);
+        }
+        const items = list.filter((e) => e.op)
           .map((e) => ({ kind: e.kind, k: e.k, lat: e.lat, lng: e.lng, h: e.h }));
         return json({ v: 1, items }, 200, cors, 300);
       }
@@ -170,6 +238,8 @@ export default {
         try { ev = JSON.parse(text); } catch (e) { return json({ error: 'bad json' }, 400, cors); }
         if (!ev || typeof ev !== 'object') return json({ error: 'bad event' }, 400, cors);
         Object.keys(ev).forEach((k) => { if (typeof ev[k] === 'string') ev[k] = ev[k].slice(0, 1000); });
+        // v172: 운영자 차가 아니면 위치 궤적은 저장하지 않는다 (위치정보 최소 수집. 앱도 공개 사용자는 궤적을 보내지 않는다)
+        if (!isAdmin) { delete ev.trace; delete ev.track; }
         const ts = Date.now();
         ev.serverAt = ts;
         ev.country = (req.cf && req.cf.country) || '';
@@ -230,7 +300,7 @@ export default {
         if (!env.LOGS) return json({ error: 'log storage not configured' }, 501, cors);
         if (isLogPost) {
           const text = await req.text();
-          if (text.length > 5000000) return json({ error: 'too large' }, 413, cors);
+          if (text.length > 500000) return json({ error: 'too large' }, 413, cors);   // v172: 5MB → 500KB
           let body;
           try { body = JSON.parse(text); } catch (e) { return json({ error: 'bad json' }, 400, cors); }
           const id = crypto.randomUUID().replace(/-/g, '').slice(0, 10);
@@ -278,7 +348,7 @@ export default {
             more.forEach((m, k) => { if (m.ok && m.data.code === 0 && m.data.route && m.data.route[missing[k]]) got[missing[k]] = m.data.route[missing[k]][0]; });
           }
           const alternatives = multi.filter((o) => got[o]).map((o) => slim(got[o], o));
-          if (!alternatives.length) return json({ error: 'no route', code: r.data && r.data.code, message: r.data && r.data.message }, 404, cors);
+          if (!alternatives.length) return json({ error: 'no route', code: r.data && r.data.code, message: brief(r.data) }, 404, cors);
           return json({ alternatives }, 200, cors);
         }
 
@@ -296,7 +366,7 @@ export default {
           if (routeHits.size > 5000) routeHits.clear();
         }
         const r = await call(single);
-        if (!r.ok) return json({ error: 'upstream', status: r.status, detail: r.data }, 502, cors);
+        if (!r.ok) return json({ error: 'upstream', status: r.status, message: brief(r.data) }, 502, cors);
         if (r.data.code !== 0 || !r.data.route) return json({ error: 'no route', code: r.data.code, message: r.data.message }, 404, cors);
         return json(slim(r.data.route[single][0], single), 200, cors);
       }
@@ -307,7 +377,7 @@ export default {
         const qs = new URLSearchParams({ query });
         if (COORD.test(p.get('near') || '')) qs.set('coordinate', p.get('near'));
         const r = await upstream(NCP + '/map-geocode/v2/geocode?' + qs, ncpHeaders);
-        if (!r.ok) return json({ error: 'upstream', status: r.status, detail: r.data }, 502, cors);
+        if (!r.ok) return json({ error: 'upstream', status: r.status, message: brief(r.data) }, 502, cors);
         return json({
           items: (r.data.addresses || []).slice(0, 5).map((a) => ({
             name: a.roadAddress || a.jibunAddress, addr: a.jibunAddress, lng: +a.x, lat: +a.y, dist: a.distance,
@@ -320,7 +390,7 @@ export default {
         if (!COORD.test(coords)) return json({ error: 'bad coords' }, 400, cors);
         const qs = new URLSearchParams({ coords, output: 'json', orders: 'roadaddr,addr' });
         const r = await upstream(NCP + '/map-reversegeocode/v2/gc?' + qs, ncpHeaders);
-        if (!r.ok) return json({ error: 'upstream', status: r.status, detail: r.data }, 502, cors);
+        if (!r.ok) return json({ error: 'upstream', status: r.status, message: brief(r.data) }, 502, cors);
         const res = r.data.results || [];
         const road = res.find((x) => x.name === 'roadaddr');
         const addr = res.find((x) => x.name === 'addr');
@@ -339,7 +409,7 @@ export default {
         const r = await upstream('https://openapi.naver.com/v1/search/local.json?' + qs, {
           'X-Naver-Client-Id': env.NAVER_SEARCH_ID, 'X-Naver-Client-Secret': env.NAVER_SEARCH_SECRET,
         });
-        if (!r.ok) return json({ error: 'upstream', status: r.status, detail: r.data }, 502, cors);
+        if (!r.ok) return json({ error: 'upstream', status: r.status, message: brief(r.data) }, 502, cors);
         const ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
         const strip = (s) => (s || '').replace(/<[^>]+>/g, '')
           .replace(/&#(\d+);/g, (m, n) => String.fromCharCode(+n))
@@ -355,7 +425,7 @@ export default {
 
       return json({ error: 'not found' }, 404, cors);
     } catch (e) {
-      return json({ error: 'proxy', message: String(e && e.message || e) }, 500, cors);
+      return json({ error: 'proxy', message: String(e && e.message || e).slice(0, 120) }, 500, cors);
     }
   },
 };

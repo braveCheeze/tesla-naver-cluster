@@ -357,6 +357,8 @@
     t.state.fix = null;
     t.state.heading = null;
     t.state.speedKmh = 0;
+    // v172: 앞 시험이 터널 근처에서 끝나 '터널 안 어두운 지도'가 켜진 채면 다음 시험의 낮·밤 판정이 흔들린다
+    if (t.tnDark && t.tnDark.on) { t.tnDark.on = false; t.tnDark.outAt = 0; t.applyNight(); }
     stub.reset();
     clock += 10 * 60000;   // big gap: reroute throttle / camera 'passed' expiry from earlier scenarios never carries over
   }
@@ -2833,6 +2835,8 @@
     { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored; 7-10 lanes fit the drawer as square tiles", fn: s77 },
     { id: 'S78', name: "S78 mainline junction (v133): keep-left/right where the route stays on the same expressway section and goes straight is shown as straight ('신갈분기점에서 직진 · 서울 방면', main-straight junction scene, straight sign); a fork onto another expressway stays a fork", fn: s78 },
     { id: 'S79', name: 'S79 rest areas (v133): distance to where the entry ramp leaves the mainline (OSM), not the rest-area centre; within 3 km and no turn within 1 km the top row becomes the rest area (blue), next row = the guidance after it', fn: s79 },
+    { id: 'S109', name: "S109 tunnel dark map (v172, driver: 'dark mode in a tunnel, back on exit, stays dark at night'): with night map 'auto', driving into a named tunnel turns the map dark at once, leaving it keeps it dark until 4 s outside and 8 s in total, then light again; GPS lost 100 m before the entrance at speed counts as inside, standing there does not; a parallel road 30 m beside the tunnel, an unnamed tunnel way and 'always light' never darken; on a guided route the route's tunnel stretch darkens", fn: s109 },
+    { id: 'S110', name: "S110 public-release privacy (v172 security review): without the operator token a '놓침' report carries nearby camera points and heading but no trace or speed, the token adds the trace and the Authorization header; with '놓침·틀림 위치 보내기' off nothing is sent and the button reads '✓ 저장'; diagnostic upload needs the token; settings have no Naver Client ID or tunnel switch, the server address, diagnostics, demo, sound test and icon admin sit in the developer menu, and every switch is a big toggle", fn: s110 },
     { id: 'S108', name: "S108 '놓침' diagnosis (v171, driver: 'fix it right away when I press 놓침'): pressing after passing a camera hidden by '틀림' unhides it, a camera written for the other direction becomes two-way on this car, a camera 30 m beside the route is taken onto the route — each alerts on the next pass; with no camera nearby a reported spot is saved; settings list undoes a fix; shared fixes (/fixes) apply a direction fix and add a reported spot", fn: s108 },
     { id: 'S107', name: "S107 off-route near turns (v170, driver: rerouted to straight before turning at roundabouts and right exits): a right exit whose route line cuts the corner 100 m early, driven on the outer lane, causes no reroute; missing that exit reroutes within 200 m past it; one extra lap of a 25 m roundabout before the 3 o'clock exit causes no reroute", fn: s107 },
     { id: 'S106', name: "S106 reported spots (v169, driver: '놓침 spots never get updated'): '놓침' saves the spot on this car ~2.5 s back along the trace, the next pass in the same direction shows '내가 신고한 단속 지점' (limit ?) from 500 m, not the other way; settings list shows '이 차에서만 알림' and deleting stops it; spots the driver reported on two days (data/driver_spots.json) alert every user", fn: s106 },
@@ -5459,6 +5463,155 @@
       r.d.before === false && /경로 밖으로/.test(r.d.msg) && r.d.after === true &&
       r.e.fixes >= 2 && r.e.e2After === 0 &&
       r.f.ok && r.f.e2 === 1 && r.f.shared === 1 && r.f.userRow;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S109: 터널 다크 (v172, 2026-11-20 운전자: '터널 들어가면 다크모드로 되게끔 해 줘 나가면 풀리던가 (밤이면 그대로)')
+  async function s109() {
+    const t = T(), r = {};
+    const O = dest(NAV_ORIGIN, 90, 60000), north = (m) => dest(O, 0, m);
+    const enc = (pts, nameIdx, oneway) => { const q = pts.map((x) => [Math.round(x.lat * 1e5), Math.round(x.lng * 1e5)]); const row = [nameIdx, oneway ? 1 : 0, q[0][0], q[0][1]];
+      for (let k = 1; k < q.length; k++) row.push(q[k][0] - q[k - 1][0], q[k][1] - q[k - 1][1]); return row; };
+    const keepMode = t.store.get('nightMode');
+    const darkNow = () => ({ on: t.tnDark.on, map: document.getElementById('map').classList.contains('night') });
+    const drive = (y0, y1, x) => { for (let y = y0; y <= y1; y += 20) feed(dest(north(y), 90, x || 0), 16.7, 0); };
+    try {
+      t.store.set('nightMode', null); t.applyNight();
+      const sunNight = t.isNightAt(new Date());   // 지금 실제로 밤이면 지도는 원래 어둡다 (터널 표시 tnDark 로 본다)
+      r.sunNight = sunNight;
+      t.setTunnelData({ v: 1, scale: 1e5, names: ['테스트터널', ''], w: [
+        enc([north(1000), north(1300), north(1600)], 0, true),
+        enc([dest(north(3000), 90, 0), dest(north(3600), 90, 0)], 1, true),   // 이름 없는 터널 길 (지하차도일 수 있음)
+      ] });
+      // (a) 자유 주행: 터널 앞 → 안 → 밖
+      await resetApp(); t.tnDark.on = false; t.tnDark.outAt = 0; t.applyNight();
+      drive(600, 940);
+      r.before = darkNow();
+      drive(960, 1200);
+      r.inside = darkNow();
+      r.insideMap = sunNight ? true : r.inside.map;
+      drive(1220, 1640);
+      drive(1660, 1760);
+      const now = Date.now();
+      t.tunnelDarkTick(now);
+      r.justOut = t.tnDark.on;
+      t.tunnelDarkTick(now + 3000);
+      r.out3s = t.tnDark.on;
+      t.tunnelDarkTick(now + 9000);
+      r.out9s = darkNow();
+      // (b) GPS 끊김: 입구 100m 앞에서 위치가 안 온다
+      await resetApp(); t.tnDark.on = false; t.tnDark.outAt = 0; t.applyNight();
+      drive(700, 900);
+      t.tunnelDarkTick(Date.now() + 1500);
+      r.lost1s = t.tnDark.on;
+      t.tunnelDarkTick(Date.now() + 4500);
+      r.lost4s = t.tnDark.on;
+      // 입구 100m 앞에 서 있다(신호 대기) — 위치가 드문드문 와도 어두워지지 않는다
+      await resetApp(); t.tnDark.on = false; t.tnDark.outAt = 0;
+      drive(700, 880);
+      for (let k = 0; k < 4; k++) feed(north(900), 0, 0);
+      t.tunnelDarkTick(Date.now() + 6000);
+      r.parked = t.tnDark.on;
+      // (c) 터널 옆 30m 나란한 길 · 이름 없는 터널 길 · '항상 밝게'
+      await resetApp(); t.tnDark.on = false; t.tnDark.outAt = 0; t.applyNight();
+      drive(900, 1500, 30);
+      r.beside = t.tnDark.on;
+      await resetApp(); t.tnDark.on = false; t.tnDark.outAt = 0;
+      drive(2900, 3400);
+      r.unnamed = t.tnDark.on;
+      await resetApp(); t.tnDark.on = false; t.tnDark.outAt = 0;
+      t.store.set('nightMode', 'off'); t.applyNight();
+      drive(900, 1300);
+      r.alwaysLight = darkNow();
+      t.store.set('nightMode', null); t.applyNight();
+      // (d) 길안내: 경로가 지나는 터널 구간
+      const P = [];
+      for (let k = 0; k <= 300; k++) { const q = north(10 * k); P.push({ lat: round6(q.lat), lng: round6(q.lng) }); }
+      const cum = [0];
+      for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+      const total = cum[cum.length - 1];
+      const R = { route: { distance: r0(total), duration: r0(total / 17 * 1000), tollFare: 0, fuelPrice: 0, path: P.map((q) => [q.lng, q.lat]),
+        guide: [{ i: 300, t: 88, s: '목적지', d: r0(total), ms: r0(total / 17 * 1000) }], sections: [{ i: 0, n: 301, name: '테스트터널로', speed: 60, cong: 1 }] },
+        P, cum, total, dest: { name: '테스트', addr: '', lat: P[300].lat, lng: P[300].lng } };
+      await resetApp(); softReset(); t.tnDark.on = false; t.tnDark.outAt = 0;
+      await planAndStart(R);
+      for (let m = 600; m <= 940; m += 20) { const a = pointAt(R, m); feed(a.p, 16.7, a.h); }
+      r.navBefore = t.tnDark.on;
+      for (let m = 960; m <= 1200; m += 20) { const a = pointAt(R, m); feed(a.p, 16.7, a.h); }
+      r.navInside = t.tnDark.on;
+      t.endNav();
+    } finally {
+      t.store.set('nightMode', keepMode);
+      t.setTunnelData(null);
+      await t.loadTunnels();
+      await resetApp();
+      t.tnDark.on = false; t.tnDark.outAt = 0; t.applyNight();
+    }
+    const ok = !r.before.on && r.inside.on && r.insideMap && r.justOut && r.out3s && !r.out9s.on && (r.sunNight || !r.out9s.map) &&
+      !r.lost1s && r.lost4s && !r.parked && !r.beside && !r.unnamed && !r.alwaysLight.on && (r.sunNight || !r.alwaysLight.map) &&
+      !r.navBefore && r.navInside;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S110: 공개 전 보안 점검 (v172): 공개 사용자 신고에는 궤적이 없다 · 토큰이 있으면 궤적과 Authorization · 보내기를 끄면 안 보냄 ·
+  //       진단 올리기는 토큰이 있어야 · 설정에서 Client ID 칸과 터널 스위치가 없고 서버·진단·데모·소리 테스트·아이콘 관리는 개발자 메뉴 안
+  async function s110() {
+    const t = T(), r = {}, ob = t.outbox, keepPost = ob.post, keepBox = t.store.get('outbox');
+    const keepTok = t.store.get('adminToken'), keepShare = t.prefs.share;
+    const keepSpots = t.mySpots.slice(), keepSpotRaw = t.store.get('mySpots'), keepFix = t.store.get('camFix');
+    const btn = document.getElementById('camMissBtn');
+    const bodies = [];
+    try {
+      ob.inTest = true; t.store.set('outbox', null);
+      ob.post = async (b) => { bodies.push(b); return { ok: true }; };
+      await resetApp();
+      for (let y = 0; y <= 200; y += 20) feed(dest(NAV_ORIGIN, 0, y), 16.7, 0);
+      // (a) 토큰 없음
+      t.store.set('adminToken', null); t.prefs.share = true;
+      await t.userReport('wrong');
+      const b0 = bodies[bodies.length - 1] || {};
+      r.pub = { sent: bodies.length, trace: 'trace' in b0 && b0.trace !== undefined, kmh: b0.kmhNow !== undefined, heading: b0.heading, near: Array.isArray(b0.near),
+        auth: !!t.authHeaders({}).Authorization };
+      // (b) 운영자 토큰
+      t.store.set('adminToken', 'x'.repeat(24));
+      await t.userReport('wrong');
+      const b1 = bodies[bodies.length - 1] || {};
+      r.op = { trace: Array.isArray(b1.trace) && b1.trace.length > 0, auth: t.authHeaders({ a: 1 }).Authorization === 'Bearer ' + 'x'.repeat(24) };
+      t.store.set('adminToken', null);
+      // (c) 보내기 끔
+      t.prefs.share = false;
+      const n0 = bodies.length;
+      r.offRet = await t.userReport('wrong');
+      btn.click();
+      await waitFor(() => !btn.classList.contains('sending'), 2000, 20);
+      r.off = { ret: r.offRet, sent: bodies.length - n0, label: btn.textContent };
+      clearTimeout(btn._sentT); btn.classList.remove('sent', 'saved', 'sending'); btn.textContent = '놓침';
+      t.prefs.share = true;
+      // (d) 진단 올리기
+      const keepLog = t.diag.log.slice();
+      t.diag.log.push([1, 2, 37, 127, 5, 10, 0, 0, 1, 0]);
+      await t.uploadDiag();
+      r.diagMsg = document.getElementById('toast').textContent;
+      t.diag.log.length = 0; keepLog.forEach((x) => t.diag.log.push(x));
+      // (e) 설정 화면
+      const $ = (q) => document.querySelector(q), inDev = (id) => !!document.getElementById(id) && !!document.getElementById(id).closest('#devMenu');
+      const labels = [...document.querySelectorAll('#sheet .tgl > span')].map((x) => x.textContent);
+      r.ui = { key: !!$('#keyInput') || !!$('#saveKey') || !!$('#clearKey'), tunnelSw: !!$('#optTunnels'),
+        dev: ['proxyInput', 'proxyTest', 'diagToggle', 'diagUpload', 'demoBtn', 'resetTrip', 'soundTest', 'iconAdmin', 'adminInput'].every(inDev),
+        plainChecks: document.querySelectorAll('#sheet input[type=checkbox]:not(.tgl input)').length,
+        toggles: labels.length, paren: labels.filter((x) => /\(/.test(x) && x !== '차로 안내(회전·직진)'),
+        share: !!$('#optShare'), ver: !!$('#verText'), groups: [...document.querySelectorAll('#sheet .set-group h3')].map((x) => x.textContent).join('/') };
+    } finally {
+      ob.post = keepPost; ob.inTest = false; t.store.set('outbox', keepBox);
+      t.store.set('adminToken', keepTok); t.prefs.share = keepShare;
+      t.mySpots.length = 0; keepSpots.forEach((x) => t.mySpots.push(x)); t.store.set('mySpots', keepSpotRaw); t.applyUserSpots();
+      t.store.set('camFix', keepFix); t.camFixes.clear(); t.applyCamFixes();
+      await resetApp();
+    }
+    const ok = r.pub.sent >= 1 && !r.pub.trace && !r.pub.kmh && r.pub.heading === 0 && r.pub.near && !r.pub.auth &&
+      r.op.trace && r.op.auth && r.off.ret === null && r.off.sent === 0 && r.off.label === '✓ 저장' && /운영자 토큰/.test(r.diagMsg) &&
+      !r.ui.key && !r.ui.tunnelSw && r.ui.dev && r.ui.plainChecks === 0 && r.ui.toggles >= 16 && !r.ui.paren.length && r.ui.share && r.ui.ver &&
+      r.ui.groups === '소리/단속·경고/길안내 화면/지도/경로/내 신고/정보·출처/개발자 메뉴';
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

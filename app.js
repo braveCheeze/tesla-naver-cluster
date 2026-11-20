@@ -32,11 +32,13 @@
     parking: store.get('parking') !== '0',   // 주정차 단속 카메라: 천천히 갈 때만 표시, 소리 없음 (기본 켬)
     rest: store.get('rest') !== '0',         // 길안내 중 고속도로 휴게소 (기본 켬)
     signs: store.get('signs') !== '0',       // 주의 표지 알림: 미끄러운 도로·낙석·급경사 등 (기본 켬)
-    tunnels: store.get('tunnels') !== '0',   // 길안내 중 터널 진입·출구 거리 (기본 켬)
+    tunnels: true,   // 길안내 중 터널 진입·출구 거리 (v172: 늘 켬, 설정에서 뺐다)
     junction: store.get('junction') !== '0', // 고속도로 진출입·갈림길 그림 (기본 켬)
     lanes: store.get('lanes') !== '0',       // 회전 차로 안내 (시험판: 정밀도로지도를 받은 곳만, 기본 켬)
     traffic: store.get('traffic') !== '0',
     weather: store.get('weather') !== '0',
+    // v172 (2026-11-20 공개 전 보안 점검): '놓침'·'틀림'을 누르면 그 자리 근처 카메라 후보와 진행 방향을 서버로 보낸다 (설정에서 끌 수 있음, 기본 켬)
+    share: store.get('share') !== '0',
     car: ({ my: 'tesla_grey', red: 'tesla_red', white: 'tesla_white' })[store.get('car')] || store.get('car') || 'cute',             // 내 차 아이콘 (설정에서 고름)
     headingUp: store.get('hup') !== '0',
     // 멈추면 북쪽 위로: 진행 방향 위 화면은 지도 그림째 돌려서 가게 글자도 눕는다. 3초 넘게 서 있으면 북쪽 위로 돌려 글자를 바로 세운다
@@ -50,9 +52,14 @@
     tesla: true,   // 2026-11-14: 테슬라 모드가 유일한 화면 (예전 계기판 화면과 설정의 전환 스위치는 없앴다)
   };
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
+  // v172: 운영자 토큰 — 운전자 차에만 개발자 메뉴에서 한 번 넣는다(이 기기 localStorage). 있으면 진단 기록 올리기, 놓침 궤적,
+  // 자동 카메라 점검 기록, 모든 사용자에게 바로 가는 고침을 보낸다. 없으면(공개 사용자) 궤적·자동 기록 없이 누른 신고만 보낸다
+  const adminToken = () => store.get('adminToken') || '';
+  const isOp = () => adminToken().length >= 16;
+  const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-171'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-172'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -96,7 +103,7 @@
     busy: false,
     load() { try { return JSON.parse(store.get('outbox') || '[]'); } catch (e) { return []; } },
     save(a) { store.set('outbox', a.length ? JSON.stringify(a.slice(-OUTBOX_MAX)) : null); },
-    post: (body) => fetch(proxyUrl() + '/event', { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }),
+    post: (body) => fetch(proxyUrl() + '/event', { method: 'POST', body: JSON.stringify(body), headers: authHeaders({ 'Content-Type': 'application/json' }) }),
   };
   async function outboxFlush() {
     if (outbox.busy || botLike) return null;
@@ -133,7 +140,7 @@
     const body = eventBody(type, data);
     try {
       fetch(proxyUrl() + '/event', {
-        method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' }, keepalive: true,
+        method: 'POST', body: JSON.stringify(body), headers: authHeaders({ 'Content-Type': 'application/json' }), keepalive: true,
       }).catch(() => {});
     } catch (e) { /* 보고 실패는 무시 */ }
   }
@@ -165,10 +172,11 @@
     night: store.get('night') === '1',
   };
 
-  // URL에 ?key=... 로 넘기면 저장하고 주소에서는 지운다
+  // v172: 네이버 지도 Client ID 칸을 설정에서 없앴다 — 예전에 넣어 둔 키는 지우고 길안내 서버 키(/config)만 쓴다.
+  // 주소의 ?key=... 는 저장하지 않고 지우기만 한다
   const params = new URLSearchParams(location.search);
+  if (store.get('key')) store.set('key', null);
   if (params.get('key')) {
-    store.set('key', params.get('key').trim());
     params.delete('key');
     const qs = params.toString();
     history.replaceState(null, '', location.pathname + (qs ? '?' + qs : '') + location.hash);
@@ -1476,9 +1484,8 @@
   try { performance.setResourceTimingBufferSize(2000); } catch (e) { /* 지원 안 함 */ } // GL 스타일 주소를 찾을 때 쓴다
 
   async function bootMap() {
-    // 설정에 직접 넣은 키가 우선. 없으면 길안내 서버에서 받는다 (저장 안 함: 서버에서 바꾸면 바로 반영)
-    let key = store.get('key');
-    if (!key) key = await fetchMapKey();
+    // 길안내 서버에서 받는다 (v172: 설정의 키 칸은 없앴다)
+    const key = await fetchMapKey();
     if (!key) { await fallbackMap(null); return; }
     try {
       // GL(벡터) 서브모듈도 같이 받는다. 실제로 GL 로 그릴지는 지도를 만들 때 정한다 (설정·WebGL 지원)
@@ -2199,6 +2206,50 @@
     }
     return null;
   }
+  // v172 (2026-11-20 운전자: '터널 들어가면 다크모드로 되게끔 해 줘 나가면 풀리던가 (밤이면 그대로)'):
+  // 터널 안이면 지도를 밤 지도로, 나오면 되돌린다. 야간 지도가 '자동'일 때만 ('항상 밝게'를 고른 사람은 그 뜻대로, '항상 어둡게'는 이미 어둡다).
+  // 터널 안인지: 길안내 중이면 경로 위 터널 구간(v163 tunnels.json) 안, 아니면 진행 방향이 맞는 이름에 '터널'이 든 터널 도로 9m 안.
+  // 시속 10km 넘게 달리다 위치가 3초 넘게 안 오면(터널에서 GPS 끊김) 마지막 위치가 터널 안이거나 입구 150m 앞이었을 때 터널 안으로 본다 (15분까지).
+  // 깜빡이지 않게: 들어갈 때는 바로, 나올 때는 터널 밖이 4초 이어지고 어두워진 지 8초가 지나야 푼다
+  const TN_DARK_OUT_MS = 4000, TN_DARK_MIN_MS = 8000, TN_DARK_SOON = 150;
+  const tnDark = { on: false, at: 0, outAt: 0 };
+  function namedTunnelAt(p, hb) {
+    const wi = tunnelWayAt(p, hb);
+    return wi >= 0 && /터널/.test(tunnels.ways[wi].name || '');
+  }
+  function inTunnelNow(nowWall) {
+    if (!tunnels.loaded || !state.fix) return false;
+    const lag = ((nowWall || Date.now()) - lastFixWall) / 1000;
+    // 멈춰 있으면 브라우저가 위치를 드문드문 준다 — 마지막 속도가 시속 10km 넘을 때만 끊김으로 본다 (터널 입구 앞 신호 대기에서 어두워지지 않게)
+    const lost = !state.demoTimer && lastFixWall > 0 && lag > 3 && lag < 900 && state.speedKmh >= 10;
+    let here = false, soon = false;
+    if (nav.active && nav.pts && nav.onRoute && ensureRouteTunnels()) {
+      const t = nav.routeTunnels.find((x) => x.s1 > nav.along && x.s0 - nav.along < TUNNEL_SHOW);
+      here = !!t && t.s0 <= nav.along;
+      soon = !!t && t.s0 - nav.along <= TN_DARK_SOON;
+    } else if (state.heading !== null && (state.speedKmh >= 5 || lost)) {
+      here = namedTunnelAt(state.fix, state.heading);
+      soon = here;
+      for (let d = 25; !soon && d <= TN_DARK_SOON; d += 25) soon = namedTunnelAt(aheadPt(state.fix, state.heading, d), state.heading);
+    }
+    return here || (lost && soon);
+  }
+  // 1초마다(시계)와 위치가 올 때. 바뀌면 지도를 다시 칠한다
+  function tunnelDarkTick(nowWall) {
+    const now = nowWall || Date.now();
+    const inside = nightMode() === 'auto' && inTunnelNow(now);
+    if (inside) {
+      tnDark.outAt = 0;
+      if (!tnDark.on) { tnDark.on = true; tnDark.at = now; applyNight(); }
+      return tnDark.on;
+    }
+    if (!tnDark.on) return false;
+    if (!tnDark.outAt) tnDark.outAt = now;
+    if (nightMode() !== 'auto' || (now - tnDark.outAt >= TN_DARK_OUT_MS && now - tnDark.at >= TN_DARK_MIN_MS)) {
+      tnDark.on = false; tnDark.outAt = 0; applyNight();
+    }
+    return tnDark.on;
+  }
   function renderTunnel() {
     const el = $('#tunnelRow'), a = tunnelAhead();
     el.hidden = !a;
@@ -2482,11 +2533,12 @@
     return out;
   }
   // 고침을 기기 번호와 함께 보낸다 (예전 길안내 서버는 405: 그냥 넘어간다)
+  // v172: 운영자 토큰이 있으면 모든 사용자에게 바로, 없으면 서버에 후보로만 쌓인다. '신고 위치 보내기'를 끄면 보내지 않는다
   function sendFixes(items) {
-    if (!items.length || botLike || testPage) return;
-    try { fetch(proxyUrl() + '/fix', { method: 'POST', body: JSON.stringify({ dev: devId, items }), headers: { 'Content-Type': 'application/json' } }).catch(() => {}); } catch (e) { /* 없이 */ }
+    if (!items.length || botLike || testPage || !prefs.share) return;
+    try { fetch(proxyUrl() + '/fix', { method: 'POST', body: JSON.stringify({ dev: devId, items }), headers: authHeaders({ 'Content-Type': 'application/json' }) }).catch(() => {}); } catch (e) { /* 없이 */ }
   }
-  // 모든 사용자 고침: 서로 다른 기기 2대 넘게, 또는 운영자 기기가 보낸 것 (길안내 서버 /fixes). 앱을 열 때와 30분마다
+  // 모든 사용자 고침: 운영자 토큰으로 보낸 것만 (길안내 서버 /fixes, v172). 앱을 열 때와 30분마다
   async function loadSharedFixes() {
     if (botLike) return false;
     try {
@@ -3129,14 +3181,17 @@
     return n;
   }
   function userReport(kind, extra) {
+    if (!prefs.share) return null;   // v172: 설정에서 '신고 위치 보내기'를 껐다 (이 차 안의 고침·표시는 그대로)
     const f = state.fix, t0 = f ? f.t : Date.now(), tg = camState.target;
     const near = f ? camsNear(f.lat, f.lng, 400).sort((x, y) => x.d - y.d).slice(0, 12)
       .map((it) => ({ i: it.i, lat: it.c[0], lng: it.c[1], lim: it.c[2], kind: it.c[3], eb: it.c.eb, d: Math.round(it.d) })) : [];
     return reportSure('warn', Object.assign({
       msg: 'user ' + kind + (tg ? ' camera ' + tg.i : '') + ' @' + Math.round(t0 / 1000), user: kind,
       cam: tg ? tg.i : null, camEb: tg ? tg.c.eb : null, camLabel: tg ? camLabel(tg.c) : null, near, navOn: !!nav.active,
-      heading: state.heading === null ? null : Math.round(state.heading), kmhNow: Math.round(state.speedKmh || 0),
-      trace: trace1.map((e) => [Math.round((e[0] - t0) / 1000)].concat(e.slice(1))),
+      heading: state.heading === null ? null : Math.round(state.heading),
+      // v172: 궤적·속도는 운영자 차만 (공개 사용자는 카메라 후보 점과 진행 방향만 — 위치정보 최소 수집. 서버도 운영자 토큰 없는 궤적은 버린다)
+      kmhNow: isOp() ? Math.round(state.speedKmh || 0) : undefined,
+      trace: isOp() ? trace1.map((e) => [Math.round((e[0] - t0) / 1000)].concat(e.slice(1))) : undefined,
     }, extra || {}));
   }
   function passedChime() { chime(); logAlert('beep', '단속 통과 띠링'); }
@@ -6403,7 +6458,7 @@
       if (fl && m.minD <= 30 && (camMiss.flagSent || 0) < 20) {
         camMiss.flagSent = (camMiss.flagSent || 0) + 1;
         const t2 = f.t;
-        report('warn', {
+        if (isOp()) report('warn', {
           msg: 'passed flagged camera ' + i, flag: fl, cam: i, lim: c[2], kind: c[3], dir: c[9], flags: c[10] || 0, camRoad: camRoad(c), myRoad: road.name,
           minD: Math.round(m.minD), side: Math.round(m.side), kmhAt: m.kmh, navOn: !!nav.active,
           trace: fixLog.slice(-40).map((e) => [Math.round((e[0] - t2) / 100) / 10].concat(e.slice(1))),
@@ -6414,7 +6469,7 @@
       if (m.alerted && camHasDir(c) && m.hdg != null && angleDiff(c.eb, m.hdg) > 120 && (camMiss.leftSent || 0) < 5) {
         camMiss.leftSent = (camMiss.leftSent || 0) + 1;
         const t1 = f.t;
-        report('warn', {
+        if (isOp()) report('warn', {
           msg: 'opposite camera alerted ' + i, cam: i, eb: c.eb, hdg: Math.round(m.hdg), lim: c[2], kind: c[3], dir: c[9], flags: c[10] || 0, camRoad: camRoad(c), myRoad: road.name,
           minD: Math.round(m.minD), side: Math.round(m.side), kmhAt: m.kmh, navOn: !!nav.active,
           trace: fixLog.slice(-40).map((e) => [Math.round((e[0] - t1) / 100) / 10].concat(e.slice(1))),
@@ -6431,7 +6486,7 @@
       if (camMiss.sent >= 5) return;
       camMiss.sent++;
       const t0 = f.t;
-      report('warn', {
+      if (isOp()) report('warn', {   // v172: 자동 기록(궤적 포함)은 운영자 차만
         msg: 'missed camera ' + i, cam: i, lim: c[2], kind: c[3], dir: c[9], flags: c[10] || 0, camRoad: cr, myRoad: road.name,
         minD: Math.round(m.minD), side: Math.round(m.side), kmhAt: m.kmh, navOn: !!nav.active,
         trace: fixLog.slice(-40).map((e) => [Math.round((e[0] - t0) / 100) / 10].concat(e.slice(1))),
@@ -6494,6 +6549,7 @@
     saveTripNow();       // 화면의 주행 거리·시간·최고 속도 (새 버전으로 바뀌어도 이어서)
     evalCameras(f);
     camMissCheck(f);
+    tunnelDarkTick();   // v172
     updateSoundPill();
     if (cams.failed || cams.mobileMissing) renderCamStatus();
     refreshCamMarkers(f);
@@ -6733,6 +6789,7 @@
     upd.lastTick = now.getTime();
     // 자동 야간: 1분마다 해의 높이를 다시 본다
     if (!upd.nightAt || now - upd.nightAt > 60000) { upd.nightAt = now.getTime(); applyNight(); }
+    tunnelDarkTick(now.getTime());   // v172: 터널 안이면 어둡게
     // 서 있을 때는 GPS 가 드문드문 와도 북쪽 위 전환이 늦지 않게 시계로도 본다
     if (state.fix && !state.demoTimer) checkStopNorth(state.fix.t + (Date.now() - lastFixWall));
     if (!state.demoTimer && !testPage) idleUpdate(Date.now());
@@ -7081,14 +7138,24 @@
   }
   async function uploadDiag() {
     if (!diag.log.length) { toast('아직 기록이 없습니다. 진단 모드를 켜고 주행해 주세요.', 'bad', 5000); return; }
+    if (!isOp()) { toast('운영자 토큰이 있어야 올릴 수 있어요 (개발자 메뉴).', 'bad', 5000); return; }
     toast('기록 올리는 중…', '', 0);
     try {
-      const j = await api('/log', null, {
-        ua: navigator.userAgent, screen: [screen.width, screen.height, devicePixelRatio],
-        viewport: [innerWidth, innerHeight], map: mapA === NaverAdapter ? 'naver' : 'osm',
-        fields: ['now', 'gpsTime', 'lat', 'lng', 'acc', 'speed', 'heading', 'shownKmh', 'procMs', 'demo'],
-        rows: diag.log,
-      }, 90000); // 차량 LTE 로 1MB 넘게 올릴 수 있으니 넉넉히 기다린다
+      // v172: 서버가 500KB 까지만 받는다 → 최근 기록부터 들어가는 만큼
+      let rows = diag.log.slice(-5000);
+      while (rows.length > 100 && JSON.stringify(rows).length > 470000) rows = rows.slice(Math.floor(rows.length / 4));
+      const ctrl = new AbortController(), to = setTimeout(() => ctrl.abort(), 90000);
+      const r = await fetch(proxyUrl() + '/log', {
+        method: 'POST', signal: ctrl.signal, headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          ua: navigator.userAgent, screen: [screen.width, screen.height, devicePixelRatio],
+          viewport: [innerWidth, innerHeight], map: mapA === NaverAdapter ? 'naver' : 'osm',
+          fields: ['now', 'gpsTime', 'lat', 'lng', 'acc', 'speed', 'heading', 'shownKmh', 'procMs', 'demo'],
+          rows,
+        }),
+      }).finally(() => clearTimeout(to));
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(r.status === 401 ? '운영자 토큰이 맞지 않아요' : (j.error || 'HTTP ' + r.status));
       toast('기록을 올렸습니다. 기록 번호: ' + j.id + ' (이 번호를 알려 주세요)', '', 0);
     } catch (e) {
       toast('기록을 올리지 못했습니다: ' + e.message, 'bad', 8000);
@@ -7506,7 +7573,7 @@
       renderCam();
       renderCamFlags();
       toast(st === 'hide' ? '다른 날에도 틀렸다고 해서 이 방향에서는 숨길게요. 설정에서 되돌릴 수 있어요.'
-        : '틀린 경고로 보냈어요. 14일 동안 이 카메라는 흐리게, 소리 없이 보여 줄게요(제한속도 ?).', '', 3500);
+        : (prefs.share ? '틀린 경고로 보냈어요. ' : '틀린 경고로 표시했어요. ') + '14일 동안 이 카메라는 흐리게, 소리 없이 보여 줄게요(제한속도 ?).', '', 3500);
     };
     // v147: 누른 것이 버튼에서 바로 보이게 — 2.5초 동안 파란 바탕 '✓ 보냄', 그사이 또 누르면 다시 보내지 않는다
     $('#camMissBtn').onclick = (ev) => {
@@ -7525,7 +7592,8 @@
       Promise.resolve(userReport('missed', { diag: fx.diag, fix: fx.fixed || null })).then((ok) => {
         b.classList.remove('sending');
         const tail = spot ? ' ' + fx.text : '';
-        if (ok === false) { b.classList.add('sent', 'saved'); b.textContent = '저장함'; toast('연결이 안 돼 저장해 두었어요. 연결되면 보낼게요.' + tail, '', 4000); }
+        if (!prefs.share) { b.classList.add('sent'); b.textContent = '✓ 저장'; toast((fx.text || '이 차에 표시했어요.') + ' (서버로 보내지 않음)', '', 4000); }
+        else if (ok === false) { b.classList.add('sent', 'saved'); b.textContent = '저장함'; toast('연결이 안 돼 저장해 두었어요. 연결되면 보낼게요.' + tail, '', 4000); }
         else { b.classList.add('sent'); b.textContent = '✓ 보냄'; toast('놓친 단속 위치를 보냈어요.' + tail, '', 4000); }
         b._sentT = setTimeout(() => { b.classList.remove('sent', 'saved'); b.textContent = '놓침'; }, MISS_SENT_MS);
       });
@@ -7560,7 +7628,7 @@
     return sunElevation(date || new Date(), p.lat, p.lng) < -2;
   }
   function applyNight() {
-    state.night = isNightAt(new Date());
+    state.night = isNightAt(new Date()) || (nightMode() === 'auto' && tnDark.on);   // v172: 터널 안이면 어둡게
     const m = nightMode(), b = $('#nightBtn');
     $('#map').classList.toggle('night', state.night);
     if (mapA && mapA.setDark) mapA.setDark(state.night);
@@ -7621,8 +7689,6 @@
     }
   }
   $('#setBtn').onclick = () => {
-    $('#keyInput').value = store.get('key') || '';
-    $('#origin').textContent = location.origin;
     $('#optVoice').checked = prefs.voice;
     $('#optBeep').checked = prefs.beep;
     $('#optCams').checked = prefs.cams;
@@ -7631,7 +7697,6 @@
     $('#optParking').checked = prefs.parking;
     $('#optRest').checked = prefs.rest;
     $('#optSigns').checked = prefs.signs;
-    $('#optTunnels').checked = prefs.tunnels;
     $('#optJunction').checked = prefs.junction;
     $('#optLanes').checked = prefs.lanes;
     $('#optTraffic').checked = prefs.traffic;
@@ -7640,7 +7705,6 @@
     $('#optStopNorth').checked = prefs.stopNorth;
     $('#optStopNorth').disabled = glOn();
     $('#optGl').checked = prefs.gl;
-    $('#iconAdmin').hidden = !params.has('debug');   // 아이콘 관리 페이지(내부)는 ?debug 일 때만
     renderCarIcons();
     $('#optNight').value = nightMode();
     $('#optTilt').checked = prefs.tilt;
@@ -7651,11 +7715,57 @@
     $('#camDate').textContent = cams.date || '-';
     renderCamFlags();
     renderMySpots();
-    const dv = $('#devIdText'); if (dv) dv.textContent = devId;
+    $('#optShare').checked = prefs.share;
+    $('#verText').textContent = APP_VERSION;
+    renderDevMenu();
     updateDemoBtn();
     sheet.hidden = false;
-    checkProxy();
+    $('.settings').scrollTop = 0;
+    if (devMenuOn()) checkProxy();
   };
+  // v172: 개발자 메뉴 — '정보·출처'의 버전 글자를 5번 톡 누르면 열린다(이 기기에 기억). 메뉴 맨 아래 '개발자 메뉴 숨기기'로 닫는다.
+  // 서버 주소·진단·데모·아이콘 관리·소리 테스트·운영자 토큰. 공개 사용자는 토큰이 없으니 열어도 해가 없다
+  const devTap = { n: 0, at: 0 };
+  const devMenuOn = () => store.get('dev') === '1' || params.has('debug');
+  function renderDevMenu() {
+    $('#devMenu').hidden = !devMenuOn();
+    $('#adminState').textContent = isOp() ? '들어 있음 (이 기기)' : '없음';
+    $('#devIdText').textContent = devId;
+  }
+  $('#verText').onclick = () => {
+    const now = Date.now();
+    devTap.n = now - devTap.at < 1500 ? devTap.n + 1 : 1;
+    devTap.at = now;
+    if (devTap.n < 5) return;
+    devTap.n = 0;
+    if (devMenuOn()) { $('#devMenu').scrollIntoView({ block: 'start' }); return; }
+    store.set('dev', '1'); renderDevMenu(); checkProxy();
+    toast('개발자 메뉴를 열었어요.', '', 2500);
+    $('#devMenu').scrollIntoView({ block: 'start' });
+  };
+  $('#devHide').onclick = () => { store.set('dev', null); renderDevMenu(); toast('개발자 메뉴를 숨겼어요. 버전 글자를 5번 누르면 다시 열려요.', '', 3000); };
+  $('#adminSave').onclick = () => {
+    const v = $('#adminInput').value.trim();
+    $('#adminInput').value = '';
+    if (!v) { toast('토큰을 넣어 주세요.', 'bad', 2500); return; }
+    if (v.length < 16) { toast('토큰이 너무 짧아요 (16자 넘게).', 'bad', 3000); return; }
+    store.set('adminToken', v); renderDevMenu();
+    toast('운영자 토큰을 이 기기에 넣었어요.', '', 2500);
+  };
+  $('#adminClear').onclick = () => { store.set('adminToken', null); renderDevMenu(); toast('운영자 토큰을 지웠어요.', '', 2500); };
+  // 토큰 확인: 운영자만 읽을 수 있는 /events 를 1건만 읽어 본다 (401 = 토큰이 다름, 막힘 = 서버가 아직 예전 Worker)
+  $('#adminCheck').onclick = async () => {
+    const st = $('#adminState');
+    if (!isOp()) { st.textContent = '없음'; return; }
+    st.textContent = '확인 중…';
+    try {
+      const r = await fetch(proxyUrl() + '/events?limit=1', { headers: authHeaders({}), cache: 'no-store' });
+      st.textContent = r.ok ? '들어 있음 · 서버와 맞음' : r.status === 401 ? '들어 있음 · 서버 ADMIN_TOKEN 과 다름' : '들어 있음 · 서버 응답 ' + r.status;
+    } catch (e) {
+      st.textContent = '들어 있음 · 서버가 받지 않음 (예전 Worker 이거나 연결 안 됨)';
+    }
+  };
+  $('#optShare').onchange = (e) => { prefs.share = e.target.checked; store.set('share', prefs.share ? null : '0'); };
   $('#closeSheet').onclick = () => { sheet.hidden = true; };
   // v161: 설정 — '틀림'으로 표시한 카메라 목록 (하나씩·모두 되돌리기)
   function renderCamFlags() {
@@ -7797,17 +7907,11 @@
     toast('주행 기록을 지웠어요.', '', 2500);
   };
   sheet.addEventListener('click', (e) => { if (e.target === sheet) sheet.hidden = true; });
-  $('#saveKey').onclick = () => { store.set('key', $('#keyInput').value.trim() || null); location.reload(); };
-  $('#clearKey').onclick = () => { store.set('key', null); location.reload(); };
   $('#optVoice').onchange = (e) => { prefs.voice = e.target.checked; store.set('voice', prefs.voice ? null : '0'); updateSoundPill(); };
   $('#optBeep').onchange = (e) => { prefs.beep = e.target.checked; store.set('beep', prefs.beep ? null : '0'); updateSoundPill(); };
   $('#optNight').onchange = (e) => setNightMode(e.target.value);
   $('#optJunction').onchange = (e) => {
     prefs.junction = e.target.checked; store.set('junction', prefs.junction ? null : '0');
-    if (nav.active) renderNav();
-  };
-  $('#optTunnels').onchange = (e) => {
-    prefs.tunnels = e.target.checked; store.set('tunnels', prefs.tunnels ? null : '0');
     if (nav.active) renderNav();
   };
   $('#optRest').onchange = (e) => {
@@ -7970,7 +8074,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,
