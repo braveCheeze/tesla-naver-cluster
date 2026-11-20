@@ -12,6 +12,8 @@ osm_cams.py · osm_arrows.py 다음에 돌린다. 신호 카메라는 교차로�
   2. 그 길 위에서 원본 좌표 55m 안의 교차로를 찾는다: 신호 노드(highway=traffic_signals)가 있으면 가장 앞(상류)의 신호 노드,
      없으면 원본 좌표에 가장 가까운 갈림 노드(길 3개 이상)에서 30m 안으로 이어진 큰 갈림(4갈래 이상) 중 가장 앞의 것.
   3. 그 교차로 8m 앞(상류)을 카메라 자리로 한다 (정지선·횡단보도 앞). 원래 붙은 점에서 60m 넘게 옮겨야 하면 그대로 둔다.
+  v178: 2 의 갈림 노드는 '가로지르는 길'(연결로 아닌 길, 45~135°)이 있는 노드만, 그중 기둥에 가까운 것에서 40m 안 앞쪽(우리 쪽) 노드로.
+        우리 쪽 횡단보도가 25m 안에 있으면 그 3m 앞. 기둥에서 80m 넘게 옮겨야 하면 그대로 두고 목록을 찍는다
 결과: dirs[i][2], dirs[i][3] (붙인 점의 위도·경도 차, 1e-5도)을 고치고 dirs[i] 에 7번째 값 1(정지선으로 옮김)을 붙인다.
 """
 import json
@@ -31,7 +33,7 @@ CELL = 0.002
 KY = 110540.0
 BACK = 8.0        # 교차로(신호 노드·갈림 노드)에서 이만큼 앞이 정지선
 NEAR_RAW = 55.0   # 원본 좌표에서 이 안의 교차로만
-MAX_MOVE = 60.0   # 지금 붙은 점에서 이보다 멀리 옮기지는 않는다
+MAX_FROM_RAW = 80.0   # v178: 원래(기둥) 좌표에서 이보다 멀리 옮기지 않는다 (예전엔 붙은 점에서 60m). 넘으면 그대로 두고 목록에 남긴다
 SNAP = 30.0       # 지금 붙은 점에서 이 안의 길
 
 
@@ -96,8 +98,9 @@ def seg_in_cells(pts, cells, cell=CELL):
 class H(osmium.SimpleHandler):
     def __init__(self):
         super().__init__()
-        self.ways = []          # (refs, pts, oneway, name)
+        self.ways = []          # (refs, pts, oneway, name, highway)
         self.signals = set()
+        self.crossings = set()  # v178: 횡단보도 노드 (정지선은 우리 쪽 횡단보도 바로 앞)
 
     def node(self, n):
         t = n.tags
@@ -105,6 +108,10 @@ class H(osmium.SimpleHandler):
             la, lo = n.location.lat, n.location.lon
             if (int(math.floor(la / CELL)), int(math.floor(lo / CELL))) in cells:
                 self.signals.add(n.id)
+        if t.get('highway') == 'crossing' or (t.get('crossing') and t.get('crossing') != 'no'):
+            la, lo = n.location.lat, n.location.lon
+            if (int(math.floor(la / CELL)), int(math.floor(lo / CELL))) in cells:
+                self.crossings.add(n.id)
 
     def way(self, w):
         hw = w.tags.get('highway')
@@ -125,19 +132,19 @@ class H(osmium.SimpleHandler):
         if oneway == -1:
             nodes.reverse()
             oneway = 1
-        self.ways.append(([r for r, _, _ in nodes], [(la, lo) for _, la, lo in nodes], oneway, w.tags.get('name', '') or ''))
+        self.ways.append(([r for r, _, _ in nodes], [(la, lo) for _, la, lo in nodes], oneway, w.tags.get('name', '') or '', hw))
 
 
 h = H()
 h.apply_file(PBF, locations=True, idx='flex_mem')
-ways, signals = h.ways, h.signals
+ways, signals, crossings = h.ways, h.signals, h.crossings
 print('ways', len(ways), 'signal nodes', len(signals))
 
 pos = {}
 deg = Counter()
 at_node = defaultdict(list)   # 노드 → [(길 번호, 길 안의 자리)]
 seg_grid = defaultdict(list)
-for wi, (refs, pts, ow, nm) in enumerate(ways):
+for wi, (refs, pts, ow, nm, _hw) in enumerate(ways):
     for k, r in enumerate(refs):
         pos[r] = pts[k]
         at_node[r].append((wi, k))
@@ -163,7 +170,7 @@ def step(node, prev_node, forward, cur_brg):
     """node 에서 진행 방향(forward=True: 앞으로, False: 뒤로 거슬러)으로 가장 곧게 이어지는 다음 노드"""
     best = None
     for wi, k in at_node.get(node, ()):
-        refs, pts, ow, _ = ways[wi]
+        refs, pts, ow, _, _ = ways[wi]
         cand = []
         if forward:
             if k + 1 < len(refs):
@@ -188,6 +195,24 @@ def step(node, prev_node, forward, cur_brg):
 
 stats = Counter()
 moves = []
+far = []
+LINKS = {'motorway_link', 'trunk_link', 'primary_link', 'secondary_link', 'tertiary_link'}
+
+
+def crossing_road_at(seq, q):
+    """노드 seq[q] 에서 연결로가 아닌 길이 진행 방향(앞뒤 노드)과 45~135° 로 갈라지는지 = 가로지르는 길이 있는 교차로"""
+    node = seq[q]
+    cur = brg(pos[seq[q - 1]], pos[seq[q + 1]])
+    for wi, k in at_node.get(node, ()):
+        refs, pts, ow, nm, hw = ways[wi]
+        if hw in LINKS:
+            continue
+        for kk in (k - 1, k + 1):
+            if 0 <= kk < len(refs) and refs[kk] not in (seq[q - 1], seq[q + 1]):
+                if 45 <= angd(brg(pos[node], pos[refs[kk]]), cur) <= 135:
+                    return True
+    return False
+
 for i in targets:
     c, d = rows[i], dirs[i]
     raw = (c[0], c[1])
@@ -199,7 +224,7 @@ for i in targets:
     for dy in (-1, 0, 1):
         for dx in (-1, 0, 1):
             for wi, k in seg_grid.get((cy + dy, cx + dx), ()):
-                refs, pts, ow, nm = ways[wi]
+                refs, pts, ow, nm, _ = ways[wi]
                 dd, t = proj(s0, pts[k], pts[k + 1])
                 if dd > SNAP:
                     continue
@@ -216,7 +241,7 @@ for i in targets:
         continue
     same = [x for x in cands if x[5]]
     dd, wi, k, t, fwd, _ = min(same or cands)
-    refs, pts, ow, nm = ways[wi]
+    refs, pts, ow, nm, _ = ways[wi]
     # 진행 방향으로 정렬한 노드 열: a(뒤) → b(앞), 투영점은 그 사이
     a_n, b_n = (refs[k], refs[k + 1]) if fwd else (refs[k + 1], refs[k])
     tt = t if fwd else 1 - t
@@ -249,10 +274,25 @@ for i in targets:
     inner = [q for q in range(1, len(seq) - 1) if abs(cum[q] - a0) <= 70 and dist(pos[seq[q]], raw) <= NEAR_RAW]
     sig = [q for q in inner if seq[q] in signals]
     junc = [q for q in inner if deg[seq[q]] >= 3]
+    # v178: 교차로는 '가로지르는 길'(연결로가 아닌 길이 찍는 방향과 45~135°)이 만나는 노드로 찾는다. 예전엔 신호 노드가 없으면 기둥에
+    # 가장 가까운 갈림 노드를 썼는데, 우회전 연결로가 다시 합쳐지는 노드가 기둥에 더 가까우면 교차로를 지난 자리가 되었다
+    # (2026-11-20 서하남IC입구교차로 J3195 50: 강동대로 동행 정지선에 선 차에 '90m', 아이콘은 건너편 횡단보도 너머. 티맵은 우리 정지선)
+    # 기둥보다 30m 넘게 앞(하류)의 교차로는 그 카메라 교차로가 아니다 (기둥은 정지선 앞이거나 교차로 건너편에 선다)
+    xj = [q for q in junc if crossing_road_at(seq, q) and cum[q] - a0 <= 30]
     J = None
     if sig:
         J = min(sig)
         stats['by signal node'] += 1
+    elif xj:
+        q0 = min(xj, key=lambda q: dist(pos[seq[q]], raw))
+        # 같은 교차로의 앞쪽(우리 쪽) 노드: 가로지르는 길이 분리 도로면 노드가 둘이다. 40m 안으로 앞에 있는 교차 노드로
+        while True:
+            up = [q for q in xj if q < q0 and cum[q0] - cum[q] <= 40]
+            if not up:
+                break
+            q0 = max(up)
+        J = q0
+        stats['by crossing road'] += 1
     elif junc:
         q0 = min(junc, key=lambda q: dist(pos[seq[q]], raw))
         # 같은 교차로(분리된 큰길은 노드가 여럿): 30m 안으로 앞쪽에 이어진 4갈래 이상 갈림이면 그쪽으로
@@ -267,6 +307,11 @@ for i in targets:
         stats['no junction near'] += 1
         continue
     target = cum[J] - BACK
+    # 우리 쪽 횡단보도가 교차로 25m 앞 안에 있으면 그 바로 앞(3m)이 정지선
+    xw = [q for q in range(len(seq)) if seq[q] in crossings and 0 < cum[J] - cum[q] <= 25]
+    if xw:
+        target = min(target, cum[max(xw)] - 3)
+        stats['stop line before the crosswalk'] += 1
     q = max(0, J - 1)
     while q > 0 and cum[q] > target:
         q -= 1
@@ -275,8 +320,9 @@ for i in targets:
     pa, pb = pos[seq[q]], pos[seq[q + 1]]
     S = (pa[0] + (pb[0] - pa[0]) * f, pa[1] + (pb[1] - pa[1]) * f)
     mv = dist(S, s0)
-    if mv > MAX_MOVE:
-        stats['too far, kept'] += 1
+    if dist(S, raw) > MAX_FROM_RAW:
+        stats['too far from the pole, kept'] += 1
+        far.append((i, int(dist(S, raw))))
         continue
     d[2] = int(round((S[0] - c[0]) * 1e5))
     d[3] = int(round((S[1] - c[1]) * 1e5))
@@ -290,6 +336,8 @@ moves.sort()
 if moves:
     print('moved', len(moves), 'median %.1f m, p90 %.1f m, max %.1f m' % (moves[len(moves) // 2], moves[int(len(moves) * 0.9)], moves[-1]))
 print(dict(stats))
+if far:
+    print('not moved (stop line over %d m from the pole):' % MAX_FROM_RAW, len(far), far[:20])
 with open(FILE, 'w', encoding='utf-8') as fh:
     json.dump(data, fh, ensure_ascii=False, separators=(',', ':'))
 for i in (25009, 25014):

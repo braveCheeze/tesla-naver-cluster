@@ -5946,6 +5946,11 @@
       // 7. v168 (v167 가상 주행): 포천 산정호수로 어린이 60 자리의 유령 80(의정부 J4981 기록이 좌표·주소를 베낌), 부인터사거리 60 자리의
       //    예전 기록 80(F7376 2025-06, 같은 자리 새 기록 60) 이 없다 — 1km 앞부터 80 으로 알리던 곳
       r.ghost80 = near(38.07141, 127.30083, 20, (c) => c[2] === 80).length + near(37.80533, 127.13137, 20, (c) => c[2] === 80).length;
+      // 8. v178 (2026-11-20 19:28 운전자 '정지선 기준으로 과속단속을 잡는게 좋아', 티맵과 비교): 서하남IC입구교차로 신호·과속 50(J3195)은
+      //    기둥이 교차로 남동쪽 우회전 연결로 옆인데 차로 위 점이 서하남로 동행 건너편 횡단보도 너머(37.5169,127.14442)였다 — 강동대로 동행 정지선에
+      //    선 차에 '90m'. 이제 강동대로 동행 정지선(교차로 노드 127.14386 서쪽 8m 안팎, 37.51701,127.14377)
+      const sh = near(37.5167, 127.14425, 15, (c) => c[2] === 50 && (c[3] === 3 || c[3] === 2))[0];
+      r.seohanam = sh ? { eb: sh.eb, lng: Math.round(sh.sg * 1e5) / 1e5, toStop: Math.round(hav({ lat: sh.sl, lng: sh.sg }, { lat: 37.51701, lng: 127.14377 })) } : 'none';
     } finally {
       await resetApp(); softReset();
     }
@@ -5957,7 +5962,8 @@
       r.seaGone && r.ghost120 === 0 && r.kaepo >= 1 &&
       r.gyeongbuSeoul === 1 && r.bundangSuseo !== 'none' && r.bundangSuseo !== 1 && /세종포천/.test(r.sejongPocheon) && r.typo === '호국로' &&
       r.beonyeong !== 'none' && r.beonyeong !== 'motorway lane' && r.ggb33.old === 0 && r.ggb33.now >= 1 &&
-      r.sejongEnd !== 'none' && r.sejongEnd.rtype === 1 && r.sejongEnd.eb >= 0 && r.mobileLv === 0 && r.ghost80 === 0;
+      r.sejongEnd !== 'none' && r.sejongEnd.rtype === 1 && r.sejongEnd.eb >= 0 && r.mobileLv === 0 && r.ghost80 === 0 &&
+      r.seohanam !== 'none' && angd(r.seohanam.eb, 101) <= 30 && r.seohanam.lng < 127.14386 && r.seohanam.toStop <= 12;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
   const isBoxRow = (c) => ((c[10] | 0) & 2) === 2;
