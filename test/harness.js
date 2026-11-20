@@ -2835,6 +2835,7 @@
     { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored; 7-10 lanes fit the drawer as square tiles", fn: s77 },
     { id: 'S78', name: "S78 mainline junction (v133): keep-left/right where the route stays on the same expressway section and goes straight is shown as straight ('신갈분기점에서 직진 · 서울 방면', main-straight junction scene, straight sign); a fork onto another expressway stays a fork", fn: s78 },
     { id: 'S79', name: 'S79 rest areas (v133): distance to where the entry ramp leaves the mainline (OSM), not the rest-area centre; within 3 km and no turn within 1 km the top row becomes the rest area (blue), next row = the guidance after it', fn: s79 },
+    { id: 'S115', name: "S115 no false off-route (v181, driver: 'I never left the route but it keeps saying off-route now and then'): a 5-minute traffic refresh whose new route starts on a parallel road 45 m away (Naver snapping the start to the wrong road) is not applied and driving on raises no reroute; a refresh on the same road is applied; a car still behind a reroute's start (slowed in traffic) is on route, not off; a real turn-off still reroutes within about 3 s / 30 m; each reroute leaves a location-free reason record", fn: s115 },
     { id: 'S114', name: "S114 unknown limits (v179, driver: 'don't show speed cameras with ?'): a speed camera with limit 0 is never alerted or drawn, the same camera with 60 is; a signal-only camera follows the setting and shows '신호'; a reported spot takes the limit of a same-road, same-direction camera (1.5 km), else 100 on an expressway, else stays hidden and the settings list says '제한속도 모름이라 숨김' — and shows once a camera appears", fn: s114 },
     { id: 'S113', name: "S113 '내 위치로' (v177, driver: 'it doesn't seem to work well'): pressing the real button (what is under its centre) puts the map on my car at once (no animation needed) and gives back the auto zoom — after looking ahead, after a pinch zoom, while guided, in route preview (the corner locate button), after GPS stops and after the page comes back; with no position yet it says so", fn: s113 },
     { id: 'S112', name: "S112 crowd fixes (v175, driver: 'auto-apply spots 3+ drivers reported, AI checks them again'): from /fixes, a fix marked src 'auto' (3+ drivers, not yet confirmed) still changes the camera but its card says '사용자 제보', an auto spot shows '사용자 제보 단속 지점' with the limit of a nearby same-direction camera (v179), a confirmed spot (src 'op' or an old server without src) shows '운전자 신고 단속 지점'; my own reported spot at an auto spot reads '여러 운전자 신고로 반영됨(확인 전)'", fn: s112 },
@@ -5511,6 +5512,84 @@
       r.d.before === false && /경로 밖으로/.test(r.d.msg) && r.d.after === true &&
       r.e.fixes >= 2 && r.e.e2After === 0 &&
       r.f.ok && r.f.e2 === 1 && r.f.shared === 1 && r.f.userRow;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S115: 잘못된 이탈 (v181, 2026-11-20 운전자 '네비 잘 설정해서 가고 있는데 벗어난 적도 없는데 한 번씩 계속 이탈된다')
+  async function s115() {
+    const t = T(), r = {};
+    // 북쪽으로 3km 곧은 길 (회전 없음)
+    const mk = (from, len, east) => {
+      const P = [];
+      for (let k = 0; k <= len / 20; k++) { const q = dest(dest(from, 0, 20 * k), 90, east || 0); P.push({ lat: round6(q.lat), lng: round6(q.lng) }); }
+      const cum = [0];
+      for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+      const total = cum[cum.length - 1], n = P.length;
+      return { route: { distance: r0(total), duration: r0(total / 16 * 1000), tollFare: 0, fuelPrice: 0, path: P.map((q) => [q.lng, q.lat]),
+        guide: [{ i: n - 1, t: 88, s: '목적지', d: r0(total), ms: r0(total / 16 * 1000) }], sections: [{ i: 0, n, name: '곧은로', speed: 60, cong: 1 }] },
+        P, cum, total, dest: { name: '곧은 목적지', addr: '', lat: P[n - 1].lat, lng: P[n - 1].lng } };
+    };
+    const O = dest(NAV_ORIGIN, 90, 70000);
+    const R = mk(O, 3000);
+    const reroutes = () => stub.since(c0, '/route').length;
+    let c0 = 0;
+    const drive = (m0, m1, step, v, east) => { for (let m = m0; m <= m1; m += step) feed(dest(dest(O, 0, m), 90, east || 0), v, 0, { dt: step / v * 1000 }); };
+    try {
+      await resetApp(); softReset();
+      await planAndStart(R);
+      drive(20, 400, 16, 16);
+      // (a) 교통 갱신 경로가 45m 옆 나란한 길에서 시작한다
+      const here = t.state.fix;
+      const bad = mk(dest(here, 0, -40), 2600, 45);
+      stub.canned['/route'] = bad.route;
+      const route0 = t.nav.route;
+      c0 = stub.calls.length;
+      await t.planRoute(R.dest, 'traffic');
+      r.badApplied = t.nav.route !== route0;
+      c0 = stub.calls.length;
+      drive(416, 600, 16, 16);
+      r.badReroutes = reroutes();
+      r.badToast = /벗어났/.test(text('#toast'));
+      // (b) 같은 길의 교통 갱신은 바꾼다
+      const good = mk(dest(t.state.fix, 0, -30), 2400, 0);
+      stub.canned['/route'] = good.route;
+      const route1 = t.nav.route;
+      await t.planRoute(R.dest, 'traffic');
+      r.goodApplied = t.nav.route !== route1 && t.nav.setKind === 'traffic';
+      c0 = stub.calls.length;
+      drive(616, 800, 16, 16);
+      r.goodReroutes = reroutes();
+      r.goodOn = t.nav.onRoute;
+      // (c) 재탐색 경로가 차 앞 70m 에서 시작 — 막혀서 천천히 가면 한동안 출발점 뒤
+      const ahead = mk(dest(t.state.fix, 0, 70), 2000, 0);
+      stub.canned['/route'] = ahead.route;
+      await t.planRoute(R.dest, true);
+      c0 = stub.calls.length;
+      const m0 = 800;
+      let behindSeen = false, offSeen = false;
+      for (let k = 1; k <= 10; k++) { feed(dest(dest(O, 0, m0 + 4 * k), 90, 0), 4, 0, { dt: 1000 }); if (t.nav.behindStart) behindSeen = true; if (!t.nav.onRoute) offSeen = true; }
+      r.behind = { seen: behindSeen, off: offSeen, reroutes: reroutes() };
+      drive(m0 + 56, m0 + 200, 16, 16);
+      r.behind.alongAfter = Math.round(t.nav.along);
+      r.behind.reroutesAfter = reroutes();
+      // (d) 진짜로 벗어남: 동쪽으로 꺾어 간다 → 3초·30m 안에 재탐색
+      stub.canned['/route'] = mk(t.state.fix, 1500, 0).route;
+      c0 = stub.calls.length;
+      const turnAt = t.state.fix;
+      let firedAt = null;
+      for (let k = 1; k <= 12 && firedAt === null; k++) {
+        feed(dest(turnAt, 90, 12 * k), 12, 90, { dt: 1000 });
+        if (reroutes() > 0) firedAt = { k, m: 12 * k };
+      }
+      r.realOff = firedAt;
+      t.endNav();
+    } finally {
+      await resetApp(); softReset();
+    }
+    const ok = !r.badApplied && r.badReroutes === 0 && !r.badToast &&
+      r.goodApplied && r.goodReroutes === 0 && r.goodOn &&
+      r.behind.seen && !r.behind.off && r.behind.reroutes === 0 && r.behind.alongAfter > 50 && r.behind.reroutesAfter === 0 &&
+      r.realOff && r.realOff.k <= 4 && r.realOff.m <= 48;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

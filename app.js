@@ -59,7 +59,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-180'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-181'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -4428,6 +4428,16 @@
         r = nav.alts[nav.altIdx];
       }
       const beforeMs = nav.active && nav.route ? nav.route.duration * ((nav.total - nav.along) / Math.max(1, nav.total)) : null;
+      // v181 (2026-11-20 운전자 '네비 잘 설정해서 가고 있는데 벗어난 적도 없는데 한 번씩 계속 이탈된다'): 5분마다 교통 갱신으로 받은 경로를
+      // 확인 없이 바꿔 끼웠다. 네이버가 출발점을 옆 길(나란한 길·고가 아래·반대편 차로)에 붙이면 새 경로가 다른 길에서 시작해
+      // 1~2초 뒤 '경로를 벗어났습니다'가 났다. 지금 차 자리가 새 경로(앞쪽 2km) 위가 아니면 바꾸지 않고 지금 경로로 계속 간다
+      if (reroute === 'traffic' && state.fix) {
+        const fit = routeFit(r.path, state.fix);
+        if (!fit.ok) {
+          report('info', { msg: 'traffic route rejected', d: Math.round(fit.d), skew: Math.round(fit.skew), acc: Math.round(state.fix.acc || 0), kmh: Math.round(state.speedKmh) });
+          return;
+        }
+      }
       setRoute(r, dest, reroute);
       if (reroute === 'traffic') {
         // 교통 갱신은 조용히. 도착 예정이 3분 넘게 바뀔 때만 알려 준다
@@ -4505,6 +4515,7 @@
     // 달리는 중 다시 찾은 경로(재탐색·재추천·경유지·교통 갱신)는 출발 직후 유예(주차장 출발용 20초) 없이 바로 벗어남을 센다
     nav.rerouted = !!keepAlerts;
     nav.setAt = state.fix ? state.fix.t : Date.now(); nav.drawnSeg = 0; nav.drawnAlong = 0; nav.drawnAt = 0;
+    nav.setKind = keepAlerts ? String(keepAlerts) : 'start';   // v181: 재탐색 기록용 (어떤 경로 뒤의 이탈인지)
     nav.routeCams = null; nav.routeCamList = []; nav.turnCamDrops = 0; camState.markerAt = null; // 경로 위 카메라·지도 표시를 새 경로로
     nav.routeBumps = null; bumpState.markerKey = '';
     nav.routeSigns = null; tollState.numsKey = '';
@@ -4535,6 +4546,32 @@
   // 재탐색 출발점: 지금 위치에서 진행 방향으로 (속도 × 답이 오기까지 걸리는 시간) 앞, 최대 60m.
   // 지금 자리에서 물으면 답이 왔을 때 차는 이미 그 앞 교차로를 지나 있어 새 경로가 차 뒤에서 시작한다
   // (2026-11-14 신갈: 상갈교사거리를 지나 동쪽으로 가는데 새 경로가 뒤 교차로에서 북쪽으로 시작)
+  // v181: 새 경로가 지금 차 자리에서 이어지는지 — 앞쪽 2km 에서 가장 가까운 구간까지 거리(허용: 정확도의 2배, 25~50m)와 방향(45° 안),
+  // 또는 차가 출발점 뒤 150m 안에서 경로 방향으로 줄 서 있으면
+  function routeFit(path, f) {
+    const P = (path || []).map((x) => ({ lat: x[1], lng: x[0] }));
+    let best = { d: Infinity, i: 0 }, run = 0;
+    for (let i = 0; i < P.length - 1 && run < 2000; i++) {
+      const pr = projectSeg(f, P[i], P[i + 1]);
+      if (pr.dist < best.d) best = { d: pr.dist, i };
+      run += haversine(P[i], P[i + 1]);
+    }
+    if (!(best.d < Infinity)) return { ok: false, d: Infinity, skew: 0 };
+    const segB = bearing(P[best.i], P[best.i + 1]);
+    const moving = state.heading !== null && state.speedKmh >= 10;
+    const skew = moving ? angleDiff(segB, state.heading) : 0;
+    const lim = Math.max(25, Math.min(50, (f.acc || 10) * 2));
+    const behind = P.length >= 2 && carBehindStart(f, P[0], P[1]);
+    return { ok: (best.d <= lim && skew <= 45) || behind, d: best.d, skew, behind };
+  }
+  // 차가 경로 출발점 뒤(아직 못 닿음) 150m 안에서 출발점을 향해 경로 방향으로 가고 있는지
+  function carBehindStart(f, a, b) {
+    const dStart = haversine(f, a);
+    if (dStart > 150 || dStart < 1) return false;
+    const segB = bearing(a, b);
+    if (angleDiff(segB, bearing(f, a)) > 30) return false;
+    return !(state.heading !== null && state.speedKmh > 5 && angleDiff(segB, state.heading) > 45);
+  }
   function rerouteStart() {
     const f = state.fix;
     if (state.heading === null || state.speedKmh < 15) return f;
@@ -5030,7 +5067,11 @@
       skew = angleDiff(bearing(pts[best.seg], pts[best.seg + 1]), state.heading);
     }
     const wrongWay = !inRb && skew > (inPlaza || zone ? 100 : 50);   // 회전교차로 안에서는 한 바퀴 더 돌면 방향이 거꾸로다: 거리로만
-    nav.onRoute = best.dist <= offLimit && !wrongWay;
+    // v181: 아직 경로를 한 걸음도 못 갔고(출발점 앞) 차가 출발점 뒤 150m 안에서 경로 방향으로 줄 서 있으면 경로 위로 본다
+    // (재탐색 경로는 답을 기다리는 동안 갈 거리만큼 앞에서 시작한다 — 막혀서 늦게 가면 차가 출발점 뒤에 남아 '이탈'을 또 셌다)
+    const behind = !(best.dist <= offLimit) && nav.along <= 1 && carBehindStart(f, pts[0], pts[1]);
+    nav.onRoute = (best.dist <= offLimit && !wrongWay) || behind;
+    nav.behindStart = behind;
     // v174 (2026-11-20 카페 시험자 '제가 가고 있는 길이 아닌 다른 길에 자동차 아이콘이 표시된 적이 있습니다'):
     // 화면의 내 차를 경로선에 붙이는 기준이 이탈 판정(보통 30~50m, 회전 구간 60m, 톨게이트 100m)과 같아서, 30m 안쪽의 나란한 길·
     // 진출로 옆 본선·고가 옆길을 달려도 아이콘이 경로 위에 그려졌다. 이탈 판정(재탐색)은 그대로 두고, 그리기만 가까울 때 붙인다:
@@ -5044,7 +5085,9 @@
       nav.snapD = best.dist;
     }
     if (!nav.onRoute) { if (!nav.offAt) nav.offAt = f.t; } else nav.offAt = 0;   // v161: 경로 밖으로 나간 시각 (단속 카메라 고르기)
-    if (nav.onRoute) {
+    if (behind) {
+      nav.off = 0; nav.offSince = 0;   // 출발점에 닿을 때까지 그대로 (경로 위 자리는 0)
+    } else if (nav.onRoute) {
       nav.seg = best.seg;
       nav.along = nav.cum[best.seg] + best.t * (nav.cum[best.seg + 1] - nav.cum[best.seg]);
       nav.off = 0; nav.offSince = 0;
@@ -5071,6 +5114,14 @@
       nav.off = 0; nav.onCount = 0;
       if (quick) nav.quickLeft = 0;
       else { nav.quickLeft = 1; nav.gap = Math.min(nav.gap * 2, 40000); } // 계속 벗어나면 간격을 늘리되 40초를 넘기지 않는다
+      // v181: 왜 이탈로 봤는지 위치 없이 남긴다 (한 화면에 10번까지) — 다음 점검에서 잘못된 이탈을 가려내려고
+      nav.rerouteN = (nav.rerouteN || 0) + 1;
+      if (nav.rerouteN <= 10) {
+        report('info', { msg: 'reroute ' + nav.rerouteN, dist: Math.round(best.dist), lim: Math.round(offLimit), acc: Math.round(f.acc || 0), skew: Math.round(skew),
+          sure, zone: !!zone, plaza: inPlaza, kmh: Math.round(state.speedKmh), offS: Math.round((f.t - (nav.offSince || f.t)) / 100) / 10,
+          offM: Math.round(state.odo - (nav.offOdo || state.odo)), onCount: nav.onCount, sinceSet: Math.round((f.t - (nav.setAt || f.t)) / 1000),
+          setKind: nav.setKind || '', along: Math.round(nav.along), quick });
+      }
       if (!quick) say('경로를 벗어났습니다. 다시 탐색합니다.', 1, true);
       toast(quick ? '지금 위치에 맞춰 경로를 다시 찾는 중…' : '경로를 벗어나 같은 목적지로 다시 찾는 중… (추천 경로)', '', 4000);
       planRoute(nav.dest, true);
@@ -8264,7 +8315,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,
