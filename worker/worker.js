@@ -59,7 +59,8 @@ export default {
     const p = url.searchParams;
     const isLogPost = req.method === 'POST' && url.pathname === '/log';
     const isEventPost = req.method === 'POST' && url.pathname === '/event';
-    if (req.method !== 'GET' && !isLogPost && !isEventPost) return json({ error: 'method' }, 405, cors);
+    const isFixPost = req.method === 'POST' && url.pathname === '/fix';
+    if (req.method !== 'GET' && !isLogPost && !isEventPost && !isFixPost) return json({ error: 'method' }, 405, cors);
 
     if (url.pathname === '/health') {
       return json({
@@ -120,6 +121,44 @@ export default {
           cls: String(x.crgwClssNm || ''), type: String(x.crgwTypeNm || ''), open: String(x.lcsStat) === '01',
         })).filter((x) => x.no > 0);
         return json({ name, at: hipassCache.at, lanes }, 200, cors, 60);
+      }
+
+      // v171 단속 카메라 고침 목록 (2026-11-20 운전자 '놓침을 누르면 … 바로 반영될 수 있었으면'):
+      // 앱이 '놓침' 진단으로 찾은 고침(방향·경로 위로 보기·신호 전용 알림·틀림 풀기·새 신고 지점)을 기기 번호와 함께 보낸다.
+      // 저장은 KV 한 값 'fixes:v1' = [{ kind, k, lat, lng, h, devs: [기기 번호…] }] (카메라 점·방향·종류만, 신고 시각·궤적 없음, 90일).
+      // GET /fixes 는 서로 다른 기기 2대 넘게 보냈거나 운영자 기기(환경 변수 OPERATOR_DEVS, 쉼표로)가 보낸 것만 준다 — 장난·실수로 엉뚱한 카메라가 생기지 않게
+      if (url.pathname === '/fix' && isFixPost) {
+        if (!env.LOGS) return json({ ok: false }, 200, cors);
+        const text = await req.text();
+        if (text.length > 4000) return json({ error: 'too large' }, 413, cors);
+        let b;
+        try { b = JSON.parse(text); } catch (e) { return json({ error: 'bad json' }, 400, cors); }
+        const dev = String((b && b.dev) || '');
+        if (!/^[a-z0-9]{8,24}$/.test(dev) || !Array.isArray(b.items)) return json({ error: 'bad fix' }, 400, cors);
+        const KINDS = new Set(['dir', 'route', 'signal', 'flag', 'spot']);
+        let list = [];
+        try { list = JSON.parse((await env.LOGS.get('fixes:v1')) || '[]'); } catch (e) { list = []; }
+        let added = 0;
+        for (const it of b.items.slice(0, 5)) {
+          const lat = +it.lat, lng = +it.lng, h = it.h == null ? null : Math.round(+it.h) % 360;
+          if (!KINDS.has(it.kind) || !(lat > 33 && lat < 39 && lng > 124 && lng < 132)) continue;
+          const k = it.kind === 'spot' ? lat.toFixed(4) + ',' + lng.toFixed(4) + ',' + (h == null ? 'x' : Math.round(h / 45) % 8) : String(it.k || '').slice(0, 40);
+          if (!k) continue;
+          let e = list.find((x) => x.kind === it.kind && x.k === k);
+          if (!e) { if (list.length >= 2000) continue; e = { kind: it.kind, k, lat: +lat.toFixed(6), lng: +lng.toFixed(6), h, devs: [] }; list.push(e); }
+          if (!e.devs.includes(dev) && e.devs.length < 10) { e.devs.push(dev); added++; }
+        }
+        if (added) await env.LOGS.put('fixes:v1', JSON.stringify(list), { expirationTtl: 60 * 60 * 24 * 90 });
+        return json({ ok: true, added }, 200, cors);
+      }
+      if (url.pathname === '/fixes') {
+        if (!env.LOGS) return json({ v: 1, items: [] }, 200, cors);
+        let list = [];
+        try { list = JSON.parse((await env.LOGS.get('fixes:v1')) || '[]'); } catch (e) { list = []; }
+        const ops = String(env.OPERATOR_DEVS || '').split(',').map((x) => x.trim()).filter(Boolean);
+        const items = list.filter((e) => e.devs.length >= 2 || e.devs.some((d) => ops.includes(d)))
+          .map((e) => ({ kind: e.kind, k: e.k, lat: e.lat, lng: e.lng, h: e.h }));
+        return json({ v: 1, items }, 200, cors, 300);
       }
 
       // 운영 모니터링: 페이지가 보내는 접속·오류 이벤트 (위치 없음, 7일 보관)
