@@ -59,7 +59,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-174'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-175'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -2460,7 +2460,8 @@
     cams.userBase = cams.rows.length;
     const add = [];
     for (const d of driverSpots.rows) add.push({ lat: d[0], lng: d[1], h: d[2], kmh: d[3] || 0, who: 'driver' });
-    for (const d of sharedSpots) if (!add.some((x) => sameSpot(x, d))) add.push({ lat: d.lat, lng: d.lng, h: d.h, kmh: 0, who: 'driver' });   // v171
+    // v171 모든 사용자 신고 지점. v175: 운영자가 확인하기 전 자동 반영(src 'auto', 서로 다른 운전자 3명 넘게)은 '사용자 제보'로 따로 보인다
+    for (const d of sharedSpots) if (!add.some((x) => sameSpot(x, d))) add.push({ lat: d.lat, lng: d.lng, h: d.h, kmh: 0, who: d.src === 'auto' ? 'crowd' : 'driver' });
     for (const m of mySpots) if (!add.some((x) => sameSpot(x, m))) add.push({ lat: m.lat, lng: m.lng, h: m.h, kmh: m.kmh, who: 'mine' });
     for (const x of add) {
       const i = cams.rows.length, r = userSpotRow(x.lat, x.lng, x.h, x.kmh, x.who);
@@ -2503,7 +2504,7 @@
   //   route  길안내 경로 위로 보지 않았다(경로선 15~40m·이름 다름·고속도로·높이 거르기) → 이 차에서는 경로 위로 본다
   // 후보가 없거나 까닭을 모르면 '내가 신고한 단속 지점'을 만든다. 고침과 새 지점은 기기 번호와 함께 /fix 로 보낸다(아래 /fixes)
   const camFixes = new Map();   // key → Set(kind) (이 기기)
-  const sharedFixes = new Map();   // key → Set(kind) (모든 사용자: /fixes)
+  const sharedFixes = new Map();   // key → Map(kind → src 'op'|'auto') (모든 사용자: /fixes. v175: auto = 확인 전 자동 반영)
   const sharedSpots = [];
   try { for (const [k, kind] of JSON.parse(store.get('camFix') || '[]')) { if (!camFixes.has(k)) camFixes.set(k, new Set()); camFixes.get(k).add(kind); } } catch (e) { /* 없음 */ }
   function saveCamFixes() {
@@ -2525,6 +2526,8 @@
       c.fixRoute = has('route');
       c.forceWanted = has('signal');
       c.fixed = !!(a || b);
+      // v175: 이 카메라를 바꾼 고침이 운영자 확인 전 자동 반영뿐이면(이 차에서 직접 고친 것 말고) 카드에 '사용자 제보'
+      c.crowd = !!b && [...b.entries()].some(([kind, src]) => src === 'auto' && !(a && a.has(kind)));
     }
     nav.routeCams = null;
   }
@@ -2615,7 +2618,8 @@
     if (!items.length || botLike || testPage || !prefs.share) return;
     try { fetch(proxyUrl() + '/fix', { method: 'POST', body: JSON.stringify({ dev: devId, items }), headers: authHeaders({ 'Content-Type': 'application/json' }) }).catch(() => {}); } catch (e) { /* 없이 */ }
   }
-  // 모든 사용자 고침: 운영자 토큰으로 보낸 것만 (길안내 서버 /fixes, v172). 앱을 열 때와 30분마다
+  // 모든 사용자 고침 (길안내 서버 /fixes): 운영자 토큰으로 보냈거나 운영자가 확인한 것(op), 서로 다른 운전자 3명 넘게 보내 자동 반영된 것(auto, v175).
+  // 앱을 열 때와 30분마다
   async function loadSharedFixes() {
     if (botLike) return false;
     try {
@@ -2625,8 +2629,13 @@
       if (!j || !Array.isArray(j.items)) return false;
       sharedFixes.clear(); sharedSpots.length = 0;
       for (const it of j.items) {
-        if (it.kind === 'spot') sharedSpots.push(it);
-        else if (it.k && it.kind !== 'flag') { if (!sharedFixes.has(it.k)) sharedFixes.set(it.k, new Set()); sharedFixes.get(it.k).add(it.kind); }
+        const src = it.src === 'auto' ? 'auto' : 'op';   // 예전 서버는 src 가 없다 = 운영자 고침
+        if (it.kind === 'spot') sharedSpots.push(Object.assign({}, it, { src }));
+        else if (it.k && it.kind !== 'flag') {
+          if (!sharedFixes.has(it.k)) sharedFixes.set(it.k, new Map());
+          const m = sharedFixes.get(it.k);
+          if (m.get(it.kind) !== 'op') m.set(it.kind, src);
+        }
       }
       applyCamFixes(); applyUserSpots();
       return true;
@@ -2642,6 +2651,8 @@
       }
     }
     if (driverSpots.rows.some((d) => sameSpot({ lat: d[0], lng: d[1], h: d[2] }, m))) return 'driver';
+    const sh = sharedSpots.find((d) => sameSpot(d, m));
+    if (sh) return sh.src === 'auto' ? 'crowd' : 'driver';
     return m.days.length >= 2 ? 'twice' : 'mine';
   }
   // 단속 자료가 없을 때 주행 중이면 작은 표시 (소리 꺼짐 표시와 같은 모양, 그 밑)
@@ -2714,7 +2725,7 @@
     return zone + (isRear(c) ? '후면 ' : '') + what;
   }
   function camLabel(c) {
-    if (isUserSpot(c)) return c.who === 'mine' ? '내가 신고한 단속 지점' : '운전자 신고 단속 지점';   // v169: 제한속도 모름
+    if (isUserSpot(c)) return c.who === 'mine' ? '내가 신고한 단속 지점' : c.who === 'crowd' ? '사용자 제보 단속 지점' : '운전자 신고 단속 지점';   // v169: 제한속도 모름 · v175 확인 전 자동 반영
     let s = c[4] === 1 ? '구간단속 시작' : c[4] === 2 ? '구간단속 끝' : (KIND_NAME[c[3]] || '단속 카메라');
     if (c[6] === 2) s = '어린이보호구역 ' + (c[3] === 2 ? '단속' : s);
     else if (c[6] === 1) s = '노인보호구역 ' + s;
@@ -3542,6 +3553,7 @@
       const doubt = tg.flag === 'doubt';
       $('#camLimit').textContent = speedCam ? (doubt ? '?' : (tg.c[2] || '?')) : '신호';
       card.classList.toggle('doubt', doubt);
+      card.classList.toggle('crowd', !!tg.c.crowd && !isUserSpot(tg.c));   // v175: 확인 전 자동 반영 고침이 바꾼 카메라
       // v161: 틀림 버튼은 화면에 그려진 카메라에 묶는다. 카드가 다른 카메라로 바뀐 뒤 1초 동안은 누름을 무시한다
       if (card._camI !== tg.i) { card._camI = tg.i; card._camAt = Date.now(); }
       // 지나간 뒤에도 CAM_HOLD(30m)까지는 카메라 바로 앞인 것처럼 그대로 보여 주고(오차 거리는 따로 알리지 않음), 그 뒤 사라진다
@@ -4340,6 +4352,7 @@
         if (q.option) { if (routeBudget() <= 0) throw e1; routeReqs.push(routeNow()); }
         res = await api('/route', q, null, waitMs);
       }
+      nav.retry429 = false;   // v175: 서버가 받았으면 다음 429 때 다시 한 번 기다려 본다
       const took = Date.now() - t0; // 다음 재탐색 출발점을 얼마나 앞에 둘지 정하는 데 쓴다
       nav.routeMs = nav.routeMs ? Math.round(nav.routeMs * 0.6 + took * 0.4) : took;
       if (gen !== nav.gen || (reroute && !nav.active)) return;
@@ -4410,7 +4423,16 @@
           toast('잠시 후 경로를 다시 찾습니다…', '', 3000);
           return;
         }
+        // v175: 처음 길찾기도 한 번은 알려 준 시간 뒤 조용히 다시 (같은 통신사 IP 를 여러 차가 쓰면 잠깐 몰릴 수 있다)
+        if (!nav.retry429) {
+          nav.retry429 = true;
+          const g1 = nav.gen;
+          toast('요청이 몰려 잠시 후 경로를 다시 찾습니다…', '', 4000);
+          setTimeout(() => { if (nav.gen === g1 && !nav.active && !nav.busy) planRoute(dest, false); }, Math.min(20, Math.max(1, Number(d.retryAfter) || 5)) * 1000 + 300);
+          return;
+        }
       }
+      nav.retry429 = false;
       report('warn', { msg: 'route failed: ' + String(d.message || d.error || e.message).slice(0, 200), reroute: String(reroute || ''), keys: d.keys || '' });
       if (reroute === 'traffic') return; // 교통 갱신 실패는 지금 경로로 계속 안내 (화면에 띄우지 않음)
       const slow = e.name === 'AbortError' || /abort/i.test(e.message || '');
@@ -7896,7 +7918,7 @@
     }
   }
   // v169: 설정 — 내가 신고한 단속 지점 (상태와 지우기)
-  const SPOT_STATUS = { data: '단속 자료에 있음', driver: '모든 사용자에게 반영됨', twice: '두 번 넘게 신고 · 다음 자료에 넣음', mine: '이 차에서만 알림' };
+  const SPOT_STATUS = { data: '단속 자료에 있음', driver: '모든 사용자에게 반영됨', crowd: '여러 운전자 신고로 반영됨(확인 전)', twice: '두 번 넘게 신고 · 다음 자료에 넣음', mine: '이 차에서만 알림' };
   const FIX_SHORT = { dir: '양방향으로 봄', route: '경로 위로 봄', signal: '신호 전용도 알림' };
   function renderMySpots() {
     const box = $('#mySpotBox'), ul = $('#mySpotList');

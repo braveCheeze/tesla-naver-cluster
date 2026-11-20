@@ -10,6 +10,8 @@
 //   ADMIN_TOKEN         (2026-11-20 공개 전 보안 점검) 운영자 토큰. 32자 넘는 아무 글자. 이 값을 'Authorization: Bearer <값>' 으로 보낼 때만
 //                       /events·/log 읽기, 진단 기록 올리기, 운영자 고침(바로 모든 사용자 적용), 놓침 궤적 저장을 허락한다.
 //                       값은 운전자가 직접 만들어 대시보드 Secret 과 운전자 PC 환경 변수 TNC_ADMIN_TOKEN, 운전자 차 앱(개발자 메뉴)에만 넣는다.
+//   IP_SALT             (v175, 선택) 고침 자동 반영에서 접속지를 셀 때 IP 에 섞는 소금. 없으면 ADMIN_TOKEN 에서 만들어 쓴다(새 Secret 불필요).
+//                       둘 다 없으면 자동 반영을 하지 않는다
 // 요청 제한(선택): Bindings 에 Rate Limiting 을 변수명 RL 로(예: 60초에 120번) 연결하면 함께 쓴다. 없으면 메모리 기준으로만 막는다.
 
 const ALLOWED_ORIGINS = [
@@ -19,28 +21,31 @@ const ALLOWED_ORIGINS = [
 const NCP = 'https://maps.apigw.ntruss.com';
 const COORD = /^-?\d{1,3}(\.\d+)?,-?\d{1,3}(\.\d+)?$/;
 const ROUTE_OPTIONS = new Set(['trafast', 'tracomfort', 'traoptimal', 'traavoidtoll', 'traavoidcaronly']);
-// 재탐색·교통 갱신(단일 옵션 경로)은 같은 접속지에서 15초에 한 번까지만 (호출 폭주로 무료 한도를 쓰지 않게).
-// 처음 길찾기(여러 경로)는 제한하지 않는다. 메모리 기반이라 완벽하진 않지만 폭주는 막는다.
-const ROUTE_GAP_MS = 15000;
+// 재탐색·교통 갱신(단일 옵션 경로)은 같은 접속지에서 15초에 ROUTE_BURST 번까지만 (호출 폭주로 무료 한도를 쓰지 않게).
+// v175 (2026-11-20 운전자 '멀티로 사용해도 문제없지?'): 예전엔 15초에 한 번이라, 테슬라 LTE 처럼 여러 차가 통신사 공유 IP(CGNAT)로
+// 나가면 다른 차의 재탐색이 막혔다. 15초에 6번으로 (같은 IP 뒤 차 12대가 1분에 두 번씩 재탐색해도 된다). 메모리 기반이라 어림
+const ROUTE_GAP_MS = 15000, ROUTE_BURST = 6;
 // 접속 기록 키: 최신이 KV 목록 맨 앞에 오도록 (EVR_BASE - 시각) 으로 저장한다
 const EVR_BASE = 9e15;
 const routeHits = new Map();
 // v172 (2026-11-20 공개 전 보안 점검): 경로마다 접속지(IP)별 1분 창 제한 + 하루 상한(이 Worker 인스턴스 기준, 어림).
-// Origin 은 위조할 수 있으므로 유료 API(네이버 클라우드)와 KV 쓰기를 이것으로 지킨다
-const LIMITS = { '/route': 20, '/geocode': 30, '/reverse': 60, '/search': 30, '/hipass': 30, '/weather': 20, '/config': 30,
-  '/event': 30, '/log': 3, '/fix': 10, '/fixes': 10, '/events': 30 };
+// Origin 은 위조할 수 있으므로 유료 API(네이버 클라우드)와 KV 쓰기를 이것으로 지킨다.
+// v175: 공유 IP(CGNAT) 뒤의 여러 차가 정상으로 써도 막히지 않게 넉넉히 (비용은 하루 상한이 지킨다)
+const LIMITS = { '/route': 40, '/geocode': 60, '/reverse': 150, '/search': 60, '/hipass': 60, '/weather': 60, '/config': 120,
+  '/event': 60, '/log': 3, '/fix': 30, '/fixes': 60, '/events': 30, '/fix/review': 30 };
 const PAID = new Set(['/route', '/geocode', '/reverse', '/search']);
-const KV_WRITE = new Set(['/event', '/fix']);
+const KV_WRITE = new Set(['/event', '/fix', '/fix/review']);
 const DAY_CAP = { paid: 20000, kv: 900 };
 const hits = new Map();
 const day = { d: '', paid: 0, kv: 0 };
+// 넘었으면 다시 해도 되는 데까지 남은 초(1~60), 아니면 0
 function overLimit(ip, path) {
   const lim = LIMITS[path];
-  if (!lim) return false;
+  if (!lim) return 0;
   const now = Date.now(), k = path + '|' + ip;
   let h = hits.get(k);
   if (!h || now - h.t > 60000) { h = { t: now, n: 0 }; hits.set(k, h); if (hits.size > 20000) hits.clear(); }
-  return ++h.n > lim;
+  return ++h.n > lim ? Math.max(1, Math.ceil((h.t + 60000 - now) / 1000)) : 0;
 }
 function overDay(path) {
   const d = new Date().toISOString().slice(0, 10);
@@ -49,6 +54,51 @@ function overDay(path) {
   if (KV_WRITE.has(path)) return ++day.kv > DAY_CAP.kv;
   return false;
 }
+// ---- v175 고침 자동 반영 (아래 /fix 설명) ----
+const FIX_KEY = 'fixes:v1';
+const FIX_AUTO_MIN = 3;      // 서로 다른 기기 3대 + 서로 다른 접속지 3곳
+const FIX_TTL_DAYS = 30;     // 자동 반영은 마지막 신고 뒤 30일이 지나면 빠진다
+const FIX_NEAR_M = 50, FIX_NEAR_DEG = 45, FIX_MAX = 2000;
+const FIX_PUBLIC = new Set(['ok', 'auto', 'expiring']);
+// 한국 날짜 'YYYY-MM-DD' (Date.now 기준이라 시험에서 시계를 옮길 수 있다)
+const kstDay = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+const daysBetween = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
+function distM(a, b) {
+  const kx = Math.cos(a.lat * Math.PI / 180) * 111320, ky = 110540;
+  return Math.hypot((a.lng - b.lng) * kx, (a.lat - b.lat) * ky);
+}
+function headOk(a, b) {
+  if (a == null || b == null) return true;
+  const d = Math.abs((((a - b) % 360) + 540) % 360 - 180);
+  return d <= FIX_NEAR_DEG;
+}
+const fixCount = (e) => Math.min(e.devs.length, (e.ips || []).length);
+// 항목 번호: 종류·키로 정해지는 짧은 글자 (저장하지 않아도 늘 같다)
+function fixId(e) {
+  let x = 0x811c9dc5;
+  const str = e.kind + '|' + e.k;
+  for (let i = 0; i < str.length; i++) { x ^= str.charCodeAt(i); x = Math.imul(x, 0x01000193) >>> 0; }
+  return x.toString(36).padStart(7, '0');
+}
+function fixState(e, day) {
+  if (e.rev) return 'reverted';
+  if (e.op || e.ok) return 'ok';
+  if (!e.auto) return 'pending';
+  const idle = daysBetween(e.last || e.auto, day);
+  return idle > FIX_TTL_DAYS ? 'expired' : idle > FIX_TTL_DAYS - 7 ? 'expiring' : 'auto';
+}
+// 소금: Secret IP_SALT, 없으면 ADMIN_TOKEN 에서 (둘 다 비밀이라 해시로 IP 를 거꾸로 찾을 수 없다)
+const ipSalt = (env) => (env.IP_SALT ? String(env.IP_SALT) : env.ADMIN_TOKEN ? 'tnc-ip-v1|' + String(env.ADMIN_TOKEN) : '');
+async function ipHash(env, ip) {
+  const salt = ipSalt(env);
+  if (!salt || !ip || ip === 'x') return '';
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(salt + '|' + ip));
+  return [...new Uint8Array(d)].slice(0, 8).map((v) => v.toString(16).padStart(2, '0')).join('');
+}
+async function loadFixes(env) {
+  try { const l = JSON.parse((await env.LOGS.get(FIX_KEY)) || '[]'); return Array.isArray(l) ? l : []; } catch (e) { return []; }
+}
+const saveFixes = (env, list) => env.LOGS.put(FIX_KEY, JSON.stringify(list), { expirationTtl: 60 * 60 * 24 * 90 });
 // 바깥 API 오류는 상태와 짧은 글만 돌려준다 (응답 전체를 그대로 내보내지 않게)
 function brief(d) {
   if (!d || typeof d !== 'object') return '';
@@ -101,10 +151,12 @@ export default {
     const isLogPost = req.method === 'POST' && url.pathname === '/log';
     const isEventPost = req.method === 'POST' && url.pathname === '/event';
     const isFixPost = req.method === 'POST' && url.pathname === '/fix';
-    if (req.method !== 'GET' && !isLogPost && !isEventPost && !isFixPost) return json({ error: 'method' }, 405, cors);
+    const isReviewPost = req.method === 'POST' && url.pathname === '/fix/review';
+    if (req.method !== 'GET' && !isLogPost && !isEventPost && !isFixPost && !isReviewPost) return json({ error: 'method' }, 405, cors);
     // v172: 접속지(IP)별 횟수 제한 → 하루 상한 → 운영자 토큰 순서 (토큰 맞히기 시도도 횟수 제한에 걸린다)
     const ip = req.headers.get('CF-Connecting-IP') || 'x';
-    if (overLimit(ip, url.pathname)) return json({ error: 'rate limited', retryAfter: 60 }, 429, cors);
+    const wait = overLimit(ip, url.pathname);
+    if (wait) return json({ error: 'rate limited', message: '잠시 후 다시 시도합니다', retryAfter: wait }, 429, cors);
     if (env.RL && env.RL.limit && url.pathname !== '/health') {
       try { const r0 = await env.RL.limit({ key: ip }); if (r0 && r0.success === false) return json({ error: 'rate limited', retryAfter: 60 }, 429, cors); } catch (e) { /* 바인딩 없음 */ }
     }
@@ -123,6 +175,7 @@ export default {
         search: !!(env.NAVER_SEARCH_ID && env.NAVER_SEARCH_SECRET),
         logs: !!env.LOGS,
         hipass: !!env.EX_KEY,
+        autoFix: !!ipSalt(env),
       }, 200, cors);
     }
     // 브라우저가 아닌 곳에서 마구 부르는 것을 1차로 막는다 (Origin 은 위조 가능하므로 완벽하진 않음)
@@ -179,9 +232,13 @@ export default {
 
       // v171 단속 카메라 고침 목록 (2026-11-20 운전자 '놓침을 누르면 … 바로 반영될 수 있었으면'):
       // 앱이 '놓침' 진단으로 찾은 고침(방향·경로 위로 보기·신호 전용 알림·틀림 풀기·새 신고 지점)을 기기 번호와 함께 보낸다.
-      // 저장은 KV 한 값 'fixes:v1' = [{ kind, k, lat, lng, h, devs: [기기 번호…] }] (카메라 점·방향·종류만, 신고 시각·궤적 없음, 90일).
-      // v172 (공개 전 보안 점검): GET /fixes 는 운영자 토큰(ADMIN_TOKEN)으로 보낸 고침만 준다. 다른 사람이 보낸 것은 후보로만 쌓고
-      // (기기 번호는 앱이 만드는 값이라 기기 2대도 한 사람이 꾸밀 수 있다), 운영자가 GET /fixes?all=1 (토큰)로 보고 같은 고침을 토큰으로 보내면 반영된다
+      // 저장은 KV 한 값 'fixes:v1' = [{ kind, k, lat, lng, h, devs, ips, first, last, op, ok, auto, rev }] (카메라 점·방향·종류·날짜만, 궤적 없음, 90일).
+      // v175 (2026-11-20 운전자 '3명 이상 신고된 곳은 자동 반영해도 좋을 거 같아 한번 더 검증하면 되니까 AI가'):
+      //   같은 고침(카메라 고침은 같은 카메라, 새 지점은 50m 안·방향 ±45°)을 서로 다른 기기 3대 + 서로 다른 접속지 3곳에서 보내면
+      //   운영자 없이 /fixes 공개 목록에 넣는다(auto). 접속지는 원래 IP 가 아니라 Secret IP_SALT 를 섞은 해시 앞 16자만 저장한다
+      //   (IP_SALT 가 없으면 ADMIN_TOKEN 에서 만든 소금. 둘 다 없으면 자동 반영하지 않는다). 자동 반영은 30일 동안 새 신고가 없으면 빠진다(이동식 단속처럼 없어지는 곳).
+      //   운영자 토큰으로 보낸 고침(op)과 운영자가 '확인'한 곳(ok)은 만료되지 않는다. '되돌리기'(rev)는 공개하지 않고 다시 자동 반영하지도 않는다.
+      //   운영자 통로(토큰): GET /fixes?all=1[&state=auto,pending,expiring,…] 목록, POST /fix/review {items:[{id, action: confirm|revert|restore}]}
       if (url.pathname === '/fix' && isFixPost) {
         if (!env.LOGS) return json({ ok: false }, 200, cors);
         const text = await req.text();
@@ -192,40 +249,88 @@ export default {
         if (!/^[a-z0-9]{8,24}$/.test(dev) || !Array.isArray(b.items)) return json({ error: 'bad fix' }, 400, cors);
         const KINDS = new Set(['dir', 'route', 'signal', 'flag', 'spot']);
         const KEY = /^-?\d{1,3}(\.\d{1,8})?,-?\d{1,3}(\.\d{1,8})?$/;
-        let list = [];
-        try { list = JSON.parse((await env.LOGS.get('fixes:v1')) || '[]'); } catch (e) { list = []; }
+        const iph = await ipHash(env, ip);
+        const day = kstDay();
+        const list = await loadFixes(env);
         let added = 0;
         for (const it of b.items.slice(0, 5)) {
-          const lat = +it.lat, lng = +it.lng, h = it.h == null ? null : Math.round(+it.h) % 360;
+          const lat = +it.lat, lng = +it.lng, h = it.h == null || !Number.isFinite(+it.h) ? null : ((Math.round(+it.h) % 360) + 360) % 360;
           if (!KINDS.has(it.kind) || !(lat > 33 && lat < 39 && lng > 124 && lng < 132)) continue;
           const k = it.kind === 'spot' ? lat.toFixed(4) + ',' + lng.toFixed(4) + ',' + (h == null ? 'x' : Math.round(h / 45) % 8) : String(it.k || '').slice(0, 40);
           if (!k || (it.kind !== 'spot' && !KEY.test(k))) continue;
-          let e = list.find((x) => x.kind === it.kind && x.k === k);
+          const here = { lat, lng, h };
+          // 같은 고침: 카메라 고침은 같은 카메라(k)·방향 ±45°, 새 지점은 50m 안·방향 ±45°
+          let e = list.find((x) => x.kind === it.kind && (it.kind === 'spot' ? distM(x, here) <= FIX_NEAR_M : x.k === k) && headOk(x.h, h));
           if (!e) {
-            if (list.length >= 2000) {
-              // 가득 차면 운영자 고침은 가장 오래된 후보를 밀어내고 넣는다. 후보는 더 받지 않는다
-              const old = isAdmin ? list.findIndex((x) => !x.op) : -1;
+            if (list.length >= FIX_MAX) {
+              // 가득 차면 가장 오래 신고가 없던 후보(공개 안 된 것)를 밀어낸다
+              let old = -1;
+              list.forEach((x, i) => { if (fixState(x, day) === 'pending' && (old < 0 || String(x.last || '') < String(list[old].last || ''))) old = i; });
               if (old < 0) continue;
               list.splice(old, 1);
             }
-            e = { kind: it.kind, k, lat: +lat.toFixed(6), lng: +lng.toFixed(6), h, devs: [] }; list.push(e);
+            e = { kind: it.kind, k, lat: +lat.toFixed(6), lng: +lng.toFixed(6), h, devs: [], ips: [], first: day, last: day };
+            list.push(e);
+            added++;
           }
-          if (isAdmin && !e.op) { e.op = true; added++; }   // v172: 운영자 토큰이 있을 때만 바로 모든 사용자에게
-          if (!e.devs.includes(dev) && e.devs.length < 10) { e.devs.push(dev); added++; }
+          if (!e.ips) e.ips = [];
+          if (e.last !== day) { e.last = day; added++; }
+          if (!e.first) e.first = day;
+          if (!e.devs.includes(dev) && e.devs.length < 20) { e.devs.push(dev); added++; }
+          if (iph && !e.ips.includes(iph) && e.ips.length < 20) { e.ips.push(iph); added++; }
+          if (isAdmin && !e.op) { e.op = true; e.ok = e.ok || day; delete e.rev; added++; }   // 운영자가 보낸 고침은 바로 모든 사용자에게
+          if (!e.auto && !e.rev && !e.op && !e.ok && fixCount(e) >= FIX_AUTO_MIN) { e.auto = day; added++; }
         }
-        if (added) await env.LOGS.put('fixes:v1', JSON.stringify(list), { expirationTtl: 60 * 60 * 24 * 90 });
+        if (added) await saveFixes(env, list);
         return json({ ok: true, added }, 200, cors);
+      }
+      // 운영자 검토: 확인(만료 없이 공개) · 되돌리기(공개 안 함, 다시 자동 반영도 안 함) · 되살리기(되돌리기 취소)
+      if (url.pathname === '/fix/review' && isReviewPost) {
+        if (!isAdmin) return json({ error: 'unauthorized' }, 401, cors);
+        if (!env.LOGS) return json({ ok: false }, 200, cors);
+        const text = await req.text();
+        if (text.length > 8000) return json({ error: 'too large' }, 413, cors);
+        let b;
+        try { b = JSON.parse(text); } catch (e) { return json({ error: 'bad json' }, 400, cors); }
+        const acts = Array.isArray(b && b.items) ? b.items : (b && b.id ? [b] : []);
+        const day = kstDay();
+        const list = await loadFixes(env);
+        const done = [];
+        for (const a of acts.slice(0, 50)) {
+          const e = list.find((x) => fixId(x) === String(a.id || ''));
+          if (!e) { done.push({ id: a.id, ok: false, error: 'not found' }); continue; }
+          if (a.action === 'confirm') { e.ok = day; delete e.rev; }
+          else if (a.action === 'revert') { e.rev = day; delete e.ok; delete e.op; }
+          else if (a.action === 'restore') { delete e.rev; }
+          else { done.push({ id: a.id, ok: false, error: 'bad action' }); continue; }
+          done.push({ id: a.id, ok: true, state: fixState(e, day) });
+        }
+        if (done.some((x) => x.ok)) await saveFixes(env, list);
+        return json({ ok: true, done }, 200, cors);
       }
       if (url.pathname === '/fixes') {
         if (!env.LOGS) return json({ v: 1, items: [] }, 200, cors);
-        let list = [];
-        try { list = JSON.parse((await env.LOGS.get('fixes:v1')) || '[]'); } catch (e) { list = []; }
-        // v172: 운영자 토큰으로 보낸 것(op)만 모든 사용자에게. 운영자는 ?all=1 로 후보(보낸 기기 수 n)까지 본다
+        const day = kstDay();
+        const list = await loadFixes(env);
+        // 운영자: 모든 항목과 상태 (신고 기기·접속지 값은 내보내지 않고 수만). state=auto,pending,expiring,expired,ok,reverted 로 거를 수 있다
         if (isAdmin && p.get('all') === '1') {
-          return json({ v: 1, items: list.map((e) => ({ kind: e.kind, k: e.k, lat: e.lat, lng: e.lng, h: e.h, op: !!e.op, n: e.devs.length })) }, 200, cors);
+          const want = new Set(String(p.get('state') || '').split(',').map((x) => x.trim()).filter(Boolean));
+          const items = list.map((e) => {
+            const st = fixState(e, day), idle = e.last ? daysBetween(e.last, day) : null;
+            return {
+              id: fixId(e), kind: e.kind, k: e.k, lat: e.lat, lng: e.lng, h: e.h, state: st, public: FIX_PUBLIC.has(st),
+              n: fixCount(e), devs: e.devs.length, ips: (e.ips || []).length, first: e.first || null, last: e.last || null,
+              auto: e.auto || null, ok: e.ok || null, rev: e.rev || null, op: !!e.op,
+              expiresInDays: e.auto && !e.ok && !e.op && !e.rev && idle != null ? Math.max(0, FIX_TTL_DAYS - idle) : null,
+            };
+          }).filter((x) => !want.size || want.has(x.state));
+          const counts = {};
+          list.forEach((e) => { const st = fixState(e, day); counts[st] = (counts[st] || 0) + 1; });
+          return json({ v: 2, day, autoEnabled: !!ipSalt(env), counts, items }, 200, cors);
         }
-        const items = list.filter((e) => e.op)
-          .map((e) => ({ kind: e.kind, k: e.k, lat: e.lat, lng: e.lng, h: e.h }));
+        // 모든 사용자: 운영자 고침·확인한 곳(src 'op')과 아직 확인 전인 자동 반영(src 'auto', 앱이 '사용자 제보'로 표시)
+        const items = list.map((e) => ({ e, st: fixState(e, day) })).filter((x) => FIX_PUBLIC.has(x.st))
+          .map(({ e, st }) => ({ kind: e.kind, k: e.k, lat: e.lat, lng: e.lng, h: e.h, src: st === 'ok' ? 'op' : 'auto' }));
         return json({ v: 1, items }, 200, cors, 300);
       }
 
@@ -352,18 +457,14 @@ export default {
           return json({ alternatives }, 200, cors);
         }
 
-        const ip = req.headers.get('CF-Connecting-IP') || 'anon';
-        // Cloudflare Rate limiter 바인딩(ROUTE_LIMIT, 예: 60초에 4회)이 있으면 그것을 쓰고, 없으면 메모리 기준으로 막는다
-        if (env.ROUTE_LIMIT) {
-          const { success } = await env.ROUTE_LIMIT.limit({ key: 'route:' + ip });
-          if (!success) return json({ error: 'rate limited', message: '잠시 후 다시 시도합니다', retryAfter: 15 }, 429, cors);
-        } else {
-          const now = Date.now(), last = routeHits.get(ip) || 0;
-          if (now - last < ROUTE_GAP_MS) {
-            return json({ error: 'rate limited', message: '잠시 후 다시 시도합니다', retryAfter: Math.ceil((ROUTE_GAP_MS - (now - last)) / 1000) }, 429, cors);
+        // v175: 같은 접속지에서 15초에 ROUTE_BURST 번까지 (예전 ROUTE_LIMIT 바인딩·15초 한 번은 공유 IP 의 여러 차를 막아서 쓰지 않는다)
+        {
+          const now = Date.now();
+          let rh = routeHits.get(ip);
+          if (!rh || now - rh.t > ROUTE_GAP_MS) { rh = { t: now, n: 0 }; routeHits.set(ip, rh); if (routeHits.size > 5000) routeHits.clear(); }
+          if (++rh.n > ROUTE_BURST) {
+            return json({ error: 'rate limited', message: '잠시 후 다시 시도합니다', retryAfter: Math.max(1, Math.ceil((rh.t + ROUTE_GAP_MS - now) / 1000)) }, 429, cors);
           }
-          routeHits.set(ip, now);
-          if (routeHits.size > 5000) routeHits.clear();
         }
         const r = await call(single);
         if (!r.ok) return json({ error: 'upstream', status: r.status, message: brief(r.data) }, 502, cors);

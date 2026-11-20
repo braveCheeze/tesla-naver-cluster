@@ -140,6 +140,8 @@
   /* v161: '틀림'으로 의심 표시한 카메라 — 흐리게, 제한속도 '?' */
   .camcard.doubt { opacity: .55; filter: saturate(.4); }
   .camcard.doubt .cam-type::after { content: ' · 틀림 표시'; font-weight: 600; opacity: .8; }
+  /* v175: 운영자 확인 전, 여러 운전자 신고로 자동 반영된 고침이 바꾼 카메라 */
+  .camcard.crowd .cam-type::after { content: ' · 사용자 제보'; font-weight: 600; opacity: .8; }
   .camflags ul { list-style: none; margin: 4px 0 8px; padding: 0; }
   .camflags li { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(127,127,127,.25); font-size: 14px; }
   .camflags li span { flex: 1; min-width: 0; }
@@ -1954,8 +1956,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-174"></script>
-<script src="img/ai/picks.js?v=2026.11.16-174"></script>
-<script src="app.js?v=2026.11.16-174"></script>
+<script src="icons.js?v=2026.11.16-175"></script>
+<script src="img/ai/picks.js?v=2026.11.16-175"></script>
+<script src="app.js?v=2026.11.16-175"></script>
 </body>
 </html>

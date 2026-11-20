@@ -2835,6 +2835,7 @@
     { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored; 7-10 lanes fit the drawer as square tiles", fn: s77 },
     { id: 'S78', name: "S78 mainline junction (v133): keep-left/right where the route stays on the same expressway section and goes straight is shown as straight ('신갈분기점에서 직진 · 서울 방면', main-straight junction scene, straight sign); a fork onto another expressway stays a fork", fn: s78 },
     { id: 'S79', name: 'S79 rest areas (v133): distance to where the entry ramp leaves the mainline (OSM), not the rest-area centre; within 3 km and no turn within 1 km the top row becomes the rest area (blue), next row = the guidance after it', fn: s79 },
+    { id: 'S112', name: "S112 crowd fixes (v175, driver: 'auto-apply spots 3+ drivers reported, AI checks them again'): from /fixes, a fix marked src 'auto' (3+ drivers, not yet confirmed) still changes the camera but its card says '사용자 제보', an auto spot shows '사용자 제보 단속 지점' with limit '?', a confirmed spot (src 'op' or an old server without src) shows '운전자 신고 단속 지점'; my own reported spot at an auto spot reads '여러 운전자 신고로 반영됨(확인 전)'", fn: s112 },
     { id: 'S111', name: "S111 cafe tester feedback (v174): on a guided route the car icon stays on the route line within 14 m but a parallel road 25 m beside it (still 'on route' for rerouting) and the straight road 40 m beside an exit stretch show the real position, and it snaps back once on the route again; a pinch or +/- zoom holds for 2 minutes against the speed and arrival auto zoom; a voice engine that never starts is reported in settings '소리' and falls back to beeps; coming back from a hidden page (reverse camera) keeps guidance", fn: s111 },
     { id: 'S109', name: "S109 tunnel dark map (v172, driver: 'dark mode in a tunnel, back on exit, stays dark at night'): with night map 'auto', driving into a named tunnel turns the map dark at once, leaving it keeps it dark until 4 s outside and 8 s in total, then light again; GPS lost 100 m before the entrance at speed counts as inside, standing there does not; a parallel road 30 m beside the tunnel, an unnamed tunnel way and 'always light' never darken; on a guided route the route's tunnel stretch darkens", fn: s109 },
     { id: 'S110', name: "S110 public-release privacy (v172 security review): without the operator token a '놓침' report carries nearby camera points and heading but no trace or speed, the token adds the trace and the Authorization header; with '놓침·틀림 위치 보내기' off nothing is sent and the button reads '✓ 저장'; diagnostic upload needs the token; settings have no Naver Client ID or tunnel switch and no per-source credits (v173: OSM and 공공데이터포털 sit beside the map's Naver credit), the server address, diagnostics, demo, sound test and icon admin sit in the developer menu, and every switch is a big toggle", fn: s110 },
@@ -2872,7 +2873,7 @@
     { id: 'S73', name: 'S73 no spoken overspeed words (과속/초과): limit beeps and the red card only', fn: s73 },
     { id: 'S72', name: 'S72 opposite-lane cameras: two-way cameras more than 10 m left of the route are skipped (Munjeong, Bokjeong, Geumgok IC regressions)', fn: s72 },
     { id: 'S71', name: 'S71 signal camera alert clears as the car passes it (2 m past), even with fixes 17 m apart, on route too', fn: s71 },
-    { id: 'S70', name: 'S70 a reroute refused by the route server (429, 4 per minute) retries quietly after the given time, no failure message', fn: s70 },
+    { id: 'S70', name: 'S70 a reroute refused by the route server (429) retries quietly after the given time, no failure message; v175: a first route search refused with 429 also retries once quietly and shows the route card', fn: s70 },
     { id: 'S69', name: 'S69 signal cameras: warning kept only 5 m after passing; no spoken speeding line (beep instead); straight underpass entry shows the tunnel icon and "OO지하차도까지"', fn: s69 },
     { id: 'S68', name: 'S68 free drive with a wrong GPS heading still catches the speed camera ahead (track bearing); a camera passed without an alert is counted as missed', fn: s68 },
   ];
@@ -3446,8 +3447,22 @@
       await waitFor(() => !t.nav.busy, 3000);
       r.callsLater = stub.count('/route') - c0;
       t.endNav();
+      // v175: 처음 길찾기도 429 면 실패 안내 없이 한 번 다시 (같은 통신사 IP 를 여러 차가 쓸 때)
+      softReset();
+      n = 0;
+      const okAlts = { alternatives: [Object.assign({ option: 'traoptimal' }, okRoute)] };
+      stub.canned['/route'] = () => (++n === 1 ? { __status: 429, body: { error: 'rate limited', message: '잠시 후 다시 시도합니다', retryAfter: 1 } } : okAlts);
+      feed(R.P[0], 0, null);
+      const c1 = stub.count('/route');
+      await t.planRoute(R.dest, false);
+      r.first = { toast: text('#toast'), fail: /찾지 못했어요|연결하지 못했어요/.test(text('#toast')), calls: stub.count('/route') - c1 };
+      await new Promise((res) => setTimeout(res, 1700));
+      await waitFor(() => !t.nav.busy && t.nav.preview, 3000);
+      r.first.later = stub.count('/route') - c1; r.first.card = visible('#routeCard');
+      t.endNav();
     } finally { softReset(); }
-    const ok = !r.failToast && /다시 찾습니다/.test(r.toast) && r.callsNow === 1 && r.callsLater === 2;
+    const ok = !r.failToast && /다시 찾습니다/.test(r.toast) && r.callsNow === 1 && r.callsLater === 2 &&
+      !r.first.fail && /몰려/.test(r.first.toast) && r.first.calls === 1 && r.first.later === 2 && r.first.card;
     return { pass: ok, detail: JSON.stringify(r) };
   }
 
@@ -5467,6 +5482,63 @@
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
+  // S112: 여러 운전자 신고 자동 반영 (v175, 2026-11-20 운전자 '3명 이상 신고된 곳은 자동 반영해도 좋을 거 같아 한번 더 검증하면 되니까 AI가')
+  async function s112() {
+    const t = T(), r = {};
+    const O = dest(NAV_ORIGIN, 90, 48000), at = (x, y) => dest(dest(O, 90, x), 0, y);
+    const keep = { drv: t.driverSpots.rows.slice(), shared: t.sharedSpots.slice(), mine: t.mySpots.slice(), mineRaw: t.store.get('mySpots'),
+      fixRaw: t.store.get('camFix') };
+    const fakes = [];
+    let base0 = null;
+    const realF = window.fetch;
+    const label = () => ({ type: text('#camType'), limit: text('#camLimit'), crowd: document.getElementById('camCard').classList.contains('crowd') });
+    try {
+      t.driverSpots.rows.length = 0; t.sharedSpots.length = 0; t.mySpots.length = 0; t.camFixes.clear(); t.sharedFixes.clear();
+      t.applyUserSpots(); base0 = t.cams.rows.length;
+      // 남행으로 적힌 60 카메라 B — 북쪽으로 가면 원래는 안 알린다. 자동 반영 '양방향' 고침이 오면 알린다
+      const B = [round6(at(0, 3000).lat), round6(at(0, 3000).lng), 60, 1, 0, 0, 0, -1, 4, 1];
+      B.eb = 180; B.e2 = 0; B.lv = 0; B.sl = B[0]; B.sg = B[1]; B.on = '';
+      { const i = t.cams.rows.length; t.cams.rows.push(B); fakes.push(i); const k = Math.floor(B[0] / 0.01) + ':' + Math.floor(B[1] / 0.01); if (!t.cams.grid.has(k)) t.cams.grid.set(k, []); t.cams.grid.get(k).push(i); }
+      t.cams.userBase = null; t.applyUserSpots();
+      const A = at(0, 6000), C = at(0, 9000), D = at(0, 12000);
+      window.fetch = (u, o) => (/\/fixes(\?|$)/.test(String(u)) ? Promise.resolve(new Response(JSON.stringify({ v: 1, items: [
+        { kind: 'dir', k: B[0] + ',' + B[1], lat: B[0], lng: B[1], h: 0, src: 'auto' },
+        { kind: 'spot', lat: A.lat, lng: A.lng, h: 0, src: 'auto' },
+        { kind: 'spot', lat: C.lat, lng: C.lng, h: 0, src: 'op' },
+        { kind: 'spot', lat: D.lat, lng: D.lng, h: 0 }] }), { status: 200 })) : realF(u, o));
+      r.load = await t.loadSharedFixes();
+      window.fetch = realF;
+      r.fix = { e2: B.e2, crowd: !!B.crowd };
+      const pass = async (pt) => { let seen = null; await driveThrough(pt, 0, 700, 0, 60, 16.7, () => { const tg = t.camState.target; if (tg && !seen && Math.abs(tg.c[0] - round6(pt.lat)) < 1e-4) seen = label(); }); return seen; };
+      r.cam = await pass(at(0, 3000));
+      r.auto = await pass(A);
+      r.op = await pass(C);
+      r.old = await pass(D);
+      // 내가 신고한 지점이 자동 반영 지점과 같은 자리면
+      t.mySpots.push({ lat: A.lat, lng: A.lng, h: 0, t: Date.now(), days: ['x'], kmh: 60 });
+      r.status = t.mySpotStatus(t.mySpots[t.mySpots.length - 1]);
+    } finally {
+      window.fetch = realF;
+      t.sharedFixes.clear(); t.sharedSpots.length = 0;
+      t.driverSpots.rows.length = 0; t.mySpots.length = 0; t.applyUserSpots();
+      if (base0 !== null) {
+        for (const i of fakes.slice().reverse()) { const c = t.cams.rows[i]; if (!c) continue; const k = Math.floor(c[0] / 0.01) + ':' + Math.floor(c[1] / 0.01); const a = t.cams.grid.get(k); if (a) { const j = a.indexOf(i); if (j >= 0) a.splice(j, 1); } t.camMiss.near.delete(i); t.camState.passed.delete(i); t.camState.saidById.delete(i); }
+        t.cams.rows.length = base0; t.cams.userBase = null;
+      }
+      t.camFixes.clear(); t.store.set('camFix', keep.fixRaw);
+      keep.drv.forEach((x) => t.driverSpots.rows.push(x)); keep.shared.forEach((x) => t.sharedSpots.push(x)); keep.mine.forEach((x) => t.mySpots.push(x));
+      t.store.set('mySpots', keep.mineRaw);
+      t.applyUserSpots(); t.applyCamFixes();
+      await resetApp();
+    }
+    const ok = r.load && r.fix.e2 === 1 && r.fix.crowd &&
+      r.cam && r.cam.crowd && r.cam.limit === '60' &&
+      r.auto && r.auto.type === '사용자 제보 단속 지점' && r.auto.limit === '?' && !r.auto.crowd &&
+      r.op && r.op.type === '운전자 신고 단속 지점' && r.old && r.old.type === '운전자 신고 단속 지점' &&
+      r.status === 'crowd';
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
   // S111: 카페 시험자 피드백 (v174, 2026-11-20)
   async function s111() {
     const t = T(), r = {}, R = buildNavRoute();
@@ -5494,6 +5566,7 @@
       r.exit = { onRoute: t.nav.onRoute, snap: t.nav.snap, toReal: Math.round(hav(me(), ex.q)) };
       // (d) 확대: 손으로 바꾸면 2분 동안 자동 줌이 덮어쓰지 않는다
       for (let m = 520; m <= 560; m += 20) go(m, 0);
+      await waitFor(() => t.getMap(), 10000);   // 짧게 돌릴 때는 지도가 아직 안 떴을 수 있다
       const m0 = t.getMap();
       t.zoomCtl.manualUntil = 0; t.zoomCtl.last = 0;
       // (화면이 숨겨져 있으면 지도 확대 애니메이션이 끝나지 않으므로 배율 값 대신 '언제까지 손 배율' 과 자동 줌 호출을 본다)
