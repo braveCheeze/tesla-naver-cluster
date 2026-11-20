@@ -59,7 +59,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-175'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-176'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -491,11 +491,14 @@
   // (음성 목록은 있지만 시작이 안 됨)는 알아채지 못해 경고음도 없었다. 이제 4초 안에 말이 시작되지 않으면(말하는 중도 아니면) 그 안내는 경고음으로 대신하고,
   // 두 번 이어지면 이 화면에서는 경고음으로만 안내한다. 이유는 한 번 짧게 알리고 설정 '소리'에 남긴다(위치 없이 서버에도 한 번)
   const tts = { started: 0, failed: 0, broken: false, noticed: false };
+  // v176 (2026-11-20 배포 뒤 점검: 테슬라 브라우저 접속은 모두 음성 목록이 비어 있었다 voices=0): 'noko' 는 음성은 있는데 한국어가 없을 때만
+  // (외국어 음성으로 읽으면 못 알아듣는다). 목록이 아예 비어 있으면 기본 음성으로 말해 보고('novoice'), 시작이 안 되면 위 감시가 경고음으로
   function ttsStatus() {
     if (!hasTTS) return 'none';
     if (tts.broken) return 'broken';
     if (koVoice) return 'ok';
-    return voicesSettled || speechSynthesis.getVoices().length ? 'noko' : 'wait';
+    if (speechSynthesis.getVoices().length) return 'noko';
+    return tts.started ? 'ok' : voicesSettled ? 'novoice' : 'wait';
   }
   const TTS_WHY = {
     none: '이 브라우저에는 음성 기능이 없어 경고음으로 안내해요.',
@@ -525,8 +528,9 @@
   function speak(text, urgent, onFail, onEnd) {
     if (!prefs.voice || !audioUnlocked) return false;
     if (!hasTTS || tts.broken) { ttsNotice(); return false; }
-    // 한국어 음성이 없는 기기에서 외국어 음성으로 읽으면 알아들을 수 없으므로 경고음으로 대신한다
-    if (!koVoice && (voicesSettled || speechSynthesis.getVoices().length)) { ttsNotice(); return false; }
+    // 한국어 음성이 없는 기기(다른 말 음성만 있음)에서 외국어 음성으로 읽으면 알아들을 수 없으므로 경고음으로 대신한다.
+    // v176: 음성 목록이 비어 있으면(테슬라) 막지 않고 기본 음성으로 말해 본다
+    if (!koVoice && speechSynthesis.getVoices().length) { ttsNotice(); return false; }
     try {
       let resay = false;
       if (urgent) {
@@ -546,12 +550,22 @@
         }
       };
       // v174: 말이 시작됐는지 본다. 앞 안내가 아직 말하는 중이면(차례 기다림) 세지 않는다
-      const ok1 = () => { if (!u._st) { u._st = true; tts.started++; tts.failed = 0; } };
+      const ok1 = () => {
+        if (u._st) return;
+        u._st = true; tts.started++; tts.failed = 0;
+        // v176: 음성 목록 없이도 말이 나왔는지 한 번 남긴다 (위치 없음)
+        if (!koVoice && !tts.spokeNoList && !speechSynthesis.getVoices().length) { tts.spokeNoList = true; report('info', { msg: 'tts started without voice list' }); }
+      };
       u.onstart = ok1;
       const end0 = u.onend;
       u.onend = (e) => { ok1(); if (end0) end0(e); };   // 시작 알림이 없는 브라우저도 끝남은 성공으로 본다
       const err0 = u.onerror;
-      u.onerror = (e) => { u._err = true; if (err0) err0(e); };
+      u.onerror = (e) => {
+        u._err = true;
+        if (err0) err0(e);
+        // v176: 말하자마자 오류(음성 엔진 없음 등)도 실패로 센다 — 두 번이면 경고음으로만
+        if (e && e.error !== 'interrupted' && e.error !== 'canceled' && !u._st) { tts.failed++; if (tts.failed >= 2 && !tts.started) { tts.broken = true; ttsNotice(); } }
+      };
       try { if (speechSynthesis.paused) speechSynthesis.resume(); } catch (e) { /* 없음 */ }
       speechSynthesis.speak(u);
       setTimeout(() => {
