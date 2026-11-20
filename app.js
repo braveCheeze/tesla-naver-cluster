@@ -52,7 +52,7 @@
   const proxyUrl = () => (store.get('proxy') || PROXY_DEFAULT).replace(/\/+$/, '');
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-168'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-169'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -2220,7 +2220,9 @@
     let ok = false, mobileOk = false;
     try {
       // 버전을 붙여 새 버전과 함께 바뀐 카메라 데이터를 바로 받는다 (브라우저 10분 캐시 우회)
-      const [r, rm] = await Promise.all([fetch('data/cameras.json?v=' + APP_VERSION), fetch('data/mobile.json?v=' + APP_VERSION).catch(() => null)]);
+      const [r, rm, rd] = await Promise.all([fetch('data/cameras.json?v=' + APP_VERSION), fetch('data/mobile.json?v=' + APP_VERSION).catch(() => null),
+        fetch('data/driver_spots.json?v=' + APP_VERSION).catch(() => null)]);
+      try { const d = rd && rd.ok ? await rd.json() : null; if (d && Array.isArray(d.rows)) driverSpots.rows = d.rows; } catch (e) { /* 없이 */ }
       if (!r.ok) throw new Error('cameras ' + r.status);
       const j = await r.json();
       // 박스형(단속 부스)·이동식 과속 단속 (v112, tools/build_mobile.py): 행 모양이 같아 그대로 붙인다. 도로 이름은 모름(-1)
@@ -2266,6 +2268,7 @@
       const ar = new Map(), an = j.arrowNames || [], al = j.arrows || [];
       for (let k = 0; k + 2 < al.length; k += 3) if (j.rows[al[k]]) ar.set(j.rows[al[k]], [an[al[k + 1]], an[al[k + 2]]]);
       cams.rows = j.rows; cams.grid = g; cams.date = j.date; cams.roads = j.roads || []; cams.arrows = ar; cams.loaded = true;
+      cams.userBase = null; applyUserSpots();   // v169: 신고한 단속 지점을 카메라 표 끝에 붙인다
       ok = true;
       nav.routeCams = null;   // 길안내 중이면 경로 위 카메라를 새 자료로 다시 찾는다
     } catch (e) {
@@ -2286,6 +2289,91 @@
     // 카메라는 있고 박스형만 빠졌으면 경고 중·구간단속 중에는 자료를 바꾸지 않는다
     if (cams.loaded && (camState.target || camState.section)) { camLoad.timer = setTimeout(retryCameras, 30000); return; }
     loadCameras();
+  }
+  // ---- v169 (2026-11-20 운전자 '놓침 몇 개 눌렀는데 거긴 항상 업데이트가 안 되더라'): 신고한 단속 지점 ----
+  // 박스형·이동식은 공공자료에 없어 '확인된 곳만 추가' 규칙으로는 놓침 자리가 영영 반영되지 않았다. 이제
+  //  (1) '놓침'을 누르면 그 차에 바로 '내가 신고한 단속 지점'으로 저장하고(tnc.mySpots, 이 기기에만), 다음에 같은 방향으로 지날 때 미리 알린다.
+  //      자리는 누른 곳이 아니라 궤적에서 약 2.5초 전 자리(지나친 뒤에 누르니까). 제한속도는 모름('?'), 과속 경고음 없음
+  //  (2) 운전자가 같은 자리·방향에서 다른 날 두 번 넘게 누른 곳은 data/driver_spots.json 으로 모든 사용자에게 알린다(카메라 점만)
+  //  (3) 설정 '내가 신고한 단속 지점'에서 상태(단속 자료에 있음 · 모든 사용자에게 반영됨 · 이 차에서만 알림)를 보고 지운다
+  // 카메라 표 끝에 같은 모양의 행(flags 4)으로 붙여서 경고·지남·지도는 다른 카메라와 똑같이 처리한다
+  const USER_FLAG = 4;
+  const isUserSpot = (c) => ((c[10] | 0) & USER_FLAG) === USER_FLAG;
+  const driverSpots = { rows: [] };
+  const mySpots = [];
+  try {
+    for (const x of JSON.parse(store.get('mySpots') || '[]')) {
+      if (Array.isArray(x) && x.length >= 3) mySpots.push({ lat: x[0], lng: x[1], h: x[2], t: x[3] || 0, days: Array.isArray(x[4]) ? x[4] : [], kmh: x[5] || 0 });
+    }
+  } catch (e) { /* 없음 */ }
+  function saveMySpots() {
+    store.set('mySpots', mySpots.length ? JSON.stringify(mySpots.slice(-100).map((x) => [x.lat, x.lng, x.h, x.t, x.days.slice(-5), x.kmh])) : null);
+  }
+  function userSpotRow(lat, lng, h, kmh, who) {
+    const r = [lat, lng, 0, 1, 0, 0, 0, -1, kmh >= 70 ? 1 : 4, 1, USER_FLAG];
+    r.eb = h == null ? -1 : h; r.e2 = 0; r.lv = 0; r.sl = lat; r.sg = lng; r.on = ''; r.who = who;
+    return r;
+  }
+  const sameSpot = (a, b) => haversine(a, b) < 60 && (a.h == null || b.h == null || angleDiff(a.h, b.h) <= 45);
+  function applyUserSpots() {
+    if (!cams.loaded) return;
+    const keyOf = (c) => Math.floor(c[0] / CELL) + ':' + Math.floor(c[1] / CELL);
+    if (cams.userBase != null) {
+      for (let i = cams.rows.length - 1; i >= cams.userBase; i--) {
+        const a = cams.grid.get(keyOf(cams.rows[i]));
+        if (a) { const k = a.lastIndexOf(i); if (k >= 0) a.splice(k, 1); }
+        camState.passed.delete(i);
+        if (camState.target && camState.target.i === i) camState.target = null;
+      }
+      cams.rows.length = cams.userBase;
+    }
+    cams.userBase = cams.rows.length;
+    const add = [];
+    for (const d of driverSpots.rows) add.push({ lat: d[0], lng: d[1], h: d[2], kmh: d[3] || 0, who: 'driver' });
+    for (const m of mySpots) if (!add.some((x) => sameSpot(x, m))) add.push({ lat: m.lat, lng: m.lng, h: m.h, kmh: m.kmh, who: 'mine' });
+    for (const x of add) {
+      const i = cams.rows.length, r = userSpotRow(x.lat, x.lng, x.h, x.kmh, x.who);
+      cams.rows.push(r);
+      const k = keyOf(r);
+      if (!cams.grid.has(k)) cams.grid.set(k, []);
+      cams.grid.get(k).push(i);
+    }
+    nav.routeCams = null;
+  }
+  // '놓침'을 누른 자리: 궤적에서 약 2.5초 전(천천히 가면 누른 자리), 그 때 방향·속도
+  function addMySpot(now) {
+    const t = now || Date.now();
+    let p = trace1.length ? trace1[trace1.length - 1] : null;
+    if (!p && state.fix) p = [state.fix.t, state.fix.lat, state.fix.lng, Math.round(state.speedKmh || 0), state.heading];
+    if (!p) return null;
+    if (p[3] >= 10) { for (let k = trace1.length - 1; k >= 0; k--) { if (p[0] - trace1[k][0] >= 2500) { p = trace1[k]; break; } } }
+    const spot = { lat: p[1], lng: p[2], h: p[4] == null ? null : Math.round(p[4]), t, days: [], kmh: p[3] || 0 };
+    let m = mySpots.find((x) => sameSpot(x, spot));
+    if (!m) { m = spot; mySpots.push(m); }
+    m.t = t;
+    const day = dayStr(t);
+    if (!m.days.includes(day)) m.days.push(day);
+    saveMySpots();
+    applyUserSpots();
+    return m;
+  }
+  function removeMySpot(m) {
+    const k = mySpots.indexOf(m);
+    if (k >= 0) mySpots.splice(k, 1);
+    saveMySpots();
+    applyUserSpots();
+  }
+  // 신고 지점의 상태: 같은 자리(60m)·방향에 진짜 단속 자료가 있으면 'data', 모든 사용자 목록에 있으면 'driver', 다른 날 두 번 넘게면 'twice', 아니면 'mine'
+  function mySpotStatus(m) {
+    if (cams.loaded) {
+      const base = cams.userBase != null ? cams.userBase : cams.rows.length;
+      for (const it of camsNear(m.lat, m.lng, 60)) {
+        if (it.i >= base || !isSpeedCam(it.c)) continue;
+        if (m.h == null || !camHasDir(it.c) || angleDiff(it.c.eb, m.h) <= 50) return 'data';
+      }
+    }
+    if (driverSpots.rows.some((d) => sameSpot({ lat: d[0], lng: d[1], h: d[2] }, m))) return 'driver';
+    return m.days.length >= 2 ? 'twice' : 'mine';
   }
   // 단속 자료가 없을 때 주행 중이면 작은 표시 (소리 꺼짐 표시와 같은 모양, 그 밑)
   let camStatusEl = null;
@@ -2349,6 +2437,7 @@
   // 음성으로 읽는 이름: '과속'이라는 말은 빼고 '단속 카메라'로 (v122, 2026-11-15 밤 '속도 초과라는 말 없애줘 놀란다 자꾸').
   // 화면 글자(camLabel)는 그대로
   function camSpoken(c) {
+    if (isUserSpot(c)) return '신고된 단속 지점';
     if (c[4] === 1) return '구간단속 시작';
     if (c[4] === 2) return '구간단속 끝';
     const zone = c[6] === 2 ? '어린이보호구역 ' : c[6] === 1 ? '노인보호구역 ' : '';
@@ -2356,6 +2445,7 @@
     return zone + (isRear(c) ? '후면 ' : '') + what;
   }
   function camLabel(c) {
+    if (isUserSpot(c)) return c.who === 'mine' ? '내가 신고한 단속 지점' : '운전자 신고 단속 지점';   // v169: 제한속도 모름
     let s = c[4] === 1 ? '구간단속 시작' : c[4] === 2 ? '구간단속 끝' : (KIND_NAME[c[3]] || '단속 카메라');
     if (c[6] === 2) s = '어린이보호구역 ' + (c[3] === 2 ? '단속' : s);
     else if (c[6] === 1) s = '노인보호구역 ' + s;
@@ -2414,7 +2504,7 @@
   // 경고를 시작하는 거리 (카메라가 서 있는 도로 기준):
   //   고속도로(고속국도) 3km · 고속화도로(제한 80 이상: 도시고속도로·자동차전용도로 등) 1km · 일반도로 400m
   // 첫 음성 안내는 고속도로만 2km 에서, 나머지는 경고 시작과 함께 한다
-  function alertRange(c) { return c[8] === 1 ? 3000 : c[2] >= 80 ? 1000 : 400; }
+  function alertRange(c) { return isUserSpot(c) ? (c[8] === 1 ? 1000 : 500) : c[8] === 1 ? 3000 : c[2] >= 80 ? 1000 : 400; }
   function voiceRange(c) { return c[8] === 1 ? 2000 : alertRange(c); }
   const CAM_SCAN = 3000; // 가장 긴 경고 거리
 
@@ -3190,7 +3280,7 @@
       $('#camBar').style.width = tg.after ? '100%' : Math.max(0, Math.min(100, (1 - sd / span) * 100)) + '%';
       card.classList.toggle('over', speedCam && !doubt && tg.c[2] > 0 && state.speedKmh > tg.c[2] + 1 && sd < 600);
       card.classList.toggle('signal', !speedCam);
-      card.classList.toggle('mobile', tg.c[3] === 8 || isBox(tg.c)); // 이동식·박스형 단속은 파란색 (v114)
+      card.classList.toggle('mobile', tg.c[3] === 8 || isBox(tg.c) || isUserSpot(tg.c)); // 이동식·박스형·신고 지점은 파란색 (v114, v169)
       card.classList.toggle('box', isBox(tg.c));
       card.classList.toggle('sigspeed', tg.c[3] === 3); // 신호·과속: 표지 위에 작은 신호등
       // 어린이·노인 보호구역: 도로 주의 표지 모양 타일 (삼각 표지 + 빨간 띠에 남은 거리 + '어린이보호' 와 제한속도)
@@ -6131,7 +6221,7 @@
     const tg = camState.target;
     if (state.speedKmh >= 20) {
       for (const it of camsNear(f.lat, f.lng, 40)) {
-        if (!isSpeedCam(it.c) || !camWanted(it.c)) continue;
+        if (!isSpeedCam(it.c) || !camWanted(it.c) || isUserSpot(it.c)) continue;
         let m = camMiss.near.get(it.i);
         if (!m) { m = { minD: 1e9, side: 0, alerted: false }; camMiss.near.set(it.i, m); }
         if (it.d < m.minD) { m.minD = it.d; m.side = sideOf(f, it.c, it.d); m.kmh = Math.round(state.speedKmh); m.hdg = state.heading; }
@@ -7228,6 +7318,16 @@
         return;
       }
       userReport('wrong');
+      // v169: 내가 신고한 지점이 틀렸으면 그 지점을 지운다
+      if (isUserSpot(tg.c) && tg.c.who === 'mine') {
+        const m = mySpots.find((x) => sameSpot(x, { lat: tg.c[0], lng: tg.c[1], h: tg.c.eb >= 0 ? tg.c.eb : null }));
+        camState.passed.set(tg.i, state.fix ? state.fix.t : Date.now());
+        camState.target = null;
+        if (m) removeMySpot(m);
+        renderCam(); renderMySpots();
+        toast('내가 신고한 단속 지점을 지웠어요.', '', 3000);
+        return;
+      }
       const h = state.heading === null ? null : Math.round(state.heading);
       const st = camFlagAdd(tg.c, h);
       tg.flag = st;
@@ -7247,11 +7347,15 @@
       if (b.classList.contains('sent') || b.classList.contains('sending')) return;
       b.classList.add('sending'); b.textContent = '보내는 중…';
       clearTimeout(b._sentT);
+      // v169: 이 차에 바로 '내가 신고한 단속 지점'으로 저장 (다음에 같은 방향으로 지나면 미리 알린다)
+      const spot = addMySpot();
+      renderMySpots();
       // v163: 서버가 받았을 때만 파란 '✓ 보냄'. 못 보냈으면 '저장함'(연결되면 보냄)
       Promise.resolve(userReport('missed')).then((ok) => {
         b.classList.remove('sending');
-        if (ok === false) { b.classList.add('sent', 'saved'); b.textContent = '저장함'; toast('연결이 안 돼 저장해 두었어요. 연결되면 보낼게요.', '', 3500); }
-        else { b.classList.add('sent'); b.textContent = '✓ 보냄'; toast('놓친 단속 위치를 보냈어요.', '', 3000); }
+        const tail = spot ? ' 다음에 같은 방향으로 지나면 미리 알려 드릴게요.' : '';
+        if (ok === false) { b.classList.add('sent', 'saved'); b.textContent = '저장함'; toast('연결이 안 돼 저장해 두었어요. 연결되면 보낼게요.' + tail, '', 4000); }
+        else { b.classList.add('sent'); b.textContent = '✓ 보냄'; toast('놓친 단속 위치를 보냈어요.' + tail, '', 4000); }
         b._sentT = setTimeout(() => { b.classList.remove('sent', 'saved'); b.textContent = '놓침'; }, MISS_SENT_MS);
       });
     };
@@ -7375,6 +7479,7 @@
     $('#camCount').textContent = cams.loaded ? cams.rows.length.toLocaleString('ko-KR') : '-';
     $('#camDate').textContent = cams.date || '-';
     renderCamFlags();
+    renderMySpots();
     updateDemoBtn();
     sheet.hidden = false;
     checkProxy();
@@ -7414,6 +7519,30 @@
       ul.appendChild(li);
     }
   }
+  // v169: 설정 — 내가 신고한 단속 지점 (상태와 지우기)
+  const SPOT_STATUS = { data: '단속 자료에 있음', driver: '모든 사용자에게 반영됨', twice: '두 번 넘게 신고 · 다음 자료에 넣음', mine: '이 차에서만 알림' };
+  function renderMySpots() {
+    const box = $('#mySpotBox'), ul = $('#mySpotList');
+    if (!box || !ul) return;
+    box.hidden = !mySpots.length;
+    ul.innerHTML = '';
+    for (const m of mySpots.slice().sort((a, b) => b.t - a.t)) {
+      const li = document.createElement('li');
+      const d = new Date(m.t || Date.now());
+      const sp = document.createElement('span');
+      const D8 = ['북', '북동', '동', '남동', '남', '남서', '서', '북서'];
+      sp.textContent = (m.h == null ? '' : D8[Math.round(((m.h % 360) + 360) % 360 / 45) % 8] + '쪽으로 갈 때 ') + '신고한 단속 지점';
+      const sm = document.createElement('small');
+      sm.textContent = ' · ' + (d.getMonth() + 1) + '/' + d.getDate() + (m.days.length > 1 ? ' 외 ' + (m.days.length - 1) + '번' : '') + ' · ' + SPOT_STATUS[mySpotStatus(m)];
+      sp.appendChild(sm);
+      const b = document.createElement('button');
+      b.type = 'button'; b.textContent = '지우기';
+      b.onclick = () => { removeMySpot(m); renderMySpots(); };
+      li.appendChild(sp); li.appendChild(b);
+      ul.appendChild(li);
+    }
+  }
+  $('#mySpotClear').onclick = () => { mySpots.length = 0; saveMySpots(); applyUserSpots(); renderMySpots(); toast('내가 신고한 단속 지점을 모두 지웠어요.', '', 2500); };
   $('#camFlagClear').onclick = () => {
     camNoMap.clear(); saveCamNo(); renderCamFlags();
     const tg = camState.target;
@@ -7649,7 +7778,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,

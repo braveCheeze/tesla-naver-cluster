@@ -1822,6 +1822,12 @@
     <label class="check"><input type="checkbox" id="optTraffic"> 실시간 교통 (도로를 막힘 정도로 색칠)</label>
     <label class="check"><input type="checkbox" id="optWeather"> 날씨 표시 (위치는 약 10km 단위로만 보냄)</label>
     <p class="hint">단속 카메라 <b id="camCount">-</b>대 · 기준일 <b id="camDate">-</b> (경찰청 공공데이터)</p>
+    <!-- v169: 내가 '놓침'으로 신고한 단속 지점 (이 기기에만 저장, 다음에 같은 방향으로 지나면 미리 알림) — 상태와 지우기 -->
+    <div id="mySpotBox" class="camflags" hidden>
+      <p class="hint"><b>내가 신고한 단속 지점</b> · '놓침'을 누른 자리예요. 같은 방향으로 지나면 미리 알려요(제한속도 ?). 다른 날 또 누르면 모든 사용자 자료에 넣어요.</p>
+      <ul id="mySpotList"></ul>
+      <div class="row"><button id="mySpotClear" type="button">모두 지우기</button></div>
+    </div>
     <!-- v161: '틀림'으로 표시한 카메라 (14일 의심·두 번이면 숨김) — 하나씩 또는 모두 되돌리기 -->
     <div id="camFlagBox" class="camflags" hidden>
       <p class="hint"><b>'틀림'으로 표시한 단속 카메라</b> · 한 번 누르면 14일 동안 흐리게(소리 없이), 다른 날 또 누르면 숨겨요.</p>
@@ -1878,8 +1884,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-168"></script>
-<script src="img/ai/picks.js?v=2026.11.16-168"></script>
-<script src="app.js?v=2026.11.16-168"></script>
+<script src="icons.js?v=2026.11.16-169"></script>
+<script src="img/ai/picks.js?v=2026.11.16-169"></script>
+<script src="app.js?v=2026.11.16-169"></script>
 </body>
 </html>

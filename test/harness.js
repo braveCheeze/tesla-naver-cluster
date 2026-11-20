@@ -2833,6 +2833,7 @@
     { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored; 7-10 lanes fit the drawer as square tiles", fn: s77 },
     { id: 'S78', name: "S78 mainline junction (v133): keep-left/right where the route stays on the same expressway section and goes straight is shown as straight ('신갈분기점에서 직진 · 서울 방면', main-straight junction scene, straight sign); a fork onto another expressway stays a fork", fn: s78 },
     { id: 'S79', name: 'S79 rest areas (v133): distance to where the entry ramp leaves the mainline (OSM), not the rest-area centre; within 3 km and no turn within 1 km the top row becomes the rest area (blue), next row = the guidance after it', fn: s79 },
+    { id: 'S106', name: "S106 reported spots (v169, driver: '놓침 spots never get updated'): '놓침' saves the spot on this car ~2.5 s back along the trace, the next pass in the same direction shows '내가 신고한 단속 지점' (limit ?) from 500 m, not the other way; settings list shows '이 차에서만 알림' and deleting stops it; spots the driver reported on two days (data/driver_spots.json) alert every user", fn: s106 },
     { id: 'S105', name: "S105 after the v165 sweep (v167): rows passed together are judged by lane points — a point 50 is not passed with a signal 50 whose stop line is 51 m earlier (보개원삼로), a 60 sharing the 50's lane point does not show after it (복합물류로); with no route section name an elevated/underground camera on a fast road parallel to the route stays (a street-named section still drops it)", fn: s105 },
     { id: 'S104', name: "S104 camera pick, 2nd audit (v165): road names match across notation (분당-수서간고속화도로 = 분당수서로, 동부간선도로 = 동부간선로; 중앙로 ≠ 중앙고속도로); a route within 15 m of the raw position (stop-line-moved lane point 18.8 m) or within 20 m with the same road name keeps the camera (25 m still dropped, S14); expressway booths typed as ordinary roads stay on an expressway route; an entry-only highway span ends where the section name becomes a street; elevated/underground cameras stay on fast roads; opposite rows aren't passed; curve tangent", fn: s104 },
     { id: 'S103', name: "S103 tunnel cameras (v163 audit 8): on the route, a camera 3.6 km inside a tunnel is alerted from 300 m before the entrance (beyond the 3 km scan), and with GPS lost inside, a 1 s dead-reckoning tick along the route at the last speed counts the distance down and passes it", fn: s103 },
@@ -3670,7 +3671,7 @@
   //      116×52 이상, 누르면 바로 파란 바탕 '✓ 보냄' + 아래 알림, 2.5초 안에 또 누르면 다시 보내지 않고(알림도 없음), 2.5초 뒤 '놓침'으로
   async function s87() {
     const t = T(), r = {}, b = document.getElementById('camMissBtn'), toastEl = document.getElementById('toast');
-    const prevHidden = b.hidden;
+    const prevHidden = b.hidden, keepSpots = t.mySpots.slice(), keepSpotRaw = t.store.get('mySpots');
     try {
       b.hidden = false;
       const rc = b.getBoundingClientRect();
@@ -3687,6 +3688,7 @@
       r.text3 = b.textContent; r.sentAfter = b.classList.contains('sent');
     } finally {
       clearTimeout(b._sentT); b.classList.remove('sent', 'saved', 'sending'); b.textContent = '놓침'; b.hidden = prevHidden; toastEl.hidden = true;
+      t.mySpots.length = 0; keepSpots.forEach((x) => t.mySpots.push(x)); t.store.set('mySpots', keepSpotRaw); t.applyUserSpots();   // v169
     }
     const [w, h] = r.size.split('x').map(Number);
     const ok = w >= 116 && h >= 52 && r.text1 === '✓ 보냄' && r.blue && r.toast1 && !r.toast2 && r.text3 === '놓침' && !r.sentAfter;
@@ -4997,8 +4999,9 @@
   //  (c) 카메라 자료를 못 받으면 주행 중 '단속 카메라 자료 없음 · 다시 받는 중', 다시 받으면 사라지고 행 수가 돌아온다
   async function s102() {
     const t = T(), r = {}, ob = t.outbox, keepPost = ob.post, keepBox = t.store.get('outbox');
+    const keepSpots = t.mySpots.slice(), keepSpotRaw = t.store.get('mySpots');   // v169: 놓침을 누르면 신고 지점이 저장된다
     const btn = document.getElementById('camMissBtn');
-    const keep = { loaded: t.cams.loaded, mobile: t.cams.mobile, n: t.cams.rows.length };
+    let keep = null;
     const realF = window.fetch;
     try {
       ob.inTest = true; t.store.set('outbox', null);
@@ -5013,7 +5016,9 @@
       btn.click();
       await waitFor(() => !btn.classList.contains('sending'), 2000, 20);
       r.b.label = btn.textContent; r.b.saved = btn.classList.contains('saved');
-      // (c) 자료 못 받음 → 표시 → 다시 받음
+      // (c) 자료 못 받음 → 표시 → 다시 받음 (놓침으로 저장된 신고 지점은 먼저 되돌려 행 수를 맞춘다)
+      t.mySpots.length = 0; keepSpots.forEach((x) => t.mySpots.push(x)); t.applyUserSpots();
+      keep = { loaded: t.cams.loaded, mobile: t.cams.mobile, n: t.cams.rows.length };
       window.fetch = (u, o) => (/data\/(cameras|mobile)\.json/.test(String(u)) ? Promise.resolve(new Response('no', { status: 503 })) : realF(u, o));
       t.cams.loaded = false; t.cams.mobile = 0;
       await t.loadCameras();
@@ -5029,6 +5034,7 @@
       clearTimeout(t.camLoad.timer); t.camLoad.tries = 0;
       if (!t.cams.loaded) await t.loadCameras();
       ob.post = keepPost; ob.inTest = false; t.store.set('outbox', keepBox);
+      t.mySpots.length = 0; keepSpots.forEach((x) => t.mySpots.push(x)); t.store.set('mySpots', keepSpotRaw); t.applyUserSpots();
       clearTimeout(btn._sentT); btn.classList.remove('sent', 'saved', 'sending'); btn.textContent = '놓침';
       const te = document.getElementById('toast'); if (te) te.hidden = true;
       t.state.speedKmh = 0; t.renderCamStatus();
@@ -5232,6 +5238,62 @@
     const okB = r.b === 'not in data' || r.b.laneGap > 12 || !r.b.shown.join(',').includes('50,60');
     const okC = r.c === 'none in data' || (r.c.noSection === true && r.c.street === false);
     return { pass: okA && okB && okC, detail: JSON.stringify(r) };
+  }
+
+  // S106: 신고한 단속 지점 (v169, 2026-11-20 운전자 '놓침 몇 개 눌렀는데 거긴 항상 업데이트가 안 되더라')
+  //  (a) 북쪽으로 시속 60 으로 달리다 '놓침' → 이 기기에 저장, 자리는 누른 곳보다 약 2.5초(40m) 전
+  //  (b) 다음에 같은 방향으로 지나면 500m 안에서 '내가 신고한 단속 지점'(제한 ?) (c) 반대 방향으로는 안 뜬다
+  //  (d) 설정 목록에 '이 차에서만 알림'으로 보이고 지우면 안 뜬다 (e) 운전자가 두 번 넘게 누른 자리(data/driver_spots.json)는 모든 사용자에게 뜬다
+  async function s106() {
+    const t = T(), r = {}, keepRaw = t.store.get('mySpots'), keepArr = t.mySpots.slice();
+    const O = dest(NAV_ORIGIN, 90, 30000);   // 카메라가 없는 곳
+    const pressAt = dest(O, 0, 1000);
+    try {
+      t.mySpots.length = 0; t.applyUserSpots();
+      await driveThrough(pressAt, 0, 600, 0, 60, 16.7);   // 1초에 한 번
+      document.getElementById('camMissBtn').click();
+      await waitFor(() => !document.getElementById('camMissBtn').classList.contains('sending'), 2000, 10);
+      const m = t.mySpots[0];
+      r.a = m ? { n: t.mySpots.length, back: Math.round(hav(m, pressAt)), h: m.h, status: t.mySpotStatus(m), stored: !!t.store.get('mySpots') } : null;
+      const btn = document.getElementById('camMissBtn'); clearTimeout(btn._sentT); btn.classList.remove('sent', 'saved', 'sending'); btn.textContent = '놓침';
+      // (b) 같은 방향
+      let first = null, label = '', limit = '';
+      if (m) {
+        await driveThrough(m, 0, 900, 60, 60, 10, (s) => {
+          const tg = t.camState.target;
+          if (tg && t.isUserSpot(tg.c) && first === null) { first = -s; label = text('#camType'); limit = text('#camLimit'); }
+        });
+        r.b = { first, label, limit };
+        // (c) 반대 방향
+        let opp = false;
+        await driveThrough(m, 180, 900, 60, 60, 10, () => { const tg = t.camState.target; if (tg && t.isUserSpot(tg.c)) opp = true; });
+        r.c = { opp };
+        // (d) 설정 목록 → 지우기
+        t.renderMySpots();
+        const li = document.querySelector('#mySpotList li');
+        r.d = { box: !document.getElementById('mySpotBox').hidden, text: li ? li.textContent : '' };
+        if (li) li.querySelector('button').click();
+        let after = false;
+        await driveThrough(m, 0, 900, 60, 60, 10, () => { const tg = t.camState.target; if (tg && t.isUserSpot(tg.c)) after = true; });
+        r.d.afterDelete = after; r.d.left = t.mySpots.length;
+      }
+      // (e) 모든 사용자: 강동대로 둔촌동 북서행
+      const D = t.driverSpots.rows.find((x) => Math.abs(x[0] - 37.51902) < 1e-4);
+      if (D) {
+        let seen = '';
+        await driveThrough({ lat: D[0], lng: D[1] }, D[2], 800, 40, 50, 10, () => { const tg = t.camState.target; if (tg && t.isUserSpot(tg.c) && !seen) seen = text('#camType'); });
+        r.e = { rows: t.driverSpots.rows.length, seen };
+      } else r.e = 'no driver spots';
+    } finally {
+      t.mySpots.length = 0; keepArr.forEach((x) => t.mySpots.push(x));
+      t.store.set('mySpots', keepRaw); t.applyUserSpots();
+      await resetApp(); softReset();
+    }
+    const ok = r.a && r.a.n === 1 && r.a.back >= 25 && r.a.back <= 75 && r.a.stored && r.a.status === 'mine' &&
+      r.b.first !== null && r.b.first <= 520 && /내가 신고한 단속 지점/.test(r.b.label) && r.b.limit === '?' && !r.c.opp &&
+      r.d.box && /이 차에서만 알림/.test(r.d.text) && !r.d.afterDelete && r.d.left === 0 &&
+      r.e.rows >= 5 && /운전자 신고 단속 지점/.test(r.e.seen);
+    return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
   // S96: 소리 잠김 표시 (v160, 2026-11-20 점검: 새로고침·'새 버전' 뒤 화면을 누를 때까지 음성·경고음이 모두 꺼져 있는데 표시가 없었다).
