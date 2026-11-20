@@ -472,6 +472,20 @@ def sec_partner(row):
     return (best[0][1], best[1]) if best else None
 
 
+# v180: 제한속도가 빠진 구간 시점·종점은 같은 도로의 가장 가까운 반대 끝(30km 안) 값으로 (앱이 '?' 카메라를 숨긴다)
+for r_ in sec_rows:
+    if r_[2]:
+        continue
+    best = None
+    for o in sec_rows:
+        if o[4] != 3 - r_[4] or not o[2] or o[7] < 0 or o[7] != r_[7]:
+            continue
+        d_ = dist_m(o, r_)
+        if 150 < d_ <= 30000 and (best is None or d_ < best[0]):
+            best = (d_, o[2])
+    if best:
+        r_[2] = best[1]
+        skipped['(info) section limit from its partner'] += 1
 orphan = Counter()
 for r_ in sec_rows:
     p_ = sec_partner(r_)

@@ -60,15 +60,19 @@ def norm(s):
 data = json.load(open(FILE, encoding='utf-8'))
 rows, dirs, osm_names = data['rows'], data['dirs'], data['osmNames']
 targets = []
+centre_targets = []   # v180: 양방향(길 가운데)으로 붙은 신호 카메라 — 정지선을 모르니 교차로 가운데로
 for i, c in enumerate(rows):
     if c[3] not in (2, 3) or ((c[10] if len(c) > 10 else 0) | 0) & 1:
         continue
     d = dirs[i]
-    if d[0] < 0 or d[1]:
+    if d[0] < 0:
+        continue
+    if d[1]:
+        centre_targets.append(i)
         continue
     targets.append(i)
 cells = set()
-for i in targets:
+for i in targets + centre_targets:
     c = rows[i]
     cy, cx = int(math.floor(c[0] / CELL)), int(math.floor(c[1] / CELL))
     for dy in (-1, 0, 1):
@@ -331,6 +335,36 @@ for i in targets:
     d[6] = 1
     moves.append(mv)
     stats['moved'] += 1
+
+# v180 (운전자 '가운데도 좋고'): 양방향 신호 카메라는 찍는 방향을 몰라 정지선을 못 정한다. 건너편 기둥 자리 대신 교차로 가운데(4갈래 이상
+# 갈림 노드: 붙은 점 30m·기둥 45m 안의 가장 가까운 것)로 옮긴다. 거리를 기둥까지 재지 않으려는 것 (dirs[i][6] = 2)
+node_grid = defaultdict(list)
+for r_, p_ in pos.items():
+    if deg[r_] >= 4:
+        node_grid[(int(math.floor(p_[0] / CELL)), int(math.floor(p_[1] / CELL)))].append(r_)
+for i in centre_targets:
+    c, d = rows[i], dirs[i]
+    raw = (c[0], c[1])
+    s0 = (c[0] + d[2] / 1e5, c[1] + d[3] / 1e5)
+    cy, cx = int(math.floor(s0[0] / CELL)), int(math.floor(s0[1] / CELL))
+    best = None
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            for r_ in node_grid.get((cy + dy, cx + dx), ()):
+                p_ = pos[r_]
+                ds, dr_ = dist(p_, s0), dist(p_, raw)
+                if ds <= 30 and dr_ <= 45 and (best is None or (dr_, r_) < best[:2]):
+                    best = (dr_, r_, p_)
+    if not best:
+        stats['two-way: no intersection near'] += 1
+        continue
+    S = best[2]
+    d[2] = int(round((S[0] - c[0]) * 1e5))
+    d[3] = int(round((S[1] - c[1]) * 1e5))
+    while len(d) < 7:
+        d.append(0)
+    d[6] = 2
+    stats['two-way: moved to the intersection centre'] += 1
 
 moves.sort()
 if moves:

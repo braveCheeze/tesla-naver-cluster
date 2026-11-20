@@ -194,7 +194,7 @@ for i, c in enumerate(fixed):
 froads = cam.get('roads') or []
 
 
-def same_road_limit(c, d, zone):
+def same_road_limit(c, d, zone, radius=1200, any_dir=False):
     if not d or d[0] < 0 or d[5] < 0:
         return 0
     nm = names[d[5]]
@@ -203,16 +203,17 @@ def same_road_limit(c, d, zone):
     p = lane(c, d)
     best = None
     gy, gx = int(math.floor(p[0] / 0.01)), int(math.floor(p[1] / 0.01))
-    for dy in (-1, 0, 1):
-        for dx in (-1, 0, 1):
+    span = 1 if radius <= 1200 else 3
+    for dy in range(-span, span + 1):
+        for dx in range(-span, span + 1):
             for i in fgrid.get((gy + dy, gx + dx), ()):
                 o, od = fixed[i], cam['dirs'][i]
                 if od[0] < 0 or od[5] < 0 or names[od[5]] != nm or (o[6] == 2) != (zone == 2):
                     continue
-                if not od[1] and not d[1] and angd(od[0], d[0]) > 50:
+                if not any_dir and not od[1] and not d[1] and angd(od[0], d[0]) > 50:
                     continue
                 dd = dist(p, lane(o, od))
-                if dd <= 1200 and (best is None or dd < best[0]):
+                if dd <= radius and (best is None or dd < best[0]):
                     best = (dd, o[2])
     return best[1] if best else 0
 
@@ -232,6 +233,8 @@ def hwy_limit(c, name):
 
 
 st = Counter()
+unknown = []
+CITY_EXP = re.compile(r'고속화|도시고속|자동차전용|순환로|간선')
 for di, i in targets:
     d = (cam, mob)[di]
     c, dr = d['rows'][i], d['dirs'][i]
@@ -251,15 +254,33 @@ for di, i in targets:
         if not v and (wname or (dr and dr[5] >= 0 and names[dr[5]])):
             v = named_maxspeed(lane(c, dr), wname or names[dr[5]])
             how = 'OSM maxspeed of the same road nearby'
-        if not v and c[8] == 1 and hw == 'motorway':
-            v, how = hwy_limit(c, wname), 'expressway'
+        weak = None
+        if not v:
+            # 같은 OSM 길 고정 카메라: 반대 방향(1.2km 안, 보통 같은 제한), 그다음 같은 방향 3km 안
+            v = same_road_limit(c, dr, c[6], 1200, True)
+            how, weak = 'same road camera, other direction', 'same-road-other-direction'
+            if not v:
+                v = same_road_limit(c, dr, c[6], 3000)
+                how, weak = 'same road camera within 3 km', 'same-road-3km'
+            if not v:
+                weak = None
+        # v180 (운전자 '물음표 나오는 과속단속은 안 나오게 해 주라' — 앱이 '?' 카메라를 숨기므로 자료에서 최대한 채운다): 도로 종류 기본값.
+        # 근거가 약해서 그 행의 출처를 limitSrc 에 남긴다 (앱은 읽지 않는다)
+        on_ = wname or (names[dr[5]] if dr and dr[5] >= 0 else '')
+        if not v and (c[8] == 1 or (hw == 'motorway' and is_expressway(on_))):
+            v, how, weak = hwy_limit(c, on_), 'expressway (same expressway camera or 100)', 'default:expressway'
         if not v and c[6] == 2:
-            v, how = 30, 'school zone'
+            v, how, weak = 30, 'school zone', 'default:school-zone'
+        if not v and ((hw == 'motorway' and not is_expressway(on_)) or (hw in ('motorway', 'trunk') and CITY_EXP.search(squash(on_)))):
+            v, how, weak = 80, 'city expressway default 80', 'default:city-expressway'
         if v:
             c[2] = v
             st[('mobile' if di else 'fixed') + ' limit from ' + how] += 1
+            if weak:
+                d.setdefault('limitSrc', {})[str(i)] = weak
         else:
             st[('mobile' if di else 'fixed') + ' limit still unknown'] += 1
+            unknown.append((di, i))
 
 # 고정 카메라 도로 종류·도로 이름 (v164, 2026-11-20 서울·경기 가상 주행 점검)
 #  - OSM 고속도로 본선(motorway, 또는 이름이 '…고속도로'인 trunk)에 붙었는데 원본이 시도(5) 등인 카메라 → 고속국도(1) (경부고속도로 서울 구간 80,
@@ -348,5 +369,7 @@ for f, d in zip(FILES, (cam, mob)):
     with open(f, 'w', encoding='utf-8') as fh:
         json.dump(d, fh, ensure_ascii=False, separators=(',', ':'))
 print(dict(st))
+sg = sum(1 for di, i in unknown if 37.0 < (cam, mob)[di]['rows'][i][0] < 38.3 and 126.5 < (cam, mob)[di]['rows'][i][1] < 127.9)
+print('limit still unknown:', len(unknown), '· 서울·경기 둘레', sg, '(%.0f%%)' % (100.0 * sg / len(unknown) if unknown else 0))
 print('mobile limit 0 left', sum(1 for c in mob['rows'] if c[2] == 0), 'of', len(mob['rows']),
       '· fixed limit 0 left', sum(1 for c in cam['rows'] if c[2] == 0 and c[3] != 2))
