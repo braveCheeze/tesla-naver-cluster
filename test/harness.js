@@ -2833,6 +2833,7 @@
     { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored; 7-10 lanes fit the drawer as square tiles", fn: s77 },
     { id: 'S78', name: "S78 mainline junction (v133): keep-left/right where the route stays on the same expressway section and goes straight is shown as straight ('신갈분기점에서 직진 · 서울 방면', main-straight junction scene, straight sign); a fork onto another expressway stays a fork", fn: s78 },
     { id: 'S79', name: 'S79 rest areas (v133): distance to where the entry ramp leaves the mainline (OSM), not the rest-area centre; within 3 km and no turn within 1 km the top row becomes the rest area (blue), next row = the guidance after it', fn: s79 },
+    { id: 'S108', name: "S108 '놓침' diagnosis (v171, driver: 'fix it right away when I press 놓침'): pressing after passing a camera hidden by '틀림' unhides it, a camera written for the other direction becomes two-way on this car, a camera 30 m beside the route is taken onto the route — each alerts on the next pass; with no camera nearby a reported spot is saved; settings list undoes a fix; shared fixes (/fixes) apply a direction fix and add a reported spot", fn: s108 },
     { id: 'S107', name: "S107 off-route near turns (v170, driver: rerouted to straight before turning at roundabouts and right exits): a right exit whose route line cuts the corner 100 m early, driven on the outer lane, causes no reroute; missing that exit reroutes within 200 m past it; one extra lap of a 25 m roundabout before the 3 o'clock exit causes no reroute", fn: s107 },
     { id: 'S106', name: "S106 reported spots (v169, driver: '놓침 spots never get updated'): '놓침' saves the spot on this car ~2.5 s back along the trace, the next pass in the same direction shows '내가 신고한 단속 지점' (limit ?) from 500 m, not the other way; settings list shows '이 차에서만 알림' and deleting stops it; spots the driver reported on two days (data/driver_spots.json) alert every user", fn: s106 },
     { id: 'S105', name: "S105 after the v165 sweep (v167): rows passed together are judged by lane points — a point 50 is not passed with a signal 50 whose stop line is 51 m earlier (보개원삼로), a 60 sharing the 50's lane point does not show after it (복합물류로); with no route section name an elevated/underground camera on a fast road parallel to the route stays (a street-named section still drops it)", fn: s105 },
@@ -5361,6 +5362,104 @@
     const bAt = r.b.firstAt;
     const ok = r.a.reroutes === 0 && r.b.reroutes >= 1 && typeof bAt === 'number' && bAt > 1000 && bAt <= 1200 && r.c.reroutes === 0;
     return { pass: ok, detail: JSON.stringify(r) };
+  }
+
+  // S108: '놓침' 진단·고침 (v171, 2026-11-20 운전자 '놓침을 누르면 … 바로 반영될 수 있었으면'). 카메라 없는 곳에 가짜 카메라를 두고
+  //  (a) '틀림'으로 숨긴 카메라를 지나 놓침 → 'flag' 를 풀고 다음엔 뜬다 (b) 방향이 반대로 적힌 카메라 → 'dir' 이 차에서 양방향, 다음엔 뜬다
+  //  (c) 근처에 카메라가 없으면 '새 단속 지점으로 저장' (d) 길안내 중 경로선 30m 옆 카메라 → 'route' 경로 위로 본다
+  //  (e) 설정 목록 '고친 카메라' 되돌리기 (f) 모든 사용자 고침(/fixes): 방향 고침과 신고 지점을 받아 적용
+  async function s108() {
+    const t = T(), r = {};
+    const O = dest(NAV_ORIGIN, 90, 45000), at = (x, y) => dest(dest(O, 90, x), 0, y);
+    const keep = { drv: t.driverSpots.rows.slice(), shared: t.sharedSpots.slice(), mine: t.mySpots.slice(), mineRaw: t.store.get('mySpots'),
+      fixRaw: t.store.get('camFix'), noMap: new Map(t.camNoMap), noRaw: t.store.get('camNo2') };
+    const btn = document.getElementById('camMissBtn');
+    const press = async () => {
+      btn.click();
+      await waitFor(() => !btn.classList.contains('sending'), 2000, 10);
+      const msg = document.getElementById('toast').textContent;
+      clearTimeout(btn._sentT); btn.classList.remove('sent', 'saved', 'sending'); btn.textContent = '놓침';
+      return msg;
+    };
+    const fakes = [];
+    const mk = (p, eb, lim) => { const c = [round6(p.lat), round6(p.lng), lim, 1, 0, 0, 0, -1, 4, 1]; c.eb = eb; c.e2 = 0; c.lv = 0; c.sl = c[0]; c.sg = c[1]; c.on = ''; return c; };
+    let base0 = null;
+    try {
+      // 신고 지점을 잠시 비우고 가짜 카메라를 사용자 행 앞에 넣는다
+      t.driverSpots.rows.length = 0; t.sharedSpots.length = 0; t.mySpots.length = 0; t.camFixes.clear();
+      t.applyUserSpots(); base0 = t.cams.rows.length;
+      const A = mk(at(0, 1000), 0, 50), B = mk(at(0, 3000), 180, 60), D = mk(at(30, 5500), 0, 70);   // A 북행 50, B 남행으로 적힌 60, D 경로 30m 옆
+      for (const c of [A, B, D]) { const i = t.cams.rows.length; t.cams.rows.push(c); fakes.push(i); const k = Math.floor(c[0] / 0.01) + ':' + Math.floor(c[1] / 0.01); if (!t.cams.grid.has(k)) t.cams.grid.set(k, []); t.cams.grid.get(k).push(i); }
+      t.cams.userBase = null; t.applyUserSpots();
+      const alerted = (c) => async (y0, y1) => { let hit = false; await driveThrough(at(c === D ? 30 : 0, y1), 0, y1 - y0, 0, 60, 16.7, () => { const tg = t.camState.target; if (tg && tg.c === c) hit = true; }); return hit; };
+      // (a) 숨긴 A
+      t.camNoMap.set(A[0] + ',' + A[1], [{ h: 0, t0: Date.now(), t1: Date.now(), days: ['x', 'y'], lim: 50, name: '' }]);
+      const a0 = await alerted(A)(500, 1100);
+      const msgA = await press();
+      const a1 = await alerted(A)(500, 1100);
+      r.a = { before: a0, msg: msgA, after: a1, flag: t.camFlag(A, 0) };
+      // (b) 남행으로 적힌 B 를 북행으로
+      const b0 = await alerted(B)(2500, 3100);
+      const msgB = await press();
+      const b1 = await alerted(B)(2500, 3100);
+      r.b = { before: b0, msg: msgB, after: b1, e2: B.e2, fix: [...(t.camFixes.get(B[0] + ',' + B[1]) || [])] };
+      // (c) 카메라 없는 곳
+      await driveThrough(at(0, 8000), 0, 600, 0, 60, 16.7);
+      const msgC = await press();
+      r.c = { msg: msgC, spots: t.mySpots.length };
+      // (d) 길안내 중 경로선(북쪽 직선) 30m 옆 D
+      {
+        const P = []; for (let y = 4500; y <= 6500; y += 10) P.push(at(0, y));
+        const PP = P.map((p) => ({ lat: round6(p.lat), lng: round6(p.lng) })), cum = [0];
+        for (let i = 1; i < PP.length; i++) cum.push(cum[i - 1] + hav(PP[i - 1], PP[i]));
+        const total = cum[cum.length - 1];
+        const R = { route: { distance: r0(total), duration: r0(total / 16 * 1000), tollFare: 0, fuelPrice: 0, path: PP.map((p) => [p.lng, p.lat]),
+          guide: [{ i: PP.length - 1, t: 88, s: '목적지', d: r0(total), ms: r0(total / 16 * 1000) }], sections: [{ i: 0, n: PP.length, name: '', speed: 60, cong: 1 }] },
+          P: PP, cum, total, dest: { name: '테스트', addr: '', lat: PP[PP.length - 1].lat, lng: PP[PP.length - 1].lng } };
+        await resetApp(); softReset(); await planAndStart(R); t.ensureRouteCams();
+        const d0 = t.nav.routeCams.has(D);
+        for (let s = 0; s <= 1100; s += 16.7) { const a2 = pointAt(R, s); feed(a2.p, 60 / 3.6, a2.h, { dt: 1000, acc: 3 }); }
+        const msgD = await press();
+        t.ensureRouteCams();
+        r.d = { before: d0, msg: msgD, after: t.nav.routeCams.has(D) };
+        t.endNav();
+      }
+      // (e) 설정 목록
+      t.renderMySpots();
+      const fixLi = [...document.querySelectorAll('#mySpotList li')].filter((li) => /고친 카메라/.test(li.textContent));
+      r.e = { fixes: fixLi.length, text: fixLi.map((li) => li.textContent).join(' | ') };
+      const undo = fixLi.find((li) => /양방향/.test(li.textContent));
+      if (undo) undo.querySelector('button').click();
+      r.e.e2After = B.e2;
+      // (f) 모든 사용자 고침
+      const realF = window.fetch;
+      window.fetch = (u, o) => (/\/fixes(\?|$)/.test(String(u)) ? Promise.resolve(new Response(JSON.stringify({ v: 1, items: [
+        { kind: 'dir', k: B[0] + ',' + B[1], lat: B[0], lng: B[1], h: 0 }, { kind: 'spot', lat: at(0, 9000).lat, lng: at(0, 9000).lng, h: 0 }] }), { status: 200 })) : realF(u, o));
+      try { r.f = { ok: await t.loadSharedFixes() }; } finally { window.fetch = realF; }
+      r.f.e2 = B.e2; r.f.shared = t.sharedSpots.length;
+      r.f.userRow = t.cams.rows.slice(t.cams.userBase).some((c) => Math.abs(c[0] - round6(at(0, 9000).lat)) < 1e-5);
+    } finally {
+      t.sharedFixes.clear(); t.sharedSpots.length = 0;
+      t.driverSpots.rows.length = 0; t.mySpots.length = 0; t.applyUserSpots();   // 사용자 행 빼기
+      if (base0 !== null) {
+        for (const i of fakes.slice().reverse()) { const c = t.cams.rows[i]; if (!c) continue; const k = Math.floor(c[0] / 0.01) + ':' + Math.floor(c[1] / 0.01); const a = t.cams.grid.get(k); if (a) { const j = a.indexOf(i); if (j >= 0) a.splice(j, 1); } t.camMiss.near.delete(i); t.camState.passed.delete(i); t.camState.saidById.delete(i); }
+        t.cams.rows.length = base0; t.cams.userBase = null;
+      }
+      t.camFixes.clear(); t.store.set('camFix', keep.fixRaw);
+      t.camNoMap.clear(); keep.noMap.forEach((v, k) => t.camNoMap.set(k, v)); t.store.set('camNo2', keep.noRaw);
+      keep.drv.forEach((x) => t.driverSpots.rows.push(x)); keep.shared.forEach((x) => t.sharedSpots.push(x)); keep.mine.forEach((x) => t.mySpots.push(x));
+      t.store.set('mySpots', keep.mineRaw);
+      t.applyUserSpots(); t.applyCamFixes();
+      const te = document.getElementById('toast'); if (te) te.hidden = true;
+      await resetApp(); softReset();
+    }
+    const ok = r.a.before === false && /틀림으로 숨겨/.test(r.a.msg) && r.a.after === true && !r.a.flag &&
+      r.b.before === false && /방향이 반대/.test(r.b.msg) && r.b.after === true && r.b.e2 === 1 &&
+      /새 단속 지점/.test(r.c.msg) && r.c.spots === 1 &&
+      r.d.before === false && /경로 밖으로/.test(r.d.msg) && r.d.after === true &&
+      r.e.fixes >= 2 && r.e.e2After === 0 &&
+      r.f.ok && r.f.e2 === 1 && r.f.shared === 1 && r.f.userRow;
+    return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
   // S96: 소리 잠김 표시 (v160, 2026-11-20 점검: 새로고침·'새 버전' 뒤 화면을 누를 때까지 음성·경고음이 모두 꺼져 있는데 표시가 없었다).
