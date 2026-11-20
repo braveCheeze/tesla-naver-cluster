@@ -2835,6 +2835,7 @@
     { id: 'S77', name: "S77 straight-through lane guidance: the nearer intersection's straight lanes (300 m, with distance) before the turn's lanes; opposite/side-road approaches ignored; 7-10 lanes fit the drawer as square tiles", fn: s77 },
     { id: 'S78', name: "S78 mainline junction (v133): keep-left/right where the route stays on the same expressway section and goes straight is shown as straight ('신갈분기점에서 직진 · 서울 방면', main-straight junction scene, straight sign); a fork onto another expressway stays a fork", fn: s78 },
     { id: 'S79', name: 'S79 rest areas (v133): distance to where the entry ramp leaves the mainline (OSM), not the rest-area centre; within 3 km and no turn within 1 km the top row becomes the rest area (blue), next row = the guidance after it', fn: s79 },
+    { id: 'S117', name: "S117 speech judgement (v183): with a fake speech engine — one that waits 6 s before speaking is not cancelled and gets no fallback beep, an utterance that silently vanishes (not pending, not speaking, no events) is replaced by a beep but speech stays on, two real errors switch to beeps until a Korean voice arrives, and the sound test always tries speech", fn: s117 },
     { id: 'S116', name: "S116 map fallback badge (v182): when the Naver map could not be loaded the badge says '네이버 지도를 불러오지 못했어요 · 누르면 다시 시도' (not the old '설정에서 네이버 키 입력'), stays visible when the buttons hide, and a tap reloads only when parked — while guided or moving it says to stop first", fn: s116 },
     { id: 'S115', name: "S115 no false off-route (v181, driver: 'I never left the route but it keeps saying off-route now and then'): a 5-minute traffic refresh whose new route starts on a parallel road 45 m away (Naver snapping the start to the wrong road) is not applied and driving on raises no reroute; a refresh on the same road is applied; a car still behind a reroute's start (slowed in traffic) is on route, not off; a real turn-off still reroutes within about 3 s / 30 m; each reroute leaves a location-free reason record", fn: s115 },
     { id: 'S114', name: "S114 unknown limits (v179, driver: 'don't show speed cameras with ?'): a speed camera with limit 0 is never alerted or drawn, the same camera with 60 is; a signal-only camera follows the setting and shows '신호'; a reported spot takes the limit of a same-road, same-direction camera (1.5 km), else 100 on an expressway, else stays hidden and the settings list says '제한속도 모름이라 숨김' — and shows once a camera appears", fn: s114 },
@@ -5513,6 +5514,64 @@
       r.d.before === false && /경로 밖으로/.test(r.d.msg) && r.d.after === true &&
       r.e.fixes >= 2 && r.e.e2After === 0 &&
       r.f.ok && r.f.e2 === 1 && r.f.shared === 1 && r.f.userRow;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S117: 음성 판정 (v183) — 가짜 음성 엔진으로
+  async function s117() {
+    const t = T(), r = {};
+    const desc = Object.getOwnPropertyDescriptor(window, 'speechSynthesis');
+    const keep = { voice: t.prefs.voice, unlocked: t.sound.unlocked, broken: t.tts.broken, failed: t.tts.failed, started: t.tts.started, noticed: t.tts.noticed, dropped: t.tts.dropped };
+    const mkEngine = (mode) => {
+      const E = { pending: false, speaking: false, paused: false, voices: [], cancels: 0, onvoiceschanged: null,
+        getVoices() { return this.voices; }, cancel() { this.cancels++; this.pending = false; this.speaking = false; }, resume() {},
+        speak(u) {
+          if (mode === 'slow') { this.pending = true; setTimeout(() => { if (!this.pending) return; this.pending = false; this.speaking = true; u.onstart && u.onstart({}); setTimeout(() => { this.speaking = false; u.onend && u.onend({}); }, 300); }, 6000); }
+          else if (mode === 'error') setTimeout(() => { u.onerror && u.onerror({ error: 'synthesis-failed' }); }, 50);
+          // 'drop': 아무 일도 없음
+        } };
+      return E;
+    };
+    const appVoicesHandler = window.speechSynthesis ? window.speechSynthesis.onvoiceschanged : null;   // 앱이 걸어 둔 음성 목록 알림
+    const use = (E) => { E.onvoiceschanged = appVoicesHandler; Object.defineProperty(window, 'speechSynthesis', { value: E, configurable: true, writable: true }); };
+    const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+    try {
+      t.prefs.voice = true; t.sound.unlocked = true;
+      t.tts.broken = false; t.tts.failed = 0; t.tts.started = 0; t.tts.noticed = true; t.tts.dropped = 0;
+      // (a) 느린 엔진
+      let E = mkEngine('slow'); use(E);
+      let fails = 0;
+      r.slowSpoke = t.speak('시험 하나', false, () => { fails++; });
+      await sleep(4600);
+      r.slowAt46 = { fails, cancels: E.cancels, broken: t.tts.broken };
+      await sleep(2200);
+      r.slowStarted = t.tts.started; r.slowFails = fails;
+      // (b) 말이 사라짐
+      E = mkEngine('drop'); use(E); fails = 0;
+      t.tts.started = 0;
+      t.speak('시험 둘', false, () => { fails++; });
+      t.speak('시험 셋', false, () => { fails++; });
+      await sleep(4600);
+      r.drop = { fails, broken: t.tts.broken, dropped: t.tts.dropped, cancels: E.cancels, still: t.speak('시험 넷', false, () => {}) };
+      // (c) 진짜 오류 두 번 → 경고음으로만, 한국어 음성이 오면 다시
+      E = mkEngine('error'); use(E); fails = 0; t.tts.failed = 0; t.tts.started = 0;
+      t.speak('오류 하나', false, () => { fails++; });
+      t.speak('오류 둘', false, () => { fails++; });
+      await sleep(400);
+      r.err = { fails, broken: t.tts.broken, refuses: t.speak('오류 셋', false, () => {}) === false, test: t.speak('소리 테스트', true, null, null, true) };
+      E.voices = [{ lang: 'ko-KR', name: '시험 한국어' }];
+      if (typeof window.speechSynthesis.onvoiceschanged === 'function') window.speechSynthesis.onvoiceschanged();
+      r.err.afterKo = t.tts.broken;
+    } finally {
+      if (desc) Object.defineProperty(window, 'speechSynthesis', desc); else delete window.speechSynthesis;
+      if (typeof appVoicesHandler === 'function') { try { appVoicesHandler(); } catch (e) { /* 없음 */ } }   // 진짜 음성 목록으로 되돌린다
+      Object.assign(t.tts, { broken: keep.broken, failed: keep.failed, started: keep.started, noticed: keep.noticed, dropped: keep.dropped });
+      t.prefs.voice = keep.voice; t.sound.unlocked = keep.unlocked;
+      try { window.speechSynthesis.cancel(); } catch (e) { /* 없음 */ }
+    }
+    const ok = r.slowSpoke && r.slowAt46.fails === 0 && r.slowAt46.cancels === 0 && !r.slowAt46.broken && r.slowStarted >= 1 && r.slowFails === 0 &&
+      r.drop.fails === 2 && !r.drop.broken && r.drop.dropped >= 2 && r.drop.cancels === 0 && r.drop.still === true &&
+      r.err.fails === 2 && r.err.broken && r.err.refuses && r.err.test === true && r.err.afterKo === false;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

@@ -59,7 +59,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-182'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-183'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -484,13 +484,28 @@
     koVoice = vs.find((v) => /^ko/i.test(v.lang)) || null;
   }
   let voicesSettled = false; // 음성 목록이 늦게 오는 기기 대비: 2.5초 뒤에도 비어 있으면 음성 없음으로 본다
-  if (hasTTS) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
-  setTimeout(() => { voicesSettled = true; pickVoice(); }, 2500);
+  // v183: 음성 목록이 늦게 오는지 기록한다 (리눅스 크롬은 첫 말하기 때 음성 엔진을 띄우고 그 뒤에야 목록을 채울 수 있다)
+  const ttsSeen = { t0: Date.now(), vLoad: null, changes: 0, firstAt: null, firstN: 0 };
+  if (hasTTS) {
+    pickVoice();
+    speechSynthesis.onvoiceschanged = () => {
+      pickVoice();
+      ttsSeen.changes++;
+      const n = speechSynthesis.getVoices().length;
+      if (n && ttsSeen.firstAt === null) { ttsSeen.firstAt = Math.round((Date.now() - ttsSeen.t0) / 100) / 10; ttsSeen.firstN = n; }
+      if (koVoice && tts.broken) { tts.broken = false; tts.noticed = false; renderVoiceState(); }   // 늦게라도 한국어 음성이 오면 다시 말한다
+    };
+  }
+  setTimeout(() => { voicesSettled = true; pickVoice(); if (hasTTS) ttsSeen.vLoad = speechSynthesis.getVoices().length; }, 2500);
   // v174 (2026-11-20 카페 시험자 '설정 값에서는 체크가 되어 있는데 안내 멘트가 나오지 않습니다'):
   // 예전엔 한국어 음성이 없으면 말없이 경고음만 냈고(이유는 설정의 소리 테스트에서만), 말하라고 했는데 소리가 안 나는 브라우저
   // (음성 목록은 있지만 시작이 안 됨)는 알아채지 못해 경고음도 없었다. 이제 4초 안에 말이 시작되지 않으면(말하는 중도 아니면) 그 안내는 경고음으로 대신하고,
   // 두 번 이어지면 이 화면에서는 경고음으로만 안내한다. 이유는 한 번 짧게 알리고 설정 '소리'에 남긴다(위치 없이 서버에도 한 번)
-  const tts = { started: 0, failed: 0, broken: false, noticed: false };
+  // v183 (2026-11-20 점검: v176 뒤 테슬라 접속이 모두 '음성 안 나옴'으로 기록 — 예전(11-15)엔 운전자 차에서 음성이 나왔다):
+  // 4초 안에 시작 알림이 없으면 말하던 것을 취소하고 두 번이면 음성을 껐는데, 음성 엔진을 띄우는 데 4초 넘게 걸리면 나올 말을 끊은 셈이다.
+  // 이제 기다리는 중(pending)·말하는 중(speaking)이면 건드리지 않고, 말이 사라졌을 때(대기·말하기 모두 아님, 알림 없음)만 그 안내를 경고음으로.
+  // 음성을 아예 끄는 것은 진짜 오류(onerror) 가 두 번 나고 한 번도 말한 적이 없을 때만이고, 늦게라도 한국어 음성이 오면 다시 켠다
+  const tts = { started: 0, failed: 0, dropped: 0, errors: [], broken: false, noticed: false, probed: false };
   // v176 (2026-11-20 배포 뒤 점검: 테슬라 브라우저 접속은 모두 음성 목록이 비어 있었다 voices=0): 'noko' 는 음성은 있는데 한국어가 없을 때만
   // (외국어 음성으로 읽으면 못 알아듣는다). 목록이 아예 비어 있으면 기본 음성으로 말해 보고('novoice'), 시작이 안 되면 위 감시가 경고음으로
   function ttsStatus() {
@@ -525,9 +540,9 @@
   // v161 (2026-11-20 점검): 급한 회전 안내(urgent)가 말하던·기다리던 단속 카메라 안내를 끊고 다시 말하지 않았다.
   // 끊긴 카메라 안내는 급한 안내가 끝난 뒤 그 카메라가 아직 앞에 있으면 한 번 다시 말한다
   const camVoice = { text: '', i: null, at: 0, done: true, retried: false };
-  function speak(text, urgent, onFail, onEnd) {
+  function speak(text, urgent, onFail, onEnd, force) {
     if (!prefs.voice || !audioUnlocked) return false;
-    if (!hasTTS || tts.broken) { ttsNotice(); return false; }
+    if (!hasTTS || (tts.broken && !force)) { ttsNotice(); return false; }   // force: 소리 테스트는 늘 말해 본다
     // 한국어 음성이 없는 기기(다른 말 음성만 있음)에서 외국어 음성으로 읽으면 알아들을 수 없으므로 경고음으로 대신한다.
     // v176: 음성 목록이 비어 있으면(테슬라) 막지 않고 기본 음성으로 말해 본다
     if (!koVoice && speechSynthesis.getVoices().length) { ttsNotice(); return false; }
@@ -550,31 +565,57 @@
         }
       };
       // v174: 말이 시작됐는지 본다. 앞 안내가 아직 말하는 중이면(차례 기다림) 세지 않는다
-      const ok1 = () => {
+      const ev = [];   // v183: 이 말에서 일어난 일 (기록용)
+      const ok1 = (kind) => {
+        if (kind) ev.push(kind);
         if (u._st) return;
         u._st = true; tts.started++; tts.failed = 0;
+        if (tts.broken) { tts.broken = false; tts.noticed = false; renderVoiceState(); }   // 말이 나왔으면 다시 켠다
         // v176: 음성 목록 없이도 말이 나왔는지 한 번 남긴다 (위치 없음)
         if (!koVoice && !tts.spokeNoList && !speechSynthesis.getVoices().length) { tts.spokeNoList = true; report('info', { msg: 'tts started without voice list' }); }
       };
-      u.onstart = ok1;
+      u.onstart = () => ok1('start');
       const end0 = u.onend;
-      u.onend = (e) => { ok1(); if (end0) end0(e); };   // 시작 알림이 없는 브라우저도 끝남은 성공으로 본다
+      u.onend = (e) => { ok1('end'); if (end0) end0(e); };   // 시작 알림이 없는 브라우저도 끝남은 성공으로 본다
+      u.onboundary = () => { if (!ev.includes('boundary')) ev.push('boundary'); };
       const err0 = u.onerror;
       u.onerror = (e) => {
         u._err = true;
+        const name = String((e && e.error) || 'error');
+        ev.push('error:' + name);
         if (err0) err0(e);
-        // v176: 말하자마자 오류(음성 엔진 없음 등)도 실패로 센다 — 두 번이면 경고음으로만
-        if (e && e.error !== 'interrupted' && e.error !== 'canceled' && !u._st) { tts.failed++; if (tts.failed >= 2 && !tts.started) { tts.broken = true; ttsNotice(); } }
+        // 진짜 오류(끊김·취소가 아닌 것)가 두 번이고 한 번도 말한 적이 없으면 이 화면에서는 경고음으로만
+        if (name !== 'interrupted' && name !== 'canceled' && !u._st) {
+          tts.failed++; tts.errors.push(name); if (tts.errors.length > 5) tts.errors.shift();
+          if (tts.failed >= 2 && !tts.started) { tts.broken = true; ttsNotice(); }
+        }
       };
       try { if (speechSynthesis.paused) speechSynthesis.resume(); } catch (e) { /* 없음 */ }
+      const vAt = speechSynthesis.getVoices().length;
       speechSynthesis.speak(u);
+      // 기록: 0.3·1·2·4·8초에 대기·말하기 상태 (처음 한 번과 소리 테스트 때, 위치 없음)
+      const probe = force || !tts.probed;
+      if (probe && !force) tts.probed = true;
+      const samples = [];
+      const sample = () => { try { samples.push((speechSynthesis.pending ? 'p' : '-') + (speechSynthesis.speaking ? 's' : '-')); } catch (e) { samples.push('?'); } };
+      if (probe) { for (const ms of [300, 1000, 2000]) setTimeout(sample, ms); }
       setTimeout(() => {
-        if (u._st || u._err || speechSynthesis.speaking) return;   // 말하는 중이면(시작 알림이 없어도) 나오는 것
-        tts.failed++;
-        try { speechSynthesis.cancel(); } catch (e) { /* 없음 */ }
+        if (probe) sample();
+        if (u._st || u._err) return;
+        // 아직 기다리는 중이거나 말하는 중이면 그대로 둔다 (음성 엔진을 띄우는 데 오래 걸릴 수 있다 — 끊지 않는다)
+        if (speechSynthesis.pending || speechSynthesis.speaking) return;
+        // 말이 사라졌다(대기도 말하기도 아니고 알림도 없음): 이 안내는 경고음으로
+        tts.dropped++;
         if (onFail) onFail();
-        if (tts.failed >= 2 && !tts.started) { tts.broken = true; ttsNotice(); }
       }, 4000);
+      if (probe) {
+        setTimeout(() => {
+          sample();
+          report('info', { msg: force ? 'tts probe (test)' : 'tts probe', voicesLoad: ttsSeen.vLoad, voicesAtSpeak: vAt, voicesNow: speechSynthesis.getVoices().length,
+            voicesChanged: ttsSeen.changes, firstVoicesAt: ttsSeen.firstAt, firstVoicesN: ttsSeen.firstN, ko: !!koVoice, events: ev.join(','),
+            states: samples.join(' '), started: tts.started, dropped: tts.dropped, errors: tts.errors.join(','), broken: tts.broken, sinceLoad: Math.round((Date.now() - ttsSeen.t0) / 1000) });
+        }, 8000);
+      }
       return true;
     } catch (e) { return false; }
   }
@@ -8219,7 +8260,8 @@
   $('#proxyTest').onclick = checkProxy;
   $('#soundTest').onclick = () => {
     unlockAudio();
-    if (!speak('음성 안내 테스트입니다. 500미터 앞, 단속 카메라. 제한속도 60입니다.', true)) {
+    const failed = () => { beep(2); toast('음성이 나오지 않아 경고음으로 안내해요. (기록을 남겼어요)', '', 5000); };
+    if (!speak('음성 안내 테스트입니다. 500미터 앞, 단속 카메라. 제한속도 60입니다.', true, failed, null, true)) {
       beep(2);
       toast(hasTTS ? '이 기기에는 한국어 음성이 없어 경고음으로 안내합니다.' : '이 브라우저는 음성 안내를 지원하지 않아 경고음으로 안내합니다.', '', 5000);
     }
@@ -8323,7 +8365,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,
