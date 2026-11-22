@@ -2881,6 +2881,8 @@
     { id: 'S70', name: 'S70 a reroute refused by the route server (429) retries quietly after the given time, no failure message; v175: a first route search refused with 429 also retries once quietly and shows the route card', fn: s70 },
     { id: 'S69', name: 'S69 signal cameras: warning kept only 5 m after passing; no spoken speeding line (beep instead); straight underpass entry shows the tunnel icon and "OO지하차도까지"', fn: s69 },
     { id: 'S68', name: 'S68 free drive with a wrong GPS heading still catches the speed camera ahead (track bearing); a camera passed without an alert is counted as missed', fn: s68 },
+    // v184: 멀리(경로 시작점에서 80km) 주행 화면으로 달리므로 맨 끝에 (앞에 두면 S86→S88 의 지도 상태가 흔들린다)
+    { id: 'S118', name: "S118 merge onto the camera's road (v184, driver's miss #9 at 남북대로 80 #19618): the route still named '신중부대로' runs 19 m beside a camera on '남북대로' and joins 남북대로 160 m later — the camera is on the route and alerted; if the route goes on as another road it is not, nor when the camera faces the other way", fn: s118 },
   ];
 
   // S55: 주의 표지 (전국도로안전표지표준데이터의 주의표지, data/signs.json · tools/build_signs.py, 2026-11-14 요청).
@@ -5514,6 +5516,54 @@
       r.d.before === false && /경로 밖으로/.test(r.d.msg) && r.d.after === true &&
       r.e.fixes >= 2 && r.e.e2After === 0 &&
       r.f.ok && r.f.e2 === 1 && r.f.shared === 1 && r.f.userRow;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S118: 합류하는 길의 카메라 (v184, 2026-11-22 운전자 놓침 #9)
+  async function s118() {
+    const t = T(), r = {};
+    const O = dest(NAV_ORIGIN, 90, 80000);
+    const mk = (secondName) => {
+      const P = [];
+      for (let k = 0; k <= 120; k++) { const q = dest(O, 180, 20 * k); P.push({ lat: round6(q.lat), lng: round6(q.lng) }); }
+      const cum = [0];
+      for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+      const total = cum[cum.length - 1];
+      return { route: { distance: r0(total), duration: r0(total / 22 * 1000), tollFare: 0, fuelPrice: 0, path: P.map((q) => [q.lng, q.lat]),
+        guide: [{ i: 120, t: 88, s: '목적지', d: r0(total), ms: r0(total / 22 * 1000) }],
+        sections: [{ i: 0, n: 59, name: '신중부대로', speed: 70, cong: 1 }, { i: 58, n: 63, name: secondName, speed: 70, cong: 1 }] },
+        P, cum, total, dest: { name: '합류 시험', addr: '', lat: P[120].lat, lng: P[120].lng } };
+    };
+    const camP = dest(dest(O, 180, 1000), 90, 19);   // 경로선 동쪽 19m, 경로 1,000m 자리 (남북대로 구간은 1,160m 부터)
+    const mkCam = (eb) => { const c = [round6(camP.lat), round6(camP.lng), 80, 1, 0, 0, 0, -1, 4, 1]; c.eb = eb; c.e2 = 0; c.lv = 0; c.sl = c[0]; c.sg = c[1]; c.on = '남북대로'; return c; };
+    let fakeI = -1, base0 = null;
+    const keep = { mine: t.mySpots.slice(), drv: t.driverSpots.rows.slice(), shared: t.sharedSpots.slice() };
+    const put = (c) => { t.mySpots.length = 0; t.driverSpots.rows.length = 0; t.sharedSpots.length = 0; t.applyUserSpots(); base0 = t.cams.rows.length; fakeI = base0; t.cams.rows.push(c); const k = Math.floor(c[0] / 0.01) + ':' + Math.floor(c[1] / 0.01); if (!t.cams.grid.has(k)) t.cams.grid.set(k, []); t.cams.grid.get(k).push(fakeI); t.cams.userBase = null; t.applyUserSpots(); };
+    const take = () => { if (fakeI < 0) return; t.mySpots.length = 0; t.driverSpots.rows.length = 0; t.sharedSpots.length = 0; t.applyUserSpots(); const c = t.cams.rows[fakeI]; const k = Math.floor(c[0] / 0.01) + ':' + Math.floor(c[1] / 0.01); const a = t.cams.grid.get(k); if (a) { const j = a.indexOf(fakeI); if (j >= 0) a.splice(j, 1); } t.camState.passed.delete(fakeI); t.camMiss.near.delete(fakeI); t.cams.rows.length = base0; t.cams.userBase = null; fakeI = -1; };
+    const run = async (secondName, eb) => {
+      const c = mkCam(eb); put(c);
+      const R = mk(secondName);
+      await resetApp(); softReset();
+      await planAndStart(R);
+      t.ensureRouteCams();
+      const on = !!(t.nav.routeCams && t.nav.routeCams.has(c));
+      let seen = null;
+      for (let s = 200; s <= 1000; s += 20) { const q = pointAt(R, s); feed(q.p, 22, q.h); const tg = t.camState.target; if (tg && tg.c === c && seen === null) seen = Math.round(1000 - s); }
+      t.endNav();
+      take();
+      return { on, seen };
+    };
+    try {
+      r.merge = await run('남북대로', 180);
+      r.other = await run('다른대로', 180);
+      r.opposite = await run('남북대로', 0);
+    } finally {
+      take();
+      keep.mine.forEach((x) => t.mySpots.push(x)); keep.drv.forEach((x) => t.driverSpots.rows.push(x)); keep.shared.forEach((x) => t.sharedSpots.push(x));
+      t.applyUserSpots();
+      await resetApp(); softReset();
+    }
+    const ok = r.merge.on && r.merge.seen !== null && r.merge.seen >= 300 && !r.other.on && !r.opposite.on;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

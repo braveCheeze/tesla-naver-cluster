@@ -59,7 +59,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-183'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-184'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -3066,10 +3066,31 @@
     for (const [s, o] of nav.hwEv) { if (s > at) break; out = o; }
     return out;
   }
+  // v184 (2026-11-22 운전자 놓침 #9, 용인 이동읍 남북대로 80 #19618): 42번 신중부대로에서 대촌교차로를 지나 45번 남북대로로 합류하는 길.
+  // 네이버 경로선은 합류 연결로로 그려져 카메라(남북대로 본선)에서 19m 떨어졌고 구간 이름은 아직 '신중부대로'였다 (남북대로 구간은 161m 뒤부터).
+  // 15m(이름이 같으면 20m) 규칙에 걸려 경로 위 카메라에서 빠졌다. 이제 경로가 300m 안에 카메라의 길로 들어가면(합류) 그 길 이름으로 보고
+  // 24m 까지 경로 위로 본다 — 카메라가 경로와 나란히(25° 안) 찍을 때만. 들어가지 않는 나란한 길의 카메라는 그대로 뺀다
+  // 경로 위 자리 at 의 앞뒤 m 미터 안에 안내(목적지 빼고)가 있는지
+  function guideNear(at, m) {
+    const last = nav.cum.length - 1;
+    return (nav.guides || []).some((g) => g.t !== 88 && Math.abs(nav.cum[Math.min(g.i, last)] - at) <= m);
+  }
+  // 이 구간 뒤 m 미터 안에서 처음 바뀌는 도로 이름 (없으면 '')
+  function routeRoadAhead(i, m) {
+    const end = nav.cum[i] + m, here = routeRoadAt(i);
+    for (let k = i + 1; k < nav.pts.length - 1 && nav.cum[k] <= end; k++) { const n = routeRoadAt(k); if (n && n !== here) return n; }
+    return '';
+  }
   function camAtSeg(c, i) {
     const p = camPt(c), a = nav.pts[i], b = nav.pts[i + 1];
     let pr = projectSeg(p, a, b);
-    const rn = routeRoadAt(i);
+    let rn = routeRoadAt(i);
+    // 합류: 이 구간 이름은 다르지만 300m 안에 카메라 길로 들어가고 카메라가 경로와 나란하면 그 길로 본다.
+    // 교차로에서 꺾어 들어가는 곳(길동사거리 천호대로 50 처럼 다른 접근로 정지선)은 아니다: 제한 60 이상이고 카메라 100m 안에 회전·갈림 안내가 없을 때만
+    if (!sameCamRoad(rn, c) && c[2] >= 60 && camHasDir(c) && angleDiff(c.eb, bearing(a, b)) <= 25 && !guideNear(nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]), 100)) {
+      const joins = routeRoadAhead(i, 300);
+      if (joins && joins !== rn && sameCamRoad(joins, c) && Math.min(pr.dist, projectSeg({ lat: c[0], lng: c[1] }, a, b).dist) <= 24) rn = joins;
+    }
     // 카메라 차로 위 점이 경로선 옆 15m 안. v165 (2026-11-20 2차 점검 B): 원래 좌표가 15m 안이거나(v138 에서 정지선으로 옮긴 신호 카메라:
     // 용구대로 60 #20115 원래 3.3m·차로 위 점 18.8m), 도로 이름이 같으면 20m 까지(송파대로 북행 가락시장역 50 #23719, 18.2m).
     // 25m 는 여전히 뺀다(2026-11-15 요청 '오차범위 줄이고', S14). 경로 위 자리는 그대로 차로 위 점(정지선)으로 잰다
@@ -3077,7 +3098,7 @@
     if (pr.dist > CAM_TOL) {
       const raw = projectSeg({ lat: c[0], lng: c[1] }, a, b);
       if (raw.dist <= CAM_TOL) near = raw.dist;
-      else if (!(pr.dist <= 20 && sameCamRoad(rn, c)) && !(c.fixRoute && Math.min(pr.dist, raw.dist) <= 40)) return null;   // v171: 고친 카메라는 40m
+      else if (!(pr.dist <= (rn !== routeRoadAt(i) ? 24 : 20) && sameCamRoad(rn, c)) && !(c.fixRoute && Math.min(pr.dist, raw.dist) <= 40)) return null;   // v171: 고친 카메라는 40m · v184 합류는 24m
     }
     if (c.fixRoute) return nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]);   // v171: '놓침' 진단으로 경로 위로 보게 한 카메라 (이름·고속도로·높이 거르기 없이)
     if (near > 6 && camRoadDiffers(rn, c)) return null;
