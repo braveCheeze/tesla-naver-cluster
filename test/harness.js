@@ -6274,6 +6274,11 @@
       r.seohanam = sh ? { eb: sh.eb, lng: Math.round(sh.sg * 1e5) / 1e5, toStop: Math.round(hav({ lat: sh.sl, lng: sh.sg }, { lat: 37.51701, lng: 127.14377 })) } : 'none';
       // 9. v180 (운전자 '물음표 나오는 과속단속은 안 나오게' — 앱이 '?' 를 숨긴다): 자료에서 채워 '?' 로 남는 과속 카메라는 600곳 아래
       r.unknownLimits = rows.filter((c) => !c[2] && c[3] !== 2).length;
+      // 10. v185 (keys 세션 전달, 운전자 '넘겨 줘'): 서울 이동식 '영동대교 남단(북→남방향)' 같은 한 글자 방위 글이 양방향(3)으로 들어갔다.
+      //     한 방향(1), 찍는 방향은 그 방위 — 남단은 남행(205°), 북단은 북행(20°)
+      const yd = (lat, lng) => near(lat, lng, 5, (c) => c[3] === 8)[0];
+      const yS = yd(37.52618, 127.054889), yN = yd(37.534773, 127.05987);
+      r.yeongdong = yS && yN ? { sDir: yS[9], sEb: yS.eb, nDir: yN[9], nEb: yN.eb } : 'none';
     } finally {
       await resetApp(); softReset();
     }
@@ -6286,7 +6291,8 @@
       r.gyeongbuSeoul === 1 && r.bundangSuseo !== 'none' && r.bundangSuseo !== 1 && /세종포천/.test(r.sejongPocheon) && r.typo === '호국로' &&
       r.beonyeong !== 'none' && r.beonyeong !== 'motorway lane' && r.ggb33.old === 0 && r.ggb33.now >= 1 &&
       r.sejongEnd !== 'none' && r.sejongEnd.rtype === 1 && r.sejongEnd.eb >= 0 && r.mobileLv === 0 && r.ghost80 === 0 &&
-      r.seohanam !== 'none' && angd(r.seohanam.eb, 101) <= 30 && r.seohanam.lng < 127.14386 && r.seohanam.toStop <= 12 && r.unknownLimits < 600;
+      r.seohanam !== 'none' && angd(r.seohanam.eb, 101) <= 30 && r.seohanam.lng < 127.14386 && r.seohanam.toStop <= 12 && r.unknownLimits < 600 &&
+      r.yeongdong !== 'none' && r.yeongdong.sDir === 1 && r.yeongdong.nDir === 1 && angd(r.yeongdong.sEb, 205) <= 30 && angd(r.yeongdong.nEb, 20) <= 30;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
   const isBoxRow = (c) => ((c[10] | 0) & 2) === 2;

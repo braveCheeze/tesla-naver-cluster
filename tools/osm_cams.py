@@ -329,6 +329,12 @@ for di, ri, lat, lng, rname, kind in cams:
     hwy = row_[8] == 1
     slow = 0 < row_[2] <= 70 and not re.search('고속', rname or '')
     res, cf, st = snap(lat, lng, rname, hwy, slow, di == 1)
+    hint = (datasets[di].get('headings') or {}).get(str(ri))
+    if hint is not None:
+        # v185: 원본 글이 한 글자 방위('(북→남방향)')인 이동식 지점: 그 진행 방위 차로에 붙인다 (기하로 고른 방향보다 글)
+        r2 = snap_dir(lat, lng, rname, hwy, hint, slow, di == 1)
+        if r2 is not None:
+            res, cf, st = r2, 3.0, 'mobile: heading from compass text'
     results[di][ri], conf[di][ri] = res, cf
     hwcls[di][ri] = LAST_HW[0]
     stats[st] += 1
@@ -424,6 +430,7 @@ for di, d in enumerate(datasets):
     # 반대 방향 차로 결과(osm_arrows.py 가 쓰고 지운다. 앱은 읽지 않는다)
     d['dirsAlt'] = alts[di]
     d['dirsHw'] = hwcls[di]
+    d.pop('headings', None)
     d.pop('pairs80', None)
     with open(FILES[di], 'w', encoding='utf-8') as fh:
         json.dump(d, fh, ensure_ascii=False, separators=(',', ':'))

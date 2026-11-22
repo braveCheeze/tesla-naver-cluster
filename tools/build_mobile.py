@@ -82,6 +82,23 @@ def arrow_ends(place):
     return tuple(ends) if all(len(e) >= 2 for e in ends) else None
 
 
+COMPASS = {'북': 0, '동': 90, '남': 180, '서': 270}
+
+
+def compass_heading(place):
+    """'영동대교 남단(북→남방향)'·'신천대로(북→남 방면)'·'(서→동)' 처럼 끝이 한 글자 방위면 그 진행 방위 (북→남 = 180°)"""
+    m = ARROW_PAREN.findall(place)
+    seg = m[-1] if m else place
+    parts = ARROW_SPLIT.split(seg)
+    if len(parts) != 2:
+        return None
+    ends = [re.sub(r'(방면|방향|쪽|진행)$', '', re.sub(r'\s+', '', x)) for x in parts]
+    if ends[0] in COMPASS and ends[1] in COMPASS and ends[0] != ends[1]:
+        a, z = COMPASS[ends[0]], COMPASS[ends[1]]
+        return z if (a - z) % 360 == 180 else None   # 북→남 = 남쪽으로 = 180°
+    return None
+
+
 def hav(a, b):
     R, k = 6371000, math.pi / 180
     x = math.sin((b[0] - a[0]) * k / 2) ** 2 + math.cos(a[0] * k) * math.cos(b[0] * k) * math.sin((b[1] - a[1]) * k / 2) ** 2
@@ -280,6 +297,8 @@ for rel in ('seoul/seoul.json', 'gw/points.json', 'jn/points.json', 'cb/points.j
     if os.path.exists(p):
         for q in json.load(open(p, encoding='utf-8'))['points']:
             pts.append({k: q[k] for k in ('src', 'id', 'lat', 'lng', 'text', 'booth', 'limit', 'school')})
+            if q.get('dir') == 'one' and isinstance(q.get('heading'), (int, float)):
+                pts[-1]['heading'] = q['heading']   # tools/geo_mobile_seoul.py 가 정한 진행 방위
 
 # v165: 좌표가 설치장소 글의 주소와 크게 다른 부스는 그 주소 자리로 (tools/geo_fix_mobile.py → tools/mobile_coords_fix.json).
 # 경기북부 PDF 'GGB-33 서울양양고속도로 19.8K (양평군 서종면 문호리 586-5)' 의 좌표가 광주시(25km 밖)였다. 글이 그대로일 때만 쓴다
@@ -355,6 +374,7 @@ def hwy_limit(lat, lng, name):
 
 U0002 = (37.53968, 127.25632)
 rows, arrows, names, name_idx, pairs = [], [], [], {}, []
+headings = {}   # v185: 행 번호 -> 진행 방위 (한 글자 방위 글). osm_cams.py 가 쓰고 지운다
 stats = {'in': len(pts), 'dup_self': 0, 'dup_fixed': 0, 'dup_manual': 0, 'no_limit': 0, 'hwy_limit': 0, 'school_limit': 0,
          'pairs_reversed': 0, 'pairs_two_way': 0}
 kept = []
@@ -371,8 +391,13 @@ def one_way(e):
 def add_row(p_, limit, hwy, ends):
     global arrows
     one = one_way(ends)
+    # v185: 끝이 한 글자 방위('(북→남방향)')인 줄은 글을 지명으로 쓸 수 없어(앱이 안내 문구의 '남'·'북' 글자와 맞춰 버린다) 양방향(3)으로 들어갔다
+    # (서울 영동대교 남단 등 20곳). 한 방향(1)으로 두고, 진행 방위를 headings 로 넘겨 osm_cams.py 가 그 방향 차로에 붙인다
+    hd = p_.get('heading') if p_.get('heading') is not None else compass_heading(p_['text'])
+    if hd is not None and not one:
+        headings[str(len(rows))] = int(round(hd)) % 360
     row = [round(p_['lat'], 6), round(p_['lng'], 6), int(limit), 1 if p_['booth'] else 8, 0, 0, 2 if p_['school'] else 0, -1,
-           1 if hwy else 4, 1 if one else 3, 2 if p_['booth'] else 0]
+           1 if hwy else 4, 1 if one or (hd is not None) else 3, 2 if p_['booth'] else 0]
     if one:
         for e in ends:
             if e not in name_idx:
@@ -459,7 +484,7 @@ out = {'v': 1, 'date': date.today().isoformat(), 'count': len(rows), 'fields': c
                    'dg': '대구 중부·동부·남부·성서·달서·달성경찰서 이동식 단속 사전 예고장소 (2026-04~07, 주소를 좌표로 바꾼 것)',
                    'usa': '울산 울주·남부경찰서 이동식 단속 지점 (2025-08·2026-10, 주소를 좌표로 바꾼 것)',
                    'cb': '충북경찰청 이동식 단속 카메라 설치장소 (data.go.kr 15141314, 2025-05-14 수정, 주소와 1km 넘게 다른 좌표는 뺌)'},
-       'rows': rows, 'arrowNames': names, 'arrows': arrows, 'pairs': pairs}
+       'rows': rows, 'arrowNames': names, 'arrows': arrows, 'pairs': pairs, 'headings': headings}
 # v159: 예전 파일과 같은 자리인데 제한속도·종류가 바뀐 지점은 운전자가 예전에 누른 '틀림'(이 방향 숨김)을 앱이 한 번 푼다.
 # 틀린 값 때문에 누른 틀림이라 고친 뒤에도 계속 숨기면 그대로 놓친다 (2026-11-18 송파IC 10.3k)
 try:
