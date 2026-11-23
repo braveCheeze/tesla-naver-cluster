@@ -2894,6 +2894,7 @@
     { id: 'S131', name: "S131 resume after reversing (v200, driver '직진했다가 후진할때 후방카메라가 켜지는데 브라우저가 꺼져도 세션이 남게해서 유지할수는 없나'; /events show the Tesla reopens the page with a new sid about 80 s apart at 0 km/h): guidance, the section start time and distance, and a manual zoom are kept in localStorage every 5 s and on hide/close; a reopened page picks the guidance up at the first fix with no route card, no route request and no start speech, the sound pill shows while locked; without the stored route it quietly asks once; older than 30 min or after ending guidance nothing is kept", fn: s131 },
     { id: 'S132', name: "S132 Naver two-way check, round 1 (v201, keys session emulator; driver rule '다르거나 없으면 네이버대로') and the 판교분기점 first-split pink line: driving straight past each spot in Naver's direction puts its camera on the route — 별내 송산로 southbound 60 signal+speed, 강동대로 north southbound child-zone 30, 25719 westbound 30, 둔촌사거리 25557 (moved 85 m to Naver's point) east- and westbound 50, 난곡로 23871 south-westbound 30; on the real 서울TG→판교분기점 route the first colour line starts about 300 m before the split, pink", fn: s132 },
     { id: 'S133', name: "S133 one '잘못된 정보 신고' button and the live check (v202, driver '틀림 놓침에서 틀림 없애고 놓침을 잘못 된 정보 신고로', '신고 반영 완료 … 3초', '확인완료 … 신고 접수 완료'): one button, the old one hidden, no '놓침'/'틀림' on screen; pressed while a warning card has been up for a second it reports that camera (dimmed 14 days, no check request); pressed with no card it says '신고 접수 완료' and sends /check (spot, heading, speed, device; no trail off the operator car) keeping the id; a found result reads '신고 반영 완료 · 60 신호·과속단속 추가' and reloads shared fixes, a none result reads '확인 완료'", fn: s133 },
+    { id: 'S134', name: "S134 voice feedback above the compass (v203, driver '그 나침반 위에 피드백 버튼 … 음성으로 텍스트 형태로 … 다시 음성을 누르거나 다른 곳을 누르면 취소', 'Ai 대화모드처럼'): with a fake speech recogniser — a 52 px round button right above the compass; a tap starts Korean listening with the green spinning ring and '듣는 중…'; 1.5 s after the words stop the text is sent at once (with place, heading, speed, guidance and the cards on screen) and '보냈어요' shows; a tap elsewhere or a second tap cancels without sending; a browser without speech recognition says so", fn: s134 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -6565,6 +6566,75 @@
       /^신고 접수 완료/.test(c.toast) && c.sent && c.method === 'POST' && c.keys === 'dev,h,id,kmh,lat,lng,v' && !c.trail && c.saved === 1 && c.sameId &&
       d.toast === '신고 반영 완료 · 60 신호·과속단속 추가' && d.fixes === 1 && d.left === 0 && d.askedId &&
       e.toast === '확인 완료' && e.left === 0;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S134: 나침반 위 음성 피드백 (v203, 운전자 '그 나침반 위에 피드백 버튼 띄어서 클릭하면 음성으로 텍스트 형태로 전달 … 다시 음성을 누르거나 다른 곳을 누르면 취소',
+  //       '녹음 초록색 느낌처럼 빙글 빙글 도는거? Ai 대화모드처럼'). 브라우저 음성 인식 대신 가짜를 끼워서:
+  //   (a) 버튼은 나침반 바로 위(52px 원)  (b) 누르면 한국어로 듣기 시작, 초록 고리·'듣는 중…'
+  //   (c) 말이 끝나고 1.5초 조용하면 글자를 바로 보냄(위치·방향·속도·길안내·떠 있던 카드 포함) → '보냈어요', 버튼 원래대로
+  //   (d) 듣는 중 화면 다른 곳을 누르면 취소(듣기 멈춤, '취소했어요')  (e) 다시 누르면 취소  (f) 음성 인식이 없는 브라우저면 알려 줌
+  async function s134() {
+    const t = T(), r = {}, keepSR = window.SpeechRecognition, keepW = window.webkitSpeechRecognition;
+    const recs = [];
+    class FakeSR {
+      constructor() { this.started = false; this.aborted = false; recs.push(this); }
+      start() { this.started = true; }
+      stop() { this.stopped = true; if (this.onend) this.onend(); }
+      abort() { this.aborted = true; if (this.onend) this.onend(); }
+      say(text) { const res = [{ transcript: text }]; res.isFinal = true; this.onresult({ resultIndex: 0, results: [res] }); }
+    }
+    const btn = document.getElementById('fbBtn'), lab = document.getElementById('fbLabel');
+    const R = buildNavRoute();
+    try {
+      window.SpeechRecognition = FakeSR; window.webkitSpeechRecognition = undefined;
+      t.fb.inTest = true;
+      softReset();
+      await planAndStart(R);
+      for (let s = 15; s <= 300; s += 15) { const a = pointAt(R, s); feed(a.p, 15, a.h); }
+      const hb = document.querySelector('#app .heading').getBoundingClientRect(), fbR = btn.getBoundingClientRect();
+      const cp = document.querySelector('#app .heading .compass').getBoundingClientRect();
+      r.a = { w: Math.round(fbR.width), h: Math.round(fbR.height), above: fbR.bottom <= cp.top - 4, left: Math.abs(fbR.left - cp.left) <= 4, shown: getComputedStyle(btn.parentElement).display !== 'none' };
+      // (b)·(c)
+      btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      const rec = recs[recs.length - 1];
+      r.b = { listening: btn.classList.contains('listening'), label: lab.textContent, started: !!(rec && rec.started), lang: rec && rec.lang, ring: getComputedStyle(btn.querySelector('.fb-ring')).animationName };
+      rec.say('이 카메라 위치가 틀려요');
+      const tSaid = Date.now();
+      await waitFor(() => !!t.fb.last, 4000, 50);
+      const waited = Date.now() - tSaid;
+      await waitFor(() => !btn.classList.contains('sending') && !btn.classList.contains('listening'), 3000, 50);
+      const p = t.fb.last || {};
+      r.c = { text: p.text, waited, navOn: p.navOn, hasPos: p.lat != null && p.lng != null, kmh: p.kmh, cards: !!p.cards, toast: text('#toast'), label: lab.hidden, aborted: !!rec.aborted };
+      // (d) 다른 곳을 누르면 취소
+      t.fb.last = null;
+      btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      const rec2 = recs[recs.length - 1];
+      document.getElementById('map').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      r.d = { listening: btn.classList.contains('listening'), aborted: !!rec2.aborted, toast: text('#toast'), sent: !!t.fb.last };
+      // (e) 다시 누르면 취소
+      btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      const rec3 = recs[recs.length - 1];
+      btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      r.e = { listening: btn.classList.contains('listening'), aborted: !!rec3.aborted, sent: !!t.fb.last };
+      // (f) 음성 인식 없음
+      window.SpeechRecognition = undefined;
+      btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      r.f = { listening: btn.classList.contains('listening'), toast: text('#toast') };
+      t.endNav();
+    } finally {
+      t.fbCancel(true);
+      t.fb.inTest = false; t.fb.last = null;
+      window.SpeechRecognition = keepSR; window.webkitSpeechRecognition = keepW;
+      softReset();
+    }
+    const a = r.a || {}, b = r.b || {}, c = r.c || {}, d = r.d || {}, e = r.e || {}, f = r.f || {};
+    const ok = a.w === 52 && a.h === 52 && a.above && a.left && a.shown &&
+      b.listening && b.label === '듣는 중…' && b.started && b.lang === 'ko-KR' && b.ring === 'fbspin' &&
+      c.text === '이 카메라 위치가 틀려요' && c.waited >= 1400 && c.navOn === true && c.hasPos && c.cards && c.toast === '보냈어요' && c.label && c.aborted &&
+      !d.listening && d.aborted && d.toast === '취소했어요' && !d.sent &&
+      !e.listening && e.aborted && !e.sent &&
+      !f.listening && /음성 인식을 지원하지 않아요/.test(f.toast);
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

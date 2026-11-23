@@ -61,7 +61,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-202'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-203'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -8756,6 +8756,130 @@
     } catch (e) { /* 다음 분에 */ } finally { checkSt.busy = false; }
   }
 
+
+  // ---------- v203 음성 피드백 (2026-11-24 운전자 '그 나침반 위에 피드백 버튼 띄어서 클릭하면 음성으로 텍스트 형태로 전달 가능하게 해줘
+  // 다시 음성을 누르거나 다른 곳을 누르면 취소되고 좀 운전할때 불편하지 않게', '녹음 초록색 느낌처럼 빙글 빙글 도는거? Ai 대화모드처럼') ----------
+  // 나침반 위 둥근 버튼 하나. 누르면 듣기 시작 — 초록 고리가 돌고 말소리에 맞춰 살짝 커졌다 작아진다, 작은 '듣는 중…'.
+  // 말이 끝나고 1.5초 조용하면 글자로 바꿔 바로 보낸다(확인 창·키보드 없음) → 짧게 돌고 '보냈어요'. 최대 20초.
+  // 듣는 중에 버튼을 다시 누르거나 화면의 다른 곳을 누르면 취소. 길안내·단속 음성은 끊지 않는다: 안내 음성이 나오는 동안은 듣기를 멈췄다가 끝나면 잇는다.
+  // 글자로 바꾸기는 브라우저 음성 인식(Web Speech API). 없으면 알려 주고, 기능 지원 여부만(위치 없이) 기록한다 → 테슬라에서 되는지 운전자가 써 본 뒤 기록으로 본다.
+  // 보내는 것(/event type 'feedback'): 글자·시각·앱 버전·길안내 여부·그 순간 위치·방향·속도·떠 있던 카드 (테스터는 위치 기록에 동의)
+  const speechRec = () => window.SpeechRecognition || window.webkitSpeechRecognition || null;   // 누를 때 찾는다 (시험이 가짜를 끼울 수 있게)
+  const FB_SILENCE_MS = 1500, FB_MAX_MS = 20000;
+  const fb = { on: false, rec: null, text: '', interim: '', t0: 0, lastAt: 0, heard: false, paused: false, tick: null, sendT: null, inTest: false, last: null };
+  const fbSupport = () => ({ sr: !!speechRec(), gum: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia), mr: typeof window.MediaRecorder === 'function' });
+  function fbUi(st) {
+    const b = $('#fbBtn');
+    if (!b) return;
+    b.classList.toggle('listening', st === 'listen');
+    b.classList.toggle('sending', st === 'send');
+    b.classList.remove('talk');
+    b.setAttribute('aria-pressed', st === 'listen' ? 'true' : 'false');
+    $('#fbLabel').textContent = st === 'listen' ? '듣는 중…' : st === 'send' ? '보내는 중…' : '';
+    $('#fbLabel').hidden = !st;
+  }
+  function fbNewRec() {
+    const R = speechRec(), r = new R();
+    r.lang = 'ko-KR'; r.continuous = true; r.interimResults = true; r.maxAlternatives = 1;
+    r.onresult = (e) => {
+      let fin = '', mid = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const x = e.results[i];
+        if (x.isFinal) fin += x[0].transcript; else mid += x[0].transcript;
+      }
+      if (fin) fb.text = (fb.text + ' ' + fin).trim();
+      fb.interim = mid.trim();
+      fb.lastAt = Date.now(); fb.heard = true;
+      const b = $('#fbBtn');
+      if (b) { b.classList.add('talk'); clearTimeout(fb.talkT); fb.talkT = setTimeout(() => b.classList.remove('talk'), 260); }
+    };
+    r.onspeechstart = () => { fb.lastAt = Date.now(); const b = $('#fbBtn'); if (b) b.classList.add('talk'); };
+    r.onerror = (e) => {
+      const name = String((e && e.error) || 'error');
+      if (name === 'not-allowed' || name === 'service-not-allowed' || name === 'audio-capture') {
+        report('info', { msg: 'feedback mic ' + name, support: fbSupport() });   // 기능 지원 여부만 (위치 없음)
+        fbCancel(true);
+        toast('마이크를 쓸 수 없어요', '', 2500);
+      }
+    };
+    r.onend = () => { if (fb.on && fb.rec === r && !fb.paused) { fb.rec = null; } };   // 크롬은 조용하면 스스로 끝낸다 → tick 이 다시 걸거나 보낸다
+    return r;
+  }
+  function fbStart() {
+    if (fb.on) return;
+    if (!speechRec()) {
+      report('info', { msg: 'feedback unsupported', support: fbSupport() });
+      toast('이 브라우저는 음성 인식을 지원하지 않아요', '', 3000);
+      return;
+    }
+    Object.assign(fb, { on: true, text: '', interim: '', t0: Date.now(), lastAt: Date.now(), heard: false, paused: false });
+    fbUi('listen');
+    fbListen();
+    clearInterval(fb.tick);
+    fb.tick = setInterval(fbTick, 200);
+  }
+  function fbListen() {
+    if (!fb.on || fb.rec) return;
+    try { fb.rec = fbNewRec(); fb.rec.start(); } catch (e) { fb.rec = null; }
+  }
+  // 안내 음성이 나오는 동안은 멈추고(안내를 끊지 않고, 안내 소리를 받아 적지 않게), 끝나면 잇는다. 1.5초 조용하면 보낸다
+  function fbTick() {
+    if (!fb.on) return;
+    const now = Date.now();
+    const talking = hasTTS && speechSynthesis.speaking;
+    if (talking && !fb.paused) { fb.paused = true; try { if (fb.rec) fb.rec.abort(); } catch (e) { /* 없음 */ } fb.rec = null; }
+    if (fb.paused) {
+      if (talking) { fb.lastAt = now; return; }
+      fb.paused = false; fb.lastAt = now;
+    }
+    const said = (fb.text + ' ' + fb.interim).trim();
+    if (now - fb.t0 >= FB_MAX_MS) { if (said) fbSend(); else fbCancel(false, '말씀이 없어 닫았어요'); return; }
+    if (said && now - fb.lastAt >= FB_SILENCE_MS) { fbSend(); return; }
+    if (!said && fb.heard === false && now - fb.t0 >= 8000) { fbCancel(false, '말씀이 없어 닫았어요'); return; }
+    if (!fb.rec) fbListen();   // 스스로 끝났으면 다시
+  }
+  function fbStop() {
+    fb.on = false; fb.paused = false;
+    clearInterval(fb.tick); fb.tick = null;
+    try { if (fb.rec) fb.rec.abort(); } catch (e) { /* 없음 */ }
+    fb.rec = null;
+  }
+  function fbCancel(quiet, why) {
+    if (!fb.on) return;
+    fbStop();
+    fbUi('');
+    if (!quiet) toast(why || '취소했어요', '', 1500);
+  }
+  function fbPayload(text) {
+    const f = state.fix, tg = camState.target, g = nav.active ? nav.next : null;
+    return {
+      msg: 'feedback', text: String(text).slice(0, 500), at: Date.now(), navOn: !!nav.active, ms: Date.now() - fb.t0,
+      lat: f ? Math.round(f.lat * 1e5) / 1e5 : null, lng: f ? Math.round(f.lng * 1e5) / 1e5 : null,
+      heading: state.heading === null ? null : Math.round(state.heading), kmh: Math.round(state.speedKmh || 0),
+      cards: {
+        cam: tg ? { i: tg.i, label: camLabel(tg.c), limit: tg.c[2], d: Math.round(tg.d || 0), after: !!tg.after } : null,
+        turn: g ? { t: g.t, s: String(g.s || '').slice(0, 80), d: nav.dg == null ? null : Math.round(nav.dg) } : null,
+        junc: !$('#juncCard').hidden, sec: !!camState.section, toll: !$('#tollCard').hidden,
+      },
+      support: fbSupport(),
+    };
+  }
+  function fbSend() {
+    const text = (fb.text + ' ' + fb.interim).trim();
+    fbStop();
+    if (!text) { fbUi(''); return; }
+    fbUi('send');
+    const body = fbPayload(text);
+    fb.last = body;
+    Promise.resolve(fb.inTest ? true : reportSure('feedback', body)).then(() => {
+      clearTimeout(fb.sendT);
+      fb.sendT = setTimeout(() => { fbUi(''); toast('보냈어요', '', 2000); }, 600);   // 짧게 돈 뒤
+    });
+  }
+  $('#fbBtn').addEventListener('click', (ev) => { ev.stopPropagation(); if (fb.on) fbCancel(); else fbStart(); });
+  // 듣는 중에 화면의 다른 곳을 누르면 취소 (그 누름은 원래 하던 일도 그대로 한다)
+  document.addEventListener('pointerdown', (ev) => { if (fb.on && !(ev.target && ev.target.closest && ev.target.closest('#fbBtn'))) fbCancel(); }, true);
+
   function applyTesla() {
     $('#app').classList.add('tesla');   // 테슬라 모드만 쓴다 (2026-11-14)
     queueLayout(); // 지도 칸 너비가 바뀌므로 다시 배치
@@ -9211,7 +9335,7 @@
   updateSoundPill();
   renderHupBtn();
   showChrome(); // 처음 3초 동안 버튼을 보여 준 뒤 숨긴다
-  setTimeout(() => report('session', { msg: 'open', tts: ttsStatus(), debug: params.has('debug'), autoplay: autoplayState, resumed: !!live.pending || nav.active, scheme: (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light', night: nightMode() }), 6000); // 지도·GPS 상태가 잡힌 뒤 접속 기록
+  setTimeout(() => report('session', { msg: 'open', tts: ttsStatus(), debug: params.has('debug'), autoplay: autoplayState, resumed: !!live.pending || nav.active, fbSupport: fbSupport(), scheme: (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light', night: nightMode() }), 6000); // 지도·GPS 상태가 잡힌 뒤 접속 기록
   render();
   tickClock();
   setInterval(tickClock, 1000);
@@ -9270,7 +9394,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,
