@@ -143,6 +143,9 @@
     const signs = cat.signs.map((x) => slotRow(x.k, x.label, x.html)).join('');
     sec.push(['signs', '주의 표지', '도로 주의 표지 카드(과속방지턱은 지도 표시도)에 쓰는 그림이에요.', signs]);
     sec.push(['tunnel', '터널', '길안내 패널의 터널 줄 아이콘이에요.', slotRow('tunnel', '터널', cat.tunnel.html)]);
+    // v192: 단속 경고 카드·지도 표시의 표지 (가운데 제한속도 숫자는 앱이 얹는다)
+    if (cat.cams) sec.push(['cams', '단속 표지', '단속 경고 카드와 지도 위 단속 표시의 표지 그림이에요. 가운데 제한속도 숫자는 앱이 얹어요. 구간단속·보호구역 지도 표시는 앱 그림 그대로예요.',
+      cat.cams.map((x) => slotRow(x.k, x.label, x.html)).join('')]);
     const guide = cat.guide.map((g) => {
       const src = SRC[g.k] ? tile({ cls: 'ro', html: '<img src="icon-src/' + SRC[g.k] + '" alt="">', label: '원본(직접 만든 AI)' }) : '';
       const lb = (LABEL[g.k] || g.k) + (g.borrowed ? ' · 지금은 ' + (LABEL[g.borrowed] || g.borrowed) + ' 그림을 빌려 씀' : '');
@@ -153,7 +156,7 @@
     const JV = ['fork', 'ramp', 'entry', 'over', 'under', 'side', 'oside'].flatMap((k) => ['junc_' + k + '_day', 'junc_' + k + '_night']);
     sec.push(['junc', '분기점 그림', '길안내 서랍 맨 위 그림이에요. 오른쪽으로 가는 그림이고 왼쪽 갈림길이면 앱이 좌우로 뒤집어요. 낮·밤을 둘 다 골라야 쓰여요(앱 그림 = 그려 넣은 원근 그림).',
       JV.map((k) => slotRow(k, LABEL[k] || k, '<span style="color:var(--sub);font-size:11px">원근 그림</span>', '', true)).join('')]);
-    const known = new Set(cat.guide.map((g) => g.k).concat(cat.signs.map((x) => x.k), ['tunnel'], JV));
+    const known = new Set(cat.guide.map((g) => g.k).concat(cat.signs.map((x) => x.k), ['tunnel'], JV, (cat.cams || []).map((x) => x.k)));
     const rest = [...new Set(man.items.filter((x) => x.kind !== 'car' && !known.has(x.slot)).map((x) => x.slot))];
     if (rest.length) {
       const html = rest.map((slot) => {

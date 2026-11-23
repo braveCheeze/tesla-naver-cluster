@@ -59,7 +59,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-191'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-192'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -706,7 +706,10 @@
     const el = document.createElement('div');
     el.className = 'cammk k' + c[3] + (c[6] ? ' z' + c[6] : '') + (c[3] === 8 || ((c[10] | 0) & 2) ? ' mob' : ''); // z2 어린이·z1 노인 보호구역은 노란 바탕
     // v114 (2026-11-15 요청 '이동식은 파란색으로, 빨간 테두리 말고'): 이동식·박스형(부스에 이동식 장비를 넣는 곳)은 파란 테두리
-    el.textContent = c[2] || '?';
+    el.innerHTML = '<b>' + (c[2] || '?') + '</b>';   // v192: 숫자 자리를 표지 그림에 맞춰 놓으려고 감싼다
+    // v192: AI 아틀라스 표지 그림 (보호구역의 노란 바탕·구간단속은 그대로)
+    const img = c[6] || c[4] || c[3] === 9 ? null : camSignImg(c);
+    if (img) { el.classList.add('ai'); if (img.num) el.classList.add('ainum'); el.style.backgroundImage = img.url; }
     return el;
   }
   // 과속방지턱 주의 표지: 빨간 테두리 흰 삼각형 안에 검은 둔덕
@@ -1069,7 +1072,7 @@
         this.cams.set(x.i, new N.Marker({
           // v138: 원본 좌표(교차로 한가운데인 것이 많다) 대신 카메라가 찍는 자리(접근로 정지선·차로 위 점)에 그린다
           position: new N.LatLng(camPt(x.c).lat, camPt(x.c).lng), map: this.map, clickable: false, zIndex: 100,
-          icon: { content: camEl(x.c), anchor: new N.Point(15, 15) },
+          icon: { content: camEl(x.c), anchor: new N.Point(18, 18) },   // v192: 표지가 36px (v191) — 가운데가 카메라 자리
         }));
       });
     },
@@ -1268,7 +1271,7 @@
       list.forEach((x) => {
         if (this.cams.has(x.i)) return;
         this.cams.set(x.i, L.marker([camPt(x.c).lat, camPt(x.c).lng], {
-          icon: L.divIcon({ html: camEl(x.c), className: 'me-wrap', iconSize: [30, 30], iconAnchor: [15, 15] }),
+          icon: L.divIcon({ html: camEl(x.c), className: 'me-wrap', iconSize: [36, 36], iconAnchor: [18, 18] }),
           interactive: false, keyboard: false,
         }).addTo(this.map));
       });
@@ -2856,6 +2859,18 @@
     return rear ? '후면단속' : '과속단속';
   }
   const camBand = (c) => (isUserSpot(c) || c[3] === 8 ? 'white' : 'yellow');
+  // v192 (운전자 '이런거는 ai 아틀라스로 만들고'): 단속 표지 그림 칸 — 신호(·과속)는 신호등, 이동식·박스형·신고 지점은 파란 테, 나머지는 카메라
+  function camSignSlot(c) {
+    if (c[3] === 2 || c[3] === 3) return 'cam_signal';
+    if (c[3] === 8 || isBox(c) || isUserSpot(c)) return 'cam_mobile';
+    return 'cam_speed';
+  }
+  // 고른 AI 표지 그림: 숫자까지 그린 칸(cam_speed_110 …, 운전자 'AI로 만들어봐 그리고 110을 저기 규격에 잘 맞춰주고')이 있으면 그것(num),
+  // 없으면 숫자 없는 틀(cam_speed …)에 숫자를 얹는다. noNum: '?'·'신호' 처럼 숫자가 아닌 글을 얹을 때. 없으면 null
+  function camSignImg(c, noNum) {
+    const base = camSignSlot(c), fn = !noNum && c[2] > 0 ? ICON_PICKS[base + '_' + c[2]] : null, f = fn || ICON_PICKS[base];
+    return f ? { url: 'url("' + APP_BASE + 'img/ai/' + f + '?v=' + APP_VERSION + '")', num: !!fn } : null;
+  }
   const camRoad = (c) => (cams.roads && c[7] >= 0 ? cams.roads[c[7]] : '') || '';
   // v157: '서울외곽순환고속도로'(경찰청 카메라 자료의 옛 이름)는 '수도권제1순환고속도로'(2020년 바뀐 이름, 네이버 경로 구간)와 같은 길
   // v165 (2026-11-20 2차 점검 C): 표기 차이를 맞춘다 — 경찰 '분당-수서간고속화도로'·'분당-수서간도시고속화도로', 네이버 '분당수서간도시고속화도로',
@@ -3710,7 +3725,10 @@
       const d = pk.at != null && nav.active ? Math.max(0, pk.at - nav.along)
         : state.fix ? haversine(state.fix, { lat: pk.c[0], lng: pk.c[1] }) : pk.d;
       // 테슬라 모드에서는 '다음 단속' 글자 없이 제한속도 표지 + 거리만 (표지만 봐도 안다). 글자는 화면 읽기용으로 남긴다
-      nxEl.innerHTML = '<span class="mini-sign' + (pk.c[3] === 3 ? ' k3' : '') + (pk.c[3] === 8 || isBox(pk.c) ? ' mob' : '') + '">' + (pk.c[2] || '?') + '</span><span class="nx-label">다음 단속 </span><b>' + fmtDist(d) + '</b>';
+      // v192: 다음 단속 작은 표지도 AI 아틀라스 그림(보호구역·구간단속은 예전 그림)
+      const nxImg = pk.c[6] || pk.c[4] || pk.c[3] === 9 ? null : camSignImg(pk.c);
+      nxEl.innerHTML = '<span class="mini-sign' + (pk.c[3] === 3 ? ' k3' : '') + (pk.c[3] === 8 || isBox(pk.c) ? ' mob' : '') + (nxImg ? ' ai' + (nxImg.num ? ' ainum' : '') : '') + '"' +
+        (nxImg ? ' style=\'background-image:' + nxImg.url.replace(/"/g, '&quot;') + '\'' : '') + '><span class="msn">' + (pk.c[2] || '?') + '</span></span><span class="nx-label">다음 단속 </span><b>' + fmtDist(d) + '</b>';
       nxEl.setAttribute('aria-label', '다음 단속 ' + fmtDist(d));
       nxEl._d = d;
     }
@@ -3733,6 +3751,13 @@
       $('#camType').textContent = camLabel(tg.c);
       $('#camKind').textContent = camShort(tg.c);   // v191: 종류 띠 (긴 이름은 #camType·화면 읽기용)
       card.dataset.band = camBand(tg.c);
+      // v192: 카드는 원래 모양(운전자 '원래 우리 스타일대로 해 줘'), 표지만 AI 아틀라스 그림. 구간단속은 표지도 예전 그림('구간단속은 기존께 더 좋은거 같아')
+      const secCam = tg.c[4] === 1 || tg.c[4] === 2 || tg.c[3] === 9;
+      card.classList.toggle('seccam', secCam);
+      const sgEl = card.querySelector('.cam-sign'), sgImg = secCam ? null : camSignImg(tg.c, doubt || !speedCam), sgUrl = sgImg ? sgImg.url : '';
+      card.classList.toggle('aisign', !!sgImg);
+      card.classList.toggle('ainum', !!(sgImg && sgImg.num));   // 숫자까지 그린 그림이면 얹은 숫자는 숨긴다 (글은 화면 읽기·시험용으로 남김)
+      if (sgEl.dataset.img !== sgUrl) { sgEl.style.backgroundImage = sgUrl; sgEl.dataset.img = sgUrl; }
       $('#camDist').textContent = tg.after ? '통과' : fmtDist(camShownDist(tg));   // v112: 지나친 뒤 '0m' 대신 (문구 검토)
       const sd = camShownDist(tg);
       card._d = tg.after ? 0 : Math.max(0, sd);   // 서랍 칸 순서 (v158)
@@ -4636,6 +4661,7 @@
   const FINAL_TURN = new Set(['l', 'r', 'sl', 'sr', 'sharp_l', 'sharp_r', 'kl', 'kr']);
   function setRoute(r, dest, keepAlerts) {
     nav.route = r; nav.dest = dest;
+    if (dest) nav.lastDest = dest;   // v192: 목적지가 비었을 때 다시 채울 마지막 목적지
     nav.pts = r.path.map((p) => ({ lat: p[1], lng: p[0] }));
     nav.cum = [0];
     for (let i = 1; i < nav.pts.length; i++) nav.cum.push(nav.cum[i - 1] + haversine(nav.pts[i - 1], nav.pts[i]));
@@ -4817,6 +4843,15 @@
   const toggleTray = () => ($('#navTray').classList.contains('open') ? closeTray() : openTray());
   function startNav() {
     if (!nav.pts) return;
+    // v192 (2026-11-23 09:57 테슬라 오류 'Cannot read properties of null (reading 'name')' — 경로 카드의 '안내 시작'을 눌렀는데 목적지가 비어 있었다):
+    // 운전자 '굳이 다시 껐다 켜야 하나? 그냥 목적지 다시 찍고 GPS 해도 될 듯' — 목적지가 비었으면 마지막에 고른 목적지(없으면 경로 끝점)로 다시 채워
+    // 그대로 안내한다. 어떻게 비었는지 알 수 있게 위치 없이 남긴다
+    if (!nav.dest) {
+      const end = nav.pts[nav.pts.length - 1];
+      nav.dest = nav.lastDest || { name: '목적지', addr: '', lat: end.lat, lng: end.lng };
+      report('info', { msg: 'startNav without dest', last: !!nav.lastDest, route: !!nav.route, preview: !!nav.preview, comparing: !!nav.comparing, busy: !!nav.busy });
+    }
+    if (!nav.route) { $('#routeCard').hidden = true; return; }
     $('#routeCard').hidden = true;
     nav.option = nav.route.option || prefs.routeOpt; // 재탐색·교통 갱신도 고른 옵션으로
     nav.preview = false; nav.active = true;
@@ -8368,6 +8403,15 @@
       guide: Object.keys(TURN_ICONS).map((k) => ({ k, html: icoBase(k), borrowed: !!ICON_FALLBACK[k] && !(window.TNC_ICONS || {})[k] ? ICON_FALLBACK[k] : '' })),
       signs: SIGN_TYPES.map((t) => ({ k: 'sign_' + t.id, label: t.label, html: signSvg(t.g) })).concat([{ k: 'sign_bump', label: '과속방지턱', html: SIGN_BUMP }]),
       tunnel: { k: 'tunnel', label: '터널', html: TUNNEL_ICON },
+      // v192: 단속 표지 칸 (앱 그림 = CSS 로 그린 것과 같은 모양)
+      cams: [{ k: 'cam_speed', label: '과속 단속 표지', html: '<svg viewBox="0 0 100 100" width="44" height="44"><circle cx="50" cy="50" r="43" fill="#fff" stroke="#e8202a" stroke-width="10"/><rect x="36" y="22" width="20" height="13" rx="3.5" fill="#111"/><path d="M55 28.5 L65 23 V34 Z" fill="#111"/><circle cx="41.5" cy="28.5" r="2.6" fill="#fff"/><circle cx="50" cy="28.5" r="2.6" fill="#fff"/><text x="50" y="70" text-anchor="middle" font-size="30" font-weight="900" font-family="system-ui,sans-serif" fill="#111">80</text></svg>' },
+        { k: 'cam_signal', label: '신호·과속 단속 표지', html: '<svg viewBox="0 0 100 100" width="44" height="44"><circle cx="50" cy="50" r="43" fill="#fff" stroke="#e8202a" stroke-width="10"/><rect x="34" y="23" width="32" height="12" rx="6" fill="#222"/><circle cx="41" cy="29" r="3.6" fill="#ff3b30"/><circle cx="50" cy="29" r="3.6" fill="#ffcc00"/><circle cx="59" cy="29" r="3.6" fill="#34c759"/><text x="50" y="70" text-anchor="middle" font-size="30" font-weight="900" font-family="system-ui,sans-serif" fill="#111">80</text></svg>' },
+        { k: 'cam_mobile', label: '이동식·박스형·신고 지점 표지', html: '<svg viewBox="0 0 100 100" width="44" height="44"><circle cx="50" cy="50" r="43" fill="#fff" stroke="#2979ff" stroke-width="10"/><rect x="36" y="22" width="20" height="13" rx="3.5" fill="#111"/><path d="M55 28.5 L65 23 V34 Z" fill="#111"/><circle cx="41.5" cy="28.5" r="2.6" fill="#fff"/><circle cx="50" cy="28.5" r="2.6" fill="#fff"/><text x="50" y="70" text-anchor="middle" font-size="30" font-weight="900" font-family="system-ui,sans-serif" fill="#111">80</text></svg>' }].concat(['speed', 'signal', 'mobile'].flatMap((k) => Array.from({ length: 12 }, (_, n) => {
+        // v192: 숫자까지 그린 표지 (20~130) — 앱 그림은 틀 그림에 숫자를 얹은 것
+        const lim = 20 + n * 10, lb = { speed: '과속', signal: '신호·과속', mobile: '이동식·신고' }[k];
+        return { k: 'cam_' + k + '_' + lim, label: lb + ' ' + lim, html: '<svg viewBox="0 0 100 100" width="44" height="44"><circle cx="50" cy="50" r="43" fill="#fff" stroke="' + (k === 'mobile' ? '#2979ff' : '#e8202a') +
+          '" stroke-width="10"/><text x="50" y="68" text-anchor="middle" font-size="' + (lim >= 100 ? 26 : 32) + '" font-weight="900" font-family="system-ui,sans-serif" fill="#111">' + lim + '</text></svg>' };
+      }))),
       cars: CAR_ICONS.map((c, i) => ({ id: c.id, name: c.name, html: c.svg('-c' + i) })),
       repoPicks: window.TNC_PICKS || {},
     };
@@ -8446,7 +8490,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,

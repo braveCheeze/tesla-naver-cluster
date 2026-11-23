@@ -2885,7 +2885,7 @@
     { id: 'S119', name: "S119 cameras the driver confirmed (v186, data/driver_spots.json with a limit: 신중부대로·남북대로 80): a row's own limit is kept, it alerts as '운전자 신고 단속 지점' 80 from 900 m along a route in its direction, not on the way back; v188: my own '놓침' spot 75 m behind it in the same direction is the same camera (one row, status '모든 사용자에게 반영됨'), facing the other way it is not", fn: s119 },
     { id: 'S121', name: "S121 side-road slow cameras beside any fast road (v190, driver 2026-11-23 '정확히 우리길이 아닌데 잡는 경우 확실하게 개선'): guided on 올림픽대로 an unnamed school-zone 30 10 m off is not on the route while an unnamed 80 10 m off and a 30 named 올림픽대로 10 m off are; guided on an unnamed local route at 80 km/h an unnamed 30 10 m off is on the route but not alerted, at 40 km/h it is; free drive with reverse-geocode giving the side road name, at 80 km/h a 30 named after that side road 10 m off does not alert while a 30 2 m off the path does, and at 40 km/h the 10 m one alerts", fn: s121 },
     { id: 'S120', name: "S120 side-road cameras beside an expressway (v187, driver's '틀림' 2026-11-23 on 경부 southbound south of 신갈JC at 50 km/h: the 신정로 상미사거리 school-zone 30 #20526, 23 m beside 경부, showed because a '놓침' three days earlier had put a 'route' fix on it): with that fix it is still not on a 경부 route; a '놓침' pressed after passing it fixes nothing on it; free drive on 경부 at 50 km/h drops a school-zone 30 10 m to the side; expressway cameras (on the line, and 25 m off with a 'route' fix) still alert, guided and free", fn: s120 },
-    { id: 'S122', name: "S122 camera badge like Naver guidance (v191, driver: '아이콘이나 UI … 네이버지도가 가장 정확해'): the card shows a white sign with a thick red ring, a small icon over the limit (camera; traffic light for signal+speed), a red distance band and a kind band (yellow 과속단속·신호과속·박스형, white 이동식·신고 지점), blue rings kept for mobile/box/reported (v114), no gauge outside sections; map markers are 36 px with the same icon", fn: s122 },
+    { id: 'S122', name: "S122 camera signs from the AI atlas (v192, driver: '이런거는 ai 아틀라스로 만들고', '원래 우리 스타일대로 해 줘'): the warning card keeps our original layout (long kind name, distance, gauge; ring red, blue for mobile/box/reported); map markers are 36 px with a small camera (traffic light for signal+speed); a picked AI atlas sign (img/ai/cam_*) replaces the drawn sign on the card and the map marker with the limit on top, a sign drawn with its number (cam_speed_80) is shown as it is with the overlaid number hidden; a 구간단속 camera keeps the drawn sign", fn: s122 },
   ];
 
   // S55: 주의 표지 (전국도로안전표지표준데이터의 주의표지, data/signs.json · tools/build_signs.py, 2026-11-14 요청).
@@ -5795,6 +5795,12 @@
       P, cum, total, dest: { name: '배지 시험', addr: '', lat: P[300].lat, lng: P[300].lng } };
     const mk = (s, lim, kind, flags) => { const q = dest(along(s), 270, 3); const c = [round6(q.lat), round6(q.lng), lim, kind, 0, 0, 0, -1, 4, 1]; if (flags) c.push(flags); c.eb = 180; c.e2 = 0; c.lv = 0; c.sl = c[0]; c.sg = c[1]; c.on = '배지시험로'; return c; };
     const cams = [{ s: 1000, c: mk(1000, 80, 1) }, { s: 2000, c: mk(2000, 50, 3) }, { s: 3000, c: mk(3000, 60, 8) }, { s: 4000, c: mk(4000, 80, 1, 2) }];
+    // v192: 구간단속 시작(6000) — 예전 카드 그대로 (운전자 '구간단속은 기존께 더 좋은거 같아')
+    const secC = mk(5600, 100, 9); secC[4] = 1; secC[5] = 2000;
+    cams.push({ s: 5600, c: secC });
+    // v192: AI 아틀라스 표지 그림 칸은 이 시험 동안 비운다 (CSS 그림을 본다). 끝에서 따로 켜 본다
+    const keepPicks = {};
+    for (const k of Object.keys(t.iconPicks)) if (/^cam_/.test(k)) { keepPicks[k] = t.iconPicks[k]; delete t.iconPicks[k]; }
     const spotP = dest(along(5000), 270, 3);
     const keep = { drv: t.driverSpots.rows.slice(), shared: t.sharedSpots.slice(), mine: t.mySpots.slice() };
     const fakes = [];
@@ -5803,8 +5809,8 @@
       const card = document.getElementById('camCard'), sign = card.querySelector('.cam-sign'), ico = card.querySelector('.cam-ico');
       const cs = (el, pseudo) => (el ? getComputedStyle(el, pseudo) : null);
       const bar = card.querySelector('.cam-bar');
-      return { limit: text('#camLimit'), kind: text('#camKind'), band: card.dataset.band, ring: cs(sign).borderTopColor, icon: /svg/.test(cs(ico).backgroundImage) ? (/ff3b30/.test(cs(ico).backgroundImage) ? 'signal' : 'camera') : 'none',
-        distBg: cs(card.querySelector('.cam-dist')).backgroundColor, kindBg: cs(card.querySelector('.cam-kind')).backgroundColor, bar: cs(bar).display };
+      return { limit: text('#camLimit'), type: text('#camType'), typeShown: cs(card.querySelector('.cam-type')).display, kindShown: cs(card.querySelector('.cam-kind')).display,
+        ring: cs(sign).borderTopColor, dist: text('#camDist'), bar: cs(bar).display, cardBg: cs(card).backgroundColor };
     };
     try {
       t.driverSpots.rows.length = 0; t.sharedSpots.length = 0; t.mySpots.length = 0;
@@ -5820,7 +5826,7 @@
       const seen = {};
       const want = [...cams, { s: 5000, c: spotRow }];
       // 보통은 시속 43 (제한 50 아래), 이동식 60 앞뒤만 시속 90 — 제한을 넘으면 빨간 거리 띠가 깜박인다
-      for (let s = 0, v = 12; s <= 5200; v = s >= 2550 && s < 3050 ? 25 : 12, s += v) {
+      for (let s = 0, v = 12; s <= 5650; v = s >= 2550 && s < 3050 ? 25 : 12, s += v) {
         const q = pointAt(R, s); feed(q.p, v, q.h, { dt: 1000 });
         const tg = t.camState.target;
         if (!tg) continue;
@@ -5828,7 +5834,9 @@
         if (w && !seen[w.s] && w.s - s <= 450) {
           await new Promise((res) => requestAnimationFrame(() => res()));
           seen[w.s] = cardOf();
-          if (w.s === 3000) { const card = document.getElementById('camCard'); seen[w.s].over = card.classList.contains('over'); seen[w.s].blink = getComputedStyle(card.querySelector('.cam-dist')).animationName; }
+          if (w.s === 3000) { const card = document.getElementById('camCard'); seen[w.s].over = card.classList.contains('over'); seen[w.s].distColor = getComputedStyle(card.querySelector('.cam-dist')).color; }
+          if (w.s === 1000) seen[w.s].distColor0 = getComputedStyle(document.querySelector('#camCard .cam-dist')).color;
+          if (w.s === 5600) { const card = document.getElementById('camCard'); seen[w.s].seccam = card.classList.contains('seccam'); seen[w.s].aisign = card.classList.contains('aisign'); }
           // 지도 표시 (보이는 것 하나)
           if (w.s === 2000) {
             const m = [...document.querySelectorAll('#map .cammk')].find((el) => el.classList.contains('k3')) || null;
@@ -5840,7 +5848,43 @@
       }
       t.endNav();
       r.cards = seen;
+      // v192: '안내 시작' 때 목적지가 비어 있어도(2026-11-23 테슬라 오류) 마지막 목적지로 채워 그대로 안내한다
+      await resetApp(); softReset();
+      stub.canned['/route'] = R.route; feed(R.P[0], 0, null);
+      await t.planRoute(R.dest, false);
+      t.nav.dest = null;
+      let nodestErr = null;
+      try { t.startNav(); } catch (e) { nodestErr = String(e); }
+      r.nodest = { err: nodestErr, active: !!t.nav.active, name: t.nav.dest ? t.nav.dest.name : null };
+      t.endNav();
+      // v192: 표지 그림을 고르면 카드·지도 표시가 그 그림(img/ai/…)을 쓰고 숫자만 얹는다
+      t.iconPicks.cam_speed = 'cam_speed__test__1.webp';
+      const clearMarks = () => { const m = t.getMap(); if (m && m.setCameras) m.setCameras([]); };   // 지도 표시는 카메라마다 한 번 만들어 둔다 — 그림을 바꿨으니 새로
+      clearMarks();
+      await resetApp(); softReset();
+      await planAndStart(R);
+      for (let s = 0; s <= 700; s += 20) { const q = pointAt(R, s); feed(q.p, 12, q.h, { dt: 1000 }); }
+      await new Promise((res) => requestAnimationFrame(() => res()));
+      const card = document.getElementById('camCard'), sg = card.querySelector('.cam-sign');
+      const mk1 = [...document.querySelectorAll('#map .cammk')].find((el) => el.textContent === '80' && el.classList.contains('k1'));
+      r.ai = { aisign: card.classList.contains('aisign'), img: /img\/ai\/cam_speed__test__1\.webp/.test(sg.style.backgroundImage), border: getComputedStyle(sg).borderTopWidth,
+        limit: text('#camLimit'), marker: mk1 ? mk1.classList.contains('ai') && /cam_speed__test__1/.test(mk1.style.backgroundImage) : null,
+        numShown: getComputedStyle(document.getElementById('camLimit')).opacity };
+      t.endNav();
+      // 숫자까지 그린 그림(cam_speed_80)이 있으면 그 그림, 얹은 숫자는 숨김 (글은 남김)
+      t.iconPicks.cam_speed_80 = 'cam_speed_80__test__1.webp';
+      clearMarks();
+      await resetApp(); softReset();
+      await planAndStart(R);
+      for (let s = 0; s <= 700; s += 20) { const q = pointAt(R, s); feed(q.p, 12, q.h, { dt: 1000 }); }
+      await new Promise((res) => requestAnimationFrame(() => res()));
+      const mk2 = [...document.querySelectorAll('#map .cammk')].find((el) => el.textContent === '80' && el.classList.contains('k1'));
+      r.ainum = { ainum: card.classList.contains('ainum'), img: /cam_speed_80__test__1/.test(sg.style.backgroundImage), numOpacity: getComputedStyle(document.getElementById('camLimit')).opacity,
+        limit: text('#camLimit'), marker: mk2 ? mk2.classList.contains('ainum') && /cam_speed_80__test__1/.test(mk2.style.backgroundImage) : null };
+      t.endNav();
     } finally {
+      delete t.iconPicks.cam_speed; delete t.iconPicks.cam_speed_80;
+      Object.assign(t.iconPicks, keepPicks);
       t.driverSpots.rows.length = 0; t.mySpots.length = 0; t.sharedSpots.length = 0; t.applyUserSpots();
       if (base0 !== null) {
         for (const i of fakes.slice().reverse()) { const c = t.cams.rows[i]; if (!c) continue; const k = Math.floor(c[0] / 0.01) + ':' + Math.floor(c[1] / 0.01); const a2 = t.cams.grid.get(k); if (a2) { const j = a2.indexOf(i); if (j >= 0) a2.splice(j, 1); } t.camMiss.near.delete(i); t.camState.passed.delete(i); t.camState.saidById.delete(i); }
@@ -5850,12 +5894,19 @@
       t.applyUserSpots();
       await resetApp(); softReset();
     }
-    const RED = 'rgb(232, 32, 42)', BLUE = 'rgb(41, 121, 255)', YEL = 'rgb(255, 194, 31)', WHITE = 'rgb(255, 255, 255)';
+    const BLUE = 'rgb(41, 121, 255)';
     const c = r.cards || {};
-    const chk = (k, kind, band, icon, ring, kindBg, limit) => !!c[k] && c[k].kind === kind && c[k].band === band && c[k].icon === icon && c[k].ring === ring && c[k].kindBg === kindBg && (k === 3000 || c[k].distBg === RED) && c[k].limit === limit && c[k].bar === 'none';
-    const ok = chk(1000, '과속단속', 'yellow', 'camera', RED, YEL, '80') && chk(2000, '신호과속', 'yellow', 'signal', RED, YEL, '50') &&
-      chk(3000, '이동식', 'white', 'camera', BLUE, WHITE, '60') && chk(4000, '박스형', 'yellow', 'camera', BLUE, YEL, '80') && chk(5000, '신고 지점', 'white', 'camera', BLUE, WHITE, '100') &&
-      !!c[3000] && c[3000].over === true && c[3000].blink === 'camband' &&
+    // 원래 카드 (운전자 '원래 우리 스타일대로 해 줘'): 긴 종류 이름 글·거리 글·게이지, 종류 띠 없음, 카드 바탕 없음. 표지 테는 원래 색(빨강·이동식 파랑)
+    const RED0 = 'rgb(229, 57, 53)';
+    const chk = (k, type, ring, limit) => !!c[k] && c[k].type === type && c[k].typeShown !== 'none' && c[k].kindShown === 'none' && c[k].ring === ring && c[k].limit === limit &&
+      c[k].bar === 'block' && /^\d+m$/.test(c[k].dist) && c[k].cardBg === 'rgba(0, 0, 0, 0)';
+    const ok = chk(1000, '과속단속', RED0, '80') && chk(2000, '신호·과속단속', RED0, '50') &&
+      chk(3000, '이동식단속', BLUE, '60') && chk(4000, '박스형 과속단속', BLUE, '80') && chk(5000, '운전자 신고 단속 지점', BLUE, '100') &&
+      !!c[3000] && c[3000].over === true && c[3000].distColor !== c[1000].distColor0 &&
+      !!c[5600] && c[5600].seccam === true && c[5600].aisign === false && c[5600].type === '구간단속 시작' &&
+      !!r.ai && r.ai.aisign && r.ai.img && r.ai.border === '0px' && r.ai.limit === '80' && r.ai.marker === true &&
+      !!r.nodest && r.nodest.err === null && r.nodest.active && r.nodest.name === '배지 시험' &&
+      r.ai.numShown === '1' && !!r.ainum && r.ainum.ainum && r.ainum.img && r.ainum.numOpacity === '0' && r.ainum.limit === '80' && r.ainum.marker === true &&
       !!r.marker && r.marker.size === '36px' && r.marker.camIcon && r.marker.sigIcon === true;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }

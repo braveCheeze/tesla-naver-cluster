@@ -660,6 +660,46 @@ JC_EDIT = ('Redraw the reference image as a polished flat vector navigation mane
 JCNAVER = {'jc': (('ref/road_jc.png',), JC_EDIT, '')}
 
 
+# v192 (2026-11-23 운전자 '이런거는 ai 아틀라스로 만들고'): 단속 경고 표지 — 흰 원·두꺼운 테 안 위쪽 작은 그림, 가운데는 비워 둔다
+# (제한속도 숫자는 앱이 얹는다). 밑그림 ref/ref_cam_<칸>.png (구도만). --icons cams  (3칸 × 2모델 × 2장 = 12장 약 $0.06)
+CAM_EDIT = ('Redraw the reference image as a polished flat vector speed-enforcement warning badge for a car navigation app, in the clean, '
+            'bold style of Naver Map guidance badges. Keep exactly the composition of the reference: a perfect circle with a pure white '
+            'inside and one thick colored ring of even thickness (about 11% of the diameter), and ONE small bold pictogram centered '
+            'horizontally in the upper part of the white area. Leave the middle and lower part of the white circle completely EMPTY and '
+            'plain white, because a large number will be placed there later. Perfectly round crisp edges, no text, no letters, no '
+            'numbers, no gradients or texture inside the white area, no shadow inside the circle. ')
+CAM_RED = 'The ring is a vivid signal red (#E8202A). '
+CAM_BLUE = 'The ring is a vivid blue (#2979FF). '
+CAM_CAMERA = ('The pictogram is a small solid black (#111111) video camera: a rounded rectangle body with two small round white lenses '
+              'side by side and a short trapezoid lens hood on its right side, simple and readable at 16 px.')
+CAM_LIGHT = ('The pictogram is a small horizontal traffic light: a dark charcoal (#222222) rounded capsule holding three round lamps, '
+             'red, yellow and green from left to right, simple and readable at 16 px.')
+CAMS = {
+    'cam_speed': (('ref/ref_cam_speed.png',), CAM_EDIT, CAM_RED + CAM_CAMERA + CORP + BG),
+    'cam_signal': (('ref/ref_cam_signal.png',), CAM_EDIT, CAM_RED + CAM_LIGHT + CORP + BG),
+    'cam_mobile': (('ref/ref_cam_mobile.png',), CAM_EDIT, CAM_BLUE + CAM_CAMERA + CORP + BG),
+}
+JOBS.update(CAMS)
+# 숫자까지 그린 표지 (운전자 'AI로 만들어봐 그리고 110을 저기 규격에 잘 맞춰주고'): 밑그림 ref/ref_cam_<종류>_<제한>.png (tools/ref_cams.py) —
+# 네이버 길안내 배지 비율(그림 가운데 27%, 숫자 대문자 높이 29%·가운데 57%). --icons camnum  (36칸 × flare·sunburst = 72장 약 $0.36)
+CAM_NUM = ('Redraw the reference image as a polished flat vector speed-enforcement warning badge for a car navigation app, in the clean, '
+           'bold style of Naver Map guidance badges. Keep EXACTLY the composition, sizes and positions of the reference: a perfect circle '
+           'with a pure white inside and one thick colored ring of even thickness, ONE small bold pictogram centered near the top of the '
+           'white area, and the speed limit number centered below it. The number must be exactly "%s" (the same digits, nothing else), in '
+           'very bold black (#111111) Korean road-sign style numerals (heavy, slightly condensed, like the speed limit numbers on Korean '
+           'regulatory road signs), with the same height, the same width and the same vertical position as in the reference, perfectly '
+           'centered left to right, digits evenly spaced. Perfectly round crisp edges, no other text, no gradients or texture inside the '
+           'white area, no shadow inside the circle. ')
+CAMNUM = {}
+# 20~130 세 종류 모두 (운전자 '혹시모르니 130까지는 만들어 놔')
+for _k, _ring, _pict, _lims in (('speed', CAM_RED, CAM_CAMERA, tuple(range(20, 140, 10))),
+                                ('signal', CAM_RED, CAM_LIGHT, tuple(range(20, 140, 10))),
+                                ('mobile', CAM_BLUE, CAM_CAMERA, tuple(range(20, 140, 10)))):
+    for _l in _lims:
+        CAMNUM['cam_%s_%d' % (_k, _l)] = (('ref/ref_cam_%s_%d.png' % (_k, _l),), CAM_NUM % _l, _ring + _pict + CORP + BG)
+JOBS.update(CAMNUM)
+
+
 def _gpt25(model):
     return (model, 0.005, lambda p, imgs, wide=False: {'prompt': p, 'images': imgs, 'size': '1536x1024' if wide else '1024x1024',
                                                        'quality': 'medium', 'background': 'opaque', 'output_format': 'png', 'n': 1})
@@ -858,7 +898,7 @@ def main():
     groups = {'cars': [k for k in JOBS if is_car(k)], 'signs': [k for k in JOBS if is_sign(k)],
               'guide': [k for k in JOBS if not is_car(k) and not is_sign(k)],
               'roads': ROADS, 'rb': RBS, 'redo': ROADS + RBS,
-              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s'], 'fix3': ['outs', 'ins', 'over_r', 'under_s', 'under_r', 'side_r', 'oside_r'], 'grass': RBS, 'junc': sorted(PANO), 'green': list(GREEN_KIND), 'junc2': JV2, 'soft': list(SOFT), 'rbdepth': list(RBDEPTH), 'junc3': list(JUNC3), 'clean': list(CLEAN), 'klbold': ['kl'], 'sharp': ['sharp_r'], 'slbold': ['sl'], 'fix4': list(FIX4), 'fix5': list(FIX5), 'fix6': list(FIX6), 'under3d': list(UNDER3D), 'grade3': list(GRADE3), 'grade4': list(GRADE4), 'mainline': list(MAINLINE), 'jc': ['jc']}
+              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s'], 'fix3': ['outs', 'ins', 'over_r', 'under_s', 'under_r', 'side_r', 'oside_r'], 'grass': RBS, 'junc': sorted(PANO), 'green': list(GREEN_KIND), 'junc2': JV2, 'soft': list(SOFT), 'rbdepth': list(RBDEPTH), 'junc3': list(JUNC3), 'clean': list(CLEAN), 'klbold': ['kl'], 'sharp': ['sharp_r'], 'slbold': ['sl'], 'fix4': list(FIX4), 'fix5': list(FIX5), 'fix6': list(FIX6), 'under3d': list(UNDER3D), 'grade3': list(GRADE3), 'grade4': list(GRADE4), 'mainline': list(MAINLINE), 'jc': ['jc'], 'cams': list(CAMS), 'camnum': list(CAMNUM)}
     want = []
     for i in a.icons.split(','):
         want += groups.get(i, [i])
