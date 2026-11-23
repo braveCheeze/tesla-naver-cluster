@@ -2888,7 +2888,7 @@
     { id: 'S122', name: "S122 camera signs from the AI atlas (v192, driver: '이런거는 ai 아틀라스로 만들고', '원래 우리 스타일대로 해 줘'): the warning card keeps our original layout (long kind name, distance, gauge; ring red, blue for mobile/box/reported); map markers are 36 px with a small camera (traffic light for signal+speed); a picked AI atlas sign (img/ai/cam_*) replaces the drawn sign on the card and the map marker with the limit on top, a sign drawn with its number (cam_speed_80) is shown as it is with the overlaid number hidden; a 구간단속 camera keeps the drawn sign", fn: s122 },
     { id: 'S123', name: "S123 tunnel dark in one go and no white flash (v193, driver: 'GL 모드에서 터널에 들어가 다크 모드로 바뀔 때 너무 느리게 탁 탁 탁 … 한번에 딱', '가끔 주행 중 화면이 하얀색으로 번쩍'): a daytime tunnel keeps the day map style and only inverts the GL canvas (instant, day route palette, night UI), undone at once on exit; at night the dark style is used and the map box background is dark instead of the light rgb(248,249,250) that showed through", fn: s123 },
     { id: 'S124', name: "S124 spots checked on Naver guidance (v194, driver: '네이버지도 과속단속을 나는 제일 신뢰하니까 저걸 기반으로 넣어줘'): place text 'A→B' saying my direction no longer keeps a camera that crosses the route at 77° (둔촌사거리 25557) — along (0°) or written the other way (180°) it still decides; a driver spot with kind 3 reads '운전자 신고 신호·과속단속', with the rear flag '운전자 신고 후면단속' and after passing '후면단속 중'", fn: s124 },
-    { id: 'S125', name: "S125 other-route bubble during guidance (v195, driver: '가능하면 이런 기능도 있으면 좋을거 같긴 해' — Naver's '3분 증가 · 874m 증가 · 통행료 없음'): the traffic refresh asks for several options in one request, keeps the current option's route, and offers the other one that branches 1.2 km ahead as a light line and a bubble (time, distance, toll, traffic bar); tapping it switches to that route, passing the branch without tapping clears it", fn: s125 },
+    { id: 'S125', name: "S125 other-route bubble during guidance (v195, driver: '가능하면 이런 기능도 있으면 좋을거 같긴 해' — Naver's '3분 증가 · 874m 증가 · 통행료 없음'): the traffic refresh asks for several options in one request, keeps the current option's route, and offers the other one that branches 1.2 km ahead as a light line and a bubble (time, distance, toll, traffic bar); tapping it switches to that route, passing the branch without tapping clears it; going south and west the bubble stands upright over its tail (raster and Leaflet maps rotate the map box, keys session saw it upside down)", fn: s125 },
     { id: 'S126', name: "S126 anonymous camera pass records (v196, driver '지나간곳 모조리 체크해서 과속 단속 체크해줘 신고를 하지 않았더라도 내역도 남겨놓고'): passing a camera in its direction records alerted (card distance) or missed, the other direction is not counted, an unknown limit counts as hidden; the batch has only camera number, alert, 5 km/h speed, limit, nav, date — no position, time or sid; a 90→60→90 dip with no camera within 400 m is a 100 m-cell candidate, a jam is not; the operator car adds the camera spot and trace; the settings switch stops it", fn: s126 },
     { id: 'S130', name: "S130 Naver-style junction scene (v197, driver sent Naver's 신갈JC '571m 대전' close-up: '이런거 참고해주고 적용해줘', '우리 방식 대로 AI이미지 활용을 해서', colour lines '그림으로'): an AI landscape with the road drawn by lane count. With a fork cross-section: 6 lanes, the two exit lanes painted, the bus lane line blue, the pink guide line inside the picture, two signs ('[50] 원주 인천 ↗' over the exit, '[1] ↑' over the main line), and the lane row / colour row hidden. Without data: 2 + 2 lanes. Keep-main paints lanes 2–4 under '[1] 서울 ↑'. Night colours. With the picture off, the colour row is a small road picture, no words", fn: s130 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
@@ -6042,29 +6042,50 @@
   //   남행 곧은 지금 경로(통행료 1,200원)와, 1,200m 에서 동쪽으로 갈라졌다가 2,600m 에서 다시 만나는 다른 경로(3분 더, 통행료 없음)를
   //   교통 갱신(옵션 여럿 한 요청)이 함께 준다. (a) 지금 경로는 그대로, 말풍선 '3분 증가 · …m 증가 · 통행료 없음' + 연한 선
   //   (b) 말풍선을 누르면 그 경로로 바뀐다 (c) 누르지 않고 갈라지는 곳을 지나면 사라진다
+  //   (d) 2026-11-24 keys 세션: 남쪽으로 갈 때 말풍선이 180° 뒤집혀 보였다(그림·Leaflet 지도는 지도 칸째 돌림). 남행(a)·서행(d) 모두
+  //       말풍선이 꼬리(갈림 200m 뒤 점) 위에 똑바로 선다 — 상자 밑이 꼬리보다 위, 가운데가 꼬리와 같은 x
   async function s125() {
     const t = T(), r = {};
     const O = dest(NAV_ORIGIN, 90, 200000);
-    const S = (s, east) => dest(dest(O, 180, s), 90, east || 0);
     const mkRoute = (pts, opt, extraMs, toll) => {
       const P = pts.map((q) => ({ lat: round6(q.lat), lng: round6(q.lng) }));
       let d = 0; for (let i = 1; i < P.length; i++) d += hav(P[i - 1], P[i]);
       return { option: opt, distance: r0(d), duration: r0(d / 16 * 1000 + (extraMs || 0)), tollFare: toll || 0, fuelPrice: 0, path: P.map((q) => [q.lng, q.lat]),
         guide: [{ i: P.length - 1, t: 88, s: '목적지', d: r0(d), ms: r0(d / 16 * 1000) }], sections: [{ i: 0, n: P.length, name: '시험로', speed: 60, cong: 1 }] };
     };
-    const mainPts = []; for (let s = 0; s <= 4000; s += 20) mainPts.push(S(s));
-    const altPts = [];
-    for (let s = 0; s <= 1200; s += 20) altPts.push(S(s));
-    for (let s = 1240; s <= 2560; s += 40) altPts.push(S(s, s < 1300 || s > 2500 ? 40 : 90));
-    for (let s = 2600; s <= 4000; s += 20) altPts.push(S(s));
-    const MAIN = mkRoute(mainPts, 'traoptimal', 0, 1200);
-    const ALT = mkRoute(altPts, 'trafast', 180000, 0);
-    ALT.sections = [{ i: 0, n: 60, name: '시험로', speed: 60, cong: 1 }, { i: 60, n: 20, name: '옆길', speed: 20, cong: 2 }, { i: 80, n: altPts.length - 80, name: '시험로', speed: 60, cong: 1 }];
-    const P = mainPts.map((q) => ({ lat: round6(q.lat), lng: round6(q.lng) }));
-    const cum = [0]; for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
-    const R = { route: MAIN, P, cum, total: cum[cum.length - 1], dest: { name: '갈림 시험', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
-    const drive = (s0, s1) => { for (let s = s0; s <= s1; s += 16) { const q = pointAt(R, s); feed(q.p, 16, q.h); } };
+    // 진행 방향 h 로 곧은 지금 경로와, 1,200m 에서 왼쪽(h-90)으로 갈라졌다 2,600m 에서 만나는 다른 경로
+    const build = (h) => {
+      const S = (s, side) => dest(dest(O, h, s), h - 90, side || 0);
+      const mainPts = []; for (let s = 0; s <= 4000; s += 20) mainPts.push(S(s));
+      const altPts = [];
+      for (let s = 0; s <= 1200; s += 20) altPts.push(S(s));
+      for (let s = 1240; s <= 2560; s += 40) altPts.push(S(s, s < 1300 || s > 2500 ? 40 : 90));
+      for (let s = 2600; s <= 4000; s += 20) altPts.push(S(s));
+      const MAIN = mkRoute(mainPts, 'traoptimal', 0, 1200);
+      const ALT = mkRoute(altPts, 'trafast', 180000, 0);
+      ALT.sections = [{ i: 0, n: 60, name: '시험로', speed: 60, cong: 1 }, { i: 60, n: 20, name: '옆길', speed: 20, cong: 2 }, { i: 80, n: altPts.length - 80, name: '시험로', speed: 60, cong: 1 }];
+      const P = mainPts.map((q) => ({ lat: round6(q.lat), lng: round6(q.lng) }));
+      const cum = [0]; for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+      return { MAIN, ALT, R: { route: MAIN, P, cum, total: cum[cum.length - 1], dest: { name: '갈림 시험', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } } };
+    };
+    const { MAIN, ALT, R } = build(180);
+    const W = build(270);
+    const drive = (s0, s1, RR) => { for (let s = s0; s <= s1; s += 16) { const q = pointAt(RR || R, s); feed(q.p, 16, q.h); } };
     const bub = () => document.querySelector('#map .altbub');
+    // 말풍선이 꼬리 위에 똑바로 섰는가 (화면 기준). 그림·Leaflet 지도는 uprt 로 지도 회전을 되돌린다
+    // (그림 지도는 표지를 다음 그리기 때 붙이므로 상자가 화면에 잡힐 때까지 기다린다)
+    const upright = async () => {
+      await waitFor(() => { const i = bub() && bub().querySelector('.ab-in'); return !!i && i.getBoundingClientRect().height > 0; }, 3000, 50).catch(() => null);
+      const b = bub(), i = b && b.querySelector('.ab-in');
+      if (!i) return null;
+      // 지도 칸 회전은 0.9초에 걸쳐 돈다: 다 돈 뒤의 모습으로 잰다 (앱의 snap = 애니메이션 없이 바로)
+      const host = $('#map'), had = host.classList.contains('snap');
+      host.classList.add('snap'); void host.offsetWidth;
+      const a = b.getBoundingClientRect(), q = i.getBoundingClientRect();
+      if (!had) host.classList.remove('snap');
+      return { above: q.bottom <= a.y + 2 && q.top < a.y, centred: Math.abs((q.left + q.right) / 2 - a.x) < 4, gl: !!(t.getMap() && t.getMap().gl),
+        tr: getComputedStyle(b).transform, rot: $('#map').style.getPropertyValue('--rot') };
+    };
     try {
       await waitFor(() => t.getMap(), 10000, 100);   // 선·말풍선은 지도가 뜬 뒤에 그려진다
       await resetApp(); softReset();
@@ -6077,7 +6098,7 @@
       const b = bub();
       const isR = (x, R0) => !!x && x.option === R0.option && x.distance === R0.distance;   // 서버 답은 JSON 으로 복사돼 오므로 옵션·거리로 본다
       r.a = { options: q && q.options, kept: isR(t.nav.route, MAIN), offered: isR(t.sideAlt.r, ALT), at: Math.round(t.sideAlt.at), text: b ? b.textContent : null,
-        bar: b ? b.querySelectorAll('.ab-bar i').length : 0, line: !!(t.getMap() && t.getMap().sideLine) };
+        bar: b ? b.querySelectorAll('.ab-bar i').length : 0, line: !!(t.getMap() && t.getMap().sideLine), up: await upright() };
       // (b) 누르면 그 경로로
       if (b) b.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       r.b = { route: isR(t.nav.route, ALT), option: t.nav.option, bubble: !!bub(), line: !!(t.getMap() && t.getMap().sideLine) };
@@ -6093,6 +6114,15 @@
       drive(316, 1300);
       r.c = { before, after: !!bub(), route: isR(t.nav.route, MAIN) };
       t.endNav();
+      // (d) 서쪽으로
+      await resetApp(); softReset();
+      stub.canned['/route'] = W.MAIN;
+      await planAndStart(W.R);
+      drive(0, 300, W.R);
+      stub.canned['/route'] = () => ({ alternatives: [W.MAIN, W.ALT] });
+      await t.planRoute(t.nav.dest, 'traffic');
+      r.d = { offered: isR(t.sideAlt.r, W.ALT), up: await upright() };
+      t.endNav();
     } finally {
       stub.reset();
       await resetApp(); softReset();
@@ -6100,7 +6130,8 @@
     const ok = r.a.options === 'traoptimal:trafast:traavoidtoll' && r.a.kept && r.a.offered && Math.abs(r.a.at - 1200) <= 60 && r.a.line &&
       /3분 증가/.test(r.a.text || '') && /m 증가/.test(r.a.text || '') && /통행료 없음/.test(r.a.text || '') && r.a.bar >= 2 &&
       r.b.route && r.b.option === 'trafast' && !r.b.bubble && !r.b.line &&
-      r.c.before && !r.c.after && r.c.route;
+      r.c.before && !r.c.after && r.c.route &&
+      r.a.up && r.a.up.above && r.a.up.centred && r.d.offered && r.d.up && r.d.up.above && r.d.up.centred;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

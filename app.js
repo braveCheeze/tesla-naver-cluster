@@ -61,7 +61,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-198'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-199'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -4836,7 +4836,9 @@
     sideAlt.r = a; sideAlt.at = br.at;
     sideAlt.info = sideAltInfo(a, cur, br);
     const el = document.createElement('div');
-    el.className = 'altbub';
+    // uprt: 그림(래스터)·Leaflet 지도는 주행 화면에서 지도 칸째 돌리므로 말풍선은 거꾸로 돌려 똑바로 세운다 (도착 핀처럼).
+    // 2026-11-24 keys 세션: 남쪽으로 갈 때 말풍선이 180° 뒤집혀 보였다. GL 지도는 지도 자체를 돌려 원래 똑바로
+    el.className = 'altbub uprt';
     el.innerHTML = '<div class="ab-in" role="button" tabindex="0" aria-label="다른 경로로 바꾸기">' + sideAlt.info.rows.map((x) => '<div class="ab-row ' + x.cls + '"><i></i>' + x.html + '</div>').join('') +
       '<div class="ab-bar">' + sideAlt.info.bar.map((x) => '<i style="flex:' + x.w + ';background:' + x.c + '"></i>').join('') + '</div></div>';
     el.addEventListener('click', (e) => { e.stopPropagation(); takeSideAlt(); });
