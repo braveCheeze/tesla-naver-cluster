@@ -2888,6 +2888,7 @@
     { id: 'S122', name: "S122 camera signs from the AI atlas (v192, driver: '이런거는 ai 아틀라스로 만들고', '원래 우리 스타일대로 해 줘'): the warning card keeps our original layout (long kind name, distance, gauge; ring red, blue for mobile/box/reported); map markers are 36 px with a small camera (traffic light for signal+speed); a picked AI atlas sign (img/ai/cam_*) replaces the drawn sign on the card and the map marker with the limit on top, a sign drawn with its number (cam_speed_80) is shown as it is with the overlaid number hidden; a 구간단속 camera keeps the drawn sign", fn: s122 },
     { id: 'S123', name: "S123 tunnel dark in one go and no white flash (v193, driver: 'GL 모드에서 터널에 들어가 다크 모드로 바뀔 때 너무 느리게 탁 탁 탁 … 한번에 딱', '가끔 주행 중 화면이 하얀색으로 번쩍'): a daytime tunnel keeps the day map style and only inverts the GL canvas (instant, day route palette, night UI), undone at once on exit; at night the dark style is used and the map box background is dark instead of the light rgb(248,249,250) that showed through", fn: s123 },
     { id: 'S124', name: "S124 spots checked on Naver guidance (v194, driver: '네이버지도 과속단속을 나는 제일 신뢰하니까 저걸 기반으로 넣어줘'): place text 'A→B' saying my direction no longer keeps a camera that crosses the route at 77° (둔촌사거리 25557) — along (0°) or written the other way (180°) it still decides; a driver spot with kind 3 reads '운전자 신고 신호·과속단속', with the rear flag '운전자 신고 후면단속' and after passing '후면단속 중'", fn: s124 },
+    { id: 'S125', name: "S125 other-route bubble during guidance (v195, driver: '가능하면 이런 기능도 있으면 좋을거 같긴 해' — Naver's '3분 증가 · 874m 증가 · 통행료 없음'): the traffic refresh asks for several options in one request, keeps the current option's route, and offers the other one that branches 1.2 km ahead as a light line and a bubble (time, distance, toll, traffic bar); tapping it switches to that route, passing the branch without tapping clears it", fn: s125 },
   ];
 
   // S55: 주의 표지 (전국도로안전표지표준데이터의 주의표지, data/signs.json · tools/build_signs.py, 2026-11-14 요청).
@@ -6026,6 +6027,72 @@
       r.rows[0] === '3/4/50' && r.rows[1] === '1/5/80' &&
       !!sp.sig && sp.sig.label === '운전자 신고 신호·과속단속' && sp.sig.limit === '50' &&
       !!sp.rear && sp.rear.label === '운전자 신고 후면단속' && sp.rear.limit === '80' && sp.rearAfter === '후면단속 중';
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S125: 길안내 중 다른 경로 말풍선 (v195, 운전자 '가능하면 이런 기능도 있으면 좋을거 같긴 해' — 네이버 길안내의 '3분 증가 · 874m 증가 · 통행료 없음')
+  //   남행 곧은 지금 경로(통행료 1,200원)와, 1,200m 에서 동쪽으로 갈라졌다가 2,600m 에서 다시 만나는 다른 경로(3분 더, 통행료 없음)를
+  //   교통 갱신(옵션 여럿 한 요청)이 함께 준다. (a) 지금 경로는 그대로, 말풍선 '3분 증가 · …m 증가 · 통행료 없음' + 연한 선
+  //   (b) 말풍선을 누르면 그 경로로 바뀐다 (c) 누르지 않고 갈라지는 곳을 지나면 사라진다
+  async function s125() {
+    const t = T(), r = {};
+    const O = dest(NAV_ORIGIN, 90, 200000);
+    const S = (s, east) => dest(dest(O, 180, s), 90, east || 0);
+    const mkRoute = (pts, opt, extraMs, toll) => {
+      const P = pts.map((q) => ({ lat: round6(q.lat), lng: round6(q.lng) }));
+      let d = 0; for (let i = 1; i < P.length; i++) d += hav(P[i - 1], P[i]);
+      return { option: opt, distance: r0(d), duration: r0(d / 16 * 1000 + (extraMs || 0)), tollFare: toll || 0, fuelPrice: 0, path: P.map((q) => [q.lng, q.lat]),
+        guide: [{ i: P.length - 1, t: 88, s: '목적지', d: r0(d), ms: r0(d / 16 * 1000) }], sections: [{ i: 0, n: P.length, name: '시험로', speed: 60, cong: 1 }] };
+    };
+    const mainPts = []; for (let s = 0; s <= 4000; s += 20) mainPts.push(S(s));
+    const altPts = [];
+    for (let s = 0; s <= 1200; s += 20) altPts.push(S(s));
+    for (let s = 1240; s <= 2560; s += 40) altPts.push(S(s, s < 1300 || s > 2500 ? 40 : 90));
+    for (let s = 2600; s <= 4000; s += 20) altPts.push(S(s));
+    const MAIN = mkRoute(mainPts, 'traoptimal', 0, 1200);
+    const ALT = mkRoute(altPts, 'trafast', 180000, 0);
+    ALT.sections = [{ i: 0, n: 60, name: '시험로', speed: 60, cong: 1 }, { i: 60, n: 20, name: '옆길', speed: 20, cong: 2 }, { i: 80, n: altPts.length - 80, name: '시험로', speed: 60, cong: 1 }];
+    const P = mainPts.map((q) => ({ lat: round6(q.lat), lng: round6(q.lng) }));
+    const cum = [0]; for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const R = { route: MAIN, P, cum, total: cum[cum.length - 1], dest: { name: '갈림 시험', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    const drive = (s0, s1) => { for (let s = s0; s <= s1; s += 16) { const q = pointAt(R, s); feed(q.p, 16, q.h); } };
+    const bub = () => document.querySelector('#map .altbub');
+    try {
+      await waitFor(() => t.getMap(), 10000, 100);   // 선·말풍선은 지도가 뜬 뒤에 그려진다
+      await resetApp(); softReset();
+      await planAndStart(R);
+      drive(0, 300);
+      // 교통 갱신: 옵션 여럿을 한 번에 → 지금 옵션(추천)과 다른 경로(빠른 길)
+      let q = null;
+      stub.canned['/route'] = (query) => { q = query; return { alternatives: [MAIN, ALT] }; };
+      await t.planRoute(t.nav.dest, 'traffic');
+      const b = bub();
+      const isR = (x, R0) => !!x && x.option === R0.option && x.distance === R0.distance;   // 서버 답은 JSON 으로 복사돼 오므로 옵션·거리로 본다
+      r.a = { options: q && q.options, kept: isR(t.nav.route, MAIN), offered: isR(t.sideAlt.r, ALT), at: Math.round(t.sideAlt.at), text: b ? b.textContent : null,
+        bar: b ? b.querySelectorAll('.ab-bar i').length : 0, line: !!(t.getMap() && t.getMap().sideLine) };
+      // (b) 누르면 그 경로로
+      if (b) b.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      r.b = { route: isR(t.nav.route, ALT), option: t.nav.option, bubble: !!bub(), line: !!(t.getMap() && t.getMap().sideLine) };
+      t.endNav();
+      // (c) 누르지 않고 갈라지는 곳을 지나면 사라진다
+      await resetApp(); softReset();
+      stub.canned['/route'] = MAIN;
+      await planAndStart(R);
+      drive(0, 300);
+      stub.canned['/route'] = () => ({ alternatives: [MAIN, ALT] });
+      await t.planRoute(t.nav.dest, 'traffic');
+      const before = !!bub();
+      drive(316, 1300);
+      r.c = { before, after: !!bub(), route: isR(t.nav.route, MAIN) };
+      t.endNav();
+    } finally {
+      stub.reset();
+      await resetApp(); softReset();
+    }
+    const ok = r.a.options === 'traoptimal:trafast:traavoidtoll' && r.a.kept && r.a.offered && Math.abs(r.a.at - 1200) <= 60 && r.a.line &&
+      /3분 증가/.test(r.a.text || '') && /m 증가/.test(r.a.text || '') && /통행료 없음/.test(r.a.text || '') && r.a.bar >= 2 &&
+      r.b.route && r.b.option === 'trafast' && !r.b.bubble && !r.b.line &&
+      r.c.before && !r.c.after && r.c.route;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

@@ -1614,6 +1614,23 @@
      GL 지도 두 스타일 모두 바탕 그림 층이 따로 받는 타일이라, 스타일을 바꾸거나 타일이 아직 안 왔거나 캔버스 크기가 바뀌는 순간 그 밝은 바탕이
      비쳐 밤에 하얗게 번쩍였다. 밤에는 바탕을 밤 지도 땅색으로 */
   #map.night .mapcanvas { background: #1c1e22 !important; }
+  /* v195 다른 경로 말풍선 (네이버 길안내처럼): 연한 파란 선 끝쪽에 흰 말풍선 — 시간·거리·통행료 차(늘면 빨강·줄면 파랑) + 교통 색 막대. 누르면 그 경로로 */
+  .altbub { position: relative; width: 0; height: 0; pointer-events: auto; }
+  .altbub .ab-in {
+    position: absolute; left: 0; bottom: 10px; transform: translateX(-50%); min-width: 118px; padding: 8px 11px 9px; border-radius: 12px;
+    background: #fff; color: #222; box-shadow: 0 6px 18px rgba(0, 0, 0, .28); font: 700 13px/1.35 system-ui, sans-serif; white-space: nowrap; cursor: pointer;
+  }
+  .altbub .ab-in::after { content: ''; position: absolute; left: 50%; bottom: -6px; width: 12px; height: 12px; background: #fff; transform: translateX(-50%) rotate(45deg); border-radius: 2px; }
+  .altbub .ab-row { display: flex; align-items: center; gap: 6px; }
+  .altbub .ab-row i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: #9aa3ad; }
+  .altbub .ab-row b { font-weight: 850; }
+  .altbub .ab-row.up { color: #e5363b; } .altbub .ab-row.up i { background: #e5363b; }
+  .altbub .ab-row.down { color: #1f6ff2; } .altbub .ab-row.down i { background: #1f6ff2; }
+  .altbub .ab-bar { position: relative; z-index: 1; display: flex; height: 5px; margin-top: 6px; border-radius: 3px; overflow: hidden; }
+  .altbub .ab-bar i { display: block; min-width: 2px; }
+  #map.night .altbub .ab-in, #map.night .altbub .ab-in::after { background: #2a2e35; color: #e9edf2; }
+  #map.night .altbub .ab-row.up { color: #ff6b6b; } #map.night .altbub .ab-row.up i { background: #ff6b6b; }
+  #map.night .altbub .ab-row.down { color: #6fa8ff; } #map.night .altbub .ab-row.down i { background: #6fa8ff; }
   /* v193 낮 터널: 스타일을 바꾸지 않고 GL 지도 그림만 한 번에 뒤집어 어둡게 (색상 180° 로 길·교통 색은 그대로, 지도 위 표시·내 차는 그대로) */
   #map.tndark .mapcanvas canvas.mapboxgl-canvas { filter: invert(1) hue-rotate(180deg) brightness(.95) contrast(.9); }
 
@@ -2002,8 +2019,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-194"></script>
-<script src="img/ai/picks.js?v=2026.11.16-194"></script>
-<script src="app.js?v=2026.11.16-194"></script>
+<script src="icons.js?v=2026.11.16-195"></script>
+<script src="img/ai/picks.js?v=2026.11.16-195"></script>
+<script src="app.js?v=2026.11.16-195"></script>
 </body>
 </html>

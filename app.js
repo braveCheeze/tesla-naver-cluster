@@ -59,7 +59,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-194'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-195'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -838,7 +838,18 @@
 
   // ---------- 지도 어댑터 (네이버 / 테스트용 OSM) ----------
   const ALT_LINE = { color: '#8d97a8', weight: 7, opacity: 0.85 }; // 고르지 않은 추천 경로
+  // v195: 길안내 중 다른 경로 — 지금 경로(초록·교통 색) 옆에 연한 파란 선 (네이버 길안내처럼)
+  const SIDE_ALT = { color: '#7fb0ff', weight: 7, opacity: 0.8 };
   const NaverAdapter = {
+    setSideAlt(pts, bubble) {
+      const N = naver.maps;
+      if (this.sideLine) { this.sideLine.setMap(null); this.sideLine = null; }
+      if (this.sideMk) { this.sideMk.setMap(null); this.sideMk = null; }
+      if (!pts || pts.length < 2) return;
+      this.sideLine = new N.Polyline({ map: this.map, path: pts.map((p) => new N.LatLng(p.lat, p.lng)), strokeColor: SIDE_ALT.color, strokeWeight: SIDE_ALT.weight,
+        strokeOpacity: SIDE_ALT.opacity, strokeLineCap: 'round', strokeLineJoin: 'round', zIndex: 38, clickable: false });
+      if (bubble) this.sideMk = new N.Marker({ position: new N.LatLng(bubble.pt.lat, bubble.pt.lng), map: this.map, clickable: true, zIndex: 900, icon: { content: bubble.el, anchor: new N.Point(0, 0) } });
+    },
     drawAlts(list) {
       const N = naver.maps;
       (this.alts || []).forEach((l) => l.setMap(null));
@@ -1177,6 +1188,13 @@
   };
 
   const LeafletAdapter = {
+    setSideAlt(pts, bubble) {
+      if (this.sideLine) { this.sideLine.remove(); this.sideLine = null; }
+      if (this.sideMk) { this.sideMk.remove(); this.sideMk = null; }
+      if (!pts || pts.length < 2) return;
+      this.sideLine = L.polyline(pts.map((p) => [p.lat, p.lng]), { color: SIDE_ALT.color, weight: SIDE_ALT.weight, opacity: SIDE_ALT.opacity, lineCap: 'round', lineJoin: 'round', interactive: false }).addTo(this.map);
+      if (bubble) this.sideMk = L.marker([bubble.pt.lat, bubble.pt.lng], { icon: L.divIcon({ html: bubble.el, className: 'me-wrap', iconSize: null, iconAnchor: [0, 0] }), interactive: true, keyboard: false, zIndexOffset: 900 }).addTo(this.map);
+    },
     drawAlts(list) {
       (this.alts || []).forEach((l) => l.remove());
       this.alts = (list || []).map((pts) => L.polyline(pts.map((p) => [p.lat, p.lng]), {
@@ -4539,7 +4557,11 @@
       };
       // reroute: false 새 목적지(추천 경로 여럿) · 'traffic' 교통 갱신 · 'compare' 길안내 중 경로 비교(추천 경로 여럿, 안내는 계속)
       //          · 'manual' 재추천 버튼 · 'via' 경유지 추가/빼기 · 그 밖 경로 이탈 재탐색
-      if (reroute === 'traffic') q.option = nav.option || prefs.routeOpt;
+      if (reroute === 'traffic') {
+        // v195: 교통 갱신 때 다른 경로도 같은 요청 하나로 함께 받는다(지금 옵션을 맨 앞에). 지금 경로는 예전처럼 지금 옵션 경로로 바꾼다
+        const o = nav.option || prefs.routeOpt;
+        q.options = [o].concat(ALT_OPTIONS.split(':').filter((x) => x !== o)).join(':');
+      }
       else if (reroute === 'compare' || !reroute) q.options = ALT_OPTIONS;
       else q.option = rerouteOption();
       // 경유지가 있으면 모든 길찾기(재탐색·교통 갱신·비교 포함)에 같이 보낸다
@@ -4548,7 +4570,7 @@
       // 차량 LTE 가 느릴 수 있어 20초까지 기다리고, 시간 초과면 한 번 더 시도한다.
       // 경로 이탈 재탐색은 늦게 온 답이 이미 쓸모없으므로(차가 그만큼 더 갔다) 9초에 끊고, 지금 자리에서 다시 묻는다
       const waitMs = reroute === true ? 9000 : 20000, t0 = Date.now();
-      if (q.option) {   // 한 가지 옵션 길찾기는 60초에 4번 (위 routeReqs)
+      if (q.option || reroute === 'traffic') {   // 한 가지 옵션 길찾기(와 교통 갱신)는 60초에 4번 (위 routeReqs)
         const left = routeBudget();
         if (left <= 0 || (reroute === 'traffic' && left < 2)) {
           if (reroute && reroute !== 'traffic') retryRouteLater(dest, reroute, routeWaitMs());
@@ -4561,7 +4583,7 @@
         if (e1.name !== 'AbortError' && !/abort/i.test(e1.message)) throw e1;
         if (gen !== nav.gen) return;
         if (ahead) q.start = startOf();
-        if (q.option) { if (routeBudget() <= 0) throw e1; routeReqs.push(routeNow()); }
+        if (q.option || reroute === 'traffic') { if (routeBudget() <= 0) throw e1; routeReqs.push(routeNow()); }
         res = await api('/route', q, null, waitMs);
       }
       nav.retry429 = false;   // v175: 서버가 받았으면 다음 429 때 다시 한 번 기다려 본다
@@ -4587,6 +4609,12 @@
         return;
       }
       let r = res;
+      let sideList = null;
+      if (reroute === 'traffic' && res.alternatives) {   // v195: 지금 옵션 경로로 갱신하고, 나머지는 '다른 경로' 후보로
+        const o = nav.option || prefs.routeOpt;
+        r = res.alternatives.find((a) => (a.option || '') === o) || res.alternatives[0];
+        sideList = res.alternatives.filter((a) => a !== r);
+      }
       if (!reroute) {
         nav.alts = dedupAlts(res.alternatives || [res]);
         const want = nav.resumeOpt || prefs.routeOpt; // 이어서 안내할 때는 전에 고른 옵션
@@ -4606,6 +4634,7 @@
         }
       }
       setRoute(r, dest, reroute);
+      if (reroute === 'traffic' && sideList && sideList.length) offerSideAlt(sideList, r);
       if (reroute === 'traffic') {
         // 교통 갱신은 조용히. 도착 예정이 3분 넘게 바뀔 때만 알려 준다
         const diff = beforeMs == null ? 0 : r.duration - beforeMs;
@@ -4672,6 +4701,7 @@
 
   const FINAL_TURN = new Set(['l', 'r', 'sl', 'sr', 'sharp_l', 'sharp_r', 'kl', 'kr']);
   function setRoute(r, dest, keepAlerts) {
+    clearSideAlt();   // v195: 경로가 바뀌면 다른 경로 말풍선은 내린다 (교통 갱신이면 바로 다시 고른다)
     nav.route = r; nav.dest = dest;
     if (dest) nav.lastDest = dest;   // v192: 목적지가 비었을 때 다시 채울 마지막 목적지
     nav.pts = r.path.map((p) => ({ lat: p[1], lng: p[0] }));
@@ -4747,6 +4777,100 @@
     return aheadPt(f, state.heading, Math.min(60, state.speedKmh / 3.6 * secs));
   }
   const ALT_LABEL = { trafast: '빠른 길', traoptimal: '추천', traavoidtoll: '무료 도로', tracomfort: '편한 길', traavoidcaronly: '전용도로 회피' };
+  // ---- v195 (운전자 '가능하면 이런 기능도 있으면 좋을거 같긴 해' — 네이버 길안내: 지금 경로 옆 연한 파란 다른 경로와 갈라지는 곳 말풍선
+  //      '● 3분 증가 · ● 874m 증가 · ● 통행료 없음' + 교통 색 막대) ----
+  // 교통 갱신(5분마다)으로 받은 다른 경로 중 지금 경로에서 300m~20km 앞에서 갈라지는 것, 그중 시간이 가장 짧은 하나(10분 넘게 늦으면 안 보임).
+  // 누르면 그 경로로 바꾼다(저절로 바꾸지 않음 — 운전 중 화면이 갑자기 바뀌지 않게). 갈라지는 곳을 지나거나 경로가 바뀌면 사라진다
+  const sideAlt = { r: null, at: 0, info: null };
+  function clearSideAlt() {
+    if (!sideAlt.r && !sideAlt.info) return;
+    sideAlt.r = null; sideAlt.at = 0; sideAlt.info = null;
+    if (mapA && mapA.setSideAlt) mapA.setSideAlt(null);
+  }
+  // 다른 경로 a 가 지금 경로(nav.pts)에서 갈라지는 곳(다른 경로 점 번호 k·지금 경로 거리 at)과 다시 만나는 곳(점 번호 j)
+  function sideBranch(a) {
+    const A = (a.path || []).map((p) => ({ lat: p[1], lng: p[0] }));
+    if (A.length < 3 || !nav.pts) return null;
+    const P = nav.pts, last = P.length - 1;
+    let i0 = 0;
+    const near = (q) => {   // q 와 지금 경로의 가장 가까운 거리 (앞으로만 찾는다)
+      let best = { d: Infinity, i: i0, t: 0 };
+      for (let i = Math.max(0, i0 - 2); i < Math.min(last, i0 + 400); i++) {
+        const pr = projectSeg(q, P[i], P[i + 1]);
+        if (pr.dist < best.d) best = { d: pr.dist, i, t: pr.t };
+      }
+      return best;
+    };
+    let k = -1, at = 0;
+    for (let n = 0; n < A.length; n++) {
+      const b = near(A[n]);
+      if (b.d > 35) { k = Math.max(0, n - 1); break; }
+      i0 = b.i; at = nav.cum[b.i] + b.t * (nav.cum[Math.min(last, b.i + 1)] - nav.cum[b.i]);
+    }
+    if (k < 0) return null;   // 끝까지 같은 길
+    let j = A.length - 1;
+    for (let n = k + 2; n < A.length; n++) { const b = near(A[n]); if (b.d < 20) { j = n; break; } }   // 다시 만나는 곳
+    return { k, j, at, pts: A };
+  }
+  function offerSideAlt(list, cur) {
+    if (!nav.active || !nav.pts || prefs.altBubble === false) return;
+    let best = null;
+    for (const a of list) {
+      if (!a || !Array.isArray(a.path)) continue;
+      if (Math.abs(a.distance - cur.distance) < 50 && Math.abs(a.duration - cur.duration) < 45000) continue;   // 사실상 같은 길
+      const br = sideBranch(a);
+      if (!br) continue;
+      const ahead = br.at - nav.along;
+      if (ahead < 300 || ahead > 20000) continue;
+      const dt = a.duration - cur.duration;
+      if (dt > 10 * 60000) continue;
+      if (!best || dt < best.dt) best = { a, br, dt };
+    }
+    if (!best) return;
+    const { a, br } = best, A = br.pts;
+    // 말풍선 자리: 다른 경로를 따라 갈라지는 곳에서 200m 뒤 (지금 경로와 떨어진 곳)
+    let acc = 0, bp = A[Math.min(A.length - 1, br.k + 1)];
+    for (let n = br.k; n < br.j; n++) { acc += haversine(A[n], A[n + 1]); bp = A[n + 1]; if (acc >= 200) break; }
+    sideAlt.r = a; sideAlt.at = br.at;
+    sideAlt.info = sideAltInfo(a, cur, br);
+    const el = document.createElement('div');
+    el.className = 'altbub';
+    el.innerHTML = '<div class="ab-in" role="button" tabindex="0" aria-label="다른 경로로 바꾸기">' + sideAlt.info.rows.map((x) => '<div class="ab-row ' + x.cls + '"><i></i>' + x.html + '</div>').join('') +
+      '<div class="ab-bar">' + sideAlt.info.bar.map((x) => '<i style="flex:' + x.w + ';background:' + x.c + '"></i>').join('') + '</div></div>';
+    el.addEventListener('click', (e) => { e.stopPropagation(); takeSideAlt(); });
+    el.addEventListener('pointerdown', (e) => e.stopPropagation());
+    if (mapA && mapA.setSideAlt) mapA.setSideAlt(A.slice(br.k, br.j + 1), { pt: bp, el });
+    report('info', { msg: 'side route offered', dt: Math.round(best.dt / 1000), dd: Math.round(a.distance - cur.distance), ahead: Math.round(br.at - nav.along), opt: a.option || '' });
+  }
+  // 말풍선 글: 시간 차·거리 차·통행료, 그 밑 갈라진 뒤 다시 만날 때까지의 교통 색 막대
+  function sideAltInfo(a, cur, br) {
+    const dt = Math.round((a.duration - cur.duration) / 60000), dd = a.distance - cur.distance, ta = a.tollFare || 0, tc = cur.tollFare || 0;
+    const rows = [];
+    rows.push(Math.abs(dt) < 1 ? { cls: 'same', html: '시간 비슷' } : { cls: dt > 0 ? 'up' : 'down', html: '<b>' + Math.abs(dt) + '분</b> ' + (dt > 0 ? '증가' : '단축') });
+    rows.push(Math.abs(dd) < 50 ? { cls: 'same', html: '거리 비슷' } : { cls: dd > 0 ? 'up' : 'down', html: '<b>' + fmtDist(Math.abs(dd)) + '</b> ' + (dd > 0 ? '증가' : '감소') });
+    rows.push(ta === 0 ? { cls: tc > 0 ? 'down' : 'same', html: '통행료 없음' } : ta === tc ? { cls: 'same', html: '통행료 같음' }
+      : { cls: ta > tc ? 'up' : 'down', html: '통행료 <b>' + Math.abs(ta - tc).toLocaleString('ko-KR') + '원</b> ' + (ta > tc ? '더' : '덜') });
+    const bar = [];
+    for (const sec of a.sections || []) {
+      const s0 = Math.max(br.k, sec.i), s1 = Math.min(br.j, sec.i + Math.max(1, sec.n) - 1);
+      if (s1 <= s0) continue;
+      let len = 0;
+      for (let n = s0; n < s1; n++) len += haversine(br.pts[n], br.pts[n + 1]);
+      if (len > 0) bar.push({ w: Math.round(len), c: trafficColor(sec) || '#9aa3ad' });
+    }
+    if (!bar.length) bar.push({ w: 1, c: '#9aa3ad' });
+    return { rows, bar, dt, dd };
+  }
+  function takeSideAlt() {
+    const a = sideAlt.r;
+    if (!a || !nav.active) return;
+    clearSideAlt();
+    setRoute(a, nav.dest, true);
+    nav.option = a.option || nav.option;
+    if (state.fix) navUpdate(state.fix);
+    say('다른 경로로 안내합니다.', 1);
+    toast('다른 경로로 바꿨어요.', '', 2500);
+  }
   // 사실상 같은 경로(거리·시간이 거의 같음)는 하나로 합치고 이름을 이어 붙인다
   function dedupAlts(list) {
     const out = [];
@@ -4885,6 +5009,7 @@
     clearTimeout(nav.retryT); nav.retryT = null;
     nav.active = false; nav.preview = false;
     nav.route = null; nav.pts = null; nav.cum = null; nav.dest = null; nav.guides = [];
+    clearSideAlt();
     nav.routeCams = null; nav.routeCamList = []; nav.turnCamDrops = 0; camState.markerAt = null; camState.peekAt = 0;
     nav.alts = null; nav.altIdx = 0; nav.via = []; nav.comparing = false; nav.compareBase = null;
     if (mapA) { mapA.clearRoute(); if (mapA.drawAlts) mapA.drawAlts([]); }
@@ -5308,6 +5433,8 @@
     if (nav.onRoute && mapA && Math.abs(nav.along - (nav.drawnAlong || 0)) > 5 &&
         f.t - (nav.drawnAt || 0) > 800) drawRemaining();
 
+    // v195: 다른 경로가 갈라지는 곳을 지나면 말풍선과 선을 내린다
+    if (sideAlt.r && nav.onRoute && nav.along > sideAlt.at + 30) clearSideAlt();
     // 5분마다 지금 위치에서 경로를 다시 받아 교통 상황(막히는 구간·도착 시간)을 갱신한다 (시간당 최대 12회)
     if (nav.onRoute && !nav.busy && nav.total - nav.along > 1500 && f.t - nav.lastTraffic > 5 * 60000) {
       nav.lastTraffic = f.t;
@@ -8510,7 +8637,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,
