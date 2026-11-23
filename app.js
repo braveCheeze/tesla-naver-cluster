@@ -59,7 +59,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-189'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-190'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -2670,7 +2670,7 @@
       // v187: 길안내 경로가 고속도로인 자리 옆의 일반도로 카메라는 알리지 않는 것이 맞다 — 고칠 것이 없다(숨김 풀기·양방향·경로 위 모두).
       // 경부 하행 신갈: '놓침'을 누르자 94초 전에 34m 옆으로 지난 신정로 어린이 30(상미사거리)에 '경로 위' 고침이 붙어 그 뒤 경부에서 떴다
       const sg = nav.active && nav.pts ? routeSegNear(camPt(c), 60) : null;
-      if (sg && hwSideCam(c, sg.i, sg.at)) why = 'other';
+      if (sg && hwSideCam(c, sg.i, sg.at, sg.d)) why = 'other';   // v190: 빠른 길 옆 저속 카메라도
       else if (camFlag(c, h)) why = 'flag';
       else if (isSpeedCam(c) && !limitKnown(c)) why = 'nolimit';   // v179: 제한속도를 몰라 숨긴 카메라 — 고칠 것이 없다
       else if (!camWanted(c)) why = 'signal';
@@ -2966,7 +2966,7 @@
     // v161 (2026-11-20 점검): 경로를 2.5초 넘게 벗어나 있으면(다른 길로 듦·재탐색 실패·재탐색 대기) 경로 위치가 멈춰 있어
     // 실제로 달리는 길의 카메라를 하나도 못 알렸다 — 그때는 길안내가 없을 때처럼 진행 방향 앞에서 고른다
     if (nav.active && nav.pts && routeTrusted()) {
-      if (camOnRouteAhead(c)) return true;
+      if (camOnRouteAhead(c)) return !tooFastOnRoute(c);
       // v165 (2차 점검): 다시 찾은 경로는 차보다 최대 60m 앞에서 시작한다 — 그 사이 카메라는 새 경로에도 없으니 진행 방향으로 본다
       return !!nav.rerouted && nav.along < 80 && freeAhead(f, c, keep);
     }
@@ -2989,8 +2989,18 @@
     // v187 (2026-11-23 경부 하행 신갈 정체 50km/h): 제한 50 이하 카메라(어린이 30 등)는 느리게 가도 뺀다 — 고속도로에 그런 카메라는 없고,
     // 고속도로 카메라는 camOnExpwy 로 남는다. 나간 뒤 도로 이름이 늦게 바뀌는 15초 남짓은 앞길 6m 안 카메라만 남는다
     if (isExpwyName(road.name) && (state.speedKmh >= 60 || (c[2] > 0 && c[2] <= 50)) && side > 6 && !camOnExpwy(c, road.name)) return false;
+    // v190: 이 속도로는 옆길 카메라 (도로 이름은 역지오코딩이 옆길 이름을 주곤 해서 쓰지 않는다)
+    if (tooFastForCam(c, side, null)) return false;
     // v165 (2차 점검 G): 굽은 길은 그 자리의 진행 방향(현 방향 + 거리 × 곡률)으로도 본다 (100° 넘게 돈 고리 길 뒤의 카메라가 버려졌다)
     return camDirOk(c, pb) || camDirOk(c, pathTangent(dp));
+  }
+  // v190: 길안내 경로 위로 잡힌 카메라인데 지금 속도로는 그 길일 수 없는지 (카메라 차로 위 점과 경로선 사이 거리로 본다)
+  function tooFastOnRoute(c) {
+    if (!(state.speedKmh > 0) || !(c[2] > 0) || state.speedKmh - c[2] < 45) return false;
+    const at = camRouteAt(c);
+    if (at === null) return false;
+    const q = routePointAt(at);
+    return !!q && tooFastForCam(c, haversine(camPt(c), q), routeRoadAt(routeSegAt(at)));
   }
   function pathTangent(d) {
     if (state.heading === null) return null;
@@ -3077,9 +3087,26 @@
     return out;
   }
   // v187: 경로의 이 자리(선분 i, 경로 거리 at)가 고속도로이고 카메라는 고속도로 카메라가 아닌지 (옆·아래 일반도로 카메라)
-  function hwSideCam(c, i, at) {
+  function hwSideCam(c, i, at, side) {
     const rn = routeRoadAt(i);
-    return ((isExpwyName(rn) && !pastHwExit(at)) || onHighwayAt(at)) && !camOnExpwy(c, rn);
+    if (((isExpwyName(rn) && !pastHwExit(at)) || onHighwayAt(at)) && !camOnExpwy(c, rn)) return true;
+    return side != null && fastSideCam(c, rn, side);
+  }
+  // v190 (2026-11-23 운전자 '정확히 우리 길이 아닌데 잡는 경우 확실하게 개선'): 빠른 길 옆의 저속 일반도로 카메라.
+  // 고속도로만 거르던 것을 도시고속도로·고속화도로·자동차전용도로·간선로(올림픽대로·강변북로·분당수서 등)로 넓힌다.
+  // 저속 카메라 = 제한 50 이하 또는 보호구역. 경로선에서 6m 넘게 비켜나 있고, 카메라 이름이 그 빠른 길과 같지도 빠른 길 이름도 아니면 옆길 카메라
+  const slowCam = (c) => (c[2] > 0 && c[2] <= 50) || (c[6] | 0) > 0;
+  function fastSideCam(c, rn, side) {
+    if (!(side > 6) || !slowCam(c) || !isFastRoad(rn)) return false;
+    return !sameCamRoad(rn, c) && !camNames(c).some(isFastRoad);
+  }
+  // v190: 지금 속도로는 그 카메라 길일 수 없는 경우 — 제한보다 시속 45 넘게 빨리 달리는데(어린이 30 옆을 75, 50 옆을 95)
+  // 카메라가 내 길(경로선·예측 앞길)에서 6m 넘게 비켜나 있으면 옆길 카메라다. 역지오코딩이 고속도로 위에서 옆 일반도로 이름을 줄 때·
+  // 길안내 경로 구간 이름이 비어 있을 때도 걸러진다. 고속도로 카메라와 내 길 이름과 같은 카메라는 그대로 둔다
+  function tooFastForCam(c, side, rn) {
+    if (!(side > 6) || !(c[2] > 0) || state.speedKmh - c[2] < 45) return false;
+    if (c[8] === 1 || (rn && sameCamRoad(rn, c))) return false;
+    return true;
   }
   // 경로에서 점 p 에 가장 가까운 선분 (m 미터 안이면 { i, d, at }, 없으면 null)
   function routeSegNear(p, m) {
@@ -3108,7 +3135,7 @@
       const at0 = nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]);
       // v187 (2026-11-23 경부 하행 신갈JC 남쪽 '틀림'): 고속도로 구간에서는 고친 카메라라도 옆 일반도로 카메라는 아니다.
       // 11-20 '놓침'을 눌렀을 때 진단이 94초 전에 34m 옆으로 지난 신정로 어린이 30(상미사거리)에 '경로 위' 고침을 붙여, 그 뒤 경부에서 떴다
-      return hwSideCam(c, i, at0) ? null : at0;
+      return hwSideCam(c, i, at0, Math.min(pr.dist, near)) ? null : at0;   // v190: 빠른 길 옆 저속 카메라도
     }
     if (near > 6 && camRoadDiffers(rn, c)) return null;
     const at = nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]);
@@ -3118,6 +3145,7 @@
     // 고속도로 연결로의 70 이 빠졌다. 이제 카메라 도로(경찰 이름·OSM 이름)가 고속도로이거나 경로 구간과 같은 길이면 남기고, 이름을 모를 때만 예전 규칙
     const hwHere = (isExpwyName(rn) && !pastHwExit(at)) || onHighwayAt(at);
     if (hwHere && !camOnExpwy(c, rn)) return null;
+    if (fastSideCam(c, rn, near)) return null;   // v190: 도시고속·고속화·간선로 옆 저속 일반도로 카메라
     // v167 (v165 가상 주행: 경로 구간 이름이 비면 고가·지하 카메라 67대가 여전히 빠졌다 — 네이버 경로에 구간 이름이 빠지는 일이 있다, S52 거여동):
     // 구간 이름이 없으면 카메라가 빠른 길(이름이 고속·순환로·간선이거나 제한 80 이상) 위에 있고 경로와 나란하면(20° 안) 남긴다
     const fastCam = !specificRoad(rn) && camHasDir(c) && angleDiff(c.eb, bearing(a, b)) <= 20 && (camNames(c).some(isFastRoad) || c[2] >= 80);
@@ -8395,7 +8423,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,

@@ -2883,6 +2883,7 @@
     { id: 'S68', name: 'S68 free drive with a wrong GPS heading still catches the speed camera ahead (track bearing); a camera passed without an alert is counted as missed', fn: s68 },
     // v184·v186: 멀리(경로 시작점에서 80km) 주행 화면으로 달리므로 맨 끝에 (앞에 두면 S86→S88 의 지도 상태가 흔들린다)
     { id: 'S119', name: "S119 cameras the driver confirmed (v186, data/driver_spots.json with a limit: 신중부대로·남북대로 80): a row's own limit is kept, it alerts as '운전자 신고 단속 지점' 80 from 900 m along a route in its direction, not on the way back; v188: my own '놓침' spot 75 m behind it in the same direction is the same camera (one row, status '모든 사용자에게 반영됨'), facing the other way it is not", fn: s119 },
+    { id: 'S121', name: "S121 side-road slow cameras beside any fast road (v190, driver 2026-11-23 '정확히 우리길이 아닌데 잡는 경우 확실하게 개선'): guided on 올림픽대로 an unnamed school-zone 30 10 m off is not on the route while an unnamed 80 10 m off and a 30 named 올림픽대로 10 m off are; guided on an unnamed local route at 80 km/h an unnamed 30 10 m off is on the route but not alerted, at 40 km/h it is; free drive with reverse-geocode giving the side road name, at 80 km/h a 30 named after that side road 10 m off does not alert while a 30 2 m off the path does, and at 40 km/h the 10 m one alerts", fn: s121 },
     { id: 'S120', name: "S120 side-road cameras beside an expressway (v187, driver's '틀림' 2026-11-23 on 경부 southbound south of 신갈JC at 50 km/h: the 신정로 상미사거리 school-zone 30 #20526, 23 m beside 경부, showed because a '놓침' three days earlier had put a 'route' fix on it): with that fix it is still not on a 경부 route; a '놓침' pressed after passing it fixes nothing on it; free drive on 경부 at 50 km/h drops a school-zone 30 10 m to the side; expressway cameras (on the line, and 25 m off with a 'route' fix) still alert, guided and free", fn: s120 },
   ];
 
@@ -5586,6 +5587,81 @@
     }
     const ok = r.data.confirmed >= 6 && r.data.kept && r.south.on && r.south.seen !== null && r.south.seen >= 900 && /운전자 신고 단속 지점/.test(r.south.label) && /80/.test(r.south.limit) && !r.north.on && r.north.seen === null &&
       r.mine.rows === 1 && r.mine.who === 'driver' && r.mine.status === 'driver' && r.mine.oppRows === 2;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S121: 빠른 길 옆 저속 일반도로 카메라 (v190). 합성 북행 곧은 길 4km, 실제 카메라가 없는 동해 위(36.90, 129.70)
+  async function s121() {
+    const t = T(), r = {};
+    const O = { lat: 36.90, lng: 129.70 };
+    const along = (s) => dest(O, 0, s);
+    const P = [];
+    for (let k = 0; k <= 200; k++) { const q = along(20 * k); P.push({ lat: round6(q.lat), lng: round6(q.lng) }); }
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const total = cum[cum.length - 1];
+    const mkR = (name) => ({ route: { distance: r0(total), duration: r0(total / 14 * 1000), tollFare: 0, fuelPrice: 0, path: P.map((q) => [q.lng, q.lat]),
+      guide: [{ i: 200, t: 88, s: '목적지', d: r0(total), ms: r0(total / 14 * 1000) }],
+      sections: name ? [{ i: 0, n: 201, name, speed: 60, cong: 1 }] : [] },
+      P, cum, total, dest: { name: 'S121 시험', addr: '', lat: P[200].lat, lng: P[200].lng } });
+    // 북행: 진행 방향 오른쪽은 동쪽(90°)
+    const mk = (s, off, lim, zone, on) => { const p = dest(along(s), 90, off); const c = [round6(p.lat), round6(p.lng), lim, zone ? 3 : 1, 0, 0, zone, -1, 5, 1]; c.eb = 0; c.e2 = 0; c.lv = 0; c.sl = c[0]; c.sg = c[1]; c.on = on; return c; };
+    const S30 = mk(2000, 10, 30, 2, '');          // 이름 없는 어린이 30, 10m 옆
+    const F80 = mk(2600, 10, 80, 0, '');          // 이름 없는 80, 10m 옆
+    const O30 = mk(3000, 10, 30, 2, '올림픽대로'); // 올림픽대로 이름의 30, 10m 옆
+    const N30 = mk(2300, 10, 30, 2, '신정로');     // 자유 주행: 옆길 이름 30, 10m 옆
+    const L30 = mk(3300, 2, 30, 2, '');           // 자유 주행: 앞길 2m 옆 30 (내 길)
+    const all = { S30, F80, O30, N30, L30 };
+    const fakes = []; let base0 = null;
+    const keep = { road: t.road.name };
+    const guided = async (R, kmh) => {
+      await resetApp(); softReset();
+      await planAndStart(R);
+      t.ensureRouteCams();
+      const on = {}; for (const k in all) on[k] = t.nav.routeCams.has(all[k]);
+      const seen = {}; const other = new Set(); const v = kmh / 3.6;
+      for (let s = 1200; s <= 3400; s += v) {
+        const q = pointAt(R, s); feed(q.p, v, q.h, { dt: 1000, acc: 3 });
+        const tg = t.camState.target; if (!tg) continue;
+        const k = Object.keys(all).find((x) => all[x] === tg.c);
+        if (k) { if (!(k in seen)) seen[k] = Math.round(s); } else other.add(tg.i);
+      }
+      return { on, seen, other: [...other].join(' ') };
+    };
+    const free = async (kmh) => {
+      await resetApp(); softReset();
+      stub.canned['/reverse'] = { road: '신정로', area: '시험' };
+      const R = mkR(''), seen = {}, v = kmh / 3.6;
+      for (let s = 1200; s <= 3400; s += v) {
+        t.road.name = '신정로';
+        const q = pointAt(R, s); feed(q.p, v, q.h, { dt: 1000, acc: 3 });
+        const tg = t.camState.target; if (!tg) continue;
+        const k = Object.keys(all).find((x) => all[x] === tg.c);
+        if (k && !(k in seen)) seen[k] = Math.round(s);
+      }
+      return seen;
+    };
+    try {
+      base0 = t.cams.rows.length;
+      for (const c of Object.values(all)) { const i = t.cams.rows.length; t.cams.rows.push(c); fakes.push(i); const k = Math.floor(c[0] / 0.01) + ':' + Math.floor(c[1] / 0.01); if (!t.cams.grid.has(k)) t.cams.grid.set(k, []); t.cams.grid.get(k).push(i); }
+      r.olym = await guided(mkR('올림픽대로'), 60); t.endNav();
+      r.local80 = await guided(mkR(''), 80); t.endNav();
+      r.local40 = await guided(mkR(''), 40); t.endNav();
+      r.free80 = await free(80);
+      r.free40 = await free(40);
+    } finally {
+      stub.reset();
+      t.road.name = keep.road;
+      if (base0 !== null) {
+        for (const i of fakes.slice().reverse()) { const c = t.cams.rows[i]; if (!c) continue; const k = Math.floor(c[0] / 0.01) + ':' + Math.floor(c[1] / 0.01); const a2 = t.cams.grid.get(k); if (a2) { const j = a2.indexOf(i); if (j >= 0) a2.splice(j, 1); } t.camMiss.near.delete(i); t.camState.passed.delete(i); t.camState.saidById.delete(i); }
+        t.cams.rows.length = base0; t.cams.userBase = null;
+      }
+      await resetApp(); softReset();
+    }
+    const ok = !r.olym.on.S30 && r.olym.on.F80 && r.olym.on.O30 && !('S30' in r.olym.seen) && ('F80' in r.olym.seen) && ('O30' in r.olym.seen) &&
+      r.local80.on.S30 && !('S30' in r.local80.seen) && ('L30' in r.local80.seen) &&
+      ('S30' in r.local40.seen) &&
+      !('N30' in r.free80) && ('L30' in r.free80) && ('N30' in r.free40);
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
