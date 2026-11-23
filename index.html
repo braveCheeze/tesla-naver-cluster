@@ -1610,6 +1610,12 @@
   #map.drive.gl .cammk, #map.drive.gl .bumpmk { transform: none; transition: none; }
   /* 다크 스타일을 못 받았을 때만: 지도 캔버스를 어둡게 (색은 뒤집지 않는다) */
   #map.gldim .mapcanvas canvas { filter: brightness(.55) contrast(1.1); }
+  /* v193 (운전자 '가끔 주행 중 화면이 하얀색으로 번쩍 하는 현상'): 네이버 지도 칸은 바탕이 밝은 회색(인라인 rgb(248,249,250))이고
+     GL 지도 두 스타일 모두 바탕 그림 층이 따로 받는 타일이라, 스타일을 바꾸거나 타일이 아직 안 왔거나 캔버스 크기가 바뀌는 순간 그 밝은 바탕이
+     비쳐 밤에 하얗게 번쩍였다. 밤에는 바탕을 밤 지도 땅색으로 */
+  #map.night .mapcanvas { background: #1c1e22 !important; }
+  /* v193 낮 터널: 스타일을 바꾸지 않고 GL 지도 그림만 한 번에 뒤집어 어둡게 (색상 180° 로 길·교통 색은 그대로, 지도 위 표시·내 차는 그대로) */
+  #map.tndark .mapcanvas canvas.mapboxgl-canvas { filter: invert(1) hue-rotate(180deg) brightness(.95) contrast(.9); }
 
   /* 지도 위 단속 표시도 같은 모양: 흰 원·빨간 테, 위 작은 카메라(신호·과속은 신호등), 가운데 제한속도 */
   .cammk { position: relative; width: 36px; height: 36px; padding-top: 7px; font: 900 13px/1 system-ui, sans-serif; letter-spacing: -.4px; }
@@ -1996,8 +2002,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-192"></script>
-<script src="img/ai/picks.js?v=2026.11.16-192"></script>
-<script src="app.js?v=2026.11.16-192"></script>
+<script src="icons.js?v=2026.11.16-193"></script>
+<script src="img/ai/picks.js?v=2026.11.16-193"></script>
+<script src="app.js?v=2026.11.16-193"></script>
 </body>
 </html>

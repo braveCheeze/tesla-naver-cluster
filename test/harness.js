@@ -2886,6 +2886,7 @@
     { id: 'S121', name: "S121 side-road slow cameras beside any fast road (v190, driver 2026-11-23 '정확히 우리길이 아닌데 잡는 경우 확실하게 개선'): guided on 올림픽대로 an unnamed school-zone 30 10 m off is not on the route while an unnamed 80 10 m off and a 30 named 올림픽대로 10 m off are; guided on an unnamed local route at 80 km/h an unnamed 30 10 m off is on the route but not alerted, at 40 km/h it is; free drive with reverse-geocode giving the side road name, at 80 km/h a 30 named after that side road 10 m off does not alert while a 30 2 m off the path does, and at 40 km/h the 10 m one alerts", fn: s121 },
     { id: 'S120', name: "S120 side-road cameras beside an expressway (v187, driver's '틀림' 2026-11-23 on 경부 southbound south of 신갈JC at 50 km/h: the 신정로 상미사거리 school-zone 30 #20526, 23 m beside 경부, showed because a '놓침' three days earlier had put a 'route' fix on it): with that fix it is still not on a 경부 route; a '놓침' pressed after passing it fixes nothing on it; free drive on 경부 at 50 km/h drops a school-zone 30 10 m to the side; expressway cameras (on the line, and 25 m off with a 'route' fix) still alert, guided and free", fn: s120 },
     { id: 'S122', name: "S122 camera signs from the AI atlas (v192, driver: '이런거는 ai 아틀라스로 만들고', '원래 우리 스타일대로 해 줘'): the warning card keeps our original layout (long kind name, distance, gauge; ring red, blue for mobile/box/reported); map markers are 36 px with a small camera (traffic light for signal+speed); a picked AI atlas sign (img/ai/cam_*) replaces the drawn sign on the card and the map marker with the limit on top, a sign drawn with its number (cam_speed_80) is shown as it is with the overlaid number hidden; a 구간단속 camera keeps the drawn sign", fn: s122 },
+    { id: 'S123', name: "S123 tunnel dark in one go and no white flash (v193, driver: 'GL 모드에서 터널에 들어가 다크 모드로 바뀔 때 너무 느리게 탁 탁 탁 … 한번에 딱', '가끔 주행 중 화면이 하얀색으로 번쩍'): a daytime tunnel keeps the day map style and only inverts the GL canvas (instant, day route palette, night UI), undone at once on exit; at night the dark style is used and the map box background is dark instead of the light rgb(248,249,250) that showed through", fn: s123 },
   ];
 
   // S55: 주의 표지 (전국도로안전표지표준데이터의 주의표지, data/signs.json · tools/build_signs.py, 2026-11-14 요청).
@@ -5908,6 +5909,54 @@
       !!r.nodest && r.nodest.err === null && r.nodest.active && r.nodest.name === '배지 시험' &&
       r.ai.numShown === '1' && !!r.ainum && r.ainum.ainum && r.ainum.img && r.ainum.numOpacity === '0' && r.ainum.limit === '80' && r.ainum.marker === true &&
       !!r.marker && r.marker.size === '36px' && r.marker.camIcon && r.marker.sigIcon === true;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S123: 낮 터널은 한 번에 어둡게 · 밤에 하얀 번쩍임 없음 (v193, 운전자 'GL 모드에서 터널에 들어가 다크 모드로 바뀔 때 너무 느리게 탁 탁 탁 …
+  //       한번에 딱 바뀌었으면', '가끔 주행 중 화면이 하얀색으로 번쩍')
+  //   (a) 지금 해가 떠 있는 곳(경도를 골라)에서 터널 어둡게(tnDark): GL 이면 지도 종류는 낮(normal) 그대로, #map.tndark 로 캔버스만 뒤집고
+  //       경로선은 낮 팔레트, 화면(카드)은 밤 색. 터널을 나오면 같은 자리에서 바로 풀린다. GL 이 아니면 예전처럼 밤 스타일
+  //   (b) 밤(늘 어둡게): 밤 지도 스타일, 뒤집기 없음, 지도 칸 바탕은 어두운 색(예전엔 밝은 rgb(248,249,250) 이 비쳤다)
+  async function s123() {
+    const t = T(), r = {};
+    await waitFor(() => t.getMap() && document.querySelector('#map .mapcanvas'), 10000, 100);   // 지도가 뜬 뒤에
+    if (t.glOn && t.glOn()) await waitFor(() => t.getMap().darkReady, 10000, 100);
+    const a = t.getMap(), host = document.querySelector('#map .mapcanvas');
+    const keep = { mode: t.store.get('nightMode'), fix: t.state.fix, on: t.tnDark.on, at: t.tnDark.at, outAt: t.tnDark.outAt };
+    // 지금 해가 높이 떠 있는 경도 (위도 0)
+    let day = null;
+    for (let lng = -180; lng < 180; lng += 15) { if (t.sunElevation(new Date(), 0, lng) > 20) { day = { lat: 0, lng }; break; } }
+    const look = () => {
+      const cv = document.querySelector('#map canvas.mapboxgl-canvas');
+      return { night: !!t.state.night, tndark: document.getElementById('map').classList.contains('tndark'), mapDark: t.mapNight(), gl: !!(a && a.gl),
+        type: a && a.map && a.map.getMapTypeId ? a.map.getMapTypeId() : '', filter: cv ? getComputedStyle(cv).filter : 'no-canvas', hostBg: host ? getComputedStyle(host).backgroundColor : '',
+        pal: t.trafficColor({ cong: 1, name: '' }) };
+    };
+    try {
+      t.store.set('nightMode', null);   // 자동
+      if (!day) return { pass: false, detail: 'no daylight longitude found' };
+      t.state.fix = Object.assign({}, t.state.fix || {}, { lat: day.lat, lng: day.lng, t: Date.now(), acc: 5 });
+      t.tnDark.on = false; t.applyNight();
+      r.dayBefore = look();
+      t.tnDark.on = true; t.tnDark.at = Date.now(); t.applyNight();   // 터널 안
+      r.tunnel = look();
+      t.tnDark.on = false; t.applyNight();                               // 터널 밖
+      r.after = look();
+      t.store.set('nightMode', 'on'); t.applyNight();                     // 밤
+      r.night = look();
+    } finally {
+      t.store.set('nightMode', keep.mode);
+      t.state.fix = keep.fix; t.tnDark.on = keep.on; t.tnDark.at = keep.at; t.tnDark.outAt = keep.outAt;
+      t.applyNight();
+    }
+    const DAYPAL = '#27c441';
+    const gl = r.tunnel.gl;
+    const tunnelOk = gl
+      ? r.tunnel.night && r.tunnel.tndark && !r.tunnel.mapDark && r.tunnel.type === 'normal' && /invert/.test(r.tunnel.filter) && r.tunnel.pal === DAYPAL
+      : r.tunnel.night && !r.tunnel.tndark && r.tunnel.mapDark;
+    const ok = !r.dayBefore.night && !r.dayBefore.tndark && tunnelOk &&
+      !r.after.night && !r.after.tndark && !/invert/.test(r.after.filter) && (!gl || r.after.type === 'normal') &&
+      r.night.night && !r.night.tndark && r.night.mapDark && r.night.hostBg === 'rgb(28, 30, 34)' && (!gl || r.night.type === 'tncdark' || !a.darkReady);
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

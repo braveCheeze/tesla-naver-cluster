@@ -59,7 +59,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-192'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-193'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -260,7 +260,7 @@
     day: { 1: '#27c441', 2: '#ff8d00', lag: '#ff4700', 3: '#ff0000', stop: '#b30000' },
     night: { 1: '#258936', 2: '#b75804', lag: '#af370d', 3: '#a71616', stop: '#6b0e0e' },
   };
-  const trafficPal = () => TRAFFIC_PAL[state.night ? 'night' : 'day'];
+  const trafficPal = () => TRAFFIC_PAL[state.night && !state.tnFilter ? 'night' : 'day'];   // v193: 낮 터널(지도 그림 뒤집기)은 낮 팔레트
   function trafficColor(s) {
     if (!s) return null;
     const P = trafficPal();
@@ -889,7 +889,7 @@
           if (this.map !== map) return;
           glBroken = true;
           report('warn', { msg: 'webgl context lost: raster map' });
-          setTimeout(() => { if (mapA === this) useMap(NaverAdapter).then(() => { if (mapA && mapA.setDark) mapA.setDark(state.night, true); }); }, 0);
+          setTimeout(() => { if (mapA === this) useMap(NaverAdapter).then(() => { if (mapA && mapA.setDark) mapA.setDark(state.night, true); applyNight(); }); }, 0);   // v193: 그림 지도면 터널 뒤집기 대신 스타일
         }, { once: true });
       };
       hook();
@@ -936,7 +936,7 @@
       } catch (e) {
         report('warn', { msg: 'gl dark style: ' + String(e.message || e).slice(0, 120) });
       }
-      if (this.map === map) this.setDark(state.night, true);
+      if (this.map === map) this.setDark(state.night && !state.tnFilter, true);
     },
     setDark(on, force) {
       if (!this.gl || !this.map || (!force && on === this.dark)) return;
@@ -8011,6 +8011,8 @@
   }
   const NIGHT_LABEL = { auto: '자동 (해 지면 어둡게)', on: '항상 어둡게', off: '항상 밝게' };
   function nightMode() { const m = store.get('nightMode'); return m === 'on' || m === 'off' ? m : 'auto'; }
+  // v193: 지도 스타일을 밤으로 둘지 (낮 터널을 CSS 로 뒤집는 동안은 낮 스타일 그대로)
+  const mapNight = () => !!state.night && !state.tnFilter;
   function isNightAt(date) {
     const m = nightMode();
     if (m !== 'auto') return m === 'on';
@@ -8018,14 +8020,20 @@
     return sunElevation(date || new Date(), p.lat, p.lng) < -2;
   }
   function applyNight() {
-    state.night = isNightAt(new Date()) || (nightMode() === 'auto' && tnDark.on);   // v172: 터널 안이면 어둡게
+    const base = isNightAt(new Date()), tunnel = !base && nightMode() === 'auto' && tnDark.on;   // v172: 터널 안이면 어둡게
+    state.night = base || tunnel;
+    // v193 (운전자 'GL 모드에서 터널에 들어가 다크 모드로 바뀔 때 너무 느리게 탁 탁 탁 하고 맵이 깔리는데 한번에 딱 바뀌었으면'):
+    // 밤 지도 스타일은 바탕이 따로 받는 그림 타일(타일맵_다크모드)이라 바꿀 때마다 조각조각 다시 깔렸다. 낮 터널은 스타일을 그대로 두고
+    // GL 지도 그림만 CSS 로 한 번에 뒤집어(밝기 반전 + 색상 180° = 색은 그대로) 어둡게 한다. 진짜 밤(해 진 뒤·늘 어둡게)만 밤 지도 스타일
+    state.tnFilter = !!(tunnel && mapA && mapA.gl);
     const m = nightMode(), b = $('#nightBtn');
     $('#map').classList.toggle('night', state.night);
-    if (mapA && mapA.setDark) mapA.setDark(state.night);
-    // 교통 색이 낮/밤 팔레트로 바뀌었으면 경로선을 다시 칠한다 (지나온 부분은 다시 잘라 낸다)
-    if (applyNight.was !== state.night) {
+    $('#map').classList.toggle('tndark', state.tnFilter);
+    if (mapA && mapA.setDark) mapA.setDark(mapNight());
+    // 교통 색이 낮/밤 팔레트로 바뀌었으면 경로선을 다시 칠한다 (지나온 부분은 다시 잘라 낸다). 뒤집은 터널 지도는 낮 팔레트 그대로
+    if (applyNight.was !== mapNight()) {
       const changed = applyNight.was !== undefined;
-      applyNight.was = state.night;
+      applyNight.was = mapNight();
       if (changed && mapA && nav.pts && nav.route) {
         mapA.drawRoute(nav.pts, nav.route.sections);
         nav.drawnAt = 0; drawRemaining();
@@ -8361,7 +8369,7 @@
     // 지도를 새로 만든다 (경로·카메라는 다시 그린다)
     if (mapA === NaverAdapter && window.naver && naver.maps && naver.maps.Map) {
       await useMap(NaverAdapter);
-      if (mapA && mapA.setDark) mapA.setDark(state.night, true);
+      if (mapA && mapA.setDark) mapA.setDark(state.night && !state.tnFilter, true);
       $('#optStopNorth').disabled = glOn();
       toast(glOn() ? '벡터 지도로 바꿨습니다 (글자가 똑바로)' : (prefs.gl ? '이 화면에서는 벡터 지도를 쓸 수 없어 그림 지도로 둡니다' : '그림 지도로 바꿨습니다'), '', 3000);
     }
@@ -8484,7 +8492,7 @@
       state, camState, nav, cams, prefs, onFix, setRoute, startNav, endNav, startDemo, stopDemo, renderNav,
       planRoute, doSearch, setFollowing, canvasPoint, gesture, glView, glOn, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
-      sunElevation, isNightAt, setNightMode, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
+      sunElevation, isNightAt, setNightMode, mapNight, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
       saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassKey, hipassNums, hipassLayout, laneNums, laneStripHtml, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, icoBase, pickImg, iconPicks: ICON_PICKS, tollParts, arrowSpan, routeStyle: ROUTE_STYLE, trafficPal, roundRoute, setCarIcon, carIcons: CAR_ICONS, parking, parkState, setParkingData, loadParking, evalParking, rest, setRestData, loadRest, ensureRouteRest, renderRest, placeBase, findParking, renderTurnArrow,
       lanesData, laneState, setLaneData, loadLanes, laneGuide, laneArrowSvg, laneOk, laneTipFor, laneCell,
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
