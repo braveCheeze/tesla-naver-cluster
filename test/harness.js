@@ -2891,6 +2891,7 @@
     { id: 'S125', name: "S125 other-route bubble during guidance (v195, driver: '가능하면 이런 기능도 있으면 좋을거 같긴 해' — Naver's '3분 증가 · 874m 증가 · 통행료 없음'): the traffic refresh asks for several options in one request, keeps the current option's route, and offers the other one that branches 1.2 km ahead as a light line and a bubble (time, distance, toll, traffic bar); tapping it switches to that route, passing the branch without tapping clears it", fn: s125 },
     { id: 'S126', name: "S126 anonymous camera pass records (v196, driver '지나간곳 모조리 체크해서 과속 단속 체크해줘 신고를 하지 않았더라도 내역도 남겨놓고'): passing a camera in its direction records alerted (card distance) or missed, the other direction is not counted, an unknown limit counts as hidden; the batch has only camera number, alert, 5 km/h speed, limit, nav, date — no position, time or sid; a 90→60→90 dip with no camera within 400 m is a 100 m-cell candidate, a jam is not; the operator car adds the camera spot and trace; the settings switch stops it", fn: s126 },
     { id: 'S130', name: "S130 Naver-style junction scene (v197, driver sent Naver's 신갈JC '571m 대전' close-up: '이런거 참고해주고 적용해줘', '우리 방식 대로 AI이미지 활용을 해서', colour lines '그림으로'): an AI landscape with the road drawn by lane count. With a fork cross-section: 6 lanes, the two exit lanes painted, the bus lane line blue, the pink guide line inside the picture, two signs ('[50] 원주 인천 ↗' over the exit, '[1] ↑' over the main line), and the lane row / colour row hidden. Without data: 2 + 2 lanes. Keep-main paints lanes 2–4 under '[1] 서울 ↑'. Night colours. With the picture off, the colour row is a small road picture, no words", fn: s130 },
+    { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
   // S55: 주의 표지 (전국도로안전표지표준데이터의 주의표지, data/signs.json · tools/build_signs.py, 2026-11-14 요청).
@@ -6304,6 +6305,73 @@
       c.shown && c.kind === 'jc-main' && c.data && c.go === '2,3,4' && c.sign1 === '1서울' && c.side1 === 'l' && c.straight1 && c.sign2 === '' && !c.laneRow &&
       d.shown && d.goFill && d.goFill !== r.dDay && d.bgNight === 'block' &&
       e.shown && !e.junc && e.text === '' && e.icon && e.side === 'r' && e.flip === 'none' && /분홍색 유도선 따라가기/.test(e.aria);
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S127: (v198, 운전자 '어차피 다 테스터이고 익명이라서 누군지는 몰라 그래서 쓸 수 있음', 테스터 쪽지 동의, '출발지 도착지 모두 남는 방향으로 해 줘
+  //       원본은 30일 뒤에 자동으로 지우는걸로') 테스터 주행 경로 — 처음 안내는 멈춰 있을 때만(운전 중엔 안 띄우고 기록도 안 함),
+  //       출발부터 도착까지 2~5초 간격, 카메라 통과(경고 거리) 표시, 주행마다 새 무작위 번호, 기기·접속 번호 없음, 끄면 지움
+  async function s127() {
+    const t = T(), r = {}, rr = t.routeRec;
+    const CAM = { lat: 37.3066, lng: 127.10576 };   // 용구대로 보정 60 신호·과속 남행 (S68)
+    const keep = { post: rr.post, pref: t.prefs.routeShare, pass: t.prefs.passStats, note: t.store.get('routeNote'), road: t.road.name };
+    const bodies = [];
+    const parked = async (p, n, dt) => { for (let k = 0; k < n; k++) feed(p, 0, 180, { dt }); await waitFor(() => !rr.busy, 2000, 20); };
+    const allPts = () => bodies.reduce((a, b) => a.concat(b.pts || []), []);
+    try {
+      rr.inTest = true;
+      rr.post = async (b) => { bodies.push(JSON.parse(JSON.stringify(b))); return { ok: true, status: 200 }; };
+      t.prefs.routeShare = true; t.prefs.passStats = true; t.routeClear(); t.store.set('routeNote', null);
+      await resetApp(); softReset(); t.road.name = '';
+      const A0 = dest(CAM, 0, 1500);
+      // (a) 달리는 중에는 안내도 기록도 없고, 1분 넘게 멈춰 있을 때 한 번 안내
+      for (let s = 0; s <= 170; s += 17) feed(dest(A0, 180, s), 16.7, 180);
+      r.a = { whileDriving: t.store.get('routeNote'), cur: !!rr.cur };
+      await parked(dest(A0, 180, 170), 8, 10000);
+      r.a.parked = t.store.get('routeNote');
+      r.a.toast = /주행 경로를 익명으로/.test(text('#toast'));
+      // (b) 카메라를 지나 3km, 6분 멈추면 주행 끝 → 처음부터 끝까지 보냄
+      const S0 = dest(A0, 180, 187), E0 = dest(A0, 180, 3000);
+      for (let s = 187; s <= 3000; s += 17) feed(dest(A0, 180, s), 16.7, 180);
+      await parked(E0, 7, 60000);
+      await waitFor(() => bodies.some((b) => b.end === 1), 2000, 20);
+      const P = allPts(), b0 = bodies[0] || {}, last = bodies[bodies.length - 1] || {};
+      const gaps = P.slice(1).map((q, k) => q[0] - P[k][0]);
+      const cm = bodies.reduce((a, b) => a.concat(b.cams || []), []).find((x) => x.k && x.k.indexOf('37.3066,127.10576|') === 0);
+      r.b = { parts: bodies.length, n: P.length, rid: b0.rid, end: last.end, ps: b0.ps,
+        startM: P.length ? Math.round(hav({ lat: P[0][1] / 1e5, lng: P[0][2] / 1e5 }, S0)) : -1,
+        endM: P.length ? Math.round(hav({ lat: P[P.length - 1][1] / 1e5, lng: P[P.length - 1][2] / 1e5 }, E0)) : -1,
+        s0: P.length ? P[0][0] : -1, gapMin: Math.min(...gaps), gapMax: Math.max(...gaps),
+        keys: [...new Set(bodies.reduce((a, b) => a.concat(Object.keys(b)), []))].sort().join(','), cam: cm ? { a: cm.a, kmh: cm.kmh, lim: cm.lim } : 'none' };
+      // (c) 다음 주행은 새 번호, 통과 통계를 끈 차는 ps 0
+      bodies.length = 0;
+      t.prefs.passStats = false;
+      for (let s = 3000; s >= 2400; s -= 17) feed(dest(A0, 180, s), 16.7, 0);
+      await parked(dest(A0, 180, 2400), 7, 60000);
+      await waitFor(() => bodies.some((b) => b.end === 1), 2000, 20);
+      r.c = { rid: (bodies[0] || {}).rid, ps: (bodies[0] || {}).ps };
+      t.prefs.passStats = true;
+      // (d) 설정에서 끄면 모은 것을 지우고 더 기록하지 않는다
+      bodies.length = 0;
+      for (let s = 2400; s <= 2700; s += 17) feed(dest(A0, 180, s), 16.7, 180);
+      const cb = document.getElementById('optRouteShare');
+      cb.checked = false; cb.onchange({ target: cb });
+      const off = { pref: t.prefs.routeShare, stored: t.store.get('routeShare'), cur: !!rr.cur, saved: t.store.get('routeCur') };
+      for (let s = 2700; s <= 3000; s += 17) feed(dest(A0, 180, s), 16.7, 180);
+      r.d = Object.assign(off, { after: !!rr.cur, sent: bodies.length, label: cb.closest('label') ? cb.closest('label').textContent.trim() : '' });
+      cb.checked = true; cb.onchange({ target: cb });
+      r.d.back = t.prefs.routeShare && t.store.get('routeShare') == null;
+    } finally {
+      rr.post = keep.post; rr.inTest = false; t.prefs.routeShare = keep.pref; t.prefs.passStats = keep.pass;
+      t.routeClear(); t.store.set('routeNote', keep.note); t.road.name = keep.road;
+      const te = document.getElementById('toast'); if (te) te.hidden = true;
+      await resetApp(); softReset();
+    }
+    const ok = r.a.whileDriving == null && !r.a.cur && r.a.parked === '1' && r.a.toast &&
+      r.b.parts >= 1 && r.b.end === 1 && /^[a-z0-9]{12}$/.test(r.b.rid || '') && r.b.ps === 1 && r.b.startM <= 40 && r.b.endM <= 40 && r.b.s0 >= 0 &&
+      r.b.gapMin >= 2 && r.b.gapMax <= 5 && r.b.keys === 'cams,d,end,part,ps,pts,rid,v' && r.b.cam !== 'none' && r.b.cam.a >= 100 && r.b.cam.lim === 60 &&
+      /^[a-z0-9]{12}$/.test(r.c.rid || '') && r.c.rid !== r.b.rid && r.c.ps === 0 &&
+      r.d.pref === false && r.d.stored === '0' && !r.d.cur && r.d.saved == null && !r.d.after && r.d.sent === 0 && /주행 경로/.test(r.d.label) && r.d.back;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

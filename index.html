@@ -2023,6 +2023,8 @@
       <p class="hint">놓침·틀림을 누르면 그 자리 위치(근처 단속 카메라와 진행 방향)가 서버로 보내져 자료를 고치는 데 써요. 지나온 길은 보내지 않아요. 끄면 이 차에만 기록해요.</p>
       <label class="tgl"><span>단속 카메라 알림 통계 보내기</span><input type="checkbox" id="optPassStats"><i aria-hidden="true"></i></label>
       <p class="hint">단속 카메라를 지날 때 알림이 잘 됐는지 익명 통계를 보내요 (위치 경로는 보내지 않아요). 카메라마다 알림 여부와 지날 때 속도(5km/h 단위)를 몇 분씩 모아 보내고, 기기 번호는 넣지 않아요.</p>
+      <label class="tgl"><span>테스터 주행 경로 보내기</span><input type="checkbox" id="optRouteShare"><i aria-hidden="true"></i></label>
+      <p class="hint">시험 기간 동안 단속 알림 점검을 위해 주행 경로를 익명으로 모아요. 주행마다 새 무작위 번호만 붙고 기기 번호·이름은 넣지 않아요. 경로 원본은 서버에서 30일 뒤 지워요.</p>
       <ul class="facts">
         <li><span>단속 카메라</span><b><span id="camCount">-</span>대 · 기준일 <span id="camDate">-</span></b></li>
         <li><span>날씨</span><b>위치는 약 10km 단위로만 보냄</b></li>
@@ -2063,8 +2065,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-197"></script>
-<script src="img/ai/picks.js?v=2026.11.16-197"></script>
-<script src="app.js?v=2026.11.16-197"></script>
+<script src="icons.js?v=2026.11.16-198"></script>
+<script src="img/ai/picks.js?v=2026.11.16-198"></script>
+<script src="app.js?v=2026.11.16-198"></script>
 </body>
 </html>

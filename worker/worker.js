@@ -35,12 +35,12 @@ const routeHits = new Map();
 // Origin 은 위조할 수 있으므로 유료 API(네이버 클라우드)와 KV 쓰기를 이것으로 지킨다.
 // v175: 공유 IP(CGNAT) 뒤의 여러 차가 정상으로 써도 막히지 않게 넉넉히 (비용은 하루 상한이 지킨다)
 const LIMITS = { '/route': 40, '/geocode': 60, '/reverse': 150, '/search': 60, '/hipass': 60, '/weather': 60, '/config': 120,
-  '/event': 60, '/log': 3, '/fix': 30, '/fixes': 60, '/events': 30, '/fix/review': 30, '/pass': 20, '/passes': 30 };
+  '/event': 60, '/log': 3, '/fix': 30, '/fixes': 60, '/events': 30, '/fix/review': 30, '/pass': 20, '/passes': 30, '/trip': 30, '/trips': 60, '/handoff': 30 };
 const PAID = new Set(['/route', '/geocode', '/reverse', '/search']);
 const KV_WRITE = new Set(['/event', '/fix', '/fix/review']);
-const DAY_CAP = { paid: 20000, kv: 900, pass: 40000 };   // pass: 하루 통과 기록 건수 (D1 무료 한도 쓰기 하루 10만 행 안)
+const DAY_CAP = { paid: 20000, kv: 900, pass: 30000, trip: 3000 };   // pass: 하루 통과 기록 건수, trip: 경로 조각 수 (D1 무료 한도 쓰기 하루 10만 행 안)
 const hits = new Map();
-const day = { d: '', paid: 0, kv: 0, pass: 0 };
+const day = { d: '', paid: 0, kv: 0, pass: 0, trip: 0 };
 // 넘었으면 다시 해도 되는 데까지 남은 초(1~60), 아니면 0
 function overLimit(ip, path) {
   const lim = LIMITS[path];
@@ -52,7 +52,7 @@ function overLimit(ip, path) {
 }
 function overDay(path) {
   const d = new Date().toISOString().slice(0, 10);
-  if (day.d !== d) { day.d = d; day.paid = 0; day.kv = 0; day.pass = 0; }
+  if (day.d !== d) { day.d = d; day.paid = 0; day.kv = 0; day.pass = 0; day.trip = 0; }
   if (PAID.has(path)) return ++day.paid > DAY_CAP.paid;
   if (KV_WRITE.has(path)) return ++day.kv > DAY_CAP.kv;
   return false;
@@ -107,9 +107,15 @@ const saveFixes = (env, list) => env.LOGS.put(FIX_KEY, JSON.stringify(list), { e
 const PASS_KEY = /^(-?\d{1,3}\.\d{1,8}),(-?\d{1,3}\.\d{1,8})\|([0-7x])$/;
 const CELL_KEY = /^(\d{5}),(\d{6})$/;
 const PASS_KINDS = new Set([1, 2, 3, 8, 9]);
-const PASS_OP_DAYS = 90, PASS_CAND_DAYS = 180;   // 운영자 차 통과 기록·후보 격자 날짜별 합계 보관 일수 (카메라 날짜별 합계는 지우지 않는다)
+// 보관 (v198, 운전자 '원본은 30일 뒤에 자동으로 지우는걸로 하고 대신에 저 경로 원본이 지워지더라도 참고했던 과속단속 정보는 남아있어야 해'):
+//   테스터 주행 경로 원본(trips) 30일, 운영자 차 통과 기록(op_pass) 90일. 그 밖의 표(통과 기록 pass_rec, 카메라 날짜별 합계 cam_day,
+//   자료에 없는 단속 후보 격자 cand_day, 넘긴 내역 handoff)는 원본과 따로 두고 지우지 않는다.
+const PASS_OP_DAYS = 90, TRIP_DAYS = 30;
 const inKorea = (lat, lng) => lat > 33 && lat < 39 && lng > 124 && lng < 132;
 const intIn = (v, lo, hi) => { const n = Math.round(Number(v)); return Number.isFinite(n) && n >= lo && n <= hi ? n : null; };
+const appVer = (v) => (typeof v === 'string' && /^[0-9][0-9.\-]{0,23}$/.test(v) ? v : '');
+// 통과 한 건의 판정: 경고함 · 같은 자리 다른 행을 경고 · 제한 모름(일부러 안 알림) · 놓침. '틀림' 표시는 따로(flag)
+const passRes = (a, g, hid) => (a > 0 ? 'alert' : g ? 'cover' : hid === 1 ? 'hidden' : 'miss');
 let passReady = null, passCleaned = '';
 async function passDb(env) {
   if (!env.STATS) return null;
@@ -123,10 +129,70 @@ async function passDb(env) {
         'dsum INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, cell, dir))'),
       S.prepare('CREATE TABLE IF NOT EXISTS op_pass (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, day TEXT NOT NULL, cam TEXT NOT NULL, missed INTEGER NOT NULL, rec TEXT NOT NULL)'),
       S.prepare('CREATE INDEX IF NOT EXISTS op_pass_at ON op_pass (at)'),
+      // v198: 통과 한 건씩 (주행 번호·시각·위치 없이) — 지우지 않는다
+      S.prepare('CREATE TABLE IF NOT EXISTS pass_rec (id INTEGER PRIMARY KEY AUTOINCREMENT, day TEXT NOT NULL, cam TEXT NOT NULL, v TEXT, lim INTEGER, kind INTEGER, ' +
+        'a INTEGER NOT NULL, g INTEGER NOT NULL, hid INTEGER NOT NULL, kmh INTEGER, nav INTEGER NOT NULL, res TEXT NOT NULL, flag INTEGER NOT NULL DEFAULT 0)'),
+      S.prepare('CREATE INDEX IF NOT EXISTS pass_rec_day ON pass_rec (day)'),
+      S.prepare('CREATE INDEX IF NOT EXISTS pass_rec_cam ON pass_rec (cam)'),
+      // v198: 테스터 주행 경로 원본 (주행마다 무작위 번호 rid, 조각 part). 30일 뒤 지운다
+      S.prepare('CREATE TABLE IF NOT EXISTS trips (id INTEGER PRIMARY KEY AUTOINCREMENT, day TEXT NOT NULL, rid TEXT NOT NULL, part INTEGER NOT NULL, endf INTEGER NOT NULL, ' +
+        'op INTEGER NOT NULL, v TEXT, n INTEGER NOT NULL, km REAL NOT NULL, ncam INTEGER NOT NULL, misses INTEGER NOT NULL, pts TEXT NOT NULL, cams TEXT NOT NULL)'),
+      S.prepare('CREATE INDEX IF NOT EXISTS trips_day ON trips (day)'),
+      S.prepare('CREATE INDEX IF NOT EXISTS trips_rid ON trips (rid)'),
+      // v198: 원본에서 찾아 고침 후보·신고 지점으로 넘긴 내역 (어디, 어느 방향, 근거) — 지우지 않는다
+      S.prepare('CREATE TABLE IF NOT EXISTS handoff (id INTEGER PRIMARY KEY AUTOINCREMENT, day TEXT NOT NULL, kind TEXT NOT NULL, lat REAL NOT NULL, lng REAL NOT NULL, ' +
+        'h INTEGER, cam TEXT, ref TEXT, basis TEXT NOT NULL)'),
     ]).then(() => true, (e) => { passReady = null; throw e; });
   }
   await passReady;
   return env.STATS;
+}
+// 통과 기록 → 카메라 날짜별 합계(cam_day)·통과 기록(pass_rec) 문장. D1 무료는 요청마다 쿼리 50번까지라 표마다 한 문장(json_each)으로 넣는다
+const CAM_UP = 'INSERT INTO cam_day (day, cam, lim, kind, n, alerted, covered, missed, hidden, flagged, navn, over, adist) ' +
+  "SELECT json_extract(value, '$.day'), json_extract(value, '$.cam'), json_extract(value, '$.lim'), json_extract(value, '$.kind'), json_extract(value, '$.n'), " +
+  "json_extract(value, '$.alerted'), json_extract(value, '$.covered'), json_extract(value, '$.missed'), json_extract(value, '$.hidden'), json_extract(value, '$.flagged'), " +
+  "json_extract(value, '$.navn'), json_extract(value, '$.over'), json_extract(value, '$.adist') FROM json_each(?) WHERE true " +
+  'ON CONFLICT(day, cam) DO UPDATE SET lim = excluded.lim, kind = excluded.kind, n = n + excluded.n, alerted = alerted + excluded.alerted, ' +
+  'covered = covered + excluded.covered, missed = missed + excluded.missed, hidden = hidden + excluded.hidden, flagged = flagged + excluded.flagged, ' +
+  'navn = navn + excluded.navn, over = over + excluded.over, adist = adist + excluded.adist';
+const REC_INS = 'INSERT INTO pass_rec (day, cam, v, lim, kind, a, g, hid, kmh, nav, res, flag) ' +
+  "SELECT json_extract(value, '$.day'), json_extract(value, '$.cam'), json_extract(value, '$.v'), json_extract(value, '$.lim'), json_extract(value, '$.kind'), " +
+  "json_extract(value, '$.a'), json_extract(value, '$.g'), json_extract(value, '$.hid'), json_extract(value, '$.kmh'), json_extract(value, '$.nav'), " +
+  "json_extract(value, '$.res'), json_extract(value, '$.flag') FROM json_each(?)";
+function passStmts(db, items, dayOf, v, stmts) {
+  const agg = new Map(), recs = [];
+  for (const it of items) {
+    if (!it || typeof it !== 'object') continue;
+    const k = String(it.k || ''), m = PASS_KEY.exec(k);
+    if (!m || !inKorea(+m[1], +m[2])) continue;
+    const d = dayOf(it.d), lim = intIn(it.lim, 0, 130) || 0, a = intIn(it.a, 0, 5000) || 0;
+    const hid = intIn(it.hid, 0, 3) || 0, kmh = intIn(it.kmh, 0, 250), g = it.g ? 1 : 0, nav = it.nav ? 1 : 0;
+    const kind = PASS_KINDS.has(+it.kind) ? +it.kind : 0, res = passRes(a, g, hid);
+    let e = agg.get(d + '#' + k);
+    if (!e) {
+      e = { day: d, cam: k, lim, kind, n: 0, alerted: 0, covered: 0, missed: 0, hidden: 0, flagged: 0, navn: 0, over: 0, adist: 0 };
+      agg.set(d + '#' + k, e);
+    }
+    e.n++;
+    if (res === 'alert') { e.alerted++; e.adist += a; }   // 이 카메라 경고 카드를 띄움 (거리 합은 평균 경고 거리용)
+    else if (res === 'cover') e.covered++;               // 같은 자리 다른 행(같은 기둥 다른 제한 등)을 경고하고 함께 지남
+    else if (res === 'hidden') e.hidden++;               // 제한속도를 몰라 일부러 안 알림 (v179)
+    else e.missed++;
+    if (hid >= 2) e.flagged++;                           // 이 차에서 '틀림'으로 표시한 카메라
+    if (nav) e.navn++;
+    if (kmh !== null && lim > 0 && kmh > lim) e.over++;
+    recs.push({ day: d, cam: k, v, lim, kind, a, g, hid, kmh, nav, res, flag: hid >= 2 ? 1 : 0 });
+  }
+  if (agg.size) stmts.push(db.prepare(CAM_UP).bind(JSON.stringify([...agg.values()])));
+  if (recs.length) stmts.push(db.prepare(REC_INS).bind(JSON.stringify(recs)));
+  return agg.size;
+}
+// 그날 첫 요청 때 보관 기간이 지난 원본을 지운다 (경로 30일, 운영자 차 90일). 합계·통과 기록·후보·넘긴 내역은 지우지 않는다
+function passCleanup(db, today, stmts) {
+  if (passCleaned === today) return;
+  passCleaned = today;
+  stmts.push(db.prepare('DELETE FROM op_pass WHERE day < ?').bind(dayBefore(today, PASS_OP_DAYS)));
+  stmts.push(db.prepare('DELETE FROM trips WHERE day < ?').bind(dayBefore(today, TRIP_DAYS)));
 }
 // 날짜 'YYYY-MM-DD' 가 오늘(한국)부터 3일 전 ~ 1일 뒤면 그대로, 아니면 오늘
 function passDay(d, today) {
@@ -189,7 +255,9 @@ export default {
     const isFixPost = req.method === 'POST' && url.pathname === '/fix';
     const isReviewPost = req.method === 'POST' && url.pathname === '/fix/review';
     const isPassPost = req.method === 'POST' && url.pathname === '/pass';
-    if (req.method !== 'GET' && !isLogPost && !isEventPost && !isFixPost && !isReviewPost && !isPassPost) return json({ error: 'method' }, 405, cors);
+    const isTripPost = req.method === 'POST' && url.pathname === '/trip';
+    const isHandoffPost = req.method === 'POST' && url.pathname === '/handoff';
+    if (req.method !== 'GET' && !isLogPost && !isEventPost && !isFixPost && !isReviewPost && !isPassPost && !isTripPost && !isHandoffPost) return json({ error: 'method' }, 405, cors);
     // v172: 접속지(IP)별 횟수 제한 → 하루 상한 → 운영자 토큰 순서 (토큰 맞히기 시도도 횟수 제한에 걸린다)
     const ip = req.headers.get('CF-Connecting-IP') || 'x';
     const wait = overLimit(ip, url.pathname);
@@ -200,7 +268,7 @@ export default {
     const bearer = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
     const isAdmin = !!env.ADMIN_TOKEN && String(env.ADMIN_TOKEN).length >= 16 && sameToken(bearer, String(env.ADMIN_TOKEN));
     // 남의 신고·진단 기록을 읽거나 진단 기록을 올리는 것은 운영자만 (Origin 은 위조할 수 있다)
-    if ((url.pathname === '/events' || url.pathname === '/log' || url.pathname === '/passes') && !isAdmin) {
+    if ((url.pathname === '/events' || url.pathname === '/log' || url.pathname === '/passes' || url.pathname === '/trips' || url.pathname === '/handoff') && !isAdmin) {
       return json({ error: 'unauthorized' }, 401, cors);
     }
     if (!isAdmin && overDay(url.pathname)) return json({ error: 'daily limit', retryAfter: 3600 }, 429, cors);
@@ -378,7 +446,8 @@ export default {
       // 과속 통과·경고 거리 합)에 더하기만 한다. 기기 번호·접속 번호·IP·차 위치·시각은 받지도 저장하지도 않는다.
       // 자료에 없는 단속 후보(달리다 크게 줄였다 다시 올린 곳, 400m 안에 우리 카메라 없음)는 약 100m 격자·8방위·감속 폭만 받아 격자·날짜별 합계로 둔다.
       // 운영자 차(토큰)만 통과마다 카메라·시각·가장 가까웠던 거리·놓친 곳의 궤적을 op_pass 에 남긴다.
-      // 보관: 카메라 날짜별 합계는 계속, 후보 격자 날짜별 합계 180일, 운영자 차 기록 90일 (그날 첫 /pass 때 지운다).
+      // v198: 통과 한 건씩도 pass_rec 에 남긴다(카메라·날짜·앱 버전·경고 여부·경고 거리·속도·제한·길안내·판정, 주행 번호·시각·위치 없이).
+      // 보관: 통과 기록·카메라 날짜별 합계·후보 격자는 지우지 않고, 운영자 차 기록 90일 (그날 첫 요청 때 지운다).
       // 운영자 통로(토큰): GET /passes?days=30[&op=1&opDays=7&candDays=2&candN=3]
       if (url.pathname === '/pass' && isPassPost) {
         const text = await req.text();
@@ -391,32 +460,13 @@ export default {
         const today = kstDay();
         const items = Array.isArray(b.items) ? b.items.slice(0, 150) : [];
         const cands = Array.isArray(b.cand) ? b.cand.slice(0, 20) : [];
-        const ops = isAdmin && Array.isArray(b.op) ? b.op.slice(0, 80) : [];
+        const ops = isAdmin && Array.isArray(b.op) ? b.op.slice(0, 30) : [];
         if (!isAdmin) {
           day.pass += items.length + cands.length;
           if (day.pass > DAY_CAP.pass) return json({ ok: false, why: 'cap' }, 200, cors);
         }
-        const agg = new Map();
-        for (const it of items) {
-          if (!it || typeof it !== 'object') continue;
-          const k = String(it.k || ''), m = PASS_KEY.exec(k);
-          if (!m || !inKorea(+m[1], +m[2])) continue;
-          const d = passDay(it.d, today), lim = intIn(it.lim, 0, 130) || 0, a = intIn(it.a, 0, 5000) || 0;
-          const hid = intIn(it.hid, 0, 3) || 0, kmh = intIn(it.kmh, 0, 250);
-          let e = agg.get(d + '#' + k);
-          if (!e) {
-            e = { day: d, cam: k, lim, kind: PASS_KINDS.has(+it.kind) ? +it.kind : 0, n: 0, alerted: 0, covered: 0, missed: 0, hidden: 0, flagged: 0, navn: 0, over: 0, adist: 0 };
-            agg.set(d + '#' + k, e);
-          }
-          e.n++;
-          if (a > 0) { e.alerted++; e.adist += a; }   // 이 카메라 경고 카드를 띄움 (거리 합은 평균 경고 거리용)
-          else if (it.g) e.covered++;                  // 같은 자리 다른 행(같은 기둥 다른 제한 등)을 경고하고 함께 지남
-          else if (hid === 1) e.hidden++;              // 제한속도를 몰라 일부러 안 알림 (v179)
-          else e.missed++;
-          if (hid >= 2) e.flagged++;                   // 이 차에서 '틀림'으로 표시한 카메라
-          if (it.nav) e.navn++;
-          if (kmh !== null && lim > 0 && kmh > lim) e.over++;
-        }
+        const stmts = [];
+        const nCams = passStmts(db, items, (d) => passDay(d, today), appVer(b.v), stmts);
         const cagg = new Map();
         for (const c of cands) {
           if (!c || typeof c !== 'object') continue;
@@ -427,33 +477,27 @@ export default {
           e.n++; e.dsum += dr;
           cagg.set(key, e);
         }
-        const stmts = [];
-        const UP = 'INSERT INTO cam_day (day, cam, lim, kind, n, alerted, covered, missed, hidden, flagged, navn, over, adist) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ' +
-          'ON CONFLICT(day, cam) DO UPDATE SET lim = excluded.lim, kind = excluded.kind, n = n + excluded.n, alerted = alerted + excluded.alerted, ' +
-          'covered = covered + excluded.covered, missed = missed + excluded.missed, hidden = hidden + excluded.hidden, flagged = flagged + excluded.flagged, ' +
-          'navn = navn + excluded.navn, over = over + excluded.over, adist = adist + excluded.adist';
-        for (const e of agg.values()) {
-          stmts.push(db.prepare(UP).bind(e.day, e.cam, e.lim, e.kind, e.n, e.alerted, e.covered, e.missed, e.hidden, e.flagged, e.navn, e.over, e.adist));
+        if (cagg.size) {
+          stmts.push(db.prepare('INSERT INTO cand_day (day, cell, dir, n, dsum) ' +
+            "SELECT json_extract(value, '$.day'), json_extract(value, '$.cell'), json_extract(value, '$.dir'), json_extract(value, '$.n'), json_extract(value, '$.dsum') " +
+            'FROM json_each(?) WHERE true ON CONFLICT(day, cell, dir) DO UPDATE SET n = n + excluded.n, dsum = dsum + excluded.dsum').bind(JSON.stringify([...cagg.values()])));
         }
-        const CUP = 'INSERT INTO cand_day (day, cell, dir, n, dsum) VALUES (?, ?, ?, ?, ?) ON CONFLICT(day, cell, dir) DO UPDATE SET n = n + excluded.n, dsum = dsum + excluded.dsum';
-        for (const e of cagg.values()) stmts.push(db.prepare(CUP).bind(e.day, e.cell, e.dir, e.n, e.dsum));
-        let opN = 0;
+        const opRows = [];
         for (const r of ops) {
           if (!r || typeof r !== 'object' || !PASS_KEY.test(String(r.k || ''))) continue;
           const s = JSON.stringify(r);
           if (s.length > 8000) continue;
           const at = Number.isFinite(+r.t) && +r.t > 0 ? Math.round(+r.t) : Date.now();
-          const missed = !(r.a > 0) && !r.g && !r.hid ? 1 : 0;
-          stmts.push(db.prepare('INSERT INTO op_pass (at, day, cam, missed, rec) VALUES (?, ?, ?, ?, ?)').bind(at, passDay(r.d, today), String(r.k), missed, s));
-          opN++;
+          opRows.push({ at, day: passDay(r.d, today), cam: String(r.k), missed: !(r.a > 0) && !r.g && !r.hid ? 1 : 0, rec: s });
         }
-        if (passCleaned !== today) {
-          passCleaned = today;
-          stmts.push(db.prepare('DELETE FROM op_pass WHERE day < ?').bind(dayBefore(today, PASS_OP_DAYS)));
-          stmts.push(db.prepare('DELETE FROM cand_day WHERE day < ?').bind(dayBefore(today, PASS_CAND_DAYS)));
+        if (opRows.length) {
+          stmts.push(db.prepare('INSERT INTO op_pass (at, day, cam, missed, rec) ' +
+            "SELECT json_extract(value, '$.at'), json_extract(value, '$.day'), json_extract(value, '$.cam'), json_extract(value, '$.missed'), json_extract(value, '$.rec') " +
+            'FROM json_each(?)').bind(JSON.stringify(opRows)));
         }
+        passCleanup(db, today, stmts);
         if (stmts.length) await db.batch(stmts);
-        return json({ ok: true, cams: agg.size, cand: cagg.size, op: opN }, 200, cors);
+        return json({ ok: true, cams: nCams, cand: cagg.size, op: opRows.length }, 200, cors);
       }
       if (url.pathname === '/passes') {
         const today = kstDay();
@@ -487,7 +531,100 @@ export default {
           const r4 = await db.prepare('SELECT rec FROM op_pass WHERE day >= ? ORDER BY missed DESC, at DESC LIMIT 400').bind(dayBefore(today, opDays - 1)).all();
           op = (r4.results || []).map((r) => { try { return JSON.parse(r.rec); } catch (e) { return null; } }).filter(Boolean);
         }
-        return json({ v: 1, day: today, from, stats: true, cams, cands, daily: r3.results || [], op }, 200, cors);
+        const r5 = await db.prepare('SELECT id, day, kind, lat, lng, h, cam, ref, basis FROM handoff ORDER BY id DESC LIMIT 300').all();
+        const clean = [];
+        passCleanup(db, today, clean);
+        if (clean.length) await db.batch(clean);
+        return json({ v: 1, day: today, from, stats: true, cams, cands, daily: r3.results || [], op, handoff: r5.results || [] }, 200, cors);
+      }
+
+      // v198 테스터 주행 경로 (2026-11-24 운전자 '어차피 다 테스터이고 익명이라서 누군지는 몰라 그래서 쓸 수 있음', 테스터 전원 쪽지 동의,
+      // '출발지 도착지 모두 남는 방향으로 해 줘 원본은 30일 뒤에 자동으로 지우는걸로 하고 대신에 저 경로 원본이 지워지더라도 참고했던 과속단속 정보는 남아있어야 해'):
+      // 앱이 주행마다 무작위 번호(rid)로 10분마다·주행 끝에 조각(part)을 보낸다. 점 [출발 뒤 초, 위도·경도 10만 배 정수, 속도, 방향], 카메라 통과 표시.
+      // 원본은 trips 에 30일 (그날 첫 요청 때 지움). 기기 번호·IP·브라우저는 받지도 저장하지도 않는다.
+      // 받을 때 바로 처리: 그 차가 통과 통계(/pass)를 끈 경우(ps 0)에만 조각의 카메라 통과를 pass_rec·cam_day 에 넣는다 (켠 차는 /pass 로 이미 보냄, 두 번 세지 않게).
+      // 운영자 통로(토큰): GET /trips?days=7 | ?day=YYYY-MM-DD (주행 목록) · GET /trips?rid=… (한 주행의 조각 모두)
+      if (url.pathname === '/trip' && isTripPost) {
+        const text = await req.text();
+        if (text.length > 150000) return json({ error: 'too large' }, 413, cors);
+        let b;
+        try { b = JSON.parse(text); } catch (e) { return json({ error: 'bad json' }, 400, cors); }
+        const rid = String((b && b.rid) || '');
+        if (!/^[a-z0-9]{8,24}$/.test(rid)) return json({ error: 'bad trip' }, 400, cors);
+        const db = await passDb(env);
+        if (!db) return json({ ok: false, why: 'off' }, 200, cors);
+        if (!isAdmin && ++day.trip > DAY_CAP.trip) return json({ ok: false, why: 'cap' }, 200, cors);
+        const today = kstDay();
+        const d = typeof b.d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(b.d) && daysBetween(b.d, today) >= -1 && daysBetween(b.d, today) <= TRIP_DAYS ? b.d : today;
+        const pts = [];
+        let km = 0, prev = null;
+        for (const q of (Array.isArray(b.pts) ? b.pts.slice(0, 3000) : [])) {
+          if (!Array.isArray(q)) continue;
+          const s = intIn(q[0], 0, 172800), la = intIn(q[1], 3300000, 3900000), lo = intIn(q[2], 12400000, 13200000);
+          if (s === null || la === null || lo === null) continue;
+          const pt = [s, la, lo, intIn(q[3], 0, 300) || 0, intIn(q[4], -1, 359) ?? -1];
+          if (prev) km += distM({ lat: prev[1] / 1e5, lng: prev[2] / 1e5 }, { lat: la / 1e5, lng: lo / 1e5 }) / 1000;
+          prev = pt;
+          pts.push(pt);
+        }
+        const cams = [];
+        for (const c of (Array.isArray(b.cams) ? b.cams.slice(0, 400) : [])) {
+          if (!c || typeof c !== 'object' || !PASS_KEY.test(String(c.k || ''))) continue;
+          cams.push({ s: intIn(c.s, 0, 172800) || 0, k: String(c.k), lim: intIn(c.lim, 0, 130) || 0, kind: PASS_KINDS.has(+c.kind) ? +c.kind : 0, a: intIn(c.a, 0, 5000) || 0,
+            g: c.g ? 1 : 0, hid: intIn(c.hid, 0, 3) || 0, kmh: intIn(c.kmh, 0, 250) || 0, nav: c.nav ? 1 : 0, minD: intIn(c.minD, 0, 100) });
+        }
+        if (!pts.length && !cams.length) return json({ ok: true, stored: 0 }, 200, cors);
+        const misses = cams.filter((c) => passRes(c.a, c.g, c.hid) === 'miss').length;
+        const stmts = [db.prepare('INSERT INTO trips (day, rid, part, endf, op, v, n, km, ncam, misses, pts, cams) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+          .bind(d, rid, intIn(b.part, 0, 100000) || 0, b.end ? 1 : 0, isAdmin ? 1 : 0, appVer(b.v), pts.length, Math.round(km * 100) / 100, cams.length, misses,
+            JSON.stringify(pts), JSON.stringify(cams))];
+        if (b.ps === 0) passStmts(db, cams, () => d, appVer(b.v), stmts);   // 통과 통계를 끈 차: 경로 조각에서 바로 통과 기록을 남긴다
+        passCleanup(db, today, stmts);
+        await db.batch(stmts);
+        return json({ ok: true, stored: pts.length, cams: cams.length }, 200, cors);
+      }
+      if (url.pathname === '/trips') {
+        const today = kstDay(), from = dayBefore(today, TRIP_DAYS);
+        const db = await passDb(env);
+        if (!db) return json({ v: 1, stats: false, trips: [] }, 200, cors);
+        const rid = String(p.get('rid') || '');
+        if (rid) {
+          if (!/^[a-z0-9]{8,24}$/.test(rid)) return json({ error: 'bad rid' }, 400, cors);
+          const r = await db.prepare('SELECT day, part, endf, op, v, pts, cams FROM trips WHERE rid = ? AND day >= ? ORDER BY part').bind(rid, from).all();
+          const parts = (r.results || []).map((x) => ({ day: x.day, part: x.part, end: x.endf, op: x.op, v: x.v, pts: JSON.parse(x.pts || '[]'), cams: JSON.parse(x.cams || '[]') }));
+          return json({ v: 1, rid, parts }, 200, cors);
+        }
+        const one = /^\d{4}-\d{2}-\d{2}$/.test(p.get('day') || '') ? p.get('day') : null;
+        const days = intIn(p.get('days'), 1, TRIP_DAYS) || 7;
+        const lo = one || dayBefore(today, days - 1), hi = one || today;
+        const r = await db.prepare('SELECT rid, MIN(day) AS day, COUNT(*) AS parts, SUM(n) AS n, SUM(km) AS km, SUM(ncam) AS ncam, SUM(misses) AS misses, ' +
+          'MAX(op) AS op, MAX(v) AS v, MAX(endf) AS ended FROM trips WHERE day >= ? AND day >= ? AND day <= ? GROUP BY rid ORDER BY MIN(id) DESC LIMIT 300')
+          .bind(from, lo, hi).all();
+        return json({ v: 1, stats: true, keepDays: TRIP_DAYS, trips: (r.results || []).map((x) => Object.assign(x, { km: Math.round(x.km * 10) / 10 })) }, 200, cors);
+      }
+      // v198 넘긴 내역: 주행 원본에서 찾아 고침 후보·신고 지점으로 넘긴 것을 남긴다(어디, 어느 방향, 근거). 원본과 따로, 지우지 않는다.
+      // 운영자(토큰)만: POST /handoff {items:[{kind: fix|spot|miss|cand|note, lat, lng, h, cam, ref, basis}]}. 읽기는 /passes 의 handoff
+      if (url.pathname === '/handoff' && isHandoffPost) {
+        const text = await req.text();
+        if (text.length > 40000) return json({ error: 'too large' }, 413, cors);
+        let b;
+        try { b = JSON.parse(text); } catch (e) { return json({ error: 'bad json' }, 400, cors); }
+        const db = await passDb(env);
+        if (!db) return json({ ok: false, why: 'off' }, 200, cors);
+        const today = kstDay(), KINDS = new Set(['fix', 'spot', 'miss', 'cand', 'note']), rows = [];
+        for (const it of (Array.isArray(b && b.items) ? b.items.slice(0, 50) : [])) {
+          if (!it || typeof it !== 'object' || !KINDS.has(it.kind)) continue;
+          const lat = +it.lat, lng = +it.lng, basis = String(it.basis || '').slice(0, 600);
+          if (!inKorea(lat, lng) || !basis) continue;
+          rows.push({ day: today, kind: it.kind, lat: +lat.toFixed(6), lng: +lng.toFixed(6), h: intIn(it.h, 0, 359), cam: PASS_KEY.test(String(it.cam || '')) ? String(it.cam) : null,
+            ref: String(it.ref || '').slice(0, 80), basis });
+        }
+        if (rows.length) {
+          await db.prepare('INSERT INTO handoff (day, kind, lat, lng, h, cam, ref, basis) ' +
+            "SELECT json_extract(value, '$.day'), json_extract(value, '$.kind'), json_extract(value, '$.lat'), json_extract(value, '$.lng'), json_extract(value, '$.h'), " +
+            "json_extract(value, '$.cam'), json_extract(value, '$.ref'), json_extract(value, '$.basis') FROM json_each(?)").bind(JSON.stringify(rows)).run();
+        }
+        return json({ ok: true, added: rows.length }, 200, cors);
       }
 
       // 운영 모니터링: 페이지가 보내는 접속·오류 이벤트 (위치 없음, 7일 보관)

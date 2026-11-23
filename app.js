@@ -40,6 +40,7 @@
     // v172 (2026-11-20 공개 전 보안 점검): '놓침'·'틀림'을 누르면 그 자리 근처 카메라 후보와 진행 방향을 서버로 보낸다 (설정에서 끌 수 있음, 기본 켬)
     share: store.get('share') !== '0',
     passStats: store.get('passStats') !== '0',   // v196: 단속 카메라를 지날 때 알림이 됐는지 익명 통계 (설정에서 끌 수 있음, 기본 켬)
+    routeShare: store.get('routeShare') !== '0', // v198: 테스터 주행 경로 (주행마다 무작위 번호, 서버 30일 뒤 삭제, 기본 켬)
     car: ({ my: 'tesla_grey', red: 'tesla_red', white: 'tesla_white' })[store.get('car')] || store.get('car') || 'cute',             // 내 차 아이콘 (설정에서 고름)
     headingUp: store.get('hup') !== '0',
     // 멈추면 북쪽 위로: 진행 방향 위 화면은 지도 그림째 돌려서 가게 글자도 눕는다. 3초 넘게 서 있으면 북쪽 위로 돌려 글자를 바로 세운다
@@ -60,7 +61,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-197'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-198'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -7216,7 +7217,7 @@
   }
   const passArm = () => { if (!passStats.nextAt) passStats.nextAt = Date.now() + 180000 + Math.random() * 180000; };
   function passTick(f) {
-    if (!prefs.passStats || !cams.loaded || !prefs.cams || state.demoTimer) { passStats.near.clear(); passStats.sp.length = 0; return; }
+    if (!(prefs.passStats || prefs.routeShare) || !cams.loaded || !prefs.cams || state.demoTimer) { passStats.near.clear(); passStats.sp.length = 0; return; }
     const now = f.t, tg = camState.target;
     // 경고 카드를 띄운 거리 (카메라마다 가장 먼 것)
     if (tg && !tg.after && tg.c) {
@@ -7247,6 +7248,7 @@
       if (!camDirOk(c, m.hdg) || camRoadDiffers(m.road, c)) return;   // 반대 방향 카메라·가로지른 옆 도로
       passRecord(i, c, m, f);
     });
+    if (!prefs.passStats) return;
     passCandTick(f);
     passFlush(false);
   }
@@ -7256,6 +7258,8 @@
     const a = s ? Math.min(5000, Math.max(10, Math.round(s.first / 10) * 10)) : 0;
     const g = !s && (camState.passed.has(i) || camState.saidById.has(i)) ? 1 : 0;   // 같은 자리 다른 행을 알리고 함께 지남
     const rec = { k: passKey(c), d: kstDayOf(m.t), lim: c[2] | 0, kind: c[3], a, g, hid, kmh: Math.round(m.kmh / 5) * 5, nav: m.nav ? 1 : 0 };
+    routeCam(rec, m);   // v198: 주행 경로에도 카메라마다 통과·경고·거리·속도·제한
+    if (!prefs.passStats) return;
     passStats.q.push(rec);
     if (passStats.q.length > PASS_QMAX) passStats.q.splice(0, passStats.q.length - PASS_QMAX);
     if (isOp()) {
@@ -7332,6 +7336,122 @@
   window.addEventListener('online', () => { passFlush(false); });
   window.addEventListener('pagehide', () => { passFlush(true); });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') passFlush(true); });
+
+  // ---------- v198 테스터 주행 경로 (2026-11-24 운전자 '어차피 다 테스터이고 익명이라서 누군지는 몰라 그래서 쓸 수 있음',
+  // 테스터 전원 쪽지 동의 '다 쪽지로 허락받음 테스터로 참여하고싶다고', '출발지 도착지 모두 남는 방향으로 해 줘 원본은 30일 뒤에 자동으로
+  // 지우는걸로 하고 대신에 저 경로 원본이 지워지더라도 참고했던 과속단속 정보는 남아있어야 해') ----------
+  // 주행마다 무작위 번호(rid, 그 주행에만 씀)를 만들고, 달리는 동안 5초마다 또는 30m(2초 넘게)마다 [출발 뒤 초, 위도·경도(10만 배 정수), 속도, 방향] 을
+  // 출발부터 도착까지 그대로 남긴다. 카메라를 지날 때마다 통과·경고 거리·지날 때 속도·제한·판정을 그 주행에 붙인다.
+  // 넣지 않는 것: 기기 번호·sid·브라우저·차 정보, 시각(날짜와 출발 뒤 초만). 10분마다(점 120개 넘게 모이면)와 주행이 끝나면(5분 넘게 멈춤) 보낸다.
+  // 서버는 원본을 30일 뒤 지운다. 카메라 통과 기록·합계·후보 격자는 이 차 안에서 판정해 /pass 로 따로 보내므로 원본이 지워져도 남는다.
+  // 처음 한 번, 멈춰 있을 때(길안내·주행 중이 아닐 때) 안내 한 줄을 띄운 뒤부터 기록한다. 설정 '테스터 주행 경로 보내기'(기본 켬)로 끈다.
+  const ROUTE_CHUNK_MS = 600000, ROUTE_CHUNK_PTS = 120, ROUTE_OUT_MAX = 4000;
+  const routeRec = {
+    cur: null, out: [], busy: false, inTest: false, savedAt: 0, retryAt: 0,
+    post: (body) => fetch(proxyUrl() + '/trip', { method: 'POST', body: JSON.stringify(body), headers: authHeaders({ 'Content-Type': 'application/json' }) }),
+  };
+  const routeRid = () => {
+    const a = new Uint8Array(12);
+    try { crypto.getRandomValues(a); } catch (e) { for (let i = 0; i < a.length; i++) a[i] = Math.floor(Math.random() * 256); }
+    return Array.from(a, (x) => (x % 36).toString(36)).join('');
+  };
+  try {
+    const c = JSON.parse(store.get('routeCur') || 'null');
+    if (c && typeof c.rid === 'string' && Array.isArray(c.pts) && Array.isArray(c.cams)) routeRec.cur = c;
+    const o = JSON.parse(store.get('routeOut') || '[]');
+    if (Array.isArray(o)) routeRec.out = o.filter((x) => x && typeof x.rid === 'string' && Array.isArray(x.pts));
+  } catch (e) { /* 저장소 막힘·깨짐: 새로 */ }
+  function routeSave(now) {
+    routeRec.savedAt = now || Date.now();
+    store.set('routeCur', routeRec.cur ? JSON.stringify(routeRec.cur) : null);
+    store.set('routeOut', routeRec.out.length ? JSON.stringify(routeRec.out) : null);
+  }
+  function routeClear() { routeRec.cur = null; routeRec.out = []; routeSave(); }
+  const routeNoted = () => store.get('routeNote') === '1';
+  // 처음 한 번 안내: 멈춰 있고 길안내 중이 아니며 1분 넘게 움직이지 않았을 때만 (운전 중에는 띄우지 않는다)
+  function routeNote(f) {
+    if (testPage && !routeRec.inTest) return;
+    if (state.speedKmh >= 3 || nav.active || (tripLog.cur && f.t - tripLog.cur.lastMove < 60000)) return;
+    store.set('routeNote', '1');
+    toast('시험 기간 동안 단속 알림 점검을 위해 주행 경로를 익명으로 모아요 (30일 뒤 삭제) · 설정에서 끌 수 있어요', '', 9000);
+  }
+  function routeTick(f) {
+    if (!prefs.routeShare || state.demoTimer) return;
+    if (!routeNoted()) { routeNote(f); return; }
+    const now = f.t, moving = state.speedKmh >= 8;
+    let c = routeRec.cur;
+    if (c && (now - c.lastMove > TRIP_GAP || now < c.lastMove - 60000)) { routeEnd(now); c = null; }
+    if (!c && moving) c = routeRec.cur = { rid: routeRid(), d: kstDayOf(now), t0: now, part: 0, pts: [], cams: [], lastMove: now, cutAt: now };
+    if (!c) return;
+    if (moving) c.lastMove = now;
+    const s = Math.round((now - c.t0) / 1000), lp = c.pts[c.pts.length - 1];
+    if (moving && (!lp || s - lp[0] >= 5 || (s - lp[0] >= 2 && haversine({ lat: lp[1] / 1e5, lng: lp[2] / 1e5 }, f) >= 30))) {
+      c.pts.push([s, Math.round(f.lat * 1e5), Math.round(f.lng * 1e5), Math.round(state.speedKmh), state.heading == null ? -1 : Math.round(state.heading)]);
+    }
+    if (c.pts.length >= ROUTE_CHUNK_PTS && now - c.cutAt >= ROUTE_CHUNK_MS) routeCut(false, now);
+    else if (now - routeRec.savedAt > 30000) routeSave(now);
+  }
+  // 카메라 통과 한 건을 지금 주행에 붙인다 (passRecord 에서)
+  function routeCam(rec, m) {
+    const c = routeRec.cur;
+    if (!c || !prefs.routeShare) return;
+    c.cams.push({ s: Math.max(0, Math.round((m.t - c.t0) / 1000)), k: rec.k, lim: rec.lim, kind: rec.kind, a: rec.a, g: rec.g, hid: rec.hid, kmh: rec.kmh, nav: rec.nav, minD: Math.round(m.minD) });
+    if (c.cams.length > 400) c.cams.shift();
+  }
+  // 지금까지 모은 점을 한 조각으로 떼어 보낼 함에 넣는다 (end: 주행 끝)
+  function routeCut(end, now) {
+    const c = routeRec.cur;
+    if (!c) return;
+    const tiny = c.part === 0 && end && c.pts.length < 5;   // 주차장 안에서 조금 움직인 것은 버린다
+    if (!tiny && (c.pts.length || c.cams.length)) {
+      // ps: 통과 통계(/pass)를 켰는지 — 끈 차의 카메라 통과는 서버가 이 조각에서 바로 통과 기록으로 남긴다
+      routeRec.out.push({ rid: c.rid, part: c.part, d: c.d, end: end ? 1 : 0, ps: prefs.passStats ? 1 : 0, pts: c.pts, cams: c.cams });
+      c.part++;
+    }
+    c.pts = []; c.cams = []; c.cutAt = now || Date.now();
+    let tot = routeRec.out.reduce((a, x) => a + x.pts.length, 0);
+    while (tot > ROUTE_OUT_MAX && routeRec.out.length > 1) tot -= routeRec.out.shift().pts.length;
+    routeSave(now);
+    routeFlush(false);
+  }
+  function routeEnd(now) {
+    if (!routeRec.cur) return;
+    routeCut(true, now);
+    routeRec.cur = null;
+    routeSave(now);
+  }
+  // 돌려주는 값: true 다 보냄 · false 못 보냄(함에 남김, 10분 뒤 다시) · null 보낼 때가 아님
+  async function routeFlush(force) {
+    if (routeRec.busy || botLike || (testPage && !routeRec.inTest) || !prefs.routeShare || !routeRec.out.length) return null;
+    if (!force && Date.now() < routeRec.retryAt) return null;
+    routeRec.busy = true;
+    let ok = true;
+    try {
+      while (routeRec.out.length) {
+        const ch = routeRec.out[0];
+        let r = null;
+        try { r = await routeRec.post(Object.assign({ v: APP_VERSION }, ch)); } catch (e) { r = null; }
+        if (r && (r.ok || r.status === 400 || r.status === 413)) {   // 받음(서버 저장 꺼짐 포함) 또는 다시 보내도 안 받을 것: 뺀다
+          if (routeRec.out[0] === ch) routeRec.out.shift();
+          ok = ok && !!r.ok;
+          continue;
+        }
+        ok = false;
+        break;
+      }
+    } finally { routeRec.busy = false; }
+    routeRec.retryAt = ok ? 0 : Date.now() + 600000;
+    routeSave();
+    return ok;
+  }
+  if (!testPage) {
+    if (routeRec.cur && Date.now() - routeRec.cur.lastMove > TRIP_GAP) routeEnd();   // 지난번에 끝나지 않은 주행
+    setTimeout(() => { routeFlush(true); }, 20000);
+  }
+  setInterval(() => { routeFlush(false); }, 60000);
+  window.addEventListener('online', () => { routeFlush(true); });
+  window.addEventListener('pagehide', () => { routeSave(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') routeSave(); });
   const hdgFix = { n: 0, bad: 0, sum: 0 };
   function onFix(f) {
     const t0 = performance.now();
@@ -7389,6 +7509,7 @@
     evalCameras(f);
     camMissCheck(f);
     passTick(f);        // v196 익명 통과 통계 (경고 판정은 읽기만)
+    routeTick(f);       // v198 테스터 주행 경로
     tunnelDarkTick();   // v172
     updateSoundPill();
     if (cams.failed || cams.mobileMissing) renderCamStatus();
@@ -8581,6 +8702,7 @@
     renderMySpots();
     $('#optShare').checked = prefs.share;
     $('#optPassStats').checked = prefs.passStats;
+    $('#optRouteShare').checked = prefs.routeShare;
     renderVoiceState();
     $('#verText').textContent = APP_VERSION;
     renderDevMenu();
@@ -8633,6 +8755,7 @@
   };
   $('#optShare').onchange = (e) => { prefs.share = e.target.checked; store.set('share', prefs.share ? null : '0'); };
   $('#optPassStats').onchange = (e) => { prefs.passStats = e.target.checked; store.set('passStats', prefs.passStats ? null : '0'); if (!prefs.passStats) passClear(); };
+  $('#optRouteShare').onchange = (e) => { prefs.routeShare = e.target.checked; store.set('routeShare', prefs.routeShare ? null : '0'); if (!prefs.routeShare) routeClear(); };
   $('#closeSheet').onclick = () => { sheet.hidden = true; };
   // v161: 설정 — '틀림'으로 표시한 카메라 목록 (하나씩·모두 되돌리기)
   function renderCamFlags() {
@@ -8971,6 +9094,7 @@
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,
       passStats, passTick, passFlush, passClear, passKey,
+      routeRec, routeTick, routeFlush, routeEnd, routeClear,
     };
   }
 })();

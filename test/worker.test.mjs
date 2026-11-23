@@ -280,14 +280,48 @@ if (!sqlite) {
   await call('POST', '/pass', { body: { items: [it(K1, {}), it(K2, { a: 300 })], op: [opRec(K1, {}), opRec(K2, { a: 300, trace: undefined })] }, token: TOKEN, e: envS });
   const ps2 = (await call('GET', '/passes?days=7&op=1', { token: TOKEN, e: envS })).j;
   ok(ps2.op.length === 2 && ps2.op[0].k === K1 && Array.isArray(ps2.op[0].trace) && ps2.op[1].a === 300, 'operator passes stored, misses first, with trace');
-  // (7) 보관: 운영자 기록 90일, 후보 180일 (그날 첫 /pass 때 지움), 카메라 합계는 그대로
-  shift += 100 * DAY;
+  // (7) v198 통과 한 건씩 (pass_rec): 판정·경고 거리·앱 버전, 주행 번호·위치·시각 칸은 없다
+  await call('POST', '/pass', { body: { v: '2026.11.16-198', items: [it(K2, { a: 350, lim: 50, kind: 1 })] }, e: envS });
+  const recs = rows('SELECT * FROM pass_rec');
+  const cols = (tb) => db.prepare('PRAGMA table_info(' + tb + ')').all().map((c) => c.name).join(',');
+  ok(recs.some((r) => r.cam === K1 && r.res === 'alert' && r.a === 400) && recs.some((r) => r.res === 'miss') && recs.some((r) => r.res === 'hidden') &&
+    recs.some((r) => r.res === 'cover') && recs.some((r) => r.cam === K2 && r.v === '2026.11.16-198' && r.a === 350 && r.kmh === 60),
+    'each pass kept in pass_rec with its verdict, card distance, speed and app version');
+  ok(cols('pass_rec') === 'id,day,cam,v,lim,kind,a,g,hid,kmh,nav,res,flag', 'pass_rec has no trip id, time or position column');
+  // (8) v198 테스터 주행 경로: 무작위 주행 번호, 출발부터 도착까지 그대로, 조각으로
+  const RID = 'abc123def456ghi7';
+  const P = Array.from({ length: 30 }, (_, i) => [i * 5, 3727000 + i * 10, 12710576, 60, 180]);
+  ok((await call('POST', '/trip', { body: { rid: 'BAD!', pts: P }, e: envS })).s === 400, '/trip with a bad trip id → 400');
+  const camT = (o) => Object.assign({ s: 50, k: K1, lim: 60, kind: 3, a: 0, g: 0, hid: 0, kmh: 60, nav: 0, minD: 3 }, o);
+  const nRec0 = rows('SELECT COUNT(*) AS n FROM pass_rec')[0].n;
+  const t1 = await call('POST', '/trip', { body: { rid: RID, part: 0, d: today(), v: '2026.11.16-198', ps: 1, pts: P.concat([[150, 100, 100, 0, 0]]), cams: [camT({})], sid: 'leak02', ua: 'X11 leak' }, e: envS });
+  ok(t1.s === 200 && t1.j.ok && t1.j.stored === 30 && rows('SELECT COUNT(*) AS n FROM pass_rec')[0].n === nRec0, '/trip stores a part (bad points dropped); passes already sent by /pass are not counted twice');
+  await call('POST', '/trip', { body: { rid: RID, part: 1, d: today(), end: 1, ps: 0, pts: P.map((q) => [q[0] + 200, q[1] + 400, q[2], q[3], q[4]]), cams: [camT({ s: 230, a: 300 })] }, e: envS });
+  ok(rows('SELECT COUNT(*) AS n FROM pass_rec')[0].n === nRec0 + 1, 'a car with pass statistics off: its route passes go to pass_rec at once');
+  ok(cols('trips') === 'id,day,rid,part,endf,op,v,n,km,ncam,misses,pts,cams' && !/leak02|leak/.test(JSON.stringify(rows('SELECT * FROM trips'))), 'trips keep no session, browser or IP');
+  ok((await call('GET', '/trips')).s === 401, '/trips without token → 401');
+  const tl = (await call('GET', '/trips?days=7', { token: TOKEN, e: envS })).j;
+  const tr = tl.trips.find((x) => x.rid === RID);
+  ok(tl.keepDays === 30 && tr && tr.parts === 2 && tr.n === 60 && tr.misses === 1 && tr.km > 0.2 && tr.ended === 1, '/trips lists a trip with parts, points, km and misses');
+  const td = (await call('GET', '/trips?rid=' + RID, { token: TOKEN, e: envS })).j;
+  ok(td.parts.length === 2 && td.parts[0].pts[0][1] === 3727000 && td.parts[0].pts.length === 30 && td.parts[1].cams[0].a === 300, '/trips?rid gives the whole route from its start, with camera marks');
+  // (9) 넘긴 내역: 운영자만, 근거가 있어야
+  ok((await call('POST', '/handoff', { body: { items: [{ kind: 'fix', lat: 37.3, lng: 127.1, basis: 'x' }] } })).s === 401, '/handoff without token → 401');
+  const ho = await call('POST', '/handoff', { body: { items: [{ kind: 'fix', lat: 37.3066, lng: 127.10576, h: 180, cam: K1, ref: 'trip ' + RID, basis: '경로에서 경고 없이 지남 2번, 60km/h' },
+    { kind: 'bad', lat: 37.3, lng: 127.1, basis: 'x' }, { kind: 'spot', lat: 37.3, lng: 127.1 }] }, token: TOKEN, e: envS });
+  const hl = (await call('GET', '/passes?days=7', { token: TOKEN, e: envS })).j.handoff;
+  ok(ho.j.added === 1 && hl.length === 1 && hl[0].cam === K1 && hl[0].h === 180 && /경고 없이/.test(hl[0].basis), 'handoff stored with place, direction and basis; bad ones dropped');
+  // (10) 보관: 경로 원본 30일, 운영자 차 90일 (그날 첫 요청 때 지움). 통과 기록·합계·후보·넘긴 내역은 계속
+  const keep = () => ['pass_rec', 'cam_day', 'cand_day', 'handoff'].map((tb) => rows('SELECT COUNT(*) AS n FROM ' + tb)[0].n);
+  const k0 = keep();
+  shift += 31 * DAY;
   await call('POST', '/pass', { body: { items: [] }, e: envS });
-  ok(rows('SELECT COUNT(*) AS n FROM op_pass')[0].n === 0 && rows('SELECT COUNT(*) AS n FROM cand_day')[0].n > 0 && rows('SELECT COUNT(*) AS n FROM cam_day')[0].n >= 2,
-    'after 100 days operator rows are gone, candidate and camera totals kept');
-  shift += 100 * DAY;
+  ok(rows('SELECT COUNT(*) AS n FROM trips')[0].n === 0 && rows('SELECT COUNT(*) AS n FROM op_pass')[0].n > 0 && keep().join() === k0.join(),
+    'after 31 days the raw routes are gone; operator rows, pass records, totals, cells and handoffs kept');
+  ok((await call('GET', '/trips?rid=' + RID, { token: TOKEN, e: envS })).j.parts.length === 0, 'an old route is not served');
+  shift += 70 * DAY;
   await call('POST', '/pass', { body: { items: [] }, e: envS });
-  ok(rows('SELECT COUNT(*) AS n FROM cand_day')[0].n === 0 && rows('SELECT COUNT(*) AS n FROM cam_day')[0].n >= 2, 'after 200 days candidate cells are gone, camera totals kept');
+  ok(rows('SELECT COUNT(*) AS n FROM op_pass')[0].n === 0 && keep().join() === k0.join(), 'after 100 days operator rows are gone; the rest kept');
   shift = 0;
 }
 
