@@ -2891,6 +2891,7 @@
     { id: 'S125', name: "S125 other-route bubble during guidance (v195, driver: '가능하면 이런 기능도 있으면 좋을거 같긴 해' — Naver's '3분 증가 · 874m 증가 · 통행료 없음'): the traffic refresh asks for several options in one request, keeps the current option's route, and offers the other one that branches 1.2 km ahead as a light line and a bubble (time, distance, toll, traffic bar); tapping it switches to that route, passing the branch without tapping clears it; going south and west the bubble stands upright over its tail (raster and Leaflet maps rotate the map box, keys session saw it upside down)", fn: s125 },
     { id: 'S126', name: "S126 anonymous camera pass records (v196, driver '지나간곳 모조리 체크해서 과속 단속 체크해줘 신고를 하지 않았더라도 내역도 남겨놓고'): passing a camera in its direction records alerted (card distance) or missed, the other direction is not counted, an unknown limit counts as hidden; the batch has only camera number, alert, 5 km/h speed, limit, nav, date — no position, time or sid; a 90→60→90 dip with no camera within 400 m is a 100 m-cell candidate, a jam is not; the operator car adds the camera spot and trace; the settings switch stops it", fn: s126 },
     { id: 'S130', name: "S130 Naver-style junction scene (v197, driver sent Naver's 신갈JC '571m 대전' close-up: '이런거 참고해주고 적용해줘', '우리 방식 대로 AI이미지 활용을 해서', colour lines '그림으로'): an AI landscape with the road drawn by lane count. With a fork cross-section: 6 lanes, the two exit lanes painted, the bus lane line blue, the pink guide line inside the picture, two signs ('[50] 원주 인천 ↗' over the exit, '[1] ↑' over the main line), and the lane row / colour row hidden. Without data: 2 + 2 lanes. Keep-main paints lanes 2–4 under '[1] 서울 ↑'. Night colours. With the picture off, the colour row is a small road picture, no words", fn: s130 },
+    { id: 'S131', name: "S131 resume after reversing (v200, driver '직진했다가 후진할때 후방카메라가 켜지는데 브라우저가 꺼져도 세션이 남게해서 유지할수는 없나'; /events show the Tesla reopens the page with a new sid about 80 s apart at 0 km/h): guidance, the section start time and distance, and a manual zoom are kept in localStorage every 5 s and on hide/close; a reopened page picks the guidance up at the first fix with no route card, no route request and no start speech, the sound pill shows while locked; without the stored route it quietly asks once; older than 30 min or after ending guidance nothing is kept", fn: s131 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -6336,6 +6337,107 @@
       c.shown && c.kind === 'jc-main' && c.data && c.go === '2,3,4' && c.sign1 === '1서울' && c.side1 === 'l' && c.straight1 && c.sign2 === '' && !c.laneRow &&
       d.shown && d.goFill && d.goFill !== r.dDay && d.bgNight === 'block' &&
       e.shown && !e.junc && e.text === '' && e.icon && e.side === 'r' && e.flip === 'none' && /분홍색 유도선 따라가기/.test(e.aria);
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S131: 후진(후방 카메라) 뒤 이어 가기 (v200, 운전자 '직진했다가 후진할때 후방카메라가 켜지는데 브라우저가 꺼져도 세션이 남게해서 유지할수는 없나').
+  //       /events 로 보면 테슬라는 그때 페이지를 새로 연다(새 sid, 80초 남짓 간격, 속도 0) → 길안내 상태를 localStorage 에 남겨 이어 간다.
+  //   (a) 안내 중 600m · 구간단속 1.5km 간 상태 · 손으로 바꾼 배율 15 → 5초마다/가려질 때 'tnc.live'(+ 경로 'tnc.liveRoute') 에 남음
+  //   (b) 새로 열린 것처럼(메모리만 비움) → 50m 옆 첫 위치에서 경로 카드·길찾기 요청 없이 같은 목적지로 안내 계속, 구간단속 시작 시각 그대로
+  //       ·간 거리 1.5km + 50m, 배율 15 유지, '안내를 이어 갑니다', 소리가 막혀 있으면 '소리 꺼짐' 알약
+  //   (c) 남긴 경로가 없으면 조용히 다시 찾아 이어 감(카드 없이)  (d) 30분 넘은 것은 버림  (e) 안내를 끝내면 지움  (f) 닫힐 때(pagehide)도 남김
+  async function s131() {
+    const t = T(), r = {}, L = t.live, prevOn = L.on, prevUnlocked = t.sound.unlocked, prevVoice = t.prefs.voice;
+    const raw = [];
+    for (let k = 0; k <= 30; k++) raw.push(dest(NAV_ORIGIN, 0, 100 * k));
+    const path = raw.map((p) => [round6(p.lng), round6(p.lat)]);
+    const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const total = cum[cum.length - 1];
+    const R = { route: { option: 'traoptimal', distance: r0(total), duration: r0(total / 15 * 1000), tollFare: 0, fuelPrice: 0, path,
+        guide: [{ i: 30, t: 88, s: '목적지', d: r0(total), ms: r0(total / 15 * 1000) }], sections: [{ i: 0, n: 31, name: '시험로', speed: 60, cong: 1 }] },
+      P, cum, total, dest: { name: '후진 시험', addr: '', lat: P[30].lat, lng: P[30].lng } };
+    const go = (s) => { const a = pointAt(R, s); feed(a.p, 15, a.h); };
+    const got = () => { try { return JSON.parse(localStorage.getItem('tnc.live') || 'null'); } catch (e) { return null; } };
+    const routeCalls = () => stub.count('/route');
+    // 새로 열린 페이지처럼: 남긴 것은 그대로 두고 메모리(안내·구간)만 비운다
+    const reopen = () => { L.pending = t.liveLoad(); t.endNav(); t.camState.section = null; t.nav.dest = null; };
+    try {
+      await waitFor(() => t.getMap(), 10000, 100);   // 배율은 지도가 뜬 뒤에
+      L.on = true;
+      t.sound.unlocked = false; t.prefs.voice = true;
+      softReset();
+      await planAndStart(R);
+      for (let s = 15; s <= 600; s += 15) go(s);
+      const now = Date.now();
+      t.camState.section = { limit: 100, len: 5000, t0: now - 60000, d0: t.state.odo - 1500 };
+      // 손으로 바꾼 배율 15 (시험 창이 가려지면 지도 애니메이션이 안 끝나므로 배율은 읽는 값·부른 값으로 본다)
+      const m = t.getMap(), gz = m.getZoom, sz = m.setZoom, zoomCalls = [];
+      t.zoomCtl.manualUntil = t.state.fix.t + 100000;
+      m.getZoom = () => 15;
+      t.liveSave(true);
+      m.getZoom = gz;
+      m.setZoom = function (z) { zoomCalls.push(z); return sz.call(this, z); };
+      const sv = got(), rr = JSON.parse(localStorage.getItem('tnc.liveRoute') || 'null');
+      r.a = { saved: !!sv, dest: sv && sv.dest.name, rk: !!(sv && rr && sv.rk && rr.k === sv.rk), pts: rr && rr.r && rr.r.path.length, sec: sv && sv.sec && Math.round(sv.sec.done), zoom: sv && sv.zoom && sv.zoom.z };
+      // (b) 다시 열림
+      reopen();
+      const c0 = routeCalls();
+      const a2 = pointAt(R, 600);
+      feed(dest(a2.p, 90, 50), 0, null);   // 후진·주차로 50m 옆
+      t.maybeResume();
+      await sleep(50);
+      m.setZoom = sz;
+      const s2 = t.camState.section;
+      r.b = { active: t.nav.active, dest: t.nav.dest && t.nav.dest.name, card: visible('#routeCard'), calls: routeCalls() - c0, secT0: s2 ? s2.t0 === now - 60000 : false,
+        secDone: s2 ? Math.round(t.state.odo - s2.d0) : null, zoom: zoomCalls[zoomCalls.length - 1], manual: t.zoomCtl.manualUntil > t.state.fix.t + 60000, toast: text('#toast'), pill: visible('#soundPill'),
+        pending: !!L.pending };
+      // (f) 닫힐 때도 남김
+      localStorage.removeItem('tnc.live');
+      window.dispatchEvent(new Event('pagehide'));
+      r.f = { saved: !!got(), dest: got() && got().dest.name };
+      // (e) 안내를 끝내면 지움
+      t.endNav();
+      r.e = { live: localStorage.getItem('tnc.live'), route: localStorage.getItem('tnc.liveRoute') };
+      // (c) 남긴 경로가 없으면 다시 찾아 이어 감
+      softReset();
+      await planAndStart(R);
+      for (let s = 15; s <= 300; s += 15) go(s);
+      t.liveSave(true);
+      localStorage.removeItem('tnc.liveRoute');
+      reopen();
+      stub.canned['/route'] = R.route;
+      const c1 = routeCalls();
+      feed(pointAt(R, 320).p, 0, null);
+      t.maybeResume();
+      await waitFor(() => t.nav.active, 3000, 50);
+      r.c = { active: t.nav.active, dest: t.nav.dest && t.nav.dest.name, card: visible('#routeCard'), calls: routeCalls() - c1 };
+      t.endNav();
+      // (d) 30분 넘은 것
+      softReset();
+      await planAndStart(R);
+      for (let s = 15; s <= 300; s += 15) go(s);
+      t.liveSave(true);
+      const old = got(); old.t = Date.now() - 31 * 60000; localStorage.setItem('tnc.live', JSON.stringify(old));
+      r.d = { loaded: !!t.liveLoad(), left: localStorage.getItem('tnc.live') };
+      t.endNav();
+    } finally {
+      L.pending = null;
+      t.liveClear();
+      L.on = prevOn;
+      t.sound.unlocked = prevUnlocked; t.prefs.voice = prevVoice; t.updateSoundPill();
+      t.zoomCtl.manualUntil = 0;
+      stub.reset();
+      softReset();
+    }
+    const a = r.a || {}, b = r.b || {}, c = r.c || {}, d = r.d || {}, e = r.e || {}, f = r.f || {};
+    const ok = a.saved && a.dest === '후진 시험' && a.rk && a.pts === 31 && a.sec === 1500 && a.zoom === 15 &&
+      b.active && b.dest === '후진 시험' && !b.card && b.calls === 0 && b.secT0 && b.secDone >= 1540 && b.secDone <= 1560 && b.zoom === 15 && b.manual &&
+      /안내를 이어 갑니다/.test(b.toast) && b.pill && !b.pending &&
+      f.saved && f.dest === '후진 시험' && e.live === null && e.route === null &&
+      c.active && c.dest === '후진 시험' && !c.card && c.calls === 1 &&
+      !d.loaded && d.left === null;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

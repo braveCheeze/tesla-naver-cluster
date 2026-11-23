@@ -61,7 +61,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-199'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-200'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -442,8 +442,21 @@
     // 터치 화면에서는 pointerdown 이 아직 '사용자 동작'이 아닐 수 있다(손을 뗄 때 인정됨). 떼는 순간에도 다시 부른다
     const ua = navigator.userActivation;
     if (ev && ev.type === 'pointerdown' && ua && !ua.hasBeenActive) return;
-    audioUnlocked = true;
+    audioUnlocked = true; audioAuto = false;
     updateSoundPill();
+  }
+  // v200 (후진 뒤 새로 열린 페이지): 화면을 누르기 전까지 소리가 막힌다(v160). 브라우저가 이 사이트의 자동 재생을 이미 허락하면
+  // (자주 소리를 낸 사이트는 크롬이 허락하기도 한다) 누르지 않아도 바로 켠다. 막혀 있으면 지금처럼 '소리 꺼짐 · 화면을 한 번 누르세요'.
+  // 켰는데 음성이 'not-allowed' 로 막히면 다시 끄고 알약을 띄운다 (speak). 어느 쪽이었는지는 접속 기록(session open)에 남긴다
+  let audioAuto = false, autoplayState = '';
+  function probeAutoplay() {
+    const C = window.AudioContext || window.webkitAudioContext;
+    if (!C) return (autoplayState = 'none');
+    if (audioUnlocked || testPage) return (autoplayState = 'skip');
+    try { if (!actx) actx = new C(); } catch (e) { return (autoplayState = 'error'); }
+    autoplayState = actx.state;
+    if (actx.state === 'running') { audioUnlocked = true; audioAuto = true; updateSoundPill(); }
+    return autoplayState;
   }
   for (const t of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) document.addEventListener(t, unlockAudio, { passive: true, capture: true });
   // 예전에 이 사이트에서 소리를 낸 적이 있으면 브라우저가 터치 없이도 경고음을 허락하기도 한다
@@ -587,6 +600,7 @@
         ev.push('error:' + name);
         if (err0) err0(e);
         // 진짜 오류(끊김·취소가 아닌 것)가 두 번이고 한 번도 말한 적이 없으면 이 화면에서는 경고음으로만
+        if (name === 'not-allowed' && audioAuto) { audioUnlocked = false; audioAuto = false; updateSoundPill(); }   // v200: 자동 재생 허락은 음성엔 안 통함
         if (name !== 'interrupted' && name !== 'canceled' && !u._st) {
           tts.failed++; tts.errors.push(name); if (tts.errors.length > 5) tts.errors.shift();
           if (tts.failed >= 2 && !tts.started) { tts.broken = true; ttsNotice(); }
@@ -4636,6 +4650,7 @@
         }
       }
       setRoute(r, dest, reroute);
+      if (reroute && nav.active) { liveRouteSave(); liveSave(true); }   // v200
       if (reroute === 'traffic' && sideList && sideList.length) offerSideAlt(sideList, r);
       if (reroute === 'traffic') {
         // 교통 갱신은 조용히. 도착 예정이 3분 넘게 바뀔 때만 알려 준다
@@ -4652,10 +4667,11 @@
           fmtDist(r.distance || nav.total) + ' · ' + fmtMin(r.duration), '', 4000);
         navUpdate(state.fix);
       } else if (nav.autoStart) {
-        // 새 버전으로 바꾸기 전에 안내하던 목적지: 경로 카드 없이 바로 이어서 안내
-        nav.autoStart = false; nav.resumeOpt = null;
+        // 새 버전으로 바꾸기 전에 안내하던 목적지: 경로 카드 없이 바로 이어서 안내 (v200 후진 뒤 이어 가기는 시작 말 없이)
+        const quiet = !!nav.quietStart;
+        nav.autoStart = false; nav.resumeOpt = null; nav.quietStart = false;
         $('#toast').hidden = true;
-        startNav();
+        startNav(quiet);
       } else {
         nav.preview = true; nav.active = false;
         $('#toast').hidden = true;
@@ -4981,7 +4997,7 @@
     setTimeout(() => { if (!el.classList.contains('open')) el.hidden = true; }, 200);
   }
   const toggleTray = () => ($('#navTray').classList.contains('open') ? closeTray() : openTray());
-  function startNav() {
+  function startNav(quiet) {
     if (!nav.pts) return;
     // v192 (2026-11-23 09:57 테슬라 오류 'Cannot read properties of null (reading 'name')' — 경로 카드의 '안내 시작'을 눌렀는데 목적지가 비어 있었다):
     // 운전자 '굳이 다시 껐다 켜야 하나? 그냥 목적지 다시 찍고 GPS 해도 될 듯' — 목적지가 비었으면 마지막에 고른 목적지(없으면 경로 끝점)로 다시 채워
@@ -5005,11 +5021,13 @@
     setFollowing(true);
     if (mapA) { mapA.setZoom(speedZoom(state.speedKmh)); zoomCtl.manualUntil = 0; }
     if (state.fix) navUpdate(state.fix);
-    say('경로 안내를 시작합니다. ' + nav.dest.name + '까지 ' + spokenDist(nav.total) + ', 약 ' + fmtMin(nav.route.duration) + ' 걸립니다.', 1);
+    if (!quiet) say('경로 안내를 시작합니다. ' + nav.dest.name + '까지 ' + spokenDist(nav.total) + ', 약 ' + fmtMin(nav.route.duration) + ' 걸립니다.', 1);
+    liveRouteSave(); liveSave(true);   // v200: 새로 열려도 이어 가게
     renderNav();
   }
   function endNav() {
     nav.gen++; nav.busy = false; nav.byDemo = false;
+    if (live.on && !state.demoTimer && !live.pending) liveClear();   // v200: 끝냈거나 도착했으면 다시 열려도 이어 가지 않는다
     clearTimeout(nav.retryT); nav.retryT = null;
     nav.active = false; nav.preview = false;
     nav.route = null; nav.pts = null; nav.cum = null; nav.dest = null; nav.guides = [];
@@ -7076,8 +7094,8 @@
   }
   if (!testPage) restoreTripNow();   // resumeTrip 이 누적 거리(odo)를 기준으로 이어 쓰므로 그보다 먼저
   resumeTrip();
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { saveCurTrip(); saveTripNow(true); } });
-  window.addEventListener('pagehide', () => { saveCurTrip(); saveTripNow(true); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { saveCurTrip(); saveTripNow(true); liveSave(true); } });
+  window.addEventListener('pagehide', () => { saveCurTrip(); saveTripNow(true); liveSave(true); });
 
   let lastFixWall = 0;
 
@@ -7695,6 +7713,7 @@
     if (r && r.dest && Date.now() - r.t < 15 * 60000) resumePending = r;
   } catch (e) { /* 저장소 막힘 */ }
   function maybeResume() {
+    if (live.pending && state.fix && !nav.active && !nav.busy && !nav.preview) { resumeLive(); return; }
     if (!resumePending || !state.fix || nav.active || nav.busy || nav.preview) return;
     const r = resumePending;
     resumePending = null;
@@ -7705,6 +7724,68 @@
     planRoute(r.dest, false);
   }
   const resumeFrom = (r) => { resumePending = r; maybeResume(); }; // 테스트용
+  // ---------- v200 후진(후방 카메라) 뒤 이어 가기 (2026-11-24 운전자 '직진했다가 후진할때 후방카메라가 켜지는데 브라우저가 꺼져도
+  // 세션이 남게해서 유지할수는 없나') ----------
+  // /events 를 보면 테슬라에서 서 있다가(속도 0) 페이지가 아예 새로 열린다: 'open' 기록이 80초 남짓 간격으로 새 sid 로 이어지고,
+  // 새로 열린 페이지는 늘 길안내가 비어 있었다(새 버전 버튼으로 옮긴 때만 이어짐). 화면만 가려졌다 돌아오는 경우는 v174 resumeVisible 이 맡는다.
+  // 그래서 길안내 중 상태를 이 기기 localStorage('tnc.live')에 남기고(5초마다·가려질 때·닫힐 때), 30분 안에 새로 열리면 첫 위치를 받는 대로
+  // 경로 카드·안내 시작 말 없이 그대로 이어 간다. 경로는 바뀔 때만 'tnc.liveRoute' 에 남겨 다시 찾지 않는다(없으면 조용히 다시 찾음).
+  // 구간단속(시작 시각·그동안 간 거리), 손으로 바꾼 지도 배율도 이어 간다. 안내를 끝내거나 도착하면 지운다. 서버로는 보내지 않는다
+  const LIVE_MAX_MS = 30 * 60000;
+  const live = { on: !testPage, at: 0, rk: '', pending: null };
+  function liveClear() { store.set('live', null); store.set('liveRoute', null); live.rk = ''; }
+  function liveRouteSave() {
+    if (!live.on || state.demoTimer || !nav.active || !nav.route) return;
+    live.rk = Math.random().toString(36).slice(2, 8);
+    try { localStorage.setItem(NS + 'liveRoute', JSON.stringify({ k: live.rk, r: nav.route })); } catch (e) { live.rk = ''; store.set('liveRoute', null); }   // 저장소가 차면 경로 없이(다시 찾기)
+  }
+  function liveSave(force) {
+    if (!live.on || state.demoTimer || live.pending) return;   // 이어 갈 상태가 남아 있으면(아직 위치 전) 덮어쓰지 않는다
+    const now = Date.now();
+    if (!force && now - live.at < 5000) return;
+    live.at = now;
+    if (!nav.active || !nav.dest) { if (store.get('live')) liveClear(); return; }
+    const d = nav.dest, s = camState.section, f = state.fix;
+    store.set('live', JSON.stringify({ t: now, v: APP_VERSION, rk: live.rk,
+      dest: { name: d.name, addr: d.addr || '', lat: d.lat, lng: d.lng, park: d.park || null, parkOff: !!d.parkOff }, via: nav.via || [], option: nav.option || null,
+      sec: s ? { limit: s.limit, len: s.len, t0: s.t0, done: Math.max(0, state.odo - s.d0) } : null,
+      fix: f ? { lat: Math.round(f.lat * 1e6) / 1e6, lng: Math.round(f.lng * 1e6) / 1e6, t: f.t } : null,
+      zoom: mapA && f && zoomCtl.manualUntil > f.t ? { z: mapA.getZoom(), left: zoomCtl.manualUntil - f.t } : null }));   // 자동 줌은 위치 시각과 견준다
+  }
+  function liveLoad() {
+    if (!live.on) return null;
+    try {
+      const o = JSON.parse(store.get('live') || 'null'), age = o ? Date.now() - o.t : -1;
+      if (!o || !o.dest || !(age >= 0 && age < LIVE_MAX_MS)) { if (o) liveClear(); return null; }
+      const rr = JSON.parse(store.get('liveRoute') || 'null');
+      o.route = rr && o.rk && rr.k === o.rk && rr.r && Array.isArray(rr.r.path) && rr.r.path.length >= 2 ? rr.r : null;
+      return o;
+    } catch (e) { liveClear(); return null; }
+  }
+  if (!resumePending) live.pending = liveLoad();
+  function resumeLive() {
+    const o = live.pending;
+    live.pending = null;
+    const f = state.fix;
+    // 구간단속은 시작 시각과 그동안 간 거리로 다시 연다. 꺼져 있던 동안 간 거리(직선, 시속 200km 넘게 나오면 위치가 튄 것으로 보고 뺌)는
+    // 누적 거리에 더해 구간에도 들어가게 한다 (평균이 실제보다 낮게 나오지 않게)
+    if (o.sec && !camState.section) camState.section = { limit: o.sec.limit, len: o.sec.len, t0: o.sec.t0, d0: state.odo - (o.sec.done || 0), resumed: true };
+    if (o.fix && f && f.t > o.fix.t) {
+      const gap = haversine(o.fix, f), dt = (f.t - o.fix.t) / 1000;
+      if (gap / dt < 56) state.odo += gap;
+    }
+    nav.via = o.via || [];
+    report('info', { msg: 'live resume', age: Math.round((Date.now() - o.t) / 1000), route: !!o.route, sec: !!o.sec, zoom: !!o.zoom, sameVer: o.v === APP_VERSION });
+    if (o.route) {
+      setRoute(o.route, o.dest);
+      startNav(true);
+    } else {
+      nav.autoStart = true; nav.resumeOpt = o.option || null; nav.quietStart = true;
+      planRoute(o.dest, false);
+    }
+    if (o.zoom && mapA) { mapA.setZoom(o.zoom.z); zoomCtl.manualUntil = (f ? f.t : Date.now()) + Math.min(o.zoom.left, MANUAL_ZOOM_MS); }
+    toast(o.dest.name + ' 안내를 이어 갑니다', '', 3000);
+  }
   // 새 버전으로 옮겨 갈 주소: 지금 주소의 다른 값(debug 등)은 두고 v 만 새 버전으로
   function updateUrl(v, loc) {
     const l = loc || location;
@@ -7759,6 +7840,7 @@
     if (!testPage && Date.now() - (outbox.tryAt || 0) > 60000) { outbox.tryAt = Date.now(); if (store.get('outbox')) outboxFlush(); }
     if (!testPage && Date.now() - (upd.peekAt || 0) > 2 * 60000) { upd.peekAt = Date.now(); peekVersion(); }
     maybeResume();
+    if (nav.active) liveSave();   // v200: 5초마다 (후진 뒤 새로 열려도 이어 가게)
     $('#clock').textContent = hhmm(now);
     $('#dateText').textContent = (now.getMonth() + 1) + '월 ' + now.getDate() + '일 (' + '일월화수목금토'[now.getDay()] + ')';
     mapWatchdog();
@@ -9029,10 +9111,11 @@
   });
   applyNight();
   applyTesla();
+  probeAutoplay();   // v200
   updateSoundPill();
   renderHupBtn();
   showChrome(); // 처음 3초 동안 버튼을 보여 준 뒤 숨긴다
-  setTimeout(() => report('session', { msg: 'open', tts: ttsStatus(), debug: params.has('debug'), scheme: (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light', night: nightMode() }), 6000); // 지도·GPS 상태가 잡힌 뒤 접속 기록
+  setTimeout(() => report('session', { msg: 'open', tts: ttsStatus(), debug: params.has('debug'), autoplay: autoplayState, resumed: !!live.pending || nav.active, scheme: (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light', night: nightMode() }), 6000); // 지도·GPS 상태가 잡힌 뒤 접속 기록
   render();
   tickClock();
   setInterval(tickClock, 1000);
@@ -9091,7 +9174,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,
