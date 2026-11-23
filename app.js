@@ -59,7 +59,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-186'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-187'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -2663,7 +2663,11 @@
       if (said && now - said.t < 180000) continue;   // 이미 경고 칸에 올랐던 카메라
       const c = x.c, h = x.h;
       let why = 'other';
-      if (camFlag(c, h)) why = 'flag';
+      // v187: 길안내 경로가 고속도로인 자리 옆의 일반도로 카메라는 알리지 않는 것이 맞다 — 고칠 것이 없다(숨김 풀기·양방향·경로 위 모두).
+      // 경부 하행 신갈: '놓침'을 누르자 94초 전에 34m 옆으로 지난 신정로 어린이 30(상미사거리)에 '경로 위' 고침이 붙어 그 뒤 경부에서 떴다
+      const sg = nav.active && nav.pts ? routeSegNear(camPt(c), 60) : null;
+      if (sg && hwSideCam(c, sg.i, sg.at)) why = 'other';
+      else if (camFlag(c, h)) why = 'flag';
       else if (isSpeedCam(c) && !limitKnown(c)) why = 'nolimit';   // v179: 제한속도를 몰라 숨긴 카메라 — 고칠 것이 없다
       else if (!camWanted(c)) why = 'signal';
       else if (camHasDir(c) && h != null && angleDiff(c.eb, h) > CAM_DIR_TOL) {
@@ -2978,7 +2982,9 @@
     // (지금 달리는 도로 이름으로 거르기는 하지 않는다: 고속도로 위에서도 역지오코딩이 옆 일반도로 이름을 주곤 해서, 굽은 고속도로의
     //  구간단속 시작을 638m 앞에서야 잡았다 — S27. 경찰 표기도 역지오코딩과 자주 다르다)
     // 고속도로 본선(시속 60 넘게)을 달리는 중이면 고속도로 카메라가 아닌 것(앞길에서 6m 넘게 비켜난 것)은 뺀다 (수도권1순환 위에서 밑 문정로 어린이 30)
-    if (isExpwyName(road.name) && state.speedKmh >= 60 && side > 6 && !camOnExpwy(c, road.name)) return false;
+    // v187 (2026-11-23 경부 하행 신갈 정체 50km/h): 제한 50 이하 카메라(어린이 30 등)는 느리게 가도 뺀다 — 고속도로에 그런 카메라는 없고,
+    // 고속도로 카메라는 camOnExpwy 로 남는다. 나간 뒤 도로 이름이 늦게 바뀌는 15초 남짓은 앞길 6m 안 카메라만 남는다
+    if (isExpwyName(road.name) && (state.speedKmh >= 60 || (c[2] > 0 && c[2] <= 50)) && side > 6 && !camOnExpwy(c, road.name)) return false;
     // v165 (2차 점검 G): 굽은 길은 그 자리의 진행 방향(현 방향 + 거리 × 곡률)으로도 본다 (100° 넘게 돈 고리 길 뒤의 카메라가 버려졌다)
     return camDirOk(c, pb) || camDirOk(c, pathTangent(dp));
   }
@@ -3066,6 +3072,21 @@
     for (const [s, o] of nav.hwEv) { if (s > at) break; out = o; }
     return out;
   }
+  // v187: 경로의 이 자리(선분 i, 경로 거리 at)가 고속도로이고 카메라는 고속도로 카메라가 아닌지 (옆·아래 일반도로 카메라)
+  function hwSideCam(c, i, at) {
+    const rn = routeRoadAt(i);
+    return ((isExpwyName(rn) && !pastHwExit(at)) || onHighwayAt(at)) && !camOnExpwy(c, rn);
+  }
+  // 경로에서 점 p 에 가장 가까운 선분 (m 미터 안이면 { i, d, at }, 없으면 null)
+  function routeSegNear(p, m) {
+    if (!(nav.pts && nav.pts.length > 1 && nav.cum)) return null;
+    let best = null;
+    for (let i = 0; i < nav.pts.length - 1; i++) {
+      const pr = projectSeg(p, nav.pts[i], nav.pts[i + 1]);
+      if (pr.dist <= m && (!best || pr.dist < best.d)) best = { i, d: pr.dist, at: nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]) };
+    }
+    return best;
+  }
   function camAtSeg(c, i) {
     const p = camPt(c), a = nav.pts[i], b = nav.pts[i + 1];
     let pr = projectSeg(p, a, b);
@@ -3079,7 +3100,12 @@
       if (raw.dist <= CAM_TOL) near = raw.dist;
       else if (!(pr.dist <= 20 && sameCamRoad(rn, c)) && !(c.fixRoute && Math.min(pr.dist, raw.dist) <= 40)) return null;   // v171: 고친 카메라는 40m
     }
-    if (c.fixRoute) return nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]);   // v171: '놓침' 진단으로 경로 위로 보게 한 카메라 (이름·고속도로·높이 거르기 없이)
+    if (c.fixRoute) {   // v171: '놓침' 진단으로 경로 위로 보게 한 카메라 (이름·높이 거르기 없이)
+      const at0 = nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]);
+      // v187 (2026-11-23 경부 하행 신갈JC 남쪽 '틀림'): 고속도로 구간에서는 고친 카메라라도 옆 일반도로 카메라는 아니다.
+      // 11-20 '놓침'을 눌렀을 때 진단이 94초 전에 34m 옆으로 지난 신정로 어린이 30(상미사거리)에 '경로 위' 고침을 붙여, 그 뒤 경부에서 떴다
+      return hwSideCam(c, i, at0) ? null : at0;
+    }
     if (near > 6 && camRoadDiffers(rn, c)) return null;
     const at = nav.cum[i] + pr.t * (nav.cum[i + 1] - nav.cum[i]);
     // 고속도로 구간이면 옆·아래 일반도로 카메라는 뺀다. 구간 이름이 고속국도이거나, 이름이 없어도 안내상 고속도로 진입~출구 사이면 고속도로
@@ -8365,7 +8391,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,

@@ -2883,6 +2883,7 @@
     { id: 'S68', name: 'S68 free drive with a wrong GPS heading still catches the speed camera ahead (track bearing); a camera passed without an alert is counted as missed', fn: s68 },
     // v184·v186: 멀리(경로 시작점에서 80km) 주행 화면으로 달리므로 맨 끝에 (앞에 두면 S86→S88 의 지도 상태가 흔들린다)
     { id: 'S119', name: "S119 cameras the driver confirmed (v186, data/driver_spots.json with a limit: 신중부대로·남북대로 80): a row's own limit is kept, it alerts as '운전자 신고 단속 지점' 80 from 900 m along a route in its direction, not on the way back", fn: s119 },
+    { id: 'S120', name: "S120 side-road cameras beside an expressway (v187, driver's '틀림' 2026-11-23 on 경부 southbound south of 신갈JC at 50 km/h: the 신정로 상미사거리 school-zone 30 #20526, 23 m beside 경부, showed because a '놓침' three days earlier had put a 'route' fix on it): with that fix it is still not on a 경부 route; a '놓침' pressed after passing it fixes nothing on it; free drive on 경부 at 50 km/h drops a school-zone 30 10 m to the side; expressway cameras (on the line, and 25 m off with a 'route' fix) still alert, guided and free", fn: s120 },
   ];
 
   // S55: 주의 표지 (전국도로안전표지표준데이터의 주의표지, data/signs.json · tools/build_signs.py, 2026-11-14 요청).
@@ -5575,6 +5576,107 @@
       await resetApp(); softReset();
     }
     const ok = r.data.confirmed >= 6 && r.data.kept && r.south.on && r.south.seen !== null && r.south.seen >= 900 && /운전자 신고 단속 지점/.test(r.south.label) && /80/.test(r.south.limit) && !r.north.on && r.north.seen === null;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S120: 고속도로 옆 일반도로 카메라 (v187, 2026-11-23 운전자 '틀림': 경부 하행 신갈JC 남쪽 50km/h 에서 300m 앞 '어린이보호구역 신호·과속' 30)
+  //   실제 카메라 #20526(신정로 상미사거리, 남행 181°)은 네이버 경부 하행 경로선 오른쪽 23m(차로 위 점). 11-20 '놓침' 진단이 이 카메라에 '경로 위' 고침을 붙여
+  //   (고친 카메라는 40m 까지·고속도로 거르기 없이) 그 뒤 경부에서 떴다. 합성 경로: 카메라 서쪽 28m 를 지나는 남행 곧은 '경부고속도로' 4km
+  //   (a) '경로 위' 고침이 있어도 경로 위 아님·안 뜸  (b) 고침 없이 지나 '놓침' → 이 카메라에는 아무 고침도 없음
+  //   (c) 길안내 없이 경부 50km/h: 앞길 10m 옆 신정로 어린이 30(가짜) 안 뜸  (d) 고속도로 카메라(가짜: 선 옆 4m, '경로 위' 고침 있는 25m)는 뜸
+  async function s120() {
+    const t = T(), r = {};
+    const REAL = { lat: 37.27451, lng: 127.10331 };
+    const cam = t.cams.rows.find((x) => sameCam(x, REAL) && x[2] === 30);
+    if (!cam) return { pass: false, detail: 'camera 20526 (신정로 상미사거리 30) not in data' };
+    const camI = t.cams.rows.indexOf(cam);
+    const L0 = dest(REAL, 270, 28);
+    const along = (s) => dest(dest(L0, 0, 2500), 180, s);   // 경로 거리 s 의 선 위 점 (카메라는 s≈2500)
+    const P = [];
+    for (let k = 0; k <= 200; k++) { const q = along(20 * k); P.push({ lat: round6(q.lat), lng: round6(q.lng) }); }
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const total = cum[cum.length - 1];
+    const R = { route: { distance: r0(total), duration: r0(total / 14 * 1000), tollFare: 0, fuelPrice: 0, path: P.map((q) => [q.lng, q.lat]),
+      guide: [{ i: 200, t: 88, s: '목적지', d: r0(total), ms: r0(total / 14 * 1000) }],
+      sections: [{ i: 0, n: 201, name: '경부고속도로', speed: 50, cong: 2 }] },
+      P, cum, total, dest: { name: '경부 시험', addr: '', lat: P[200].lat, lng: P[200].lng } };
+    const mk = (p, lim, kind, zone, rtype, on) => { const c = [round6(p.lat), round6(p.lng), lim, kind, 0, 0, zone, -1, rtype, 1]; c.eb = 180; c.e2 = 0; c.lv = 0; c.sl = c[0]; c.sg = c[1]; c.on = on; return c; };
+    // 남행이므로 진행 방향 오른쪽은 서쪽(270°)
+    const E1 = mk(dest(along(3300), 270, 4), 100, 1, 0, 1, '경부고속도로');    // 선 오른쪽 4m
+    const E2 = mk(dest(along(3700), 270, 25), 100, 1, 0, 1, '경부고속도로');   // 25m — '경로 위' 고침이 있어야 잡힘
+    const F = mk(dest(along(2900), 270, 10), 30, 3, 2, 5, '신정로');           // 길안내 없을 때 앞길 10m 옆 어린이 30
+    const keep = { drv: t.driverSpots.rows.slice(), shared: t.sharedSpots.slice(), mine: t.mySpots.slice(), mineRaw: t.store.get('mySpots'), fixRaw: t.store.get('camFix'), road: t.road.name };
+    const fakes = [];
+    let base0 = null;
+    const key = (c) => c[0] + ',' + c[1];
+    const setFix = (c, on) => { if (on) t.camFixes.set(key(c), new Set(['route'])); else t.camFixes.delete(key(c)); t.applyCamFixes(); };
+    const drive = async (s0, s1) => {
+      await resetApp(); softReset();
+      await planAndStart(R);
+      t.ensureRouteCams();
+      const on = { cam: t.nav.routeCams.has(cam), E1: t.nav.routeCams.has(E1), E2: t.nav.routeCams.has(E2) };
+      const seen = { cam: null, E1: null, E2: null, other: new Set() };
+      for (let s = s0; s <= s1; s += 14) {
+        const q = pointAt(R, s); feed(q.p, 14, q.h, { dt: 1000, acc: 3 });
+        const tg = t.camState.target;
+        if (!tg) continue;
+        if (tg.c === cam) { if (seen.cam === null) seen.cam = Math.round(2500 - s); }
+        else if (tg.c === E1) { if (seen.E1 === null) seen.E1 = Math.round(3300 - s); }
+        else if (tg.c === E2) { if (seen.E2 === null) seen.E2 = Math.round(3700 - s); }
+        else seen.other.add(tg.i + ':' + tg.c[2]);
+      }
+      return { on, seen: { cam: seen.cam, E1: seen.E1, E2: seen.E2, other: [...seen.other].join(' ') } };
+    };
+    try {
+      t.driverSpots.rows.length = 0; t.sharedSpots.length = 0; t.mySpots.length = 0; t.camFixes.clear();
+      t.applyUserSpots(); base0 = t.cams.rows.length;
+      for (const c of [E1, E2, F]) { const i = t.cams.rows.length; t.cams.rows.push(c); fakes.push(i); const k = Math.floor(c[0] / 0.01) + ':' + Math.floor(c[1] / 0.01); if (!t.cams.grid.has(k)) t.cams.grid.set(k, []); t.cams.grid.get(k).push(i); }
+      t.cams.userBase = null; t.applyUserSpots();
+      // (a)·(d) 길안내: 20526 과 E2 에 '경로 위' 고침
+      setFix(cam, true); setFix(E2, true);
+      r.a = await drive(1500, 3900);
+      t.endNav();
+      // (b) 고침 없이 지나 '놓침'
+      t.camFixes.clear(); t.applyCamFixes();
+      await drive(1800, 2620);
+      const out = t.fixFromMiss();
+      const d0 = (out.diag || []).find((x) => x.cam === camI);
+      r.b = { fixed: out.fixed || null, why20526: d0 ? d0.why : 'not listed', fixOnCam: t.camFixes.has(key(cam)), fixes: [...t.camFixes.keys()].length };
+      t.endNav();
+      // (c)·(d) 길안내 없이 경부 50km/h (지금 도로 이름 경부고속도로)
+      t.camFixes.clear(); t.applyCamFixes();
+      stub.canned['/reverse'] = { road: '경부고속도로', area: '경기도 용인시 기흥구' };
+      let fSeen = null, e1Free = null, camFree = null;
+      await resetApp(); softReset();
+      for (let s = 1500; s <= 3400; s += 14) {
+        t.road.name = '경부고속도로';
+        const q = pointAt(R, s); feed(q.p, 14, q.h, { dt: 1000, acc: 3 });
+        const tg = t.camState.target;
+        if (tg && tg.c === F && fSeen === null) fSeen = Math.round(2900 - s);
+        if (tg && tg.c === E1 && e1Free === null) e1Free = Math.round(3300 - s);
+        if (tg && tg.c === cam && camFree === null) camFree = Math.round(2500 - s);
+      }
+      r.c = { school10m: fSeen, cam: camFree, E1: e1Free };
+    } finally {
+      stub.reset();
+      t.road.name = keep.road;
+      t.sharedFixes.clear(); t.sharedSpots.length = 0;
+      t.driverSpots.rows.length = 0; t.mySpots.length = 0; t.applyUserSpots();
+      if (base0 !== null) {
+        for (const i of fakes.slice().reverse()) { const c = t.cams.rows[i]; if (!c) continue; const k = Math.floor(c[0] / 0.01) + ':' + Math.floor(c[1] / 0.01); const a2 = t.cams.grid.get(k); if (a2) { const j = a2.indexOf(i); if (j >= 0) a2.splice(j, 1); } t.camMiss.near.delete(i); t.camState.passed.delete(i); t.camState.saidById.delete(i); }
+        t.cams.rows.length = base0; t.cams.userBase = null;
+      }
+      t.camFixes.clear(); t.store.set('camFix', keep.fixRaw);
+      keep.drv.forEach((x) => t.driverSpots.rows.push(x)); keep.shared.forEach((x) => t.sharedSpots.push(x)); keep.mine.forEach((x) => t.mySpots.push(x));
+      t.store.set('mySpots', keep.mineRaw);
+      t.applyUserSpots(); t.applyCamFixes();
+      const te = document.getElementById('toast'); if (te) te.hidden = true;
+      await resetApp(); softReset();
+    }
+    const ok = !r.a.on.cam && r.a.seen.cam === null && r.a.on.E1 && r.a.seen.E1 !== null && r.a.on.E2 && r.a.seen.E2 !== null &&
+      r.b.why20526 !== 'route' && !r.b.fixOnCam && !(r.b.fixed && r.b.fixed.cam === camI) &&
+      r.c.school10m === null && r.c.cam === null && r.c.E1 !== null;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
