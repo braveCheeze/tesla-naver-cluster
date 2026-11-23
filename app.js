@@ -61,7 +61,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-203'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-204'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -2498,6 +2498,7 @@
       cams.rows = j.rows; cams.grid = g; cams.date = j.date; cams.roads = j.roads || []; cams.arrows = ar; cams.loaded = true;
       cams.userBase = null; applyUserSpots();   // v169: 신고한 단속 지점을 카메라 표 끝에 붙인다
       applyCamFixes();                           // v171: '놓침' 진단으로 고친 카메라
+      applySchoolTimes(true);                    // v204: 시간제 스쿨존 (지금 시각의 제한)
       if (!testPage) loadSharedFixes();
       ok = true;
       nav.routeCams = null;   // 길안내 중이면 경로 위 카메라를 새 자료로 다시 찾는다
@@ -2558,7 +2559,7 @@
   }
   // v194: 운전자 지점은 종류(1 과속 · 3 신호·과속)와 후면단속(flags 1)도 가질 수 있다 (네이버 길안내 확인, data/driver_spots.json 6·7째 값)
   function userSpotRow(lat, lng, h, kmh, who, lim, kind, flags) {
-    const r = [lat, lng, lim > 0 ? lim : 0, kind === 3 ? 3 : 1, 0, 0, 0, -1, kmh >= 70 ? 1 : 4, 1, USER_FLAG | ((flags | 0) & 1)];
+    const r = [lat, lng, lim > 0 ? lim : 0, kind === 3 || kind === 8 ? kind : 1, 0, 0, 0, -1, kmh >= 70 ? 1 : 4, 1, USER_FLAG | ((flags | 0) & 1)];   // v204: 8 이동식 (네이버 '이동식')
     r.eb = h == null ? -1 : h; r.e2 = 0; r.lv = 0; r.sl = lat; r.sg = lng; r.on = ''; r.who = who;
     return r;
   }
@@ -2590,7 +2591,7 @@
     const add = [];
     for (const d of driverSpots.rows) add.push({ lat: d[0], lng: d[1], h: d[2], kmh: d[3] || 0, who: 'driver', lim: d[4] || 0, kind: d[5] || 1, flags: d[6] || 0 });
     // v171 모든 사용자 신고 지점. v175: 운영자가 확인하기 전 자동 반영(src 'auto', 서로 다른 운전자 3명 넘게)은 '사용자 제보'로 따로 보인다
-    for (const d of sharedSpots) if (!add.some((x) => sameSpot(x, d))) add.push({ lat: d.lat, lng: d.lng, h: d.h, kmh: 0, who: d.src === 'auto' ? 'crowd' : 'driver', lim: d.lim || 0, kind: d.ck === 3 ? 3 : 1, flags: d.fl ? 1 : 0 });   // v202: 네이버 확인 지점의 종류·후면
+    for (const d of sharedSpots) if (!add.some((x) => sameSpot(x, d))) add.push({ lat: d.lat, lng: d.lng, h: d.h, kmh: 0, who: d.src === 'auto' ? 'crowd' : 'driver', lim: d.lim || 0, kind: d.ck === 3 || d.ck === 8 ? d.ck : 1, flags: d.fl ? 1 : 0 });   // v202: 네이버 확인 지점의 종류·후면
     for (const m of mySpots) if (!add.some((x) => (x.who === 'mine' ? sameSpot(x, m) : sameSpotAhead(m, x)))) add.push({ lat: m.lat, lng: m.lng, h: m.h, kmh: m.kmh, who: 'mine', lim: m.lim || 0, rn: m.rn, m });
     let filled = false;
     for (const x of add) {
@@ -2877,6 +2878,7 @@
       // v194: 네이버로 확인한 운전자 지점은 종류까지 ('운전자 신고 신호·과속단속', '운전자 신고 후면단속')
       if (isRear(c)) return who + ' ' + (c[3] === 3 ? '신호·과속 ' : '') + '후면단속';
       if (c[3] === 3) return who + ' 신호·과속단속';
+      if (c[3] === 8) return who + ' 이동식 단속';   // v204
       return who + ' 단속 지점';
     }
     let s = c[4] === 1 ? '구간단속 시작' : c[4] === 2 ? '구간단속 끝' : (KIND_NAME[c[3]] || '단속 카메라');
@@ -6145,6 +6147,68 @@
     forksData.areas = j.areas || [];
     forksData.loaded = true;
   }
+
+  // ---------- v204 시간제 스쿨존 (2026-11-24 운전자 '이것도 중요하긴 해' — 네이버는 '표지판 확인'(시간제) 뒤 밤에는 50 으로 띄운다) ----------
+  // data/school_times.json rows: [위도, 경도, 접근 방향|null, 반경 m, [[시작 HHMM, 끝 HHMM, 제한], …], 그 밖 제한, 요일, 이름]
+  //   예) [37.4704, 126.9197, null, 300, [[800, 2000, 30]], 50, '0-6', '○○초'] — 08~20시 30, 그 밖 50. 끝이 시작보다 작으면 밤을 넘는 시간대.
+  //   요일 '0-6' 매일 · '1-5' 월~금(일 0) · '1,3,5'. 요일이 아니면 그 밖 제한. 공휴일은 모른다(평일로 봄 = 낮 30, 안전 쪽)
+  // 반경 안의 어린이보호구역 카메라(방향이 있으면 ±45°)는 원래 제한(limBase)을 두고 c[2] 를 지금 시각의 제한으로 바꾼다 —
+  // 경고 카드·속도 칸·음성·과속 판정이 모두 c[2] 를 보므로 같은 값을 쓴다. 1분마다 다시 본다. 자료가 없으면 아무것도 바꾸지 않는다
+  const schoolTimes = { loaded: false, rows: [], min: -1, touched: [] };
+  function setSchoolTimes(j) {
+    const ok = (r) => Array.isArray(r) && r.length >= 6 && Number.isFinite(+r[0]) && Number.isFinite(+r[1]) && +r[3] > 0 && +r[3] <= 2000 && Array.isArray(r[4]) &&
+      r[4].every((w) => Array.isArray(w) && w.length >= 3 && +w[0] >= 0 && +w[0] <= 2400 && +w[1] >= 0 && +w[1] <= 2400 && +w[2] >= 10 && +w[2] <= 130) && +r[5] >= 10 && +r[5] <= 130;
+    schoolTimes.rows = j && Array.isArray(j.rows) ? j.rows.filter(ok).map((r) => ({ lat: +r[0], lng: +r[1], h: r[2] == null ? null : +r[2], rad: +r[3],
+      win: r[4].map((w) => [+w[0], +w[1], +w[2]]), other: +r[5], days: String(r[6] == null ? '0-6' : r[6]), name: String(r[7] || '') })) : [];
+    schoolTimes.loaded = true;
+    applySchoolTimes(true);
+  }
+  async function loadSchoolTimes() {
+    try {
+      const r = await fetch('data/school_times.json?v=' + APP_VERSION);
+      if (r.ok) setSchoolTimes(await r.json());
+    } catch (e) { /* 자료가 없으면 지금처럼 */ }
+  }
+  function dayIn(spec, wd) {
+    return String(spec).split(',').some((p) => {
+      const m = p.trim().match(/^(\d)(?:-(\d))?$/);
+      if (!m) return false;
+      const a = +m[1], b = m[2] == null ? a : +m[2];
+      return a <= b ? wd >= a && wd <= b : wd >= a || wd <= b;
+    });
+  }
+  function schoolLimitAt(row, d) {
+    if (!dayIn(row.days, d.getDay())) return row.other;
+    const hm = d.getHours() * 100 + d.getMinutes();
+    for (const [a, b, lim] of row.win) {
+      if (a <= b ? hm >= a && hm < b : hm >= a || hm < b) return lim;
+    }
+    return row.other;
+  }
+  function applySchoolTimes(force, now) {
+    const d = now ? new Date(now) : new Date();
+    if (!force && d.getMinutes() === schoolTimes.min) return;
+    schoolTimes.min = d.getMinutes();
+    // 지난번에 바꾼 카메라는 먼저 원래 값으로
+    for (const c of schoolTimes.touched) { if (c.limBase != null) c[2] = c.limBase; delete c.timed; }
+    schoolTimes.touched = [];
+    if (!cams.loaded || !schoolTimes.rows.length) return;
+    const base = cams.userBase != null ? cams.userBase : cams.rows.length;
+    let changed = false;
+    for (const row of schoolTimes.rows) {
+      const lim = schoolLimitAt(row, d);
+      for (const it of camsNear(row.lat, row.lng, row.rad)) {
+        const c = it.c;
+        if (it.i >= base || c[6] !== 2 || c[4]) continue;   // 어린이보호구역 단속 카메라만 (구간단속·신고 지점은 그대로)
+        if (row.h != null && camHasDir(c) && angleDiff(c.eb, row.h) > 45) continue;
+        if (c.limBase == null) c.limBase = c[2];
+        if (c[2] !== lim) changed = true;
+        c[2] = lim; c.timed = row.name || true;
+        schoolTimes.touched.push(c);
+      }
+    }
+    if (changed) { camState.markerAt = null; if (camState.target && camState.target.c.timed) renderCam(); }   // 지도 표지 숫자도 다시
+  }
   async function loadForks() {
     try {
       const r = await fetch('data/forks.json?v=' + APP_VERSION);
@@ -7848,6 +7912,7 @@
     maybeResume();
     if (nav.active) liveSave();   // v200: 5초마다 (후진 뒤 새로 열려도 이어 가게)
     if (!testPage) checkPoll();   // v202: 내 신고 확인 결과 (있을 때만, 1분마다)
+    if (schoolTimes.rows.length) applySchoolTimes(false);   // v204: 시간제 스쿨존 (분이 바뀔 때)
     $('#clock').textContent = hhmm(now);
     $('#dateText').textContent = (now.getMonth() + 1) + '월 ' + now.getDate() + '일 (' + '일월화수목금토'[now.getDay()] + ')';
     mapWatchdog();
@@ -9348,6 +9413,7 @@
   loadLanes();
   loadForks();
   loadColorLines();
+  loadSchoolTimes();   // v204
   loadHipass();
   loadTunnels();
   startGps();
@@ -9394,7 +9460,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,

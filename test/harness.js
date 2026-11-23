@@ -2895,6 +2895,7 @@
     { id: 'S132', name: "S132 Naver two-way check, round 1 (v201, keys session emulator; driver rule '다르거나 없으면 네이버대로') and the 판교분기점 first-split pink line: driving straight past each spot in Naver's direction puts its camera on the route — 별내 송산로 southbound 60 signal+speed, 강동대로 north southbound child-zone 30, 25719 westbound 30, 둔촌사거리 25557 (moved 85 m to Naver's point) east- and westbound 50, 난곡로 23871 south-westbound 30; on the real 서울TG→판교분기점 route the first colour line starts about 300 m before the split, pink", fn: s132 },
     { id: 'S133', name: "S133 one '잘못된 정보 신고' button and the live check (v202, driver '틀림 놓침에서 틀림 없애고 놓침을 잘못 된 정보 신고로', '신고 반영 완료 … 3초', '확인완료 … 신고 접수 완료'): one button, the old one hidden, no '놓침'/'틀림' on screen; pressed while a warning card has been up for a second it reports that camera (dimmed 14 days, no check request); pressed with no card it says '신고 접수 완료' and sends /check (spot, heading, speed, device; no trail off the operator car) keeping the id; a found result reads '신고 반영 완료 · 60 신호·과속단속 추가' and reloads shared fixes, a none result reads '확인 완료'", fn: s133 },
     { id: 'S134', name: "S134 voice feedback above the compass (v203, driver '그 나침반 위에 피드백 버튼 … 음성으로 텍스트 형태로 … 다시 음성을 누르거나 다른 곳을 누르면 취소', 'Ai 대화모드처럼'): with a fake speech recogniser — a 52 px round button right above the compass; a tap starts Korean listening with the green spinning ring and '듣는 중…'; 1.5 s after the words stop the text is sent at once (with place, heading, speed, guidance and the cards on screen) and '보냈어요' shows; a tap elsewhere or a second tap cancels without sending; a browser without speech recognition says so", fn: s134 },
+    { id: 'S135', name: "S135 time-limited school zones (v204, driver '이것도 중요하긴 해'; Naver shows 50 at night after '표지판 확인') and the 경부 northbound mobile 110s: around the real child-zone camera 25719, a test school with 30 from 08–20 and 50 otherwise makes it 50 at 22:00 (the warning card too) and 30 at 10:00, cameras outside the radius stay; weekday-only rows give 50 on a Sunday; windows across midnight work; clearing the data restores 30; the 죽전 mobile 110 moved 71 m north to Naver's point and a 판교 northbound mobile 110 was added, both '운전자 신고 이동식 단속'", fn: s135 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -6635,6 +6636,48 @@
       !d.listening && d.aborted && d.toast === '취소했어요' && !d.sent &&
       !e.listening && e.aborted && !e.sent &&
       !f.listening && /음성 인식을 지원하지 않아요/.test(f.toast);
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S135: 시간제 스쿨존 (v204, 운전자 '이것도 중요하긴 해' — 네이버는 '표지판 확인' 뒤 밤에는 50) 과 경부 상행 이동식 110 (keys 세션 네이버 확인).
+  //   실제 어린이보호구역 카메라 25719(30) 둘레에 시험 학교 하나: 08~20시 30, 그 밖 50, 매일
+  //   (a) 22시면 50, 10시면 30, 반경 밖 카메라는 그대로  (b) 밤 50 이면 경고 카드도 50  (c) 월~금만이면 일요일 10시는 50
+  //   (d) 밤을 넘는 시간대(21~07시 50, 그 밖 30): 23시·06시 50, 12시 30  (e) 자료를 비우면 원래 30
+  //   (f) 운전자 지점: 죽전 이동식 110 은 네이버 자리(71m 북)로, 판교 부근 북행 이동식 110 추가 — 둘 다 '운전자 신고 이동식 단속'
+  async function s135() {
+    const t = T(), r = {}, keep = JSON.parse(JSON.stringify({ rows: [] }));
+    const at = (h, m, wd) => { const d = new Date(2026, 10, 22 + (wd == null ? 0 : wd), h, m || 0); return d.getTime(); };   // 2026-11-22 은 일요일
+    try {
+      await waitFor(() => t.cams.loaded, 10000, 100);
+      const c = t.cams.rows[25719], far = t.cams.rows.find((x, i) => i < t.cams.userBase && x[6] === 2 && x[2] === 30 && hav({ lat: x[0], lng: x[1] }, { lat: c[0], lng: c[1] }) > 2000);
+      t.setSchoolTimes({ v: 1, rows: [[c[0], c[1], null, 200, [[800, 2000, 30]], 50, '0-6', '시험초']] });
+      t.applySchoolTimes(true, at(22, 0, 1)); r.night = c[2]; r.farNight = far[2];
+      t.camState.target = { i: 25719, c, d: 300, r: 300, minD: 300, after: false, t0: Date.now() };
+      t.renderCam(); r.card = text('#camLimit');
+      t.camState.target = null; t.renderCam();
+      t.applySchoolTimes(true, at(10, 0, 1)); r.day = c[2];
+      t.setSchoolTimes({ v: 1, rows: [[c[0], c[1], null, 200, [[800, 2000, 30]], 50, '1-5', '시험초']] });
+      t.applySchoolTimes(true, at(10, 0, 0)); r.sunday = c[2];
+      t.applySchoolTimes(true, at(10, 0, 1)); r.monday = c[2];
+      t.setSchoolTimes({ v: 1, rows: [[c[0], c[1], null, 200, [[2100, 700, 50]], 30, '0-6', '시험초']] });
+      t.applySchoolTimes(true, at(23, 0, 1)); r.n23 = c[2];
+      t.applySchoolTimes(true, at(6, 0, 1)); r.n06 = c[2];
+      t.applySchoolTimes(true, at(12, 0, 1)); r.n12 = c[2];
+      t.applySchoolTimes(true, at(23, 0, 1));
+      t.setSchoolTimes({ v: 1, rows: [] }); r.cleared = c[2]; r.timed = !!c.timed;
+      // (f) 운전자 지점
+      const u = t.cams.rows.slice(t.cams.userBase);
+      const near = (lat, lng) => u.find((x) => hav({ lat, lng }, { lat: x[0], lng: x[1] }) < 15);
+      const jj = near(37.334139, 127.103549), pg = near(37.377688, 127.103352), old = near(37.3335, 127.103614);
+      r.spots = { jukjeon: jj ? jj[2] + '/' + jj[3] + ' ' + t.camLabel(jj) : '', pangyo: pg ? pg[2] + '/' + pg[3] + ' ' + t.camLabel(pg) : '', old: !!old };
+    } finally {
+      t.setSchoolTimes(keep);
+      await t.loadSchoolTimes();
+      t.camState.target = null; t.renderCam();
+    }
+    const ok = r.night === 50 && r.farNight === 30 && r.card === '50' && r.day === 30 && r.sunday === 50 && r.monday === 30 &&
+      r.n23 === 50 && r.n06 === 50 && r.n12 === 30 && r.cleared === 30 && !r.timed &&
+      r.spots.jukjeon === '110/8 운전자 신고 이동식 단속' && r.spots.pangyo === '110/8 운전자 신고 이동식 단속' && !r.spots.old;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

@@ -97,7 +97,7 @@ function fixState(e, day) {
 const CHECK_ID = /^[a-z0-9]{8,24}$/;
 const CHECK_STATE_TTL = 14 * 86400, CHECK_RES_TTL = 90 * 86400, CHECK_AUTO_TTL = 7 * 86400;
 // 네이버 종류 → 앱 신고 지점 종류(1 과속·3 신호·과속)와 표시(1 후면단속). 구간단속·'표지판 확인'(시간제)·제한 모름은 자동으로 넣지 않는다
-const CHECK_KIND = { '신호과속': [3, 0], '과속단속': [1, 0], '박스형': [1, 0], '이동식': [1, 0], '후면단속': [1, 1] };
+const CHECK_KIND = { '신호과속': [3, 0], '과속단속': [1, 0], '박스형': [1, 0], '이동식': [8, 0], '후면단속': [1, 1] };   // v204: 이동식은 앱 종류 8
 const dir8 = (h) => (h == null || !Number.isFinite(+h) ? 'x' : String(Math.round(((+h % 360) + 360) % 360 / 45) % 8));
 const headOf = (v) => (v == null || v === '' || !Number.isFinite(+v) ? null : ((Math.round(+v) % 360) + 360) % 360);
 function checkPt(o) {
