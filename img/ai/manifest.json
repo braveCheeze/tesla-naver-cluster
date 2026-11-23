@@ -1,5 +1,5 @@
 {
- "date": "2026-11-23",
+ "date": "2026-11-24",
  "items": [
   {
    "slot": "cam_mobile_100",
@@ -1070,6 +1070,86 @@
    "kind": "icon",
    "file": "jc__sunburst__2.webp",
    "model": "sunburst",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "junc_bg_day",
+   "kind": "scene",
+   "file": "junc_bg_day__flare26__1.webp",
+   "model": "flare26",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "junc_bg_day",
+   "kind": "scene",
+   "file": "junc_bg_day__flare26__2.webp",
+   "model": "flare26",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "junc_bg_day",
+   "kind": "scene",
+   "file": "junc_bg_day__flare26c__1.webp",
+   "model": "flare26c",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "junc_bg_day",
+   "kind": "scene",
+   "file": "junc_bg_day__sunburst26__1.webp",
+   "model": "sunburst26",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "junc_bg_day",
+   "kind": "scene",
+   "file": "junc_bg_day__sunburst26__2.webp",
+   "model": "sunburst26",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "junc_bg_night",
+   "kind": "scene",
+   "file": "junc_bg_night__flare26__1.webp",
+   "model": "flare26",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "junc_bg_night",
+   "kind": "scene",
+   "file": "junc_bg_night__flare26__2.webp",
+   "model": "flare26",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "junc_bg_night",
+   "kind": "scene",
+   "file": "junc_bg_night__flare26c__2.webp",
+   "model": "flare26c",
+   "n": 2,
+   "pink": 0
+  },
+  {
+   "slot": "junc_bg_night",
+   "kind": "scene",
+   "file": "junc_bg_night__sunburst26__1.webp",
+   "model": "sunburst26",
+   "n": 1,
+   "pink": 0
+  },
+  {
+   "slot": "junc_bg_night",
+   "kind": "scene",
+   "file": "junc_bg_night__sunburst26__2.webp",
+   "model": "sunburst26",
    "n": 2,
    "pink": 0
   },

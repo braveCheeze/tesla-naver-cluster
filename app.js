@@ -60,7 +60,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-196'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-197'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -5523,7 +5523,7 @@
   // 고가·지하차도·옆길 (2026-11-15 '안내 표기가 어려우면 밑에처럼 이미지로')
   const JUNC_ROAD = { 62: 'over', 71: 'over', 64: 'under', 73: 'under', 63: 'oside', 72: 'oside', 65: 'side', 74: 'side' };   // v110: 55·56(직진)은 빼다
   const JUNC_SHOW = 800;
-  const juncState = { g: null, key: '' };
+  const juncState = { g: null, key: '', fork: null, cl: null };   // v197 fork·cl: 장면에 그린 분기 단면·색깔 유도선 (차로 칸·유도선 줄은 그때 숨김)
   function juncInfo(g) {
     if (!g || (!JUNC_FORK.has(g.t) && !JUNC_RAMP.has(g.t) && !JUNC_ROAD[g.t])) return null;
     const s = String(g.s || '');
@@ -5656,10 +5656,124 @@
   // v133 본선 직진 표지: 곧게 위로 ('↑ 서울')
   const SIGN_ARROW_S = '<svg viewBox="0 0 24 30" aria-hidden="true"><path d="M12 28V10" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round"/>' +
     '<path d="M12 2.5 19 12H5z" fill="#fff" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/></svg>';
-  function juncSignHtml(names, straight) {
+  function juncSignHtml(names, straight, no) {
     const one = names.join('').length <= 7;   // 짧으면 한 줄('서울 대전'), 길면 두 줄로 쌓는다 (그림을 덜 가리게)
     const rows = names.map((n) => { const no = expwayNo(n); return '<span class="sg-row">' + (no ? '<i class="sg-shield">' + shieldSvg(no) + '</i>' : '') + '<b>' + esc(n) + '</b></span>'; });
-    return '<span class="sg-names' + (one ? ' one' : '') + '">' + rows.join('') + '</span><span class="sg-arrow">' + (straight ? SIGN_ARROW_S : SIGN_ARROW) + '</span>';
+    // v197: 방면 글자에 노선 방패가 없으면 그 길(경로가 들어가는 도로)의 노선 번호 방패를 앞에 (네이버 '[50] 원주 인천')
+    const lead = no && !names.some((n) => expwayNo(n)) ? '<i class="sg-shield sg-lead">' + shieldSvg(no) + '</i>' : '';
+    return lead + (rows.length ? '<span class="sg-names' + (one ? ' one' : '') + '">' + rows.join('') + '</span>' : '') +
+      '<span class="sg-arrow">' + (straight ? SIGN_ARROW_S : SIGN_ARROW) + '</span>';
+  }
+  // ---------- v197 네이버식 분기점 장면 (2026-11-24 운전자가 네이버 경부 하행 신갈JC '571m 대전' 확대 그림을 보내며
+  // '이런거 참고해주고 적용해줘', '우리 방식 대로 AI이미지 활용을 해서') ----------
+  // 고속도로·도시고속도로 갈림(fork·ramp·main)은 길을 직접 그린다: AI 풍경(하늘·먼 산·풀밭, img/ai junc_bg_day·junc_bg_night, 지평선 35%) 위에
+  // 원근 도로(차로 수·차선·갈래)를 얹고, 갈 차로를 하늘색으로 칠하고 차로마다 흰 노면 화살표(갈 차로는 진하게), 위에 문형 표지 틀과
+  // 표지판 둘(경로 갈래·다른 갈래, 고속도로는 초록). 차로 수는 정밀도로지도 분기 단면(forks.json → forkLane)이 있으면 그대로,
+  // 없으면 본선 3 + 연결로 1 (갈림길은 2 + 2). 노면 색깔 유도선이 바로 이 갈림이면 갈 차로에 그 색 선을 겹쳐 그린다 (네이버처럼).
+  // 차로마다 방면 글자는 쓰지 않는다: 서랍 그림이 290×109px 이라 7px 남짓 — 달리는 중 화면은 글자보다 그림·색·숫자
+  // (운전자 '글씨로 보여주는것보다 그림이 훨씬 조흥ㅁ', '난 안전네비게이션을 만들어서 이용자들 다치지않게 하는게 중요해')
+  const NV = { W: 640, H: 240, HZ: 84, Z0: 18, LW: 3.6, ZS: 46 };
+  const NV_KINDS = new Set(['fork', 'ramp', 'main']);
+  // 차로 모양: { n, sd: 차로마다 갈래(-1 왼쪽 갈래, 0 본선, 1 오른쪽 갈래), go: 칠할 차로, rs: 경로 갈래, fork: 두 갈래가 다 휘는 갈림길 }
+  function nvModel(j, fl) {
+    if (fl && fl.lanes && fl.lanes.length >= 2) {
+      const L = fl.lanes.map((m) => String(m).replace(/B/g, ''));
+      const sd = L.map((m) => (m.indexOf('S') >= 0 || !/[LR]/.test(m) ? 0 : m.indexOf('R') >= 0 ? 1 : -1));
+      // 출구가 같이 쓰는 차로(SR·SL)뿐이면 그 바깥 차로를 출구 갈래로
+      if (!sd.includes(1)) { let k = -1; L.forEach((m, i) => { if (m.indexOf('R') >= 0) k = i; }); if (k > 0) sd[k] = 1; }
+      if (!sd.includes(-1)) { const k = L.findIndex((m) => m.indexOf('L') >= 0); if (k >= 0 && k < L.length - 1) sd[k] = -1; }
+      const mono = sd.every((s, i) => !i || s >= sd[i - 1]);   // 왼쪽 갈래 · 본선 · 오른쪽 갈래 순서여야 그린다
+      const rs = fl.M === 'R' ? 1 : fl.M === 'L' ? -1 : 0;
+      if (mono && sd.some((s) => s) && sd.includes(rs)) return { n: L.length, sd, go: fl.ok.slice(), rs, fork: j.kind === 'fork' && !sd.includes(0), bus: fl.lanes.map(isBusLane), data: true };
+    }
+    if (j.kind === 'fork') {
+      const rs = j.left ? -1 : 1;
+      return { n: 4, sd: [-1, -1, 1, 1], go: rs > 0 ? [2, 3] : [0, 1], rs, fork: true, bus: [] };
+    }
+    // ramp: 오른쪽(왼쪽) 연결로로 나감. main: 본선 그대로 (j.left = 본선이 연결로의 왼쪽 → 연결로는 오른쪽)
+    const e = j.kind === 'main' ? (j.left ? 1 : -1) : (j.left ? -1 : 1);
+    const sd = e > 0 ? [0, 0, 0, 1] : [-1, 0, 0, 0];
+    const go = j.kind === 'main' ? sd.map((s, i) => (s ? -1 : i)).filter((i) => i >= 0) : [e > 0 ? 3 : 0];
+    return { n: 4, sd, go, rs: j.kind === 'main' ? 0 : e, fork: false, bus: [] };
+  }
+  // 갈래 가운데선 (땅 좌표): 갈림 앞(ZS)까지 곧게, 그다음 갈래 쪽으로
+  function nvCenter(x0, s, fork, other) {
+    const Z = NV.ZS, out = [];
+    for (let z = 0; z < Z; z += 3) out.push([x0, z]);
+    let c;
+    if (s && fork) c = [[x0, Z], [x0, Z + 40], [x0 + s * 2.5, Z + 90], [x0 + s * 52, Z + 260]];
+    else if (s) c = [[x0, Z], [x0, Z + 34], [x0 + s * 3.5, Z + 70], [x0 + s * 80, Z + 205]];
+    else if (fork) c = [[x0, Z], [x0, Z + 40], [x0 - other * 1.5, Z + 95], [x0 - other * 30, Z + 330]];
+    else c = [[x0, Z], [x0, Z + 150], [x0, Z + 400], [x0, Z + 700]];
+    return out.concat(jvCurve(c, 56));
+  }
+  function nvScene(j, fl, clc) {
+    const M = nvModel(j, fl), n = M.n, LW = NV.LW;
+    const fz = Math.min(38, 560 / (n * LW + 1.4)), F = fz * NV.Z0;   // 가까운 쪽 도로가 그림 폭의 85% 남짓
+    const P = (X, Z) => { const k = NV.Z0 / (Z + NV.Z0); return [NV.W / 2 + X * F / (Z + NV.Z0), NV.HZ + (NV.H - NV.HZ) * k]; };
+    const f1 = (q) => q[0].toFixed(1) + ' ' + q[1].toFixed(1);
+    const rib = (c, w, off) => {
+      const A = [], B = [], o = off || 0;
+      for (let i = 0; i < c.length; i++) {
+        const a = c[Math.max(0, i - 1)], b = c[Math.min(c.length - 1, i + 1)];
+        let dx = b[0] - a[0], dz = b[1] - a[1];
+        const m = Math.hypot(dx, dz) || 1; dx /= m; dz /= m;
+        A.push(P(c[i][0] + dz * (o - w / 2), c[i][1] - dx * (o - w / 2)));
+        B.push(P(c[i][0] + dz * (o + w / 2), c[i][1] - dx * (o + w / 2)));
+      }
+      return 'M' + A.map(f1).join('L') + 'L' + B.reverse().map(f1).join('L') + 'Z';
+    };
+    const poly = (pts) => 'M' + pts.map((q) => f1(P(q[0], q[1]))).join('L') + 'Z';
+    const dash = (c, off, a, b) => { let d = ''; for (let s = a; s < b; s += 12) d += rib(jvSlice(c, s, Math.min(b, s + 5)), 0.2, off); return d; };
+    const X = (i) => (i - (n - 1) / 2) * LW;
+    // 갈래: 이웃한 차로들
+    const groups = [];
+    M.sd.forEach((s, i) => { const g = groups[groups.length - 1]; if (g && g.s === s) g.idx.push(i); else groups.push({ s, idx: [i] }); });
+    const others = groups.filter((g) => g.s).map((g) => g.s);
+    groups.forEach((g) => {
+      g.x0 = (X(g.idx[0]) + X(g.idx[g.idx.length - 1])) / 2; g.w = g.idx.length * LW;
+      g.c = nvCenter(g.x0, g.s, M.fork || (!g.s && j.kind === 'fork'), others[0] || 1);
+    });
+    let asph = '', edge = '', lines = '', paint = '', arrows = '', bus = '';
+    const go = new Set(M.go), ZL = NV.ZS - 22;   // 갈림 앞 22m 는 실선 (차로 바꾸지 않기)
+    groups.forEach((g, k) => {
+      asph += rib(g.c, g.w + 0.9);
+      const left = k > 0, right = k < groups.length - 1;
+      edge += rib(jvSlice(g.c, left ? ZL : 0, 9999), 0.3, -g.w / 2) + rib(jvSlice(g.c, right ? ZL : 0, 9999), 0.3, g.w / 2);
+      if (left) lines += dash(g.c, -g.w / 2, 2, ZL);
+      // 버스전용차로 옆 차선은 파랑 (네이버처럼)
+      for (let q = 1; q < g.idx.length; q++) {
+        if (M.bus[g.idx[q - 1]] || M.bus[g.idx[q]]) bus += rib(jvSlice(g.c, 0, 9999), 0.3, -g.w / 2 + q * LW);
+        else lines += dash(g.c, -g.w / 2 + q * LW, 2, 420);
+      }
+      g.idx.forEach((i) => {
+        if (!go.has(i)) return;
+        // 경로 갈래의 차로는 끝까지, 다른 갈래로 이어지는 차로(같이 쓰는 차로)는 갈림 앞까지만 칠한다
+        paint += rib(g.s === M.rs ? g.c : jvSlice(g.c, 0, NV.ZS), LW - 0.45, X(i) - g.x0);
+      });
+      // 노면 화살표: 네이버처럼 모든 차로에 곧은 흰 ↑ (버스 칸 빼고). 갈림 앞은 차로가 곧으니 갈래 차로도 곧게
+      // (v197 운전자 '이거 그대로 쓰는건 아니지?' — 갈래 쪽으로 꺾은 화살표는 원근에 눌려 'ㄱ'자로 누워 보였다)
+      g.idx.forEach((i) => { if (!M.bus[i]) arrows += nvArrow(poly, X(i)); });
+    });
+    // 이 갈림의 색깔 유도선을 알면 갈 차로를 그 색으로 칠한다 (네이버 판교분기점 '구리 성남' 분홍 차로.
+    // 운전자 '파란색보다는 만약 유도선이라고 한다면 저렇게 표현해도 좋아')
+    const clPaint = clc && CL_COLORS[clc] ? CL_COLORS[clc].paint : '';
+    const id = 'nv' + (++jvN);
+    const kind = j.kind === 'main' ? 'main' : j.kind === 'fork' ? 'fork' : 'ramp';
+    return { M, groups, svg: '<svg viewBox="0 0 ' + NV.W + ' ' + NV.H + '" class="nv jc-' + kind + (M.data ? ' nv-data' : '') + '" data-lanes="' + n + '" data-go="' + M.go.map((i) => i + 1).join(',') + '" aria-hidden="true"><defs>' +
+      '<linearGradient id="' + id + 's" x1="0" y1="0" x2="0" y2="1"><stop class="nv-s1" offset="0"/><stop class="nv-s2" offset="1"/></linearGradient>' +
+      '<linearGradient id="' + id + 'g" x1="0" y1="0" x2="0" y2="1"><stop class="nv-g1" offset="0"/><stop class="nv-g2" offset="1"/></linearGradient>' +
+      '<linearGradient id="' + id + 'a" gradientUnits="userSpaceOnUse" x1="0" y1="' + NV.HZ + '" x2="0" y2="' + NV.H + '"><stop class="nv-a1" offset="0"/><stop class="nv-a2" offset="1"/></linearGradient></defs>' +
+      '<g class="nv-sky"><rect width="' + NV.W + '" height="' + (NV.HZ + 1) + '" fill="url(#' + id + 's)"/><rect y="' + NV.HZ + '" width="' + NV.W + '" height="' + (NV.H - NV.HZ) + '" fill="url(#' + id + 'g)"/></g>' +
+      '<path class="nv-asph" fill="url(#' + id + 'a)" d="' + asph + '"/>' +
+      '<path class="nv-go' + (clPaint ? ' nv-cl" style="fill:' + clPaint : '') + '" d="' + paint + '"/>' +
+      '<path class="nv-ln" d="' + lines + edge + '"/>' + (bus ? '<path class="nv-bus" d="' + bus + '"/>' : '') + '<path class="nv-ar" d="' + arrows + '"/>' +
+      '<g class="nv-gan"><path d="M18 4h7v' + (NV.HZ + 24) + 'h-7zM615 4h7v' + (NV.HZ + 24) + 'h-7z"/><rect class="nv-beam" x="14" y="5" width="612" height="8" rx="1.5"/></g></svg>' };
+  }
+  // 차로 가운데 x 의 곧은 노면 화살표 (땅 좌표 → poly 로 투영). 네이버처럼 가는 줄기 + 작은 촉
+  function nvArrow(poly, x) {
+    const z0 = 5, z1 = 13.5, hw = 0.18, hh = 0.58, hl = 4.2;
+    return poly([[x - hw, z0], [x - hw, z1], [x - hh, z1], [x, z1 + hl], [x + hh, z1], [x + hw, z1], [x + hw, z0]]);
   }
   function renderJunction() {
     const el = $('#juncCard');
@@ -5668,6 +5782,7 @@
     if (j && JUNC_ROAD[g.t] && !(ICON_PICKS['junc_' + j.kind + '_day'] && ICON_PICKS['junc_' + j.kind + '_night'])) j = null;
     juncState.g = j ? g : null;
     if (!j) {
+      juncState.fork = null; juncState.cl = null; juncState.key = '';
       // 서랍에 분기점 그림만 있으면 접히는 동안은 그대로 두었다가 숨긴다
       if (!el.hidden && drawerAnimated() && !drawerKeeps('#juncCard')) startDrawerClose();
       else if (!drawer.closing) el.hidden = true;
@@ -5676,18 +5791,55 @@
     }
     cancelDrawerClose();
     el._d = nav.dg;   // 서랍 칸 순서 (v158): 안내 지점까지
-    const key = g.i + ':' + g.t + ':' + g.s;
+    // v197: 고속도로·도시고속도로 갈림은 네이버식 장면 (분기 차로 단면·이 갈림의 색깔 유도선이 바뀌면 다시 그린다)
+    const useNv = NV_KINDS.has(j.kind);
+    const fl = useNv ? forkLane() : null;
+    const cla = useNv ? colorLineAhead() : null;
+    const clHere = !!cla && nav.dg != null && cla.d - nav.dg > -200 && cla.d - nav.dg < 600;   // renderColorLine 의 '같은 갈림'과 같은 기준
+    const key = g.i + ':' + g.t + ':' + g.s + (useNv ? '|' + (fl ? fl.k + ':' + fl.ok.join(',') : '') + '|' + (clHere ? cla.k + cla.c : '') : '');
     if (juncState.key !== key) {
       juncState.key = key;
+      juncState.fork = null; juncState.cl = null;
+      const sg2 = $('#juncLabel2');
       // AI 분기점 장면(낮·밤, 오른쪽 그림. 왼쪽은 CSS 로 좌우 뒤집기)을 골라 두었으면 그것을, 아니면 그려 넣은 원근 그림 (2026-11-15 요청)
       const jd = ICON_PICKS['junc_' + j.kind + '_day'], jn = ICON_PICKS['junc_' + j.kind + '_night'];
       const jimg = (f, c) => '<img class="jv-img ' + c + ' jc-' + j.kind + '" src="' + APP_BASE + 'img/ai/' + f + '?v=' + APP_VERSION + '" alt="" draggable="false">';
-      $('#juncSvg').innerHTML = jd && jn ? jimg(jd, 'jv-day') + jimg(jn, 'jv-night') : juncSvg(j.kind === 'entry' ? Object.assign({}, j, { kind: 'ramp' }) : j);
+      let goSide = '', goStraight = j.kind === 'main', goAl = false, goNo = 0;
+      if (useNv) {
+        const sc = nvScene(j, fl, clHere ? cla.c : '');
+        const bd = ICON_PICKS.junc_bg_day, bn = ICON_PICKS.junc_bg_night;
+        const bg = bd && bn ? jimg(bd, 'jv-day nv-bg') + jimg(bn, 'jv-night nv-bg') : '';
+        $('#juncSvg').innerHTML = bg + sc.svg;
+        $('#juncSvg').classList.toggle('nv-has-bg', !!bg);
+        juncState.fork = sc.M.data ? fl.k : null;
+        juncState.cl = clHere && sc.svg.indexOf('nv-cl') > 0 ? cla.k : null;
+        // 표지판 둘: 경로 갈래(방면 + 들어가는 길의 노선 방패) · 다른 갈래(본선이 이어지면 지금 길의 방패나 이름, 모르면 안 띄움)
+        const rs = sc.M.rs, og = sc.groups.find((q) => q.s !== rs);
+        const last = nav.pts ? nav.pts.length - 1 : 0;
+        const goRoad = routeRoadAt(Math.min(g.i + 2, last)), curRoad = routeRoadAt(Math.max(g.i - 2, 0));
+        goNo = expwayNo(goRoad);
+        goSide = og && og.s > rs ? 'l' : 'r';
+        goStraight = rs === 0; goAl = rs < 0;
+        let other = '';
+        if (og && og.s === 0 && curRoad && curRoad !== goRoad) {
+          const no = expwayNo(curRoad), nm = no ? [] : [curRoad.replace(/고속도로$/, '')];
+          other = juncSignHtml(nm, true, no);
+        }
+        sg2.innerHTML = other;
+        sg2.className = 'jc-label jc-other ' + (goSide === 'l' ? 'sr' : 'sl') + (og && og.s < 0 ? ' al' : '');
+        sg2.setAttribute('aria-label', other ? (curRoad + ' 본선') : '');
+      } else {
+        $('#juncSvg').innerHTML = jd && jn ? jimg(jd, 'jv-day') + jimg(jn, 'jv-night') : juncSvg(j.kind === 'entry' ? Object.assign({}, j, { kind: 'ramp' }) : j);
+        $('#juncSvg').classList.remove('nv-has-bg');
+        sg2.innerHTML = ''; sg2.className = 'jc-label jc-other';
+      }
       // 방면 표지판 (v115). 방면이 없으면 비운다(빈 칸은 CSS 로 숨김). '오른쪽'을 지어 넣지 않는다
-      $('#juncLabel').innerHTML = j.names.length ? juncSignHtml(j.names, j.kind === 'main') : '';
+      $('#juncLabel').innerHTML = j.names.length || goNo ? juncSignHtml(j.names, goStraight, goNo) : '';
+      $('#juncLabel').className = 'jc-label' + (useNv ? ' ' + (goSide === 'l' ? 'sl' : 'sr') + (goAl ? ' al' : '') : '');
       $('#juncLabel').dataset.names = j.label;
       $('#juncLabel').setAttribute('aria-label', j.label ? j.label + ' 방면' : '');
       $('#juncPlace').textContent = j.place;
+      el.classList.toggle('nv', useNv);
       el.classList.toggle('left', j.left);
       el.classList.toggle('main', j.kind === 'main');
       el.classList.toggle('hwy', j.hwy);
@@ -6059,7 +6211,8 @@
   // 안내 카드 밑 줄에 '분홍색 유도선 따라가기'로 (끝점을 지나면 사라짐). 경로가 어느 갈래에도 안 가면(본선 그대로) 안 보인다 — 틀린 색보다 없는 편
   const clData = { loaded: false, rows: [], grid: new Map() };
   const CL_SHOW = 1000, CL_SIDE = 25, CL_END = 25, CL_AHEAD = 3000;
-  const CL_COLORS = { p: { name: '분홍색', css: '#ff4fa3' }, g: { name: '녹색', css: '#16a34a' }, lg: { name: '연한 녹색', css: '#7ed957' } };
+  // paint: 분기점 그림에서 갈 차로를 칠하는 색 (v197, 네이버 분기점 그림의 차로 색처럼 조금 옅게)
+  const CL_COLORS = { p: { name: '분홍색', css: '#ff4fa3', paint: '#f68cc0' }, g: { name: '녹색', css: '#16a34a', paint: '#44c46e' }, lg: { name: '연한 녹색', css: '#7ed957', paint: '#94dc6c' } };
   function setColorLines(j) {
     clData.loaded = false; clData.grid = new Map(); clData.rows = []; nav.clList = null;
     if (!j || !Array.isArray(j.rows)) return;
@@ -6120,7 +6273,9 @@
       const r = clData.rows[k];
       const hits = r.br.map((b) => ({ b, h: passAt(b, o.at) })).filter((x) => x.h && x.h.at > o.at);
       if (hits.length !== 1) continue;                // 어느 갈래에도 안 감(본선 그대로) 또는 둘 다 닿음 → 모름
-      out.push({ at: o.at, end: hits[0].h.at, c: hits[0].b.c, name: r.name, k });
+      // v197 그림 방향: 갈라지는 점의 진행 방향에서 본 갈래 끝점 쪽 (왼쪽 'l' / 오른쪽 'r')
+      const turn = ((bearing(r, hits[0].b) - r.h + 540) % 360) - 180;
+      out.push({ at: o.at, end: hits[0].h.at, c: hits[0].b.c, name: r.name, k, side: turn < 0 ? 'l' : 'r' });
     }
     out.sort((u, v) => u.at - v.at);
     nav.clList = out;
@@ -6135,19 +6290,31 @@
     }
     return null;
   }
+  // v197 유도선 그림 (2026-11-24 운전자 '그 분홍색 유도선 따라가기 <이거 말고 그림으로 보여주는게 나아', '그게 더 사고유발이야'):
+  // 글자 대신 작은 도로 그림 — 본선 두 차로에서 갈래가 옆으로 빠지고, 바닥 색 선(--cl)이 아래에서 올라가 그 갈래로 휘어 나간다 + 거리 숫자만.
+  // 오른쪽으로 빠지는 그림, 왼쪽은 CSS 로 뒤집기
+  // v197 운전자 '이건 그냥 오른쪽 화살표로 해줘도 되고 분홍색 화살표로 해줘도 될 거 같아', '그림이 설명해준다면?':
+  // 작은 도로 그림 대신 그 색의 굵은 화살표 하나 — 곧게 올라가다 갈래 쪽(오른쪽)으로 비켜 나감 (왼쪽은 CSS 로 뒤집기)
+  const CL_ICON = '<svg viewBox="0 0 30 32" aria-hidden="true">' +
+    '<path class="cli-cl" d="M9.5 30V20.2c0-3.2 1.3-5.6 4-7.8L19.6 7.6" fill="none" stroke-width="5.4" stroke-linecap="round" stroke-linejoin="round"/>' +
+    '<path class="cli-hd" d="M14.2 3.9 27.6 2.2 25.6 15.4z" stroke-width="1.2" stroke-linejoin="round"/></svg>';
   function renderColorLine() {
     const el = $('#colorRow'), a = colorLineAhead();
-    el.hidden = !a;
-    if (!a) { el._d = Infinity; return; }
+    // v197: 분기점 장면이 이 유도선을 그림 안에 그렸으면 줄은 숨긴다 (네이버처럼 그림 안에서)
+    const inScene = !!a && !!juncState.g && juncState.cl === a.k && !$('#juncCard').hidden;
+    el.hidden = !a || inScene;
+    if (!a || inScene) { el._d = Infinity; return; }
     const col = CL_COLORS[a.c];
     // 지금 안내(분기점·나들목 출구)가 바로 이 갈림이면 거리는 위 안내 줄에 있다 — 여기 거리(색 선이 갈라지는 곳까지)까지 쓰면 숫자가 둘이라
     // 헷갈린다 (서울TG→판교분기점: 위 '150m 오른쪽 방향', 색 선은 출구 뒤 320m 에서 갈라짐). 그때는 거리 없이, 순서는 안내 지점 거리로
     const same = nav.dg != null && a.d - nav.dg > -200 && a.d - nav.dg < 600;
     el._d = same ? nav.dg : Math.max(0, a.d);   // 줄 순서 (v158)
-    if (el.dataset.c !== a.c) {
-      el.dataset.c = a.c;
+    if (el.dataset.c !== a.c || el.dataset.side !== a.side) {
+      el.dataset.c = a.c; el.dataset.side = a.side;
       el.style.setProperty('--cl', col.css);
-      $('#colorText').innerHTML = '<em>' + col.name + '</em> 유도선 따라가기';
+      el.querySelector('.cl-sw').innerHTML = CL_ICON;
+      el.classList.toggle('cl-left', a.side === 'l');
+      $('#colorText').textContent = '';
     }
     el.dataset.name = a.name;
     const ds = !same && a.d > 15 ? fmtDist(a.d) : '';
@@ -6373,6 +6540,8 @@
       if (!hit) hit = nextStraightLane();   // 가까운 직진 교차로가 먼저
       if (!hit) hit = g && nav.dg != null && nav.dg <= LANE_SHOW ? laneGuide(g) : null;
     }
+    // v197: 분기점 장면이 이 분기 단면의 차로를 이미 그렸으면 차로 칸은 숨긴다 (같은 것을 두 번 보이지 않게)
+    if (hit && hit.fork && juncState.g && juncState.fork === hit.k) hit = null;
     laneState.hit = hit;
     laneState.rowHit = hit;
     if (!hit) {

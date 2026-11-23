@@ -698,6 +698,21 @@ for _k, _ring, _pict, _lims in (('speed', CAM_RED, CAM_CAMERA, tuple(range(20, 1
     for _l in _lims:
         CAMNUM['cam_%s_%d' % (_k, _l)] = (('ref/ref_cam_%s_%d.png' % (_k, _l),), CAM_NUM % _l, _ring + _pict + CORP + BG)
 JOBS.update(CAMNUM)
+# v197 네이버식 분기점 장면의 풍경 (2026-11-24 운전자 '우리 방식 대로 AI이미지 활용을 해서'): 길은 앱이 차로 수대로 그리므로
+# 하늘·먼 산·나무·풀밭만. 지평선은 그림 위에서 35% (app.js NV.HZ 84/240), 아래 가운데는 길이 덮는다 (--icons jbg)
+JBG_BASE = ('Wide 8:3 panorama background scenery for the junction view of a premium Korean car navigation app (like the Naver Map '
+            'junction close-up), polished modern illustration with soft gradients and crisp edges. First-person view from a car on '
+            'a highway looking straight ahead. The horizon line is perfectly straight and level at exactly 35 percent of the image '
+            'height from the top. Above it: sky. Along the horizon: a low line of distant hills and small rounded trees, kept low '
+            '(no taller than 6 percent of the image height). Below it: a flat open grass field that recedes in perspective, '
+            'smooth and calm with very subtle texture. ')
+JBG_END = (' Absolutely NO road, no asphalt, no lanes, no lines, no arrows, no signs, no poles, no fences, no buildings, no cars, '
+           'no people, no text, no letters, no logos. The whole lower part is open grass. Even, calm composition, symmetric.')
+JBG = {'junc_bg_day': ((), JBG_BASE, 'Daytime: clear light-blue sky gradient that gets paler toward the horizon, a few soft white '
+                       'clouds high up, hazy blue-green distant hills, fresh green grass with slightly darker green near the viewer.' + JBG_END),
+       'junc_bg_night': ((), JBG_BASE, 'Night: deep navy sky gradient, a faint warm orange glow right on the horizon, a few tiny '
+                         'stars, dark blue-grey silhouettes of distant hills and trees, very dark green-grey grass field.' + JBG_END)}
+PANO |= set(JBG)
 
 
 def _gpt25(model):
@@ -889,6 +904,8 @@ def main():
         JOBS.update(FIX4)   # 분기점 그림: 사용자가 X·동그라미 친 곳만 고치기
     if 'jc' in a.icons.split(','):
         JOBS.update(JCNAVER)   # 분기 후 합류 (v156)
+    if 'jbg' in a.icons.split(','):
+        JOBS.update(JBG)   # v197 분기점 장면 풍경
     if 'junc3' in a.icons.split(','):
         JOBS.update(JUNC3)   # 분기점 그림 14장: 길게 이어진 화살표·은은한 파란 빛
     models = [m for m in (a.models or 'flare,sunburst,flare26,sunburst26').split(',') if m in MODELS]
@@ -898,7 +915,7 @@ def main():
     groups = {'cars': [k for k in JOBS if is_car(k)], 'signs': [k for k in JOBS if is_sign(k)],
               'guide': [k for k in JOBS if not is_car(k) and not is_sign(k)],
               'roads': ROADS, 'rb': RBS, 'redo': ROADS + RBS,
-              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s'], 'fix3': ['outs', 'ins', 'over_r', 'under_s', 'under_r', 'side_r', 'oside_r'], 'grass': RBS, 'junc': sorted(PANO), 'green': list(GREEN_KIND), 'junc2': JV2, 'soft': list(SOFT), 'rbdepth': list(RBDEPTH), 'junc3': list(JUNC3), 'clean': list(CLEAN), 'klbold': ['kl'], 'sharp': ['sharp_r'], 'slbold': ['sl'], 'fix4': list(FIX4), 'fix5': list(FIX5), 'fix6': list(FIX6), 'under3d': list(UNDER3D), 'grade3': list(GRADE3), 'grade4': list(GRADE4), 'mainline': list(MAINLINE), 'jc': ['jc'], 'cams': list(CAMS), 'camnum': list(CAMNUM)}
+              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s'], 'fix3': ['outs', 'ins', 'over_r', 'under_s', 'under_r', 'side_r', 'oside_r'], 'grass': RBS, 'junc': sorted(PANO), 'green': list(GREEN_KIND), 'junc2': JV2, 'soft': list(SOFT), 'rbdepth': list(RBDEPTH), 'junc3': list(JUNC3), 'clean': list(CLEAN), 'klbold': ['kl'], 'sharp': ['sharp_r'], 'slbold': ['sl'], 'fix4': list(FIX4), 'fix5': list(FIX5), 'fix6': list(FIX6), 'under3d': list(UNDER3D), 'grade3': list(GRADE3), 'grade4': list(GRADE4), 'mainline': list(MAINLINE), 'jc': ['jc'], 'cams': list(CAMS), 'camnum': list(CAMNUM), 'jbg': list(JBG)}
     want = []
     for i in a.icons.split(','):
         want += groups.get(i, [i])

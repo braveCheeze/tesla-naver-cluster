@@ -2890,6 +2890,7 @@
     { id: 'S124', name: "S124 spots checked on Naver guidance (v194, driver: '네이버지도 과속단속을 나는 제일 신뢰하니까 저걸 기반으로 넣어줘'): place text 'A→B' saying my direction no longer keeps a camera that crosses the route at 77° (둔촌사거리 25557) — along (0°) or written the other way (180°) it still decides; a driver spot with kind 3 reads '운전자 신고 신호·과속단속', with the rear flag '운전자 신고 후면단속' and after passing '후면단속 중'", fn: s124 },
     { id: 'S125', name: "S125 other-route bubble during guidance (v195, driver: '가능하면 이런 기능도 있으면 좋을거 같긴 해' — Naver's '3분 증가 · 874m 증가 · 통행료 없음'): the traffic refresh asks for several options in one request, keeps the current option's route, and offers the other one that branches 1.2 km ahead as a light line and a bubble (time, distance, toll, traffic bar); tapping it switches to that route, passing the branch without tapping clears it", fn: s125 },
     { id: 'S126', name: "S126 anonymous camera pass records (v196, driver '지나간곳 모조리 체크해서 과속 단속 체크해줘 신고를 하지 않았더라도 내역도 남겨놓고'): passing a camera in its direction records alerted (card distance) or missed, the other direction is not counted, an unknown limit counts as hidden; the batch has only camera number, alert, 5 km/h speed, limit, nav, date — no position, time or sid; a 90→60→90 dip with no camera within 400 m is a 100 m-cell candidate, a jam is not; the operator car adds the camera spot and trace; the settings switch stops it", fn: s126 },
+    { id: 'S130', name: "S130 Naver-style junction scene (v197, driver sent Naver's 신갈JC '571m 대전' close-up: '이런거 참고해주고 적용해줘', '우리 방식 대로 AI이미지 활용을 해서', colour lines '그림으로'): an AI landscape with the road drawn by lane count. With a fork cross-section: 6 lanes, the two exit lanes painted, the bus lane line blue, the pink guide line inside the picture, two signs ('[50] 원주 인천 ↗' over the exit, '[1] ↑' over the main line), and the lane row / colour row hidden. Without data: 2 + 2 lanes. Keep-main paints lanes 2–4 under '[1] 서울 ↑'. Night colours. With the picture off, the colour row is a small road picture, no words", fn: s130 },
   ];
 
   // S55: 주의 표지 (전국도로안전표지표준데이터의 주의표지, data/signs.json · tools/build_signs.py, 2026-11-14 요청).
@@ -4069,6 +4070,8 @@
       const el = document.getElementById('juncCard'), img = el.querySelector('#juncSvg img.jv-day');
       return { text: text('#turnText'), kind: t.turnKind(t.nav.next), junc: visible('#juncCard'), main: el.classList.contains('main'), left: el.classList.contains('left'),
         img: img ? img.getAttribute('src').replace(/^.*\/img\/ai\//, '').replace(/\?.*$/, '') : '', flip: img ? getComputedStyle(img).transform : '',
+        // v197: 본선 그대로는 네이버식 장면 jc-main (본선 차로를 칠함), 표지판에 경부 방패 1
+        scene: (() => { const sv = el.querySelector('#juncSvg svg.nv'); return sv ? sv.getAttribute('class').replace(/^nv /, '') + ':' + sv.dataset.go : ''; })(),
         straightSign: !!el.querySelector('#juncLabel .sg-arrow path[d^="M12 28V10"]'), sign: text('#juncLabel'),
         // v143: 안내 칸 그림 — 본선 그대로는 네이버 '도로 주행' 그림(ml/mr), '오른쪽 방향'은 굵은 화살표 하나(sr 그림)
         icon: (() => { const ti = document.querySelector('#turnIcon svg, #turnIcon img'); if (!ti) return ''; if (ti.tagName === 'IMG') return ti.getAttribute('src').replace(/^.*\/img\/ai\//, '').split('__')[0]; return (ti.getAttribute('class') || '').replace(/\s+/g, ' ').trim(); })() };
@@ -4084,7 +4087,7 @@
       t.endNav(); softReset();
     }
     const a = r.singal, b = r.pangyo;
-    const ok = !!a && !!b && a.kind === 's' && a.text === '신갈분기점에서 직진 · 서울 방면' && a.junc && a.main && a.left && /^junc_main_day/.test(a.img) && a.flip === 'none' && a.straightSign && a.sign === '서울' &&
+    const ok = !!a && !!b && a.kind === 's' && a.text === '신갈분기점에서 직진 · 서울 방면' && a.junc && a.main && a.left && a.scene === 'jc-main:1,2,3' && a.straightSign && a.sign === '1서울' &&
       b.kind === 'kr' && /오른쪽 방향/.test(b.text) && b.junc && !b.main && !b.straightSign &&
       /\bml\b/.test(a.icon) && b.icon === 'sr';
     return { pass: ok, detail: JSON.stringify(r) };
@@ -4682,7 +4685,9 @@
     const data = (pEnd, gEnd) => t.setColorLines({ v: 1, rows: [[spot.lat, spot.lng, 0, [['g', gEnd.lat, gEnd.lng], ['p', pEnd.lat, pEnd.lng]], '시험분기점']] });
     const el = () => document.getElementById('colorRow');
     const row = () => ({ shown: visible('#colorRow'), c: el().dataset.c || '', name: el().dataset.name || '', text: text('#colorText'), dist: text('#colorDist'),
-      cl: el().style.getPropertyValue('--cl') });
+      cl: el().style.getPropertyValue('--cl'), aria: el().getAttribute('aria-label') || '', icon: !!el().querySelector('.cl-sw svg .cli-cl'), side: el().dataset.side || '',
+      // v197: 분기점 장면이 바로 이 갈림이면 유도선은 그림 안에 (줄은 숨김)
+      scene: (() => { const p = document.querySelector('#juncCard:not([hidden]) svg.nv .nv-cl'); return p ? p.style.fill : ''; })() });
     const go = (RR, m) => { const a = pointAt(RR, m); feed(a.p, 25, a.h); t.renderNav(); };
     const drive = async (pEnd, gEnd, upto) => {
       data(pEnd, gEnd);
@@ -4744,14 +4749,15 @@
       await t.loadColorLines();
       softReset();
     }
-    const ok = r.pink.shown && r.pink.c === 'p' && r.pink.text === '분홍색 유도선 따라가기' && /m$/.test(r.pink.dist) && distM(r.pink.dist) >= 100 && distM(r.pink.dist) <= 200 &&
+    const ok = r.pink.shown && r.pink.c === 'p' && r.pink.text === '' && r.pink.icon && r.pink.side === 'r' && /분홍색 유도선 따라가기/.test(r.pink.aria) && /m$/.test(r.pink.dist) && distM(r.pink.dist) >= 100 && distM(r.pink.dist) <= 200 &&
       /ff4fa3/i.test(r.pink.cl) && r.pink.name === '시험분기점' &&
       !r.passed.shown &&
-      r.green.shown && r.green.c === 'g' && r.green.text === '녹색 유도선 따라가기' &&
+      r.green.shown && r.green.c === 'g' && r.green.text === '' && r.green.icon && /녹색 유도선 따라가기/.test(r.green.aria) &&
       !r.mainline.shown && !r.both.shown &&
       r.real.loaded && r.real.rows > 150 && r.real.singalN === 'gp:g-west' && r.real.singalS === 0 &&
       r.seoulTg.list.indexOf('판교분기점:p') >= 0 && r.seoulTg.list.indexOf('판교나들목') < 0 &&
-      r.seoulTg.far === false && r.seoulTg.near && r.seoulTg.near.shown && r.seoulTg.near.c === 'p' && r.seoulTg.near.name === '판교분기점' && r.seoulTg.near.dist === '' &&
+      r.seoulTg.far === false && r.seoulTg.near && ((r.seoulTg.near.shown && r.seoulTg.near.c === 'p' && r.seoulTg.near.name === '판교분기점' && r.seoulTg.near.dist === '') ||
+        (!r.seoulTg.near.shown && /246, 140, 192|f68cc0/i.test(r.seoulTg.near.scene))) &&
       /^하남:p/.test(r.hanam);
     return { pass: ok, detail: JSON.stringify(r) + (ok ? ' ✓' : ' ✗') };
   }
@@ -6201,6 +6207,103 @@
       F && F.dr === 30 && F.o === 0 && r.f.cells.includes(F.c) && r.f.jam === 0 &&
       r.g.op !== 'none' && r.g.op.miss === 1 && r.g.op.lat === CAM.lat && r.g.op.trace > 0 && r.g.sentOp >= 1 && !r.g.pubLat &&
       r.h.pref === false && r.h.stored === '0' && r.h.left === 0 && r.h.after === 0 && /통계/.test(r.h.label) && r.h.back;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S130: 네이버식 분기점 장면 (v197, 운전자가 네이버 경부 하행 신갈JC '571m 대전' 확대 그림을 보내며 '이런거 참고해주고 적용해줘',
+  //       '우리 방식 대로 AI이미지 활용을 해서', 유도선은 '글씨로 보여주는것보다 그림이 훨씬'). 북쪽으로 곧은 3km 경부고속도로, 1.5km 신갈분기점.
+  //   (a) '원주, 인천' 오른쪽 방향 + 분기 단면(SB|S|S|S|R|R, 경로는 R 갈래) + 분홍 유도선: 600m 앞 그림이 6차로, 5·6차로를 분홍으로 칠함(네이버처럼), 버스 차선 파랑,
+  //       표지판 둘(오른쪽 '[50] 원주 인천 ↗', 왼쪽 경부 '[1] ↑'), 차로 칸·유도선 줄은 숨김 (그림에 있으니)
+  //   (b) 같은 곳, 자료 없음: 갈림길 2 + 2, 오른쪽 둘 칠함, 다른 갈래 표지는 모르니 없음
+  //   (c) '서울' 본선 그대로(왼쪽 도로 주행) + 단면(경로는 본선): 본선 2·3·4차로 칠함(버스 칸 빼고), 왼쪽 '[1] 서울 ↑' 하나
+  //   (d) 밤에는 칠한 차로가 밤 색, AI 풍경이 밤 그림   (e) 그림을 끄면(설정) 유도선은 줄로 — 글자 없이 작은 도로 그림 + 오른쪽
+  async function s130() {
+    const t = T(), r = {}, prevJ = t.prefs.junction;
+    const raw = [];
+    for (let k = 0; k <= 30; k++) raw.push(dest(NAV_ORIGIN, 0, 100 * k));
+    const path = raw.map((p) => [round6(p.lng), round6(p.lat)]);
+    const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const total = cum[cum.length - 1];
+    const mkR = (g) => ({
+      route: { distance: r0(total), duration: r0(total / 25 * 1000), tollFare: 0, fuelPrice: 300, path,
+        guide: [Object.assign({ i: 15, d: r0(cum[15]), ms: 60000 }, g), { i: 30, t: 88, s: '목적지', d: r0(total - cum[15]), ms: 60000 }],
+        sections: g.t === 41 ? [{ i: 0, n: 31, name: '경부고속도로', speed: 80, cong: 1 }]   // 본선 그대로: 한 구간이 안내 지점을 지나 이어짐 (mainKeep)
+          : [{ i: 0, n: 16, name: '경부고속도로', speed: 80, cong: 1 }, { i: 15, n: 16, name: '영동고속도로', speed: 80, cong: 1 }] },
+      P, cum, total, dest: { name: '분기점 장면', addr: '', lat: P[30].lat, lng: P[30].lng } });
+    const EXIT = mkR({ t: 5, s: "신갈분기점에서 '원주, 인천' 방면으로 오른쪽 방향" });
+    const MAIN = mkR({ t: 41, s: "신갈분기점에서 '서울' 방면으로 왼쪽 도로 주행" });
+    const on = dest(NAV_ORIGIN, 0, 2000), off = dest(dest(NAV_ORIGIN, 0, 1700), 270, 300), sec = dest(NAV_ORIGIN, 0, 1350);
+    const forks = (toExit) => ({ rows: [[sec.lat, sec.lng, 0, 'SB|S|S|S|R|R', [[0], [0], [0], [0], [1], [1]]]],
+      ends: (toExit ? [off, on] : [on, off]).map((p) => [p.lat, p.lng]) });
+    const cls = (c) => { const a = dest(NAV_ORIGIN, 0, 1450), b = dest(NAV_ORIGIN, 0, 1900);
+      return { v: 1, rows: [[a.lat, a.lng, 0, [[c, b.lat, b.lng], [c === 'p' ? 'g' : 'p', off.lat, off.lng]], '신갈분기점']] }; };
+    const go = (R, s) => { const a = pointAt(R, s); feed(a.p, 25, a.h); t.renderNav(); };
+    const snap = () => {
+      const el = document.getElementById('juncCard'), sv = el.querySelector('#juncSvg svg.nv'), l1 = document.getElementById('juncLabel'), l2 = document.getElementById('juncLabel2');
+      const cl = sv && sv.querySelector('.nv-cl'), goP = sv && sv.querySelector('.nv-go'), bg = el.querySelector('#juncSvg img.nv-bg.jv-night');
+      return { shown: visible('#juncCard'), nv: el.classList.contains('nv'), kind: sv ? sv.getAttribute('class').replace(/^nv /, '').replace(/ nv-data/, '') : '', data: !!(sv && sv.classList.contains('nv-data')),
+        lanes: sv ? sv.dataset.lanes : '', go: sv ? sv.dataset.go : '', bus: !!(sv && sv.querySelector('.nv-bus')), cl: cl ? cl.style.fill : '',
+        sign1: text('#juncLabel'), side1: /\bsr\b/.test(l1.className) ? 'r' : /\bsl\b/.test(l1.className) ? 'l' : '', straight1: !!l1.querySelector('.sg-arrow path[d^="M12 28V10"]'),
+        sign2: visible('#juncLabel2') ? text('#juncLabel2') : '', side2: /\bsr\b/.test(l2.className) ? 'r' : /\bsl\b/.test(l2.className) ? 'l' : '', straight2: !!l2.querySelector('.sg-arrow path[d^="M12 28V10"]'),
+        goFill: goP ? getComputedStyle(goP).fill : '', bgNight: bg ? getComputedStyle(bg).display : '', place: getComputedStyle(el.querySelector('.jc-head')).display !== 'none',
+        laneRow: visible('#laneRow'), colorRow: visible('#colorRow') };
+    };
+    try {
+      // (a)
+      t.setForkData(forks(true)); t.setColorLines(cls('p'));
+      softReset();
+      await planAndStart(EXIT);
+      for (let s = 20; s <= 900; s += 20) go(EXIT, s);
+      r.a = snap();
+      for (let s = 920; s <= 1620; s += 20) go(EXIT, s);
+      r.aPast = { shown: visible('#juncCard'), laneRow: visible('#laneRow') };
+      t.endNav();
+      // (b)
+      t.setForkData(null); t.setColorLines(null);
+      softReset();
+      await planAndStart(EXIT);
+      for (let s = 20; s <= 900; s += 20) go(EXIT, s);
+      r.b = snap();
+      t.endNav();
+      // (c)
+      t.setForkData(forks(false));
+      softReset();
+      await planAndStart(MAIN);
+      for (let s = 20; s <= 900; s += 20) go(MAIN, s);
+      r.c = snap();
+      // (d) 밤
+      t.setNightMode('on');
+      r.d = snap();
+      t.setNightMode('off');
+      r.dDay = snap().goFill;
+      t.endNav();
+      // (e) 그림 끔 → 유도선 줄
+      t.setForkData(null); t.setColorLines(cls('p'));
+      t.prefs.junction = false;
+      softReset();
+      await planAndStart(EXIT);
+      for (let s = 20; s <= 700; s += 20) go(EXIT, s);
+      const row = document.getElementById('colorRow'), sw = row.querySelector('.cl-sw svg');
+      r.e = { shown: visible('#colorRow'), text: text('#colorText'), icon: !!row.querySelector('.cl-sw svg .cli-cl'), side: row.dataset.side || '',
+        flip: sw ? getComputedStyle(sw).transform : '', aria: row.getAttribute('aria-label') || '', junc: visible('#juncCard') };
+      t.endNav();
+    } finally {
+      t.prefs.junction = prevJ;
+      t.setNightMode('auto');
+      t.setForkData(null); await t.loadForks();
+      t.setColorLines(null); await t.loadColorLines();
+      softReset();
+    }
+    const a = r.a || {}, b = r.b || {}, c = r.c || {}, d = r.d || {}, e = r.e || {};
+    const ok = a.shown && a.nv && a.kind === 'jc-fork' && a.data && a.lanes === '6' && a.go === '5,6' && a.bus && /246, 140, 192/.test(a.cl) &&
+      a.sign1 === '50원주인천' && a.side1 === 'r' && !a.straight1 && a.sign2 === '1' && a.side2 === 'l' && a.straight2 && !a.place &&
+      !a.laneRow && !a.colorRow && r.aPast && !r.aPast.shown &&
+      b.shown && b.nv && !b.data && b.lanes === '4' && b.go === '3,4' && !b.cl && b.sign1 === '50원주인천' && b.sign2 === '' &&
+      c.shown && c.kind === 'jc-main' && c.data && c.go === '2,3,4' && c.sign1 === '1서울' && c.side1 === 'l' && c.straight1 && c.sign2 === '' && !c.laneRow &&
+      d.shown && d.goFill && d.goFill !== r.dDay && d.bgNight === 'block' &&
+      e.shown && !e.junc && e.text === '' && e.icon && e.side === 'r' && e.flip === 'none' && /분홍색 유도선 따라가기/.test(e.aria);
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
