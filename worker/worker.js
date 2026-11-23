@@ -35,9 +35,10 @@ const routeHits = new Map();
 // Origin 은 위조할 수 있으므로 유료 API(네이버 클라우드)와 KV 쓰기를 이것으로 지킨다.
 // v175: 공유 IP(CGNAT) 뒤의 여러 차가 정상으로 써도 막히지 않게 넉넉히 (비용은 하루 상한이 지킨다)
 const LIMITS = { '/route': 40, '/geocode': 60, '/reverse': 150, '/search': 60, '/hipass': 60, '/weather': 60, '/config': 120,
-  '/event': 60, '/log': 3, '/fix': 30, '/fixes': 60, '/events': 30, '/fix/review': 30, '/pass': 20, '/passes': 30, '/trip': 30, '/trips': 60, '/handoff': 30 };
+  '/event': 60, '/log': 3, '/fix': 30, '/fixes': 60, '/events': 30, '/fix/review': 30, '/pass': 20, '/passes': 30, '/trip': 30, '/trips': 60, '/handoff': 30,
+  '/check': 10, '/check/status': 30, '/check/next': 120, '/check/result': 120, '/check/unmatched': 30, '/check/results': 30 };
 const PAID = new Set(['/route', '/geocode', '/reverse', '/search']);
-const KV_WRITE = new Set(['/event', '/fix', '/fix/review']);
+const KV_WRITE = new Set(['/event', '/fix', '/fix/review', '/check']);
 const DAY_CAP = { paid: 20000, kv: 900, pass: 30000, trip: 3000 };   // pass: 하루 통과 기록 건수, trip: 경로 조각 수 (D1 무료 한도 쓰기 하루 10만 행 안)
 const hits = new Map();
 const day = { d: '', paid: 0, kv: 0, pass: 0, trip: 0 };
@@ -89,6 +90,51 @@ function fixState(e, day) {
   if (!e.auto) return 'pending';
   const idle = daysBetween(e.last || e.auto, day);
   return idle > FIX_TTL_DAYS ? 'expired' : idle > FIX_TTL_DAYS - 7 ? 'expiring' : 'auto';
+}
+// ---- v202 실시간 신고 확인 (아래 /check 설명) ----
+// KV 키: 'chkq:<순위 0 신고>:<시각 13자리>:<id>' 대기열 · 'chks:<id>' 상태(14일) · 'chka:<카메라>' 자동 확인 표시(7일) ·
+//        'unm:<격자 y,x>:<8방위>' 네이버에도 없는 신고 모음(지우지 않음) · 'chkr:<뒤집은 시각>:<id>' 결과 기록(90일)
+const CHECK_ID = /^[a-z0-9]{8,24}$/;
+const CHECK_STATE_TTL = 14 * 86400, CHECK_RES_TTL = 90 * 86400, CHECK_AUTO_TTL = 7 * 86400;
+// 네이버 종류 → 앱 신고 지점 종류(1 과속·3 신호·과속)와 표시(1 후면단속). 구간단속·'표지판 확인'(시간제)·제한 모름은 자동으로 넣지 않는다
+const CHECK_KIND = { '신호과속': [3, 0], '과속단속': [1, 0], '박스형': [1, 0], '이동식': [1, 0], '후면단속': [1, 1] };
+const dir8 = (h) => (h == null || !Number.isFinite(+h) ? 'x' : String(Math.round(((+h % 360) + 360) % 360 / 45) % 8));
+const headOf = (v) => (v == null || v === '' || !Number.isFinite(+v) ? null : ((Math.round(+v) % 360) + 360) % 360);
+function checkPt(o) {
+  const lat = +((o && (o.lat != null ? o.lat : o[0])) || NaN), lng = +((o && (o.lng != null ? o.lng : o[1])) || NaN);
+  return lat > 33 && lat < 39 && lng > 124 && lng < 132 ? { lat: +lat.toFixed(6), lng: +lng.toFixed(6) } : null;
+}
+// h 방향으로 m 미터 (짧은 거리용)
+function offsetPt(p, h, m) {
+  const r = h * Math.PI / 180;
+  return { lat: +(p.lat + Math.cos(r) * m / 110540).toFixed(6), lng: +(p.lng + Math.sin(r) * m / (Math.cos(p.lat * Math.PI / 180) * 111320)).toFixed(6) };
+}
+async function checkState(env, id) { try { return JSON.parse((await env.LOGS.get('chks:' + id)) || 'null'); } catch (e) { return null; } }
+const putCheckState = (env, id, st) => env.LOGS.put('chks:' + id, JSON.stringify(st), { expirationTtl: CHECK_STATE_TTL });
+// 자동 확인 후보: v196 통과 통계(cam_day)에서 최근 30일 경고 없이 지난 것(missed)이 서로 다른 날 2번 넘게, 또는 통과 3번 이상 중 30% 넘게
+async function autoCheckJob(env) {
+  if (!env.STATS) return null;
+  let rows = [];
+  try {
+    const db = await passDb(env);
+    const since = new Date(Date.now() + 9 * 3600e3 - 30 * 86400000).toISOString().slice(0, 10);
+    const q = await db.prepare('SELECT cam, SUM(n) AS n, SUM(missed) AS m, COUNT(DISTINCT CASE WHEN missed > 0 THEN day END) AS md, MAX(lim) AS lim, MAX(kind) AS kind ' +
+      'FROM cam_day WHERE day >= ? GROUP BY cam HAVING md > 2 OR (n >= 3 AND m * 10 > n * 3) ORDER BY md DESC, m DESC LIMIT 30').bind(since).all();
+    rows = (q && q.results) || [];
+  } catch (e) { return null; }
+  for (const r of rows) {
+    const m = PASS_KEY.exec(String(r.cam || ''));
+    if (!m) continue;
+    if (await env.LOGS.get('chka:' + r.cam)) continue;   // 7일에 한 번
+    await env.LOGS.put('chka:' + r.cam, '1', { expirationTtl: CHECK_AUTO_TTL });
+    const at = { lat: +m[1], lng: +m[2] }, h = m[3] === 'x' ? null : +m[3] * 45;
+    const id = 'a' + crypto.randomUUID().replace(/-/g, '').slice(0, 15);
+    const job = { id, kind: 'auto', lat: at.lat, lng: at.lng, heading: h, cam: r.cam, limit: r.lim || null, camKind: r.kind || null,
+      passes: r.n, missed: r.m, missDays: r.md, trail: h == null ? [] : [[offsetPt(at, (h + 180) % 360, 450).lat, offsetPt(at, (h + 180) % 360, 450).lng], [at.lat, at.lng]], at: Date.now() };
+    await putCheckState(env, id, { st: 'checking', kind: 'auto', at: Date.now(), job });
+    return job;
+  }
+  return null;
 }
 // 소금: Secret IP_SALT, 없으면 ADMIN_TOKEN 에서 (둘 다 비밀이라 해시로 IP 를 거꾸로 찾을 수 없다)
 const ipSalt = (env) => (env.IP_SALT ? String(env.IP_SALT) : env.ADMIN_TOKEN ? 'tnc-ip-v1|' + String(env.ADMIN_TOKEN) : '');
@@ -257,7 +303,8 @@ export default {
     const isPassPost = req.method === 'POST' && url.pathname === '/pass';
     const isTripPost = req.method === 'POST' && url.pathname === '/trip';
     const isHandoffPost = req.method === 'POST' && url.pathname === '/handoff';
-    if (req.method !== 'GET' && !isLogPost && !isEventPost && !isFixPost && !isReviewPost && !isPassPost && !isTripPost && !isHandoffPost) return json({ error: 'method' }, 405, cors);
+    const isCheckPost = req.method === 'POST' && (url.pathname === '/check' || url.pathname === '/check/result');
+    if (req.method !== 'GET' && !isLogPost && !isEventPost && !isFixPost && !isReviewPost && !isPassPost && !isTripPost && !isHandoffPost && !isCheckPost) return json({ error: 'method' }, 405, cors);
     // v172: 접속지(IP)별 횟수 제한 → 하루 상한 → 운영자 토큰 순서 (토큰 맞히기 시도도 횟수 제한에 걸린다)
     const ip = req.headers.get('CF-Connecting-IP') || 'x';
     const wait = overLimit(ip, url.pathname);
@@ -268,7 +315,8 @@ export default {
     const bearer = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
     const isAdmin = !!env.ADMIN_TOKEN && String(env.ADMIN_TOKEN).length >= 16 && sameToken(bearer, String(env.ADMIN_TOKEN));
     // 남의 신고·진단 기록을 읽거나 진단 기록을 올리는 것은 운영자만 (Origin 은 위조할 수 있다)
-    if ((url.pathname === '/events' || url.pathname === '/log' || url.pathname === '/passes' || url.pathname === '/trips' || url.pathname === '/handoff') && !isAdmin) {
+    if ((url.pathname === '/events' || url.pathname === '/log' || url.pathname === '/passes' || url.pathname === '/trips' || url.pathname === '/handoff' ||
+      url.pathname === '/check/next' || url.pathname === '/check/result' || url.pathname === '/check/unmatched' || url.pathname === '/check/results') && !isAdmin) {
       return json({ error: 'unauthorized' }, 401, cors);
     }
     if (!isAdmin && overDay(url.pathname)) return json({ error: 'daily limit', retryAfter: 3600 }, 429, cors);
@@ -285,7 +333,7 @@ export default {
       }, 200, cors);
     }
     // 브라우저가 아닌 곳에서 마구 부르는 것을 1차로 막는다 (Origin 은 위조 가능하므로 완벽하진 않음)
-    if (!allowed) return json({ error: 'origin not allowed' }, 403, cors);
+    if (!allowed && !isAdmin) return json({ error: 'origin not allowed' }, 403, cors);   // v202: 운영자 도구(에뮬레이터 실행기)는 Origin 없이 토큰으로
 
     const ncpHeaders = { 'x-ncp-apigw-api-key-id': env.NCP_KEY_ID || '', 'x-ncp-apigw-api-key': env.NCP_KEY || '' };
 
@@ -436,8 +484,143 @@ export default {
         }
         // 모든 사용자: 운영자 고침·확인한 곳(src 'op')과 아직 확인 전인 자동 반영(src 'auto', 앱이 '사용자 제보'로 표시)
         const items = list.map((e) => ({ e, st: fixState(e, day) })).filter((x) => FIX_PUBLIC.has(x.st))
-          .map(({ e, st }) => ({ kind: e.kind, k: e.k, lat: e.lat, lng: e.lng, h: e.h, src: st === 'ok' ? 'op' : 'auto' }));
+          .map(({ e, st }) => Object.assign({ kind: e.kind, k: e.k, lat: e.lat, lng: e.lng, h: e.h, src: st === 'ok' ? 'op' : 'auto' },
+            e.lim ? { lim: e.lim } : {}, e.ck ? { ck: e.ck } : {}, e.fl ? { fl: e.fl } : {}));   // v202: 네이버 확인으로 넣은 지점은 제한·종류·후면
         return json({ v: 1, items }, 200, cors, 300);
+      }
+
+      // v202 실시간 신고 확인 (2026-11-24 운전자 '단속경보나 경고없을때 눌렀을때 에뮬레이터가 일을 하지 않는다면 찾아서 적용하고 그 사용자에게
+      // 신고 반영 완료를 작게나마 알림 토스트로 가볍게 3초 띄어주고 … 바로바로 실시간으로 적용되게'):
+      //   POST /check            앱: 경고 없이 누른 '잘못된 정보 신고' {id, dev, lat, lng, h, kmh[, trail(운영자 차만)]} → 대기열. {ok, id, pos}
+      //   GET  /check/status?ids 앱: 내 요청들의 상태 {items:{id:{st:'queued'|'checking'|'found'|'none'|'unchecked'|'unknown', cams?:[{limit,kind}]}}}
+      //   GET  /check/next       운영자(에뮬레이터 실행기): 하나 꺼냄 {job:{id, kind:'user'|'auto', lat, lng, heading, kmh?, trail:[[lat,lng]…], …}}, 없으면 204.
+      //                          사용자 신고가 없으면 통과 통계에서 경고 없이 자주 지난 카메라를 낮은 순위로 (한 카메라 7일에 한 번)
+      //   POST /check/result     운영자: {id, status:'found'|'none'|'unchecked', cams:[{lat,lng,heading,limit,kind,rel,shots,evidence}], run, checked, reason}
+      //                          'found' 는 그 자리·방향·제한·종류를 운영자 고침(신고 지점, 바로 모든 사용자)으로 넣는다. 'none' 도 버리지 않고 사용자 신고면
+      //                          약 100m 격자·8방위로 모은다(신고 수·기기 수·날 수). 지우는 것은 없음(양방향 두 번 규칙은 운영자가)
+      //   GET  /check/unmatched  운영자: 네이버에도 없는데 신고가 몰리는 곳 {v:1, items:[{cell, lat, lng, dir, n, devices, days, last, candidate}]}
+      //   GET  /check/results    운영자: 최근 결과 100개
+      if (url.pathname === '/check' && isCheckPost) {
+        if (!env.LOGS) return json({ ok: false }, 200, cors);
+        const text = await req.text();
+        if (text.length > (isAdmin ? 60000 : 4000)) return json({ error: 'too large' }, 413, cors);
+        let b;
+        try { b = JSON.parse(text); } catch (e) { return json({ error: 'bad json' }, 400, cors); }
+        const id = String((b && b.id) || ''), dev = String((b && b.dev) || ''), at = checkPt(b);
+        if (!CHECK_ID.test(id) || !CHECK_ID.test(dev) || !at) return json({ error: 'bad check' }, 400, cors);
+        if (await checkState(env, id)) return json({ ok: true, id, dup: true }, 200, cors);
+        // 궤적은 운영자 차만 (v172 위치정보 최소 수집: 공개 사용자는 신고 자리·방향·속도만)
+        const trail = isAdmin && Array.isArray(b.trail) ? b.trail.slice(-120).map(checkPt).filter(Boolean).map((q) => [q.lat, q.lng]) : [];
+        const job = { id, kind: 'user', dev, lat: at.lat, lng: at.lng, heading: headOf(b.h), kmh: intIn(b.kmh, 0, 250), trail, v: appVer(b.v), at: Date.now() };
+        const qk = 'chkq:0:' + String(Date.now()).padStart(13, '0') + ':' + id;
+        await env.LOGS.put(qk, JSON.stringify(job), { expirationTtl: CHECK_STATE_TTL });
+        await putCheckState(env, id, { st: 'queued', kind: 'user', at: Date.now(), q: qk, dev, lat: at.lat, lng: at.lng, h: job.heading });
+        let pos = 1;
+        try { pos = (await env.LOGS.list({ prefix: 'chkq:', limit: 1000 })).keys.length || 1; } catch (e) { /* 모름 */ }
+        return json({ ok: true, id, pos }, 200, cors);
+      }
+      if (url.pathname === '/check/status') {
+        if (!env.LOGS) return json({ items: {} }, 200, cors);
+        const ids = String(p.get('ids') || '').split(',').filter((x) => CHECK_ID.test(x)).slice(0, 10);
+        const items = {};
+        for (const id of ids) {
+          const st = await checkState(env, id);
+          items[id] = !st ? { st: 'unknown' } : Object.assign({ st: st.st }, st.cams ? { cams: st.cams } : {});
+        }
+        return json({ items }, 200, cors);
+      }
+      if (url.pathname === '/check/next') {
+        if (!env.LOGS) return new Response(null, { status: 204, headers: cors });
+        const l = await env.LOGS.list({ prefix: 'chkq:', limit: 20 });
+        for (const k of l.keys) {
+          const raw = await env.LOGS.get(k.name);
+          if (env.LOGS.delete) await env.LOGS.delete(k.name); else await env.LOGS.put(k.name, '', { expirationTtl: 60 });
+          let job = null;
+          try { job = JSON.parse(raw || 'null'); } catch (e) { job = null; }
+          if (!job || !job.id) continue;
+          const st = (await checkState(env, job.id)) || {};
+          await putCheckState(env, job.id, Object.assign(st, { st: 'checking', taken: Date.now(), job }));
+          return json({ job }, 200, cors);
+        }
+        const auto = await autoCheckJob(env);
+        return auto ? json({ job: auto }, 200, cors) : new Response(null, { status: 204, headers: cors });
+      }
+      if (url.pathname === '/check/result' && isCheckPost) {
+        if (!env.LOGS) return json({ ok: false }, 200, cors);
+        const text = await req.text();
+        if (text.length > 60000) return json({ error: 'too large' }, 413, cors);
+        let b;
+        try { b = JSON.parse(text); } catch (e) { return json({ error: 'bad json' }, 400, cors); }
+        const id = String((b && b.id) || ''), status = String((b && b.status) || '');
+        if (!CHECK_ID.test(id) || !['found', 'none', 'unchecked'].includes(status)) return json({ error: 'bad result' }, 400, cors);
+        const st = (await checkState(env, id)) || { kind: 'user', at: Date.now() };
+        const job = st.job || {};
+        const day = kstDay();
+        const applied = [];
+        if (status === 'found' && Array.isArray(b.cams)) {
+          const list = await loadFixes(env);
+          for (const c of b.cams.slice(0, 6)) {
+            const pt = checkPt(c), lim = intIn(c && c.limit, 20, 130), map = CHECK_KIND[String((c && c.kind) || '').replace(/\s+/g, '')];
+            if (!pt || !lim || !map) continue;
+            const h = headOf(c.heading != null ? c.heading : job.heading);
+            const here = { lat: pt.lat, lng: pt.lng, h };
+            let e = list.find((x) => x.kind === 'spot' && distM(x, here) <= FIX_NEAR_M && headOk(x.h, h));
+            if (!e) {
+              if (list.length >= FIX_MAX) continue;
+              e = { kind: 'spot', k: pt.lat.toFixed(4) + ',' + pt.lng.toFixed(4) + ',' + dir8(h), lat: pt.lat, lng: pt.lng, h, devs: [], ips: [], first: day, last: day };
+              list.push(e);
+            }
+            e.lim = lim; e.ck = map[0]; if (map[1]) e.fl = map[1]; else delete e.fl;
+            e.op = true; e.ok = e.ok || day; e.last = day; e.src = 'check'; delete e.rev;
+            if (job.dev && !e.devs.includes(job.dev) && e.devs.length < 20) e.devs.push(job.dev);
+            applied.push({ limit: lim, kind: String(c.kind).replace(/\s+/g, '') });
+          }
+          if (applied.length) await saveFixes(env, list);
+        }
+        // 네이버에도 없음: 사용자 신고면 격자·방위로 모은다 (앱에는 반영하지 않음, 운영자 화면용)
+        if (status === 'none' && st.kind !== 'auto') {
+          const ref = checkPt(job) || checkPt(st);
+          if (ref) {
+            const h = job.heading != null ? job.heading : st.h;
+            const cell = Math.floor(ref.lat * 1000) + ',' + Math.floor(ref.lng * 1000), key = 'unm:' + cell + ':' + dir8(h);
+            let u = null;
+            try { u = JSON.parse((await env.LOGS.get(key)) || 'null'); } catch (e) { u = null; }
+            if (!u) u = { n: 0, devs: [], days: [], last: day };
+            u.n++; u.last = day;
+            const dv = job.dev || st.dev;
+            if (dv && !u.devs.includes(dv) && u.devs.length < 50) u.devs.push(dv);
+            if (!u.days.includes(day)) { u.days.push(day); if (u.days.length > 60) u.days.shift(); }
+            await env.LOGS.put(key, JSON.stringify(u));
+          }
+        }
+        const res = { st: status, kind: st.kind || 'user', at: st.at, done: Date.now(), cams: applied, dev: st.dev, lat: st.lat != null ? st.lat : job.lat, lng: st.lng != null ? st.lng : job.lng, h: st.h != null ? st.h : job.heading };
+        await putCheckState(env, id, res);
+        await env.LOGS.put('chkr:' + String(EVR_BASE - Date.now()).padStart(16, '0') + ':' + id, JSON.stringify(Object.assign({ id, reason: b.reason ? String(b.reason).slice(0, 200) : undefined,
+          run: b.run ? String(b.run).slice(0, 80) : undefined, found: Array.isArray(b.cams) ? b.cams.slice(0, 6) : [] }, res, { dev: undefined })), { expirationTtl: CHECK_RES_TTL });
+        return json({ ok: true, applied: applied.length }, 200, cors);
+      }
+      if (url.pathname === '/check/unmatched') {
+        if (!env.LOGS) return json({ v: 1, items: [] }, 200, cors);
+        const l = await env.LOGS.list({ prefix: 'unm:', limit: 1000 });
+        const items = [];
+        for (const k of l.keys) {
+          let u = null;
+          try { u = JSON.parse((await env.LOGS.get(k.name)) || 'null'); } catch (e) { u = null; }
+          if (!u) continue;
+          const m = /^unm:(-?\d+),(-?\d+):([0-7x])$/.exec(k.name);
+          if (!m) continue;
+          const devices = u.devs.length, days = u.days.length;
+          items.push({ cell: m[1] + ',' + m[2], lat: (+m[1] + 0.5) / 1000, lng: (+m[2] + 0.5) / 1000, dir: m[3] === 'x' ? null : +m[3] * 45,
+            n: u.n, devices, days, last: u.last, candidate: devices >= 2 || days >= 2 });
+        }
+        items.sort((a, b) => (b.candidate - a.candidate) || (b.n - a.n));
+        return json({ v: 1, items }, 200, cors);
+      }
+      if (url.pathname === '/check/results') {
+        if (!env.LOGS) return json({ items: [] }, 200, cors);
+        const l = await env.LOGS.list({ prefix: 'chkr:', limit: 100 });
+        const items = (await Promise.all(l.keys.map((k) => env.LOGS.get(k.name)))).filter(Boolean).map((v) => { try { return JSON.parse(v); } catch (e) { return null; } }).filter(Boolean);
+        return json({ items }, 200, cors);
       }
 
       // v196 카메라 통과 익명 통계 (2026-11-24 운전자 '앞으로 우리 테슬라클러스터 네비 이용자들 지나간곳 모조리 체크해서 과속 단속 체크해줘

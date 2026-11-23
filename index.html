@@ -132,14 +132,14 @@
   .cam-miss { display: block; align-self: flex-start; margin: 0; min-height: 40px; font-size: 15px; background: rgba(20,24,30,.62); }
   /* v147 (2026-11-16 '누를때 알람만 밑에 떠서 누른지 모르겠거든? 누르면 파란색 뜨게 … 좀만 길게 … 크게'): 더 크게(116×52),
      누르면 2.5초 동안 파란 바탕 '✓ 보냄' (그사이 또 눌러도 한 번만 보낸다) */
-  .cam-miss { min-width: 116px; min-height: 52px; padding: 0 20px; border-radius: 14px; font-size: 18px; }
+  .cam-miss { min-width: 116px; min-height: 52px; padding: 0 18px; border-radius: 14px; font-size: 17px; white-space: nowrap; }   /* v202 '잘못된 정보 신고' */
   .cam-miss.sent, .cam-miss.sent:active { background: #1d4fb8; border-color: #fff; }
   .cam-miss.sending { opacity: .7; }
   .cam-miss.saved, .cam-miss.saved:active { background: #4b5563; border-color: #fff; }
   .cam-miss[hidden] { display: none; }
   /* v161: '틀림'으로 의심 표시한 카메라 — 흐리게, 제한속도 '?' */
   .camcard.doubt { opacity: .55; filter: saturate(.4); }
-  .camcard.doubt .cam-type::after { content: ' · 틀림 표시'; font-weight: 600; opacity: .8; }
+  .camcard.doubt .cam-type::after { content: ' · 신고함'; font-weight: 600; opacity: .8; }
   /* v175: 운영자 확인 전, 여러 운전자 신고로 자동 반영된 고침이 바꾼 카메라 */
   .camcard.crowd .cam-type::after { content: ' · 사용자 제보'; font-weight: 600; opacity: .8; }
   .camflags ul { list-style: none; margin: 4px 0 8px; padding: 0; }
@@ -1759,7 +1759,8 @@
               <div class="zt-body"><div id="ztLabel" class="zt-label">어린이보호</div><div id="ztLimit" class="zt-limit">30</div></div>
             </div>
             <!-- v123: 경고가 틀렸으면 한 번 눌러 신고 (궤적·카메라 번호를 보내고 이 방향에서는 다시 알리지 않음) -->
-            <button id="camWrong" class="cam-report" type="button" aria-label="이 단속 경고가 틀렸어요">틀림</button>
+            <!-- v202: '잘못된 정보 신고' 하나로 — 이 버튼은 숨김 (카드가 떠 있을 때 누르면 아래 버튼이 이 일을 한다) -->
+            <button id="camWrong" class="cam-report" type="button" hidden aria-label="잘못된 정보 신고">정보 신고</button>
           </div>
           <!-- 테슬라 모드: 단속 경고가 떠 있으면 내 속도를 함께 (제한을 넘으면 빨갛게) -->
           <div id="mySpeed" class="myspeed" hidden><b id="mySpeedVal">0</b><i>km/h</i><em id="mySpeedLim"></em></div>
@@ -1790,7 +1791,8 @@
     <div id="signCard" class="bumpcard signcard" hidden><span id="signIcon" class="bump-sign"></span><span id="signLabel" class="bump-label">주의</span><b id="signDist">0m</b></div>
     <div id="camNext" class="camnext" hidden></div>
     <!-- v123: 단속 카메라를 놓쳤으면 한 번 눌러 신고 (최근 2분 반 궤적과 근처 카메라를 보냄) -->
-    <button id="camMissBtn" class="cam-report cam-miss" type="button" hidden aria-label="단속 카메라를 놓쳤어요">놓침</button>
+    <!-- v202 (운전자 '틀림 놓침에서 틀림 없애고 놓침을 잘못 된 정보 신고로'): 경고 카드가 떠 있으면 그 카메라 신고, 없으면 놓친 단속 신고 + 네이버 확인 -->
+    <button id="camMissBtn" class="cam-report cam-miss" type="button" hidden aria-label="잘못된 정보 신고">잘못된 정보 신고</button>
     </div>
     <div id="weather" class="weather" hidden></div>
     <div class="trip">
@@ -2002,16 +2004,16 @@
 
     <section class="set-group mine" aria-label="내 신고">
       <h3>내 신고</h3>
-      <p id="myEmpty" class="hint">아직 없어요. 단속 카드의 '놓침'·'틀림'을 누르면 여기에 모여요.</p>
+      <p id="myEmpty" class="hint">아직 없어요. '잘못된 정보 신고'를 누르면 여기에 모여요.</p>
       <!-- v169/v171: '놓침'으로 고친 카메라와 신고한 단속 지점 (이 기기에만 저장) — 상태와 되돌리기 -->
       <div id="mySpotBox" class="camflags" hidden>
-        <p class="hint"><b>놓침으로 고친 카메라·신고한 지점</b> · 이 차에서 바로 반영돼요. 같은 방향으로 지나면 미리 알려요.</p>
+        <p class="hint"><b>신고로 고친 카메라·신고한 지점</b> · 이 차에서 바로 반영돼요. 같은 방향으로 지나면 미리 알려요.</p>
         <ul id="mySpotList"></ul>
         <div class="row"><button id="mySpotClear" type="button">모두 되돌리기</button></div>
       </div>
       <!-- v161: '틀림'으로 표시한 카메라 (14일 의심·두 번이면 숨김) — 하나씩 또는 모두 되돌리기 -->
       <div id="camFlagBox" class="camflags" hidden>
-        <p class="hint"><b>틀림으로 표시한 카메라</b> · 14일 동안 흐리게(소리 없이), 다른 날 또 누르면 숨겨요.</p>
+        <p class="hint"><b>신고로 흐리게 한 카메라</b> · 14일 동안 흐리게(소리 없이), 다른 날 또 신고하면 숨겨요.</p>
         <ul id="camFlagList"></ul>
         <div class="row"><button id="camFlagClear" type="button">모두 되돌리기</button></div>
       </div>
@@ -2019,8 +2021,8 @@
 
     <section class="set-group info" aria-label="정보">
       <h3>정보</h3>
-      <label class="tgl"><span>놓침·틀림 위치 보내기</span><input type="checkbox" id="optShare"><i aria-hidden="true"></i></label>
-      <p class="hint">놓침·틀림을 누르면 그 자리 위치(근처 단속 카메라와 진행 방향)가 서버로 보내져 자료를 고치는 데 써요. 지나온 길은 보내지 않아요. 끄면 이 차에만 기록해요.</p>
+      <label class="tgl"><span>신고 위치 보내기</span><input type="checkbox" id="optShare"><i aria-hidden="true"></i></label>
+      <p class="hint">'잘못된 정보 신고'를 누르면 그 자리 위치(근처 단속 카메라와 진행 방향)가 서버로 보내져 자료를 고치는 데 써요. 지나온 길은 보내지 않아요. 끄면 이 차에만 기록해요.</p>
       <label class="tgl"><span>단속 카메라 알림 통계 보내기</span><input type="checkbox" id="optPassStats"><i aria-hidden="true"></i></label>
       <p class="hint">단속 카메라를 지날 때 알림이 잘 됐는지 익명 통계를 보내요 (위치 경로는 보내지 않아요). 카메라마다 알림 여부와 지날 때 속도(5km/h 단위)를 몇 분씩 모아 보내고, 기기 번호는 넣지 않아요.</p>
       <label class="tgl"><span>테스터 주행 경로 보내기</span><input type="checkbox" id="optRouteShare"><i aria-hidden="true"></i></label>
@@ -2065,8 +2067,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-201"></script>
-<script src="img/ai/picks.js?v=2026.11.16-201"></script>
-<script src="app.js?v=2026.11.16-201"></script>
+<script src="icons.js?v=2026.11.16-202"></script>
+<script src="img/ai/picks.js?v=2026.11.16-202"></script>
+<script src="app.js?v=2026.11.16-202"></script>
 </body>
 </html>

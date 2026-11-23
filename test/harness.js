@@ -26,7 +26,7 @@
 
   // ---------------------------------------------------------------- config
   const PROXY_DEFAULT = 'https://tesla-nav.cy6789.workers.dev';
-  const ENDPOINTS = ['/route', '/geocode', '/search', '/reverse', '/health', '/log', '/config', '/hipass'];
+  const ENDPOINTS = ['/route', '/geocode', '/search', '/reverse', '/health', '/log', '/config', '/hipass', '/check', '/check/status', '/fixes'];   // v202: 실시간 신고 확인
   const BOOT_TIMEOUT_MS = 20000;
   const LS_KEYS = ['tnc.voice', 'tnc.beep', 'tnc.key', 'tnc.recent', 'tnc.cams'];
 
@@ -2893,6 +2893,7 @@
     { id: 'S130', name: "S130 Naver-style junction scene (v197, driver sent Naver's 신갈JC '571m 대전' close-up: '이런거 참고해주고 적용해줘', '우리 방식 대로 AI이미지 활용을 해서', colour lines '그림으로'): an AI landscape with the road drawn by lane count. With a fork cross-section: 6 lanes, the two exit lanes painted, the bus lane line blue, the pink guide line inside the picture, two signs ('[50] 원주 인천 ↗' over the exit, '[1] ↑' over the main line), and the lane row / colour row hidden. Without data: 2 + 2 lanes. Keep-main paints lanes 2–4 under '[1] 서울 ↑'. Night colours. With the picture off, the colour row is a small road picture, no words", fn: s130 },
     { id: 'S131', name: "S131 resume after reversing (v200, driver '직진했다가 후진할때 후방카메라가 켜지는데 브라우저가 꺼져도 세션이 남게해서 유지할수는 없나'; /events show the Tesla reopens the page with a new sid about 80 s apart at 0 km/h): guidance, the section start time and distance, and a manual zoom are kept in localStorage every 5 s and on hide/close; a reopened page picks the guidance up at the first fix with no route card, no route request and no start speech, the sound pill shows while locked; without the stored route it quietly asks once; older than 30 min or after ending guidance nothing is kept", fn: s131 },
     { id: 'S132', name: "S132 Naver two-way check, round 1 (v201, keys session emulator; driver rule '다르거나 없으면 네이버대로') and the 판교분기점 first-split pink line: driving straight past each spot in Naver's direction puts its camera on the route — 별내 송산로 southbound 60 signal+speed, 강동대로 north southbound child-zone 30, 25719 westbound 30, 둔촌사거리 25557 (moved 85 m to Naver's point) east- and westbound 50, 난곡로 23871 south-westbound 30; on the real 서울TG→판교분기점 route the first colour line starts about 300 m before the split, pink", fn: s132 },
+    { id: 'S133', name: "S133 one '잘못된 정보 신고' button and the live check (v202, driver '틀림 놓침에서 틀림 없애고 놓침을 잘못 된 정보 신고로', '신고 반영 완료 … 3초', '확인완료 … 신고 접수 완료'): one button, the old one hidden, no '놓침'/'틀림' on screen; pressed while a warning card has been up for a second it reports that camera (dimmed 14 days, no check request); pressed with no card it says '신고 접수 완료' and sends /check (spot, heading, speed, device; no trail off the operator car) keeping the id; a found result reads '신고 반영 완료 · 60 신호·과속단속 추가' and reloads shared fixes, a none result reads '확인 완료'", fn: s133 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -3720,18 +3721,18 @@
       // v163: 서버가 받았다고 할 때 '✓ 보냄' (시험 페이지는 보내지 않아 바로 답이 온다)
       await waitFor(() => !b.classList.contains('sending') && /놓친 단속/.test(toastEl.hidden ? '' : toastEl.textContent), 2000, 10);
       r.text1 = b.textContent; r.blue = getComputedStyle(b).backgroundColor === 'rgb(29, 79, 184)';
-      r.toast1 = !toastEl.hidden && /놓친 단속/.test(toastEl.textContent);
+      r.toast1 = !toastEl.hidden && /신고 접수 완료/.test(toastEl.textContent);   // v202
       toastEl.hidden = true;
       b.click();
       r.toast2 = !toastEl.hidden;
       await new Promise((res) => setTimeout(res, 2700));
       r.text3 = b.textContent; r.sentAfter = b.classList.contains('sent');
     } finally {
-      clearTimeout(b._sentT); b.classList.remove('sent', 'saved', 'sending'); b.textContent = '놓침'; b.hidden = prevHidden; toastEl.hidden = true;
+      clearTimeout(b._sentT); b.classList.remove('sent', 'saved', 'sending'); b.textContent = '잘못된 정보 신고'; b.hidden = prevHidden; toastEl.hidden = true;
       t.mySpots.length = 0; keepSpots.forEach((x) => t.mySpots.push(x)); t.store.set('mySpots', keepSpotRaw); t.applyUserSpots();   // v169
     }
     const [w, h] = r.size.split('x').map(Number);
-    const ok = w >= 116 && h >= 52 && r.text1 === '✓ 보냄' && r.blue && r.toast1 && !r.toast2 && r.text3 === '놓침' && !r.sentAfter;
+    const ok = w >= 116 && h >= 52 && r.text1 === '✓ 보냄' && r.blue && r.toast1 && !r.toast2 && r.text3 === '잘못된 정보 신고' /* v202 */ && !r.sentAfter;
     return { pass: ok, detail: JSON.stringify(r) };
   }
 
@@ -5080,7 +5081,7 @@
       if (!t.cams.loaded) await t.loadCameras();
       ob.post = keepPost; ob.inTest = false; t.store.set('outbox', keepBox);
       t.mySpots.length = 0; keepSpots.forEach((x) => t.mySpots.push(x)); t.store.set('mySpots', keepSpotRaw); t.applyUserSpots();
-      clearTimeout(btn._sentT); btn.classList.remove('sent', 'saved', 'sending'); btn.textContent = '놓침';
+      clearTimeout(btn._sentT); btn.classList.remove('sent', 'saved', 'sending'); btn.textContent = '잘못된 정보 신고';
       const te = document.getElementById('toast'); if (te) te.hidden = true;
       t.state.speedKmh = 0; t.renderCamStatus();
       await resetApp(); softReset();
@@ -5305,7 +5306,7 @@
       const m = t.mySpots[0];
       r.a = m ? { n: t.mySpots.length, back: Math.round(hav(m, pressAt)), h: m.h, status: t.mySpotStatus(m), stored: !!t.store.get('mySpots') } : null;
       r.a.toast = text('#toast');
-      const btn = document.getElementById('camMissBtn'); clearTimeout(btn._sentT); btn.classList.remove('sent', 'saved', 'sending'); btn.textContent = '놓침';
+      const btn = document.getElementById('camMissBtn'); clearTimeout(btn._sentT); btn.classList.remove('sent', 'saved', 'sending'); btn.textContent = '잘못된 정보 신고';
       // (b) v178: 근처에 카메라가 없어 제한속도를 모르면 숨김 → 같은 방향 카메라(70)를 200m 뒤에 두면 채워져 보인다
       let first = null, label = '', limit = '';
       if (m) {
@@ -5452,7 +5453,7 @@
       btn.click();
       await waitFor(() => !btn.classList.contains('sending'), 2000, 10);
       const msg = document.getElementById('toast').textContent;
-      clearTimeout(btn._sentT); btn.classList.remove('sent', 'saved', 'sending'); btn.textContent = '놓침';
+      clearTimeout(btn._sentT); btn.classList.remove('sent', 'saved', 'sending'); btn.textContent = '잘못된 정보 신고';
       return msg;
     };
     const fakes = [];
@@ -5527,7 +5528,7 @@
       const te = document.getElementById('toast'); if (te) te.hidden = true;
       await resetApp(); softReset();
     }
-    const ok = r.a.before === false && /틀림으로 숨겨/.test(r.a.msg) && r.a.after === true && !r.a.flag &&
+    const ok = r.a.before === false && /신고로 숨겨/.test(r.a.msg) && r.a.after === true && !r.a.flag &&
       r.b.before === false && /방향이 반대/.test(r.b.msg) && r.b.after === true && r.b.e2 === 1 &&
       /새 단속 지점/.test(r.c.msg) && r.c.spots === 1 &&
       r.d.before === false && /경로 밖으로/.test(r.d.msg) && r.d.after === true &&
@@ -6491,6 +6492,82 @@
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
+  // S133: '잘못된 정보 신고' 하나 + 실시간 확인 (v202, 운전자 '틀림 놓침에서 틀림 없애고 놓침을 잘못 된 정보 신고로', '경고없을때 눌렀을때 에뮬레이터가 …
+  //       신고 반영 완료를 … 3초', '네이버에 없을때 확인완료로만 … 신고 접수 완료 로').
+  //   (a) 버튼은 하나('잘못된 정보 신고'), 예전 '틀림'은 숨김, 화면 어디에도 '놓침'·'틀림' 글자 없음
+  //   (b) 경고 카드가 1초 넘게 떠 있을 때 누르면 그 카메라 신고(서버 기록 user 'wrong', 14일 흐리게) — 네이버 확인 요청은 안 보냄
+  //   (c) 카드가 없을 때 누르면 '신고 접수 완료' + /check 요청(자리·방향·속도·기기, 운영자 차가 아니면 궤적 없음), 요청 번호를 남김
+  //   (d) 1분 뒤 상태가 '네이버에 있음'이면 '신고 반영 완료 · 60 신호·과속단속 추가'(3초) + 모든 사용자 고침을 다시 받음, 요청 번호 지움
+  //   (e) '네이버에도 없음'이면 '확인 완료'
+  async function s133() {
+    const t = T(), r = {}, b = document.getElementById('camMissBtn'), keepShare = t.prefs.share, keepChecks = t.store.get('checks'), keepNo = t.store.get('camNo2'), keepSpots = t.store.get('mySpots'), keepArr = t.mySpots.slice(), keepFix = t.store.get('camFix');
+    let flagKey = null;
+    const R = buildNavRoute();
+    const visibleText = () => { const p = document.getElementById('harnessPanel'), d = p ? p.style.display : ''; if (p) p.style.display = 'none'; const x = document.body.innerText; if (p) p.style.display = d; return x; };
+    try {
+      t.checkSt.inTest = true; t.prefs.share = true; t.store.set('checks', null);
+      softReset();
+      await planAndStart(R);
+      for (let s = 15; s <= 300; s += 15) { const a = pointAt(R, s); feed(a.p, 15, a.h); }
+      b.hidden = false;
+      r.a = { label: b.textContent, aria: b.getAttribute('aria-label'), wrongHidden: document.getElementById('camWrong').hidden, words: /놓침|틀림/.test(visibleText()) };
+      // (b) 카드가 떠 있을 때: 가짜 카메라를 경고 대상으로
+      const card = document.getElementById('camCard');
+      const tgRow = t.cams.rows.find((c) => c[2] === 60) || t.cams.rows[0];
+      const i = t.cams.rows.indexOf(tgRow);
+      t.camState.target = { i, c: tgRow, d: 300, r: 300, minD: 300, after: false, t0: Date.now() };
+      t.renderCam();
+      card._camI = i; card._camAt = Date.now() - 2000; card.hidden = false;
+      const c0 = stub.calls.length;
+      b.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await sleep(30);
+      r.b = { toast: text('#toast'), flag: t.camState.target ? t.camState.target.flag : 'gone', check: stub.since(c0, '/check').length };
+      clearTimeout(b._sentT); b.classList.remove('sent', 'saved', 'sending'); b.textContent = '잘못된 정보 신고';
+      flagKey = tgRow[0] + ',' + tgRow[1];
+      t.camState.target = null; card.hidden = true; t.renderCam();
+      // (c) 카드가 없을 때 (Worker 가 받음)
+      stub.canned['/check'] = (q, rec) => ({ ok: true, id: rec.body && rec.body.id, pos: 1 });
+      const c1 = stub.calls.length;
+      b.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await waitFor(() => !b.classList.contains('sending'), 2000, 10);
+      const ck = stub.since(c1, '/check')[0];
+      await waitFor(() => t.checksLoad().length > 0, 2000, 10);
+      const saved = t.checksLoad();
+      r.c = { toast: text('#toast'), sent: !!ck, method: ck && ck.method, keys: ck && ck.body ? Object.keys(ck.body).sort().join(',') : '', trail: !!(ck && ck.body && ck.body.trail),
+        saved: saved.length, sameId: !!(ck && saved[0] && saved[0].id === ck.body.id) };
+      clearTimeout(b._sentT); b.classList.remove('sent', 'saved', 'sending'); b.textContent = '잘못된 정보 신고';
+      // (d) 네이버에 있음
+      const id = saved[0] && saved[0].id;
+      stub.canned['/check/status'] = (q) => ({ items: { [id]: { st: 'found', cams: [{ limit: 60, kind: '신호과속' }] } } });   // (POST /check 는 기본 답 {} — ok 가 없으면 번호를 안 남기므로 아래 canned)
+      stub.canned['/fixes'] = { v: 1, items: [] };
+      const c2 = stub.calls.length;
+      await t.checkPoll(true);
+      r.d = { toast: text('#toast'), fixes: stub.since(c2, '/fixes').length, left: t.checksLoad().length, askedId: ((stub.since(c2, '/check/status')[0] || {}).query || {}).ids === id };
+      // (e) 네이버에도 없음
+      t.store.set('checks', JSON.stringify([{ id: 'zz00000000001', at: Date.now() }]));
+      stub.canned['/check/status'] = () => ({ items: { zz00000000001: { st: 'none' } } });
+      await t.checkPoll(true);
+      r.e = { toast: text('#toast'), left: t.checksLoad().length };
+      t.endNav();
+    } finally {
+      t.checkSt.inTest = false; t.prefs.share = keepShare; t.store.set('checks', keepChecks);
+      if (flagKey) t.camNoMap.delete(flagKey);
+      t.camFixes.clear(); t.store.set('camFix', keepFix); t.applyCamFixes();   // (c) 의 차 안 진단이 고친 것
+      t.mySpots.length = 0; keepArr.forEach((m) => t.mySpots.push(m)); t.store.set('mySpots', keepSpots); t.applyUserSpots(); t.renderMySpots();
+      t.store.set('camNo2', keepNo); t.renderCamFlags();
+      stub.reset();
+      clearTimeout(b._sentT); b.classList.remove('sent', 'saved', 'sending'); b.textContent = '잘못된 정보 신고';
+      softReset();
+    }
+    const a = r.a || {}, bb = r.b || {}, c = r.c || {}, d = r.d || {}, e = r.e || {};
+    const ok = a.label === '잘못된 정보 신고' && a.aria === '잘못된 정보 신고' && a.wrongHidden && !a.words &&
+      /^신고 접수 완료/.test(bb.toast) && (bb.flag === 'doubt' || bb.flag === 'hide') && bb.check === 0 &&
+      /^신고 접수 완료/.test(c.toast) && c.sent && c.method === 'POST' && c.keys === 'dev,h,id,kmh,lat,lng,v' && !c.trail && c.saved === 1 && c.sameId &&
+      d.toast === '신고 반영 완료 · 60 신호·과속단속 추가' && d.fixes === 1 && d.left === 0 && d.askedId &&
+      e.toast === '확인 완료' && e.left === 0;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
   // S127: (v198, 운전자 '어차피 다 테스터이고 익명이라서 누군지는 몰라 그래서 쓸 수 있음', 테스터 쪽지 동의, '출발지 도착지 모두 남는 방향으로 해 줘
   //       원본은 30일 뒤에 자동으로 지우는걸로') 테스터 주행 경로 — 처음 안내는 멈춰 있을 때만(운전 중엔 안 띄우고 기록도 안 함),
   //       출발부터 도착까지 2~5초 간격, 카메라 통과(경고 거리) 표시, 주행마다 새 무작위 번호, 기기·접속 번호 없음, 끄면 지움
@@ -7111,7 +7188,7 @@
       btn.click();
       await waitFor(() => !btn.classList.contains('sending'), 2000, 20);
       r.off = { ret: r.offRet, sent: bodies.length - n0, label: btn.textContent };
-      clearTimeout(btn._sentT); btn.classList.remove('sent', 'saved', 'sending'); btn.textContent = '놓침';
+      clearTimeout(btn._sentT); btn.classList.remove('sent', 'saved', 'sending'); btn.textContent = '잘못된 정보 신고';
       t.prefs.share = true;
       // (d) 진단 올리기
       const keepLog = t.diag.log.slice();

@@ -61,7 +61,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-201'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-202'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -2590,7 +2590,7 @@
     const add = [];
     for (const d of driverSpots.rows) add.push({ lat: d[0], lng: d[1], h: d[2], kmh: d[3] || 0, who: 'driver', lim: d[4] || 0, kind: d[5] || 1, flags: d[6] || 0 });
     // v171 모든 사용자 신고 지점. v175: 운영자가 확인하기 전 자동 반영(src 'auto', 서로 다른 운전자 3명 넘게)은 '사용자 제보'로 따로 보인다
-    for (const d of sharedSpots) if (!add.some((x) => sameSpot(x, d))) add.push({ lat: d.lat, lng: d.lng, h: d.h, kmh: 0, who: d.src === 'auto' ? 'crowd' : 'driver', lim: d.lim || 0 });
+    for (const d of sharedSpots) if (!add.some((x) => sameSpot(x, d))) add.push({ lat: d.lat, lng: d.lng, h: d.h, kmh: 0, who: d.src === 'auto' ? 'crowd' : 'driver', lim: d.lim || 0, kind: d.ck === 3 ? 3 : 1, flags: d.fl ? 1 : 0 });   // v202: 네이버 확인 지점의 종류·후면
     for (const m of mySpots) if (!add.some((x) => (x.who === 'mine' ? sameSpot(x, m) : sameSpotAhead(m, x)))) add.push({ lat: m.lat, lng: m.lng, h: m.h, kmh: m.kmh, who: 'mine', lim: m.lim || 0, rn: m.rn, m });
     let filled = false;
     for (const x of add) {
@@ -2731,7 +2731,7 @@
     return res.sort((a, b) => rank[a.why] - rank[b.why] || Math.abs(a.ago) - Math.abs(b.ago) || a.d - b.d);
   }
   const FIX_TEXT = {
-    flag: '틀림으로 숨겨 둔 카메라였어요. 다시 알리게 했어요.',
+    flag: '신고로 숨겨 둔 카메라였어요. 다시 알리게 했어요.',
     signal: '신호 전용이라 알리지 않던 카메라였어요. 이 카메라는 알릴게요.',
     dir: '카메라 방향이 반대로 돼 있었어요. 이 차에서는 양쪽 방향 모두 알릴게요.',
     route: '경로 밖으로 보던 카메라였어요. 이 차에서는 경로 위로 볼게요.',
@@ -7847,6 +7847,7 @@
     if (!testPage && Date.now() - (upd.peekAt || 0) > 2 * 60000) { upd.peekAt = Date.now(); peekVersion(); }
     maybeResume();
     if (nav.active) liveSave();   // v200: 5초마다 (후진 뒤 새로 열려도 이어 가게)
+    if (!testPage) checkPoll();   // v202: 내 신고 확인 결과 (있을 때만, 1분마다)
     $('#clock').textContent = hhmm(now);
     $('#dateText').textContent = (now.getMonth() + 1) + '월 ' + now.getDate() + '일 (' + '일월화수목금토'[now.getDay()] + ')';
     mapWatchdog();
@@ -8611,60 +8612,149 @@
   $('#ntUpdate').onclick = () => { closeTray(); goUpdate(); };
   $('#updBtn').onclick = goUpdate;
   $('#navEnd').onclick = () => { endNav(); say('안내를 종료합니다.', 1); };
-    $('#camWrong').onclick = (ev) => {
-      ev.stopPropagation();
-      const tg = camState.target, card = $('#camCard');
-      // v161: 화면에 그려진 카메라에만. 카드가 방금(1초 안) 다른 카메라로 바뀌었으면 누름을 무시한다(엉뚱한 카메라가 표시되지 않게)
-      if (!tg || card._camI !== tg.i || Date.now() - (card._camAt || 0) < 1000) {
-        toast('카드가 방금 바뀌었어요. 맞으면 한 번 더 눌러 주세요.', '', 2500);
-        return;
+  // ---------- v202 '잘못된 정보 신고' 하나로 (2026-11-24 운전자 '틀림 놓침에서 틀림 없애고 놓침을 잘못 된 정보 신고로 바꾸고') ----------
+  // 버튼 하나. 누른 순간 단속 경고 카드가 1초 넘게 떠 있으면 그 카메라 신고(예전 '틀림': 14일 흐리게, 다른 날 또 누르면 숨김),
+  // 카드가 없으면 놓친 단속 신고(예전 '놓침': 차 안 진단 v171 · 신고 지점 v169) + 네이버 확인 요청(/check). 서버 기록의 user 칸은 그대로 'wrong'·'missed'
+  const REPORT_LABEL = '잘못된 정보 신고';
+  function reportWrongCard() {
+    const tg = camState.target, card = $('#camCard');
+    // v161: 화면에 그려진 카메라에만. 카드가 방금(1초 안) 다른 카메라로 바뀌었으면 누름을 무시한다(엉뚱한 카메라가 표시되지 않게)
+    if (!tg || card._camI !== tg.i || Date.now() - (card._camAt || 0) < 1000) {
+      toast('카드가 방금 바뀌었어요. 맞으면 한 번 더 눌러 주세요.', '', 2500);
+      return false;
+    }
+    userReport('wrong');
+    // v169: 내가 신고한 지점이 틀렸으면 그 지점을 지운다
+    if (isUserSpot(tg.c) && tg.c.who === 'mine') {
+      const m = mySpots.find((x) => sameSpot(x, { lat: tg.c[0], lng: tg.c[1], h: tg.c.eb >= 0 ? tg.c.eb : null }));
+      camState.passed.set(tg.i, state.fix ? state.fix.t : Date.now());
+      camState.target = null;
+      if (m) removeMySpot(m);
+      renderCam(); renderMySpots();
+      toast('신고 접수 완료 · 내가 신고한 지점을 지웠어요', '', 3000);
+      return true;
+    }
+    const h = state.heading === null ? null : Math.round(state.heading);
+    const st = camFlagAdd(tg.c, h);
+    tg.flag = st;
+    if (st === 'hide') {
+      camState.passed.set(tg.i, state.fix ? state.fix.t : Date.now());
+      camState.target = null;
+    }
+    renderCam();
+    renderCamFlags();
+    toast(st === 'hide' ? '신고 접수 완료 · 이 방향에서는 숨길게요 (설정에서 되돌리기)' : '신고 접수 완료 · 14일 동안 흐리게, 소리 없이 (제한속도 ?)', '', 3000);
+    return true;
+  }
+  function reportMissed(b) {
+    // v171: 누르는 순간 차 안에서 원인을 찾아 고친다. 우리 자료에 후보가 없으면 '내가 신고한 단속 지점'으로 저장 (v169)
+    let fx = { items: [], text: '', diag: [] };
+    try { fx = fixFromMiss(); } catch (e) { const m = addMySpot(); fx.text = m ? '새 단속 지점으로 저장했어요.' : ''; }
+    renderMySpots();
+    sendFixes(fx.items);
+    sendCheck();   // v202: 네이버 확인 요청 (결과는 checkPoll 이 3초 토스트로)
+    // v163: 서버가 받았을 때만 파란 '✓ 보냄'. 못 보냈으면 '저장함'(연결되면 보냄)
+    Promise.resolve(userReport('missed', { diag: fx.diag, fix: fx.fixed || null })).then((ok) => {
+      b.classList.remove('sending');
+      // 차 안에서 고친 것(fx.text: '제한속도를 몰라…', '신고로 숨겨 둔 카메라였어요…')은 그대로 붙인다 — 바로 반영된 것을 알 수 있게
+      const tail = fx.text ? ' · ' + fx.text : '', ms = fx.text ? 3500 : 3000;
+      if (!prefs.share) { b.classList.add('sent'); b.textContent = '✓ 저장'; toast('신고 접수 완료' + (tail || ' · 이 차에만 표시') + ' (서버로 보내지 않음)', '', ms); }
+      else if (ok === false) { b.classList.add('sent', 'saved'); b.textContent = '저장함'; toast('연결이 안 돼 저장해 두었어요. 연결되면 보낼게요.' + (fx.text ? ' ' + fx.text : ''), '', ms); }
+      else { b.classList.add('sent'); b.textContent = '✓ 보냄'; toast('신고 접수 완료' + tail, '', ms); }
+      b._sentT = setTimeout(() => { b.classList.remove('sent', 'saved'); b.textContent = REPORT_LABEL; }, MISS_SENT_MS);
+    });
+  }
+  // 예전 '틀림' 버튼(숨김, 시험·예전 화면용)
+  $('#camWrong').onclick = (ev) => { ev.stopPropagation(); reportWrongCard(); };
+  // v147: 누른 것이 버튼에서 바로 보이게 — 2.5초 동안 파란 바탕 '✓ 보냄', 그사이 또 누르면 다시 보내지 않는다
+  $('#camMissBtn').onclick = (ev) => {
+    ev.stopPropagation();
+    const b = $('#camMissBtn'), tg = camState.target, card = $('#camCard');
+    if (b.classList.contains('sent') || b.classList.contains('sending')) return;
+    clearTimeout(b._sentT);
+    if (tg && !card.hidden && card._camI === tg.i) {   // 경고 카드가 떠 있음 → 그 카메라 신고
+      if (reportWrongCard()) { b.classList.add('sent'); b.textContent = '✓ 보냄'; b._sentT = setTimeout(() => { b.classList.remove('sent'); b.textContent = REPORT_LABEL; }, MISS_SENT_MS); }
+      return;
+    }
+    b.classList.add('sending'); b.textContent = '보내는 중…';
+    reportMissed(b);
+  };
+  // ---------- v202 실시간 신고 확인 (2026-11-24 운전자 '단속경보나 경고없을때 눌렀을때 에뮬레이터가 일을 하지 않는다면 찾아서 적용하고 그 사용자에게
+  // 신고 반영 완료를 작게나마 알림 토스트로 가볍게 3초 띄어주고', '네이버에 없을때 확인완료로만 바꿔주면 돼 확인 대기 알려줄 필요없이 신고 접수 완료 로') ----------
+  // 경고 없이 누른 신고를 Worker 대기열(/check)에 넣으면 운영자 쪽 에뮬레이터가 네이버 지도로 그 자리를 지나 보고 결과를 올린다.
+  // 네이버에 있으면 Worker 가 모든 사용자 신고 지점으로 바로 넣는다(/fixes). 이 기기는 요청 번호만 남겨(tnc.checks, 2일) 1분마다 상태를 묻고
+  // '신고 반영 완료 · 60 신호·과속단속 추가' 또는 '확인 완료'를 3초(소리 없이). 보내는 것: 신고 자리(약 2.5초 전)·방향·속도·기기 번호.
+  // 지나온 길(궤적)은 운영자 차만 (v172 위치정보 최소 수집). '신고 위치 보내기'를 끄면 보내지 않는다
+  const CHECK_KEEP_MS = 2 * 86400000, CHECK_POLL_MS = 60000;
+  const checkSt = { at: 0, busy: false, inTest: false };   // inTest: 시험 페이지에서는 시험이 켤 때만 보낸다
+  const checksLoad = () => { try { const a = JSON.parse(store.get('checks') || '[]'); return Array.isArray(a) ? a.filter((x) => x && x.id && Date.now() - x.at < CHECK_KEEP_MS) : []; } catch (e) { return []; } };
+  const checksSave = (a) => store.set('checks', a.length ? JSON.stringify(a.slice(-10)) : null);
+  function reportPoint() {
+    let p = trace1.length ? trace1[trace1.length - 1] : null;
+    if (!p && state.fix) p = [state.fix.t, state.fix.lat, state.fix.lng, Math.round(state.speedKmh || 0), state.heading];
+    if (!p) return null;
+    if (p[3] >= 10) { for (let k = trace1.length - 1; k >= 0; k--) { if (p[0] - trace1[k][0] >= 2500) { p = trace1[k]; break; } } }
+    return p;
+  }
+  function sendCheck() {
+    if (!prefs.share || botLike || (testPage && !checkSt.inTest)) return null;
+    const p = reportPoint();
+    if (!p) return null;
+    const id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-6);
+    const body = { id, dev: devId, lat: Math.round(p[1] * 1e6) / 1e6, lng: Math.round(p[2] * 1e6) / 1e6, h: p[4] == null ? null : Math.round(p[4]), kmh: p[3] || 0, v: APP_VERSION };
+    if (isOp()) {   // 운영자 차: 신고 전 약 800m 궤적 (오래된 것부터) — 에뮬레이터가 그만큼 뒤에서 출발한다
+      const tr = [];
+      let acc = 0;
+      for (let k = trace1.length - 1; k >= 0 && acc < 800; k--) {
+        const e = trace1[k];
+        if (tr.length) acc += haversine({ lat: tr[0][0], lng: tr[0][1] }, { lat: e[1], lng: e[2] });
+        tr.unshift([Math.round(e[1] * 1e6) / 1e6, Math.round(e[2] * 1e6) / 1e6]);
       }
-      userReport('wrong');
-      // v169: 내가 신고한 지점이 틀렸으면 그 지점을 지운다
-      if (isUserSpot(tg.c) && tg.c.who === 'mine') {
-        const m = mySpots.find((x) => sameSpot(x, { lat: tg.c[0], lng: tg.c[1], h: tg.c.eb >= 0 ? tg.c.eb : null }));
-        camState.passed.set(tg.i, state.fix ? state.fix.t : Date.now());
-        camState.target = null;
-        if (m) removeMySpot(m);
-        renderCam(); renderMySpots();
-        toast('내가 신고한 단속 지점을 지웠어요.', '', 3000);
-        return;
-      }
-      const h = state.heading === null ? null : Math.round(state.heading);
-      const st = camFlagAdd(tg.c, h);
-      tg.flag = st;
-      if (st === 'hide') {
-        camState.passed.set(tg.i, state.fix ? state.fix.t : Date.now());
-        camState.target = null;
-      }
-      renderCam();
-      renderCamFlags();
-      toast(st === 'hide' ? '다른 날에도 틀렸다고 해서 이 방향에서는 숨길게요. 설정에서 되돌릴 수 있어요.'
-        : (prefs.share ? '틀린 경고로 보냈어요. ' : '틀린 경고로 표시했어요. ') + '14일 동안 이 카메라는 흐리게, 소리 없이 보여 줄게요(제한속도 ?).', '', 3500);
-    };
-    // v147: 누른 것이 버튼에서 바로 보이게 — 2.5초 동안 파란 바탕 '✓ 보냄', 그사이 또 누르면 다시 보내지 않는다
-    $('#camMissBtn').onclick = (ev) => {
-      ev.stopPropagation();
-      const b = $('#camMissBtn');
-      if (b.classList.contains('sent') || b.classList.contains('sending')) return;
-      b.classList.add('sending'); b.textContent = '보내는 중…';
-      clearTimeout(b._sentT);
-      // v171: 누르는 순간 차 안에서 원인을 찾아 고친다. 우리 자료에 후보가 없으면 '내가 신고한 단속 지점'으로 저장 (v169)
-      let fx = { items: [], text: '', diag: [] };
-      try { fx = fixFromMiss(); } catch (e) { const m = addMySpot(); fx.text = m ? '새 단속 지점으로 저장했어요.' : ''; }
-      const spot = !!fx.text;
-      renderMySpots();
-      sendFixes(fx.items);
-      // v163: 서버가 받았을 때만 파란 '✓ 보냄'. 못 보냈으면 '저장함'(연결되면 보냄)
-      Promise.resolve(userReport('missed', { diag: fx.diag, fix: fx.fixed || null })).then((ok) => {
-        b.classList.remove('sending');
-        const tail = spot ? ' ' + fx.text : '';
-        if (!prefs.share) { b.classList.add('sent'); b.textContent = '✓ 저장'; toast((fx.text || '이 차에 표시했어요.') + ' (서버로 보내지 않음)', '', 4000); }
-        else if (ok === false) { b.classList.add('sent', 'saved'); b.textContent = '저장함'; toast('연결이 안 돼 저장해 두었어요. 연결되면 보낼게요.' + tail, '', 4000); }
-        else { b.classList.add('sent'); b.textContent = '✓ 보냄'; toast('놓친 단속 위치를 보냈어요.' + tail, '', 4000); }
-        b._sentT = setTimeout(() => { b.classList.remove('sent', 'saved'); b.textContent = '놓침'; }, MISS_SENT_MS);
+      body.trail = tr;
+    }
+    // Worker 가 받았을 때만 요청 번호를 남긴다 (/check 가 없는 예전 Worker 면 아무것도 남기지 않음)
+    try {
+      fetch(proxyUrl() + '/check', { method: 'POST', body: JSON.stringify(body), headers: authHeaders({ 'Content-Type': 'application/json' }) })
+        .then((r) => (r.ok ? r.json() : null)).then((j) => {
+          if (!j || !j.ok) return;
+          const a = checksLoad();
+          if (!a.some((x) => x.id === id)) a.push({ id, at: Date.now() });
+          checksSave(a);
+          checkSt.at = Date.now() - CHECK_POLL_MS + 90000;   // 처음 묻는 것은 1분 반 뒤 (확인에 1.5~2분)
+        }).catch(() => {});
+    } catch (e) { /* 다음에 */ }
+    return id;
+  }
+  const CHECK_KIND_TEXT = { '신호과속': '신호·과속단속', '과속단속': '과속단속', '박스형': '박스형 단속', '이동식': '이동식 단속', '후면단속': '후면단속' };
+  async function checkPoll(force) {
+    if (checkSt.busy || botLike || (testPage && !checkSt.inTest)) return;
+    const a = checksLoad();
+    if (!a.length) return;
+    if (!force && Date.now() - checkSt.at < CHECK_POLL_MS) return;
+    checkSt.at = Date.now(); checkSt.busy = true;
+    try {
+      const r = await fetch(proxyUrl() + '/check/status?ids=' + a.map((x) => x.id).join(','), { cache: 'no-store' });
+      if (!r.ok) return;
+      const j = await r.json();
+      const items = (j && j.items) || {};
+      let found = null, none = false;
+      const left = a.filter((x) => {
+        const it = items[x.id];
+        if (!it) return true;
+        if (it.st === 'found') { found = found || it; return false; }
+        if (it.st === 'none') { none = true; return false; }
+        if (it.st === 'unchecked') return false;   // 확인하지 못함: 조용히 내린다
+        if (it.st === 'unknown') return Date.now() - x.at < 10 * 60000;   // 서버가 아직 모르면 10분은 기다린다
+        return true;   // queued · checking
       });
-    };
+      checksSave(left);
+      if (found) {
+        loadSharedFixes();   // 모든 사용자 신고 지점으로 들어갔다 — 이 차에 바로
+        const c = (found.cams || [])[0];
+        toast('신고 반영 완료' + (c ? ' · ' + c.limit + ' ' + (CHECK_KIND_TEXT[c.kind] || '단속') + ' 추가' : ''), '', 3000);
+      } else if (none) toast('확인 완료', '', 3000);
+    } catch (e) { /* 다음 분에 */ } finally { checkSt.busy = false; }
+  }
 
   function applyTesla() {
     $('#app').classList.add('tesla');   // 테슬라 모드만 쓴다 (2026-11-14)
@@ -8929,7 +9019,7 @@
     camNoMap.clear(); saveCamNo(); renderCamFlags();
     const tg = camState.target;
     if (tg) { tg.flag = null; renderCam(); }
-    toast('틀림 표시를 모두 되돌렸어요.', '', 2500);
+    toast('신고 표시를 모두 되돌렸어요.', '', 2500);
   };
 
   // ---------- 주행 기록 화면 ----------
@@ -9180,7 +9270,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,

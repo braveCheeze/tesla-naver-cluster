@@ -22,6 +22,7 @@ const kv = new Map();
 const LOGS = {
   get: async (k) => (kv.has(k) ? kv.get(k) : null),
   put: async (k, v) => { kv.set(k, v); },
+  delete: async (k) => { kv.delete(k); },
   list: async ({ prefix }) => ({ keys: [...kv.keys()].filter((k) => k.startsWith(prefix)).sort().map((name) => ({ name })), list_complete: true }),
 };
 const TOKEN = 'T'.repeat(40);
@@ -323,6 +324,70 @@ if (!sqlite) {
   await call('POST', '/pass', { body: { items: [] }, e: envS });
   ok(rows('SELECT COUNT(*) AS n FROM op_pass')[0].n === 0 && keep().join() === k0.join(), 'after 100 days operator rows are gone; the rest kept');
   shift = 0;
+}
+
+// ---------------- v202 실시간 신고 확인 (/check · /check/status · /check/next · /check/result · /check/unmatched) ----------------
+{
+  const job = (id, dev, o) => Object.assign({ id, dev, lat: 37.699451, lng: 127.124144, h: 146, kmh: 58, v: '2026.11.16-202', trail: [[37.69, 127.12], [37.695, 127.122]] }, o || {});
+  const q1 = await call('POST', '/check', { body: job('rq0000000001', 'devaaaaaaaa1') });
+  ok(q1.s === 200 && q1.j.ok && q1.j.id === 'rq0000000001' && q1.j.pos >= 1, 'POST /check queues a report and answers its place');
+  const qk = [...kv.keys()].find((k) => k.startsWith('chkq:0:'));
+  ok(qk && JSON.parse(kv.get(qk)).trail.length === 0, 'public report keeps no trail (operator car only)');
+  ok((await call('POST', '/check', { body: job('bad id!', 'devaaaaaaaa1') })).s === 400 && (await call('POST', '/check', { body: job('rq0000000002', 'devaaaaaaaa1', { lat: 1 }) })).s === 400,
+    'bad id or outside Korea → 400');
+  ok((await call('GET', '/check/status?ids=rq0000000001,nothere00001')).j.items.rq0000000001.st === 'queued', '/check/status: queued');
+  ok((await call('GET', '/check/next')).s === 401, '/check/next without token → 401');
+  const n1 = await call('GET', '/check/next', { token: TOKEN, origin: '' });
+  ok(n1.s === 200 && n1.j.job.id === 'rq0000000001' && n1.j.job.kind === 'user' && n1.j.job.heading === 146 && n1.j.job.kmh === 58, '/check/next (operator tool, no Origin) gives the job');
+  ok(![...kv.keys()].some((k) => k.startsWith('chkq:')) && (await call('GET', '/check/status?ids=rq0000000001')).j.items.rq0000000001.st === 'checking', 'taken off the queue, now checking');
+  ok((await call('GET', '/check/next', { token: TOKEN, origin: '' })).s === 204, 'empty queue (no stats) → 204');
+  // 네이버에 있음 → 모든 사용자 신고 지점(제한·종류)으로
+  const r1 = await call('POST', '/check/result', { token: TOKEN, origin: '', body: { id: 'rq0000000001', status: 'found', run: 'emu1',
+    cams: [{ lat: 37.6995, lng: 127.1241, heading: 146, limit: 60, kind: '신호과속', rel: -20, shots: 2, evidence: 'a.png' }, { lat: 37.7, lng: 127.12, limit: 0, kind: '표지판 확인' }] } });
+  ok(r1.s === 200 && r1.j.applied === 1, "found: one camera applied ('표지판 확인' without a limit is not)");
+  const sp = (await pub()).find((x) => x.kind === 'spot' && Math.abs(x.lat - 37.6995) < 1e-6);
+  ok(sp && sp.lim === 60 && sp.ck === 3 && sp.src === 'op' && sp.h === 146, '/fixes now lists it for everyone: limit 60, signal+speed, operator');
+  const s1 = (await call('GET', '/check/status?ids=rq0000000001')).j.items.rq0000000001;
+  ok(s1.st === 'found' && s1.cams.length === 1 && s1.cams[0].limit === 60 && s1.cams[0].kind === '신호과속', 'status: found with what was added');
+  // 네이버에도 없음: 서로 다른 기기 2대 → 후보 (앱에는 반영하지 않음)
+  for (const [id, dev] of [['rq0000000003', 'devbbbbbbbb1'], ['rq0000000004', 'devcccccccc1']]) {
+    await call('POST', '/check', { body: job(id, dev, { lat: 37.5, lng: 127.05, h: 92 }) });
+    await call('GET', '/check/next', { token: TOKEN, origin: '' });
+    await call('POST', '/check/result', { token: TOKEN, origin: '', body: { id, status: 'none' } });
+  }
+  const um = (await call('GET', '/check/unmatched', { token: TOKEN })).j.items;
+  ok(um.length === 1 && um[0].n === 2 && um[0].devices === 2 && um[0].days === 1 && um[0].candidate && um[0].dir === 90 && um[0].cell === '37500,127050',
+    '/check/unmatched: same 100 m cell and direction from 2 devices → candidate');
+  ok((await call('GET', '/check/unmatched')).s === 401 && (await call('GET', '/check/results')).s === 401, 'unmatched and results need the token');
+  ok(!(await pub()).some((x) => Math.abs(x.lat - 37.5) < 0.001 && Math.abs(x.lng - 127.05) < 0.001), "'none' adds nothing for users");
+  ok((await call('GET', '/check/status?ids=rq0000000003')).j.items.rq0000000003.st === 'none', 'status: none');
+  const rs = (await call('GET', '/check/results', { token: TOKEN })).j.items;
+  ok(rs.length === 3 && rs.every((x) => !('dev' in x)), '/check/results lists results without device ids');
+  ok((await call('POST', '/check/result', { token: TOKEN, origin: '', body: { id: 'rq0000000005', status: 'maybe' } })).s === 400, 'bad status → 400');
+  // 자동 확인: 통과 통계에서 경고 없이 3일 넘게 지난 카메라를 낮은 순위로, 7일에 한 번
+  if (sqlite) {
+    const db2 = new sqlite.DatabaseSync(':memory:');
+    const st2 = (sql, args) => ({ bind: (...a) => st2(sql, a), run: async () => { db2.prepare(sql).run(...(args || [])); return { success: true }; },
+      all: async () => ({ results: db2.prepare(sql).all(...(args || [])) }), first: async () => db2.prepare(sql).get(...(args || [])) || null,
+      _sync: () => (/^\s*select/i.test(sql) ? db2.prepare(sql).all(...(args || [])) : db2.prepare(sql).run(...(args || []))) });
+    const S2 = { prepare: (sql) => st2(sql), batch: async (list) => { db2.exec('BEGIN'); try { const r = list.map((x) => x._sync()); db2.exec('COMMIT'); return r; } catch (e) { db2.exec('ROLLBACK'); throw e; } } };
+    const envA = { ...env, STATS: S2 };
+    // (Worker 는 표를 한 번만 만든다 — 앞 시험의 D1 에서 이미 만들었으므로 여기서는 같은 표를 직접)
+    db2.exec('CREATE TABLE cam_day (day TEXT NOT NULL, cam TEXT NOT NULL, lim INTEGER, kind INTEGER, n INTEGER NOT NULL DEFAULT 0, alerted INTEGER NOT NULL DEFAULT 0, ' +
+      'covered INTEGER NOT NULL DEFAULT 0, missed INTEGER NOT NULL DEFAULT 0, hidden INTEGER NOT NULL DEFAULT 0, flagged INTEGER NOT NULL DEFAULT 0, navn INTEGER NOT NULL DEFAULT 0, ' +
+      'over INTEGER NOT NULL DEFAULT 0, adist INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, cam))');
+    const kday = (d) => new Date(Date.now() + 9 * 3600e3 - d * 86400000).toISOString().slice(0, 10);
+    for (const d of [1, 2, 3]) db2.prepare('INSERT INTO cam_day (day, cam, lim, kind, n, missed) VALUES (?, ?, 50, 3, 1, 1)').run(kday(d), '37.52116,127.1338|7');
+    db2.prepare('INSERT INTO cam_day (day, cam, lim, kind, n, alerted) VALUES (?, ?, 60, 1, 5, 5)').run(kday(1), '37.4,127.1|2');
+    await call('POST', '/check', { body: job('rq0000000006', 'devdddddddd1'), e: envA });
+    const u1 = await call('GET', '/check/next', { token: TOKEN, origin: '', e: envA });
+    const a1 = await call('GET', '/check/next', { token: TOKEN, origin: '', e: envA });
+    ok(u1.j.job.kind === 'user' && a1.s === 200 && a1.j.job.kind === 'auto' && a1.j.job.cam === '37.52116,127.1338|7' && a1.j.job.heading === 315 && a1.j.job.trail.length === 2 && a1.j.job.missDays === 3,
+      'user reports first, then an auto check of a camera passed without a warning on 3 days');
+    ok((await call('GET', '/check/next', { token: TOKEN, origin: '', e: envA })).s === 204, 'the same camera is not auto-checked again within 7 days');
+    await call('POST', '/check/result', { token: TOKEN, origin: '', e: envA, body: { id: a1.j.job.id, status: 'none' } });
+    ok((await call('GET', '/check/unmatched', { token: TOKEN, e: envA })).j.items.length === 1, "an auto check's 'none' is not added to the unmatched list");
+  }
 }
 
 Date.now = realNow;
