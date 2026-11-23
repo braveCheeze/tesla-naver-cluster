@@ -61,7 +61,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-200'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-201'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -5816,7 +5816,7 @@
     const useNv = NV_KINDS.has(j.kind);
     const fl = useNv ? forkLane() : null;
     const cla = useNv ? colorLineAhead() : null;
-    const clHere = !!cla && nav.dg != null && cla.d - nav.dg > -200 && cla.d - nav.dg < 600;   // renderColorLine 의 '같은 갈림'과 같은 기준
+    const clHere = !!cla && clSameTurn(cla);   // renderColorLine 의 '같은 갈림'과 같은 기준
     const key = g.i + ':' + g.t + ':' + g.s + (useNv ? '|' + (fl ? fl.k + ':' + fl.ok.join(',') : '') + '|' + (clHere ? cla.k + cla.c : '') : '');
     if (juncState.key !== key) {
       juncState.key = key;
@@ -6319,6 +6319,12 @@
   const CL_ICON = '<svg viewBox="0 0 30 32" aria-hidden="true">' +
     '<path class="cli-cl" d="M9.5 30V20.2c0-3.2 1.3-5.6 4-7.8L19.6 7.6" fill="none" stroke-width="5.4" stroke-linecap="round" stroke-linejoin="round"/>' +
     '<path class="cli-hd" d="M14.2 3.9 27.6 2.2 25.6 15.4z" stroke-width="1.2" stroke-linejoin="round"/></svg>';
+  // 이 유도선이 지금 안내(분기점·나들목)와 같은 갈림인가: 색 선 시작이 안내 지점 200m 앞~600m 뒤이거나,
+  // v201: 색 선이 안내 지점을 덮을 때 (판교분기점 1차처럼 색 선이 갈림 300m 앞 본선에서 시작해 2차 갈림 뒤까지 이어지는 곳)
+  function clSameTurn(a) {
+    if (nav.dg == null) return false;
+    return (a.d - nav.dg > -200 && a.d - nav.dg < 600) || (a.d <= nav.dg + 50 && a.end - nav.along >= nav.dg - 50);
+  }
   function renderColorLine() {
     const el = $('#colorRow'), a = colorLineAhead();
     // v197: 분기점 장면이 이 유도선을 그림 안에 그렸으면 줄은 숨긴다 (네이버처럼 그림 안에서)
@@ -6328,7 +6334,7 @@
     const col = CL_COLORS[a.c];
     // 지금 안내(분기점·나들목 출구)가 바로 이 갈림이면 거리는 위 안내 줄에 있다 — 여기 거리(색 선이 갈라지는 곳까지)까지 쓰면 숫자가 둘이라
     // 헷갈린다 (서울TG→판교분기점: 위 '150m 오른쪽 방향', 색 선은 출구 뒤 320m 에서 갈라짐). 그때는 거리 없이, 순서는 안내 지점 거리로
-    const same = nav.dg != null && a.d - nav.dg > -200 && a.d - nav.dg < 600;
+    const same = clSameTurn(a);
     el._d = same ? nav.dg : Math.max(0, a.d);   // 줄 순서 (v158)
     if (el.dataset.c !== a.c || el.dataset.side !== a.side) {
       el.dataset.c = a.c; el.dataset.side = a.side;

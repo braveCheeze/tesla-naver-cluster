@@ -2892,6 +2892,7 @@
     { id: 'S126', name: "S126 anonymous camera pass records (v196, driver '지나간곳 모조리 체크해서 과속 단속 체크해줘 신고를 하지 않았더라도 내역도 남겨놓고'): passing a camera in its direction records alerted (card distance) or missed, the other direction is not counted, an unknown limit counts as hidden; the batch has only camera number, alert, 5 km/h speed, limit, nav, date — no position, time or sid; a 90→60→90 dip with no camera within 400 m is a 100 m-cell candidate, a jam is not; the operator car adds the camera spot and trace; the settings switch stops it", fn: s126 },
     { id: 'S130', name: "S130 Naver-style junction scene (v197, driver sent Naver's 신갈JC '571m 대전' close-up: '이런거 참고해주고 적용해줘', '우리 방식 대로 AI이미지 활용을 해서', colour lines '그림으로'): an AI landscape with the road drawn by lane count. With a fork cross-section: 6 lanes, the two exit lanes painted, the bus lane line blue, the pink guide line inside the picture, two signs ('[50] 원주 인천 ↗' over the exit, '[1] ↑' over the main line), and the lane row / colour row hidden. Without data: 2 + 2 lanes. Keep-main paints lanes 2–4 under '[1] 서울 ↑'. Night colours. With the picture off, the colour row is a small road picture, no words", fn: s130 },
     { id: 'S131', name: "S131 resume after reversing (v200, driver '직진했다가 후진할때 후방카메라가 켜지는데 브라우저가 꺼져도 세션이 남게해서 유지할수는 없나'; /events show the Tesla reopens the page with a new sid about 80 s apart at 0 km/h): guidance, the section start time and distance, and a manual zoom are kept in localStorage every 5 s and on hide/close; a reopened page picks the guidance up at the first fix with no route card, no route request and no start speech, the sound pill shows while locked; without the stored route it quietly asks once; older than 30 min or after ending guidance nothing is kept", fn: s131 },
+    { id: 'S132', name: "S132 Naver two-way check, round 1 (v201, keys session emulator; driver rule '다르거나 없으면 네이버대로') and the 판교분기점 first-split pink line: driving straight past each spot in Naver's direction puts its camera on the route — 별내 송산로 southbound 60 signal+speed, 강동대로 north southbound child-zone 30, 25719 westbound 30, 둔촌사거리 25557 (moved 85 m to Naver's point) east- and westbound 50, 난곡로 23871 south-westbound 30; on the real 서울TG→판교분기점 route the first colour line starts about 300 m before the split, pink", fn: s132 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -4751,7 +4752,7 @@
       await t.loadColorLines();
       softReset();
     }
-    const ok = r.pink.shown && r.pink.c === 'p' && r.pink.text === '' && r.pink.icon && r.pink.side === 'r' && /분홍색 유도선 따라가기/.test(r.pink.aria) && /m$/.test(r.pink.dist) && distM(r.pink.dist) >= 100 && distM(r.pink.dist) <= 200 &&
+    const ok = r.pink.shown && r.pink.c === 'p' && r.pink.text === '' && r.pink.icon && r.pink.side === 'r' && /분홍색 유도선 따라가기/.test(r.pink.aria) && r.pink.dist === '' /* v201: 색 선(300m)이 회전(600m)을 덮으면 같은 갈림 — 거리는 위 안내 줄에만 */ &&
       /ff4fa3/i.test(r.pink.cl) && r.pink.name === '시험분기점' &&
       !r.passed.shown &&
       r.green.shown && r.green.c === 'g' && r.green.text === '' && r.green.icon && /녹색 유도선 따라가기/.test(r.green.aria) &&
@@ -6438,6 +6439,55 @@
       f.saved && f.dest === '후진 시험' && e.live === null && e.route === null &&
       c.active && c.dest === '후진 시험' && !c.card && c.calls === 1 &&
       !d.loaded && d.left === null;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S132: 네이버 양방향 확인 1차 (v201, keys 세션 에뮬레이터 — 운전자 규칙 '다르거나 없으면 네이버대로')와 판교분기점 1차 유도선. 실제 자료로:
+  //   곧은 길을 네이버가 띄운 방향으로 그 자리 1.5km 앞에서 지나가면 그 카메라가 경로 위 카메라에 든다 —
+  //   별내 송산로 남행 60 신호·과속, 강동대로 북쪽 남행 어린이 30 신호·과속, 25719 서행 30, 둔촌사거리 25557(네이버 자리로 85m 옮김) 동행·서행 50,
+  //   난곡로 23871 남서행 30. 판교분기점 1차: 경부 상행 실제 경로(서울TG→판교분기점 '일산, 구리')에서 유도선 첫 줄이 갈림 300m 앞에서 시작하는 분홍
+  async function s132() {
+    const t = T(), r = {};
+    const pass = async (lat, lng, h) => {
+      const at = { lat, lng }, A = dest(at, h + 180, 1500), P = [];
+      for (let s = 0; s <= 2000; s += 20) { const q = dest(A, h, s); P.push({ lat: round6(q.lat), lng: round6(q.lng) }); }
+      const cum = [0]; for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+      const total = cum[cum.length - 1];
+      const R = { route: { distance: r0(total), duration: r0(total / 14 * 1000), tollFare: 0, fuelPrice: 0, path: P.map((q) => [q.lng, q.lat]),
+        guide: [{ i: P.length - 1, t: 88, s: '목적지', d: r0(total), ms: r0(total / 14 * 1000) }], sections: [{ i: 0, n: P.length, name: '', speed: 50, cong: 1 }] },
+        P, cum, total, dest: { name: '확인', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+      await resetApp(); softReset(); await planAndStart(R); t.ensureRouteCams();
+      const hit = [...(t.nav.routeCams ? t.nav.routeCams.keys() : [])].map((c) => ({ c, d: hav(at, { lat: c[0], lng: c[1] }) })).filter((x) => x.d <= 40).sort((a, b) => a.d - b.d)[0];
+      t.endNav();
+      return hit ? hit.c[2] + '/' + hit.c[3] + '@' + Math.round(hit.d) : '';
+    };
+    try {
+      await waitFor(() => t.cams.loaded, 10000, 100);
+      r.songsanS = await pass(37.699451, 127.124144, 146);
+      r.gangdongN = await pass(37.521355, 127.139616, 199);
+      r.c25719W = await pass(37.52777, 127.1405, 290);
+      r.c25557E = await pass(37.52116, 127.1338, 119);
+      r.c25557W = await pass(37.52116, 127.1338, 299);
+      r.c23871SW = await pass(37.4704, 126.919729, 252);
+      const row = t.cams.rows[25557];
+      r.row25557 = row ? [row[0], row[1], row[2], row[3]].join(',') : '';
+      // 판교분기점 1차 유도선
+      const fx = await (await realFetch(harnessDir + 'fixtures/route-seoultg-n.json', { cache: 'no-store' })).json();
+      const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0]; for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + hav(P[k - 1], P[k]));
+      await resetApp(); softReset();
+      await planAndStart({ route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '판교', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } });
+      const g = fx.guide.find((x) => /판교분기점에서 '일산, 구리'/.test(x.s));
+      const list = t.ensureRouteColorLines();
+      r.pangyo = list.map((x) => x.name + ':' + x.c + ':' + Math.round(x.at - cum[g.i])).join(',');
+      t.endNav();
+    } finally {
+      await resetApp(); softReset();
+    }
+    const first = (r.pangyo || '').split(',')[0].split(':');
+    const ok = /^60\/3@/.test(r.songsanS) && /^30\/3@/.test(r.gangdongN) && /^30\/3@/.test(r.c25719W) && /^50\/3@/.test(r.c25557E) && /^50\/3@/.test(r.c25557W) &&
+      /^30\/3@/.test(r.c23871SW) && r.row25557 === '37.52116,127.1338,50,3' &&
+      first[0] === '판교분기점' && first[1] === 'p' && +first[2] >= -350 && +first[2] <= -250;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
