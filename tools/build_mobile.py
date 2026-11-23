@@ -445,6 +445,10 @@ for p_ in pts:
             kept.append(p_)
             stats['pairs_reversed'] += 1
             continue
+        # v188: 버리는 줄이 한 글자 방위('(남→북 방면)')면 남은 줄의 방향 단서로 남긴다 (아래 뒤처리)
+        hd_ = p_.get('heading') if p_.get('heading') is not None else compass_heading(p_['text'])
+        if hd_ is not None:
+            dup.setdefault('_dup_hd', []).append(hd_)
         stats['dup_self'] += 1
         continue
     if any(d < 30 and c[3] in (1, 3) for d, c in near_fixed(p_['lat'], p_['lng'], 30)):
@@ -466,6 +470,28 @@ for p_ in pts:
     else:
         p_['_row'] = add_row(p_, limit, hwy, ends)
     kept.append(p_)
+
+# v188 (keys 세션 '전체적으로 봐줘야 하지 않아?'): 같은 자리(30m)라 버린 한 글자 방위 줄을 남은 줄의 방향 단서로 쓴다.
+#  - 방위가 한쪽뿐이면 남은 줄의 진행 방위로 (대구 남산초등학교 앞: 남은 줄 '(계대네거리→신남네거리)'의 지명을 OSM 에서 못 찾아 기하로 남행이
+#    됐는데, 버린 줄은 '(남→북 방면)' — 계명대 쪽에서 신남 쪽, 북행)
+#  - 서로 반대 방위가 다 있으면 그 자리에 두 방향 카메라가 있는 것: 반대 방향 짝 줄을 하나 더 (대구 크레텍 앞: 남행 '(달성네거리→동산네거리)'·
+#    '(북→남)' 과 길 건너 '(남→북)')
+for p_ in kept:
+    hs = p_.get('_dup_hd')
+    if not hs or p_.get('_twin') is not None or str(p_['_row']) in headings:
+        continue
+    if all(min(abs(h - hs[0]) % 360, 360 - abs(h - hs[0]) % 360) <= 60 for h in hs):
+        headings[str(p_['_row'])] = int(round(hs[0])) % 360
+        stats['dup_compass_hint'] = stats.get('dup_compass_hint', 0) + 1
+    else:
+        base = rows[p_['_row']]
+        tw = dict(p_, text='', heading=None)
+        r = add_row(tw, base[2], base[8] == 1, None)
+        rows[r][9] = 1
+        rows[p_['_row']][9] = 1
+        pairs += [p_['_row'], r]
+        p_['_twin'] = r
+        stats['dup_compass_twin'] = stats.get('dup_compass_twin', 0) + 1
 
 by = {}
 for p_ in kept:

@@ -6402,6 +6402,11 @@
       const yd = (lat, lng) => near(lat, lng, 5, (c) => c[3] === 8)[0];
       const yS = yd(37.52618, 127.054889), yN = yd(37.534773, 127.05987);
       r.yeongdong = yS && yN ? { sDir: yS[9], sEb: yS.eb, nDir: yN[9], nEb: yN.eb } : 'none';
+      // 11. v189 (keys 세션 '전체적으로 봐줘야 하지 않아?'): 같은 자리라 빠진 한 글자 방위 줄을 남은 줄의 방향 단서로 — 대구 남산초등학교 앞은 북행
+      //     ('계대네거리→신남네거리'·'남→북', 예전엔 남행 177°), 크레텍 앞은 남행·북행 두 줄
+      const ns = near(35.862237, 128.582448, 5, (c) => c[3] === 8)[0];
+      const kr = near(35.873857, 128.582069, 5, (c) => c[3] === 8);
+      r.daegu = { namsan: ns ? ns.eb : 'none', cretec: kr.map((c) => c.eb) };
     } finally {
       await resetApp(); softReset();
     }
@@ -6415,7 +6420,8 @@
       r.beonyeong !== 'none' && r.beonyeong !== 'motorway lane' && r.ggb33.old === 0 && r.ggb33.now >= 1 &&
       r.sejongEnd !== 'none' && r.sejongEnd.rtype === 1 && r.sejongEnd.eb >= 0 && r.mobileLv === 0 && r.ghost80 === 0 &&
       r.seohanam !== 'none' && angd(r.seohanam.eb, 101) <= 30 && r.seohanam.lng < 127.14386 && r.seohanam.toStop <= 12 && r.unknownLimits < 600 &&
-      r.yeongdong !== 'none' && r.yeongdong.sDir === 1 && r.yeongdong.nDir === 1 && angd(r.yeongdong.sEb, 205) <= 30 && angd(r.yeongdong.nEb, 20) <= 30;
+      r.yeongdong !== 'none' && r.yeongdong.sDir === 1 && r.yeongdong.nDir === 1 && angd(r.yeongdong.sEb, 205) <= 30 && angd(r.yeongdong.nEb, 20) <= 30 &&
+      r.daegu.namsan !== 'none' && angd(r.daegu.namsan, 0) <= 40 && r.daegu.cretec.length === 2 && angd(r.daegu.cretec[0], r.daegu.cretec[1]) >= 120;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
   const isBoxRow = (c) => ((c[10] | 0) & 2) === 2;
