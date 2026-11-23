@@ -1610,6 +1610,58 @@
   #map.drive.gl .cammk, #map.drive.gl .bumpmk { transform: none; transition: none; }
   /* 다크 스타일을 못 받았을 때만: 지도 캔버스를 어둡게 (색은 뒤집지 않는다) */
   #map.gldim .mapcanvas canvas { filter: brightness(.55) contrast(1.1); }
+
+  /* ================= v191 단속 배지 (2026-11-23 운전자 '아이콘이나 UI 같은것도 어느정도 학습해서 … 네이버지도가 가장 정확해') =================
+     네이버 길안내의 왼쪽 단속 배지처럼: 흰 원·두꺼운 빨간 테 안에 위 작은 아이콘(과속은 카메라, 신호·과속은 신호등) + 굵은 제한속도,
+     옆에 빨간 띠(흰 굵은 남은 거리)와 그 밑 종류 띠(노란 바탕 '과속단속'·'신호과속'·'박스형', 흰 바탕 '이동식'·'신고 지점').
+     서랍 칸 배치(v158)와 '틀림' 버튼은 그대로. 이동식·박스형·신고 지점의 파란 테(v114 요청)도 그대로 */
+  #app.tesla .cd-in .camcard { display: flex; align-items: center; gap: 12px; }
+  #app.tesla .cd-in .camcard .cam-sign {
+    position: relative; width: 74px; height: 74px; border: 7px solid #e8202a; background: #fff; color: #111;
+    padding-top: 11px; font-size: 27px; font-weight: 900; letter-spacing: -1px; box-shadow: 0 2px 8px rgba(0, 0, 0, .22);
+  }
+  #app.tesla .cd-in .camcard.mobile .cam-sign { border-color: #2979ff; }
+  #app.tesla .cd-in .camcard.signal .cam-sign { font-size: 17px; letter-spacing: -.5px; border-color: #e8202a; }
+  #app.tesla .cd-in .camcard .cam-sign::after { display: none; }   /* 위에 얹던 신호등은 원 안 아이콘으로 */
+  #app.tesla .cd-in .camcard .cam-ico {
+    position: absolute; left: 50%; top: 7px; width: 21px; height: 12px; transform: translateX(-50%);
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 14'%3E%3Crect x='1' y='1.5' width='15' height='11' rx='3.2' fill='%23111'/%3E%3Cpath d='M15.5 7 L23 2.6 V11.4 Z' fill='%23111' stroke='%23111' stroke-width='1.2' stroke-linejoin='round'/%3E%3Ccircle cx='5.6' cy='7' r='2.1' fill='%23fff'/%3E%3Ccircle cx='11.2' cy='7' r='2.1' fill='%23fff'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+  #app.tesla .cd-in .camcard.sigspeed .cam-ico, #app.tesla .cd-in .camcard.signal .cam-ico {
+    width: 26px; height: 10px; top: 8px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 12'%3E%3Crect x='.6' y='.6' width='28.8' height='10.8' rx='4' fill='%23222'/%3E%3Ccircle cx='7.5' cy='6' r='2.8' fill='%23ff3b30'/%3E%3Ccircle cx='15' cy='6' r='2.8' fill='%23ffcc00'/%3E%3Ccircle cx='22.5' cy='6' r='2.8' fill='%2334c759'/%3E%3C/svg%3E");
+  }
+  #app.tesla .cd-in .camcard .cam-info {
+    display: grid; grid-template-columns: minmax(118px, max-content) 1fr; column-gap: 10px; align-items: center;
+  }
+  #app.tesla .cd-in .camcard .cam-row { display: contents; }
+  #app.tesla .cd-in .camcard .cam-type { display: none; }   /* 긴 이름은 화면 읽기·기록용으로만 (종류 띠가 짧게 보여 준다) */
+  #app.tesla .cd-in .camcard .cam-dist {
+    grid-column: 1; grid-row: 1; margin: 0; padding: 3px 12px 2px; border-radius: 10px 10px 0 0; text-align: center;
+    background: #e8202a; color: #fff; font-size: 25px; font-weight: 850; line-height: 1.2; letter-spacing: -.3px; white-space: nowrap;
+  }
+  #app.tesla .cd-in .camcard .cam-avg { grid-column: 2; grid-row: 1; }
+  #app.tesla .cd-in .camcard .cam-kind {
+    grid-column: 1; grid-row: 2; padding: 3px 10px 4px; border-radius: 0 0 10px 10px; text-align: center;
+    background: #ffc21f; color: #111; font-size: 16px; font-weight: 800; line-height: 1.25; white-space: nowrap;
+  }
+  #app.tesla .cd-in .camcard[data-band="white"] .cam-kind { background: #fff; color: #111; box-shadow: inset 0 0 0 1.5px rgba(0, 0, 0, .14); }
+  #app.tesla .cd-in .camcard.crowd .cam-kind::after { content: ' · 제보'; }
+  #app.tesla .cd-in .camcard .cam-bar { grid-column: 1 / -1; grid-row: 3; margin-top: 8px; }
+  #app.tesla .cd-in .camcard .cam-hint { grid-column: 1 / -1; grid-row: 4; }
+  /* 게이지는 구간단속 중(남은 시간 줄이 있을 때)만 — 보통 경고는 네이버처럼 거리 띠만 */
+  #app.tesla .cd-in .camcard:not(:has(#camHint.sec:not([hidden]))) .cam-bar { display: none; }
+  /* 제한을 넘으면 빨간 거리 띠가 깜박인다 (글자는 흰색 그대로라 늘 읽힌다) */
+  #app.tesla .cd-in .camcard.over .cam-dist { color: #fff; animation: camband 1s ease-in-out infinite; }
+  @keyframes camband { 50% { background: #8e0d13; } }
+  @media (prefers-reduced-motion: reduce) { #app.tesla .cd-in .camcard.over .cam-dist { animation: none; background: #b3121a; } }
+  /* 지도 위 단속 표시도 같은 모양: 흰 원·빨간 테, 위 작은 카메라(신호·과속은 신호등), 가운데 제한속도 */
+  .cammk { position: relative; width: 36px; height: 36px; padding-top: 7px; font: 900 13px/1 system-ui, sans-serif; letter-spacing: -.4px; }
+  .cammk::before {
+    content: ''; position: absolute; left: 50%; top: 3px; width: 12px; height: 7px; transform: translateX(-50%);
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 14'%3E%3Crect x='1' y='1.5' width='15' height='11' rx='3.2' fill='%23111'/%3E%3Cpath d='M15.5 7 L23 2.6 V11.4 Z' fill='%23111' stroke='%23111' stroke-width='1.2' stroke-linejoin='round'/%3E%3Ccircle cx='5.6' cy='7' r='2.1' fill='%23fff'/%3E%3Ccircle cx='11.2' cy='7' r='2.1' fill='%23fff'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+  .cammk.k2::before, .cammk.k3::before { width: 15px; height: 6px; top: 4px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 12'%3E%3Crect x='.6' y='.6' width='28.8' height='10.8' rx='4' fill='%23222'/%3E%3Ccircle cx='7.5' cy='6' r='2.8' fill='%23ff3b30'/%3E%3Ccircle cx='15' cy='6' r='2.8' fill='%23ffcc00'/%3E%3Ccircle cx='22.5' cy='6' r='2.8' fill='%2334c759'/%3E%3C/svg%3E"); }
+  .cammk.k3::after { display: none; }
 </style>
 </head>
 <body>
@@ -1641,11 +1693,13 @@
           <!-- 분기점 그림: 고속도로 진출입·갈림길 800m 앞부터 (가야 할 쪽 파랗게, 위에 방면, 밑에 안내 지점·남은 거리) -->
           <div id="juncCard" class="junccard" hidden><div id="juncSvg" class="jc-svg"></div><div id="juncLabel" class="jc-label"></div><div class="jc-head"><b id="juncPlace"></b></div></div>
           <div id="camCard" class="camcard" hidden>
-            <div class="cam-sign"><span id="camLimit">60</span></div>
+            <div class="cam-sign"><i class="cam-ico" aria-hidden="true"></i><span id="camLimit">60</span></div>
             <div class="cam-info">
               <div id="camType" class="cam-type">과속 단속</div>
               <!-- 구간단속 중이면 거리 오른쪽 끝(게이지 끝)에 구간 평균 속도 -->
               <div class="cam-row"><div id="camDist" class="cam-dist">0m</div><div id="camAvg" class="cam-avg" hidden></div></div>
+              <!-- v191: 네이버 길안내 배지처럼 빨간 거리 띠 밑에 종류 띠 (과속단속·신호과속·박스형·이동식·신고 지점) -->
+              <div id="camKind" class="cam-kind">과속단속</div>
               <div class="cam-bar"><i id="camBar"></i></div>
               <div id="camHint" class="cam-hint" hidden></div>
             </div>
@@ -1958,8 +2012,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-190"></script>
-<script src="img/ai/picks.js?v=2026.11.16-190"></script>
-<script src="app.js?v=2026.11.16-190"></script>
+<script src="icons.js?v=2026.11.16-191"></script>
+<script src="img/ai/picks.js?v=2026.11.16-191"></script>
+<script src="app.js?v=2026.11.16-191"></script>
 </body>
 </html>

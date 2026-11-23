@@ -59,7 +59,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-190'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-191'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -2528,7 +2528,14 @@
   // v188: 내 신고 지점 m 이 모든 사용자 지점 d(운전자 신고·여러 운전자 제보)와 같은 카메라인지. '놓침' 자리는 약 3초 전 궤적 점이라
   // 빠른 길에서는 같은 카메라라도 70~100m 뒤에 찍힌다(2026-11-23 경부 죽전·신갈JC 북쪽: 73m·79m 뒤, 제한 100 과 110 으로 두 번 뜰 뻔) —
   // 60m 안이거나, 120m 안에서 같은 방향이고 그 지점이 내 진행 방향 앞(30° 안)이면 같다
-  const sameSpotAhead = (m, d) => sameSpot(m, d) || (haversine(m, d) < 120 && m.h != null && d.h != null && angleDiff(m.h, d.h) <= 45 && angleDiff(bearing(m, d), m.h) <= 30);
+  // v191: 빠른 길(그때 시속 70 넘게, 또는 고속·간선 도로 이름)에서는 400m 까지 — 다른 내비가 앞에서 알릴 때 누르면 실제 자리보다
+  // 수백 m 앞에 저장된다(경부 하행 신갈JC 이동식 110: 네이버 자리가 운전자 신고보다 257m 남쪽, 운전자 차의 신고 지점은 370m 뒤)
+  const sameSpotAhead = (m, d) => {
+    if (sameSpot(m, d)) return true;
+    if (m.h == null || d.h == null || angleDiff(m.h, d.h) > 45) return false;
+    const far = m.kmh >= 70 || isFastRoad(m.rn) ? 400 : 120;
+    return haversine(m, d) < far && angleDiff(bearing(m, d), m.h) <= 30;
+  };
   function applyUserSpots() {
     if (!cams.loaded) return;
     const keyOf = (c) => Math.floor(c[0] / CELL) + ':' + Math.floor(c[1] / CELL);
@@ -2835,6 +2842,20 @@
     if (isBox(c)) s = '박스형 ' + s;                        // 예: '박스형 과속단속' (2026-11-14 팔당 제보)
     return s;
   }
+  // v191 (2026-11-23 운전자 '아이콘이나 UI … 네이버지도가 가장 정확해'): 경고 카드 종류 띠의 짧은 이름과 색 (네이버 길안내 배지처럼).
+  // 노란 띠: 과속단속·신호과속·신호단속·구간단속·박스형. 흰 띠: 이동식·신고 지점. 보호구역은 따로 뜨는 주의 표지가 알린다
+  function camShort(c) {
+    if (isUserSpot(c)) return c.who === 'mine' ? '내 신고 지점' : c.who === 'crowd' ? '제보 지점' : '신고 지점';
+    if (c[4] === 1) return '구간단속 시작';
+    if (c[4] === 2) return '구간단속 끝';
+    if (isBox(c)) return '박스형';
+    if (c[3] === 8) return '이동식';
+    const rear = isRear(c);
+    if (c[3] === 3) return rear ? '신호과속 후면' : '신호과속';
+    if (c[3] === 2) return rear ? '신호 후면' : '신호단속';
+    return rear ? '후면단속' : '과속단속';
+  }
+  const camBand = (c) => (isUserSpot(c) || c[3] === 8 ? 'white' : 'yellow');
   const camRoad = (c) => (cams.roads && c[7] >= 0 ? cams.roads[c[7]] : '') || '';
   // v157: '서울외곽순환고속도로'(경찰청 카메라 자료의 옛 이름)는 '수도권제1순환고속도로'(2020년 바뀐 이름, 네이버 경로 구간)와 같은 길
   // v165 (2026-11-20 2차 점검 C): 표기 차이를 맞춘다 — 경찰 '분당-수서간고속화도로'·'분당-수서간도시고속화도로', 네이버 '분당수서간도시고속화도로',
@@ -3710,6 +3731,8 @@
       if (card._camI !== tg.i) { card._camI = tg.i; card._camAt = Date.now(); }
       // 지나간 뒤에도 CAM_HOLD(30m)까지는 카메라 바로 앞인 것처럼 그대로 보여 주고(오차 거리는 따로 알리지 않음), 그 뒤 사라진다
       $('#camType').textContent = camLabel(tg.c);
+      $('#camKind').textContent = camShort(tg.c);   // v191: 종류 띠 (긴 이름은 #camType·화면 읽기용)
+      card.dataset.band = camBand(tg.c);
       $('#camDist').textContent = tg.after ? '통과' : fmtDist(camShownDist(tg));   // v112: 지나친 뒤 '0m' 대신 (문구 검토)
       const sd = camShownDist(tg);
       card._d = tg.after ? 0 : Math.max(0, sd);   // 서랍 칸 순서 (v158)
@@ -8423,7 +8446,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,
