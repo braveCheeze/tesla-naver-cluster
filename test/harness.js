@@ -2887,6 +2887,7 @@
     { id: 'S120', name: "S120 side-road cameras beside an expressway (v187, driver's '틀림' 2026-11-23 on 경부 southbound south of 신갈JC at 50 km/h: the 신정로 상미사거리 school-zone 30 #20526, 23 m beside 경부, showed because a '놓침' three days earlier had put a 'route' fix on it): with that fix it is still not on a 경부 route; a '놓침' pressed after passing it fixes nothing on it; free drive on 경부 at 50 km/h drops a school-zone 30 10 m to the side; expressway cameras (on the line, and 25 m off with a 'route' fix) still alert, guided and free", fn: s120 },
     { id: 'S122', name: "S122 camera signs from the AI atlas (v192, driver: '이런거는 ai 아틀라스로 만들고', '원래 우리 스타일대로 해 줘'): the warning card keeps our original layout (long kind name, distance, gauge; ring red, blue for mobile/box/reported); map markers are 36 px with a small camera (traffic light for signal+speed); a picked AI atlas sign (img/ai/cam_*) replaces the drawn sign on the card and the map marker with the limit on top, a sign drawn with its number (cam_speed_80) is shown as it is with the overlaid number hidden; a 구간단속 camera keeps the drawn sign", fn: s122 },
     { id: 'S123', name: "S123 tunnel dark in one go and no white flash (v193, driver: 'GL 모드에서 터널에 들어가 다크 모드로 바뀔 때 너무 느리게 탁 탁 탁 … 한번에 딱', '가끔 주행 중 화면이 하얀색으로 번쩍'): a daytime tunnel keeps the day map style and only inverts the GL canvas (instant, day route palette, night UI), undone at once on exit; at night the dark style is used and the map box background is dark instead of the light rgb(248,249,250) that showed through", fn: s123 },
+    { id: 'S124', name: "S124 spots checked on Naver guidance (v194, driver: '네이버지도 과속단속을 나는 제일 신뢰하니까 저걸 기반으로 넣어줘'): place text 'A→B' saying my direction no longer keeps a camera that crosses the route at 77° (둔촌사거리 25557) — along (0°) or written the other way (180°) it still decides; a driver spot with kind 3 reads '운전자 신고 신호·과속단속', with the rear flag '운전자 신고 후면단속' and after passing '후면단속 중'", fn: s124 },
   ];
 
   // S55: 주의 표지 (전국도로안전표지표준데이터의 주의표지, data/signs.json · tools/build_signs.py, 2026-11-14 요청).
@@ -5329,11 +5330,12 @@
         await driveThrough(m, 0, 900, 60, 60, 10, () => { const tg = t.camState.target; if (tg && t.isUserSpot(tg.c)) after = true; });
         r.d.afterDelete = after; r.d.left = t.mySpots.length;
       }
-      // (e) 모든 사용자: 강동대로 둔촌동 북서행 — v178: 제한속도를 채웠으면 보이고, 못 채웠으면 숨김
-      const D = t.driverSpots.rows.find((x) => Math.abs(x[0] - 37.51902) < 1e-4);
+      // (e) 모든 사용자: 강동대로 둔촌동 북서행 — v178: 제한속도를 채웠으면 보이고, 못 채웠으면 숨김.
+      //     v194: 네이버 길안내로 확인해 자리를 옮기고(37.519472) 제한 50·신호·과속으로 적었다 → '운전자 신고 신호·과속단속'
+      const D = t.driverSpots.rows.find((x) => Math.abs(x[0] - 37.519472) < 1e-4 || Math.abs(x[0] - 37.51902) < 1e-4);
       if (D) {
         let seen = '';
-        const lim = t.spotLimit({ lat: D[0], lng: D[1], h: D[2] }, '');
+        const lim = D[4] > 0 ? D[4] : t.spotLimit({ lat: D[0], lng: D[1], h: D[2] }, '');
         await driveThrough({ lat: D[0], lng: D[1] }, D[2], 800, 40, 50, 10, () => { const tg = t.camState.target; if (tg && t.isUserSpot(tg.c) && !seen) seen = text('#camType'); });
         r.e = { rows: t.driverSpots.rows.length, seen, lim };
       } else r.e = 'no driver spots';
@@ -5355,7 +5357,7 @@
       r.a.lim0 === 0 && r.a.lim1 === 70 &&
       r.b.first !== null && r.b.first <= 520 && /내가 신고한 단속 지점/.test(r.b.label) && r.b.limit === '70' && !r.c.opp &&
       r.d.box && /이 차에서만 알림/.test(r.d.text) && !r.d.afterDelete && r.d.left === 0 &&
-      r.e.rows >= 5 && (r.e.lim > 0 ? /운전자 신고 단속 지점/.test(r.e.seen) : !r.e.seen);
+      r.e.rows >= 5 && (r.e.lim > 0 ? /운전자 신고 (단속 지점|신호·과속단속)/.test(r.e.seen) : !r.e.seen);
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
@@ -5957,6 +5959,73 @@
     const ok = !r.dayBefore.night && !r.dayBefore.tndark && tunnelOk &&
       !r.after.night && !r.after.tndark && !/invert/.test(r.after.filter) && (!gl || r.after.type === 'normal') &&
       r.night.night && !r.night.tndark && r.night.mapDark && r.night.hostBg === 'rgb(28, 30, 34)' && (!gl || r.night.type === 'tncdark' || !a.darkReady);
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S124: 네이버 길안내로 확인한 자리 (v194, 운전자 '네이버지도 과속단속을 나는 제일 신뢰하니까 저걸 기반으로 넣어줘')
+  //   (a) 설치장소 'A→B' 가 안내 문구로 내 방향이어도 카메라가 경로를 가로지르는 방향(77°)이면 경로 위가 아님 (둔촌사거리 25557 틀림)
+  //       — 같은 방향(0°)·반대로 적힌 방향(180°)은 예전처럼 글이 가른다(하남 창우로 J2735)
+  //   (b) 운전자 지점 종류: 신호·과속(6째 값 3)은 '운전자 신고 신호·과속단속', 후면단속(7째 값 1)은 '운전자 신고 후면단속'이고 지난 뒤 '후면단속 중'
+  async function s124() {
+    const t = T(), r = {};
+    const O = dest(NAV_ORIGIN, 90, 160000);
+    const along = (s) => dest(O, 180, s);
+    const P = [];
+    for (let k = 0; k <= 130; k++) { const q = along(20 * k); P.push({ lat: round6(q.lat), lng: round6(q.lng) }); }
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const total = cum[cum.length - 1];
+    const R = { route: { distance: r0(total), duration: r0(total / 20 * 1000), tollFare: 0, fuelPrice: 0, path: P.map((q) => [q.lng, q.lat]),
+      guide: [{ i: 70, t: 1, s: "시험교차로에서 '시험역' 방면으로 직진", d: r0(cum[70]), ms: r0(cum[70] / 20 * 1000) }, { i: 130, t: 88, s: '목적지', d: r0(total), ms: r0(total / 20 * 1000) }],
+      sections: [{ i: 0, n: 131, name: '시험로', speed: 60, cong: 1 }] },
+      P, cum, total, dest: { name: '시험 목적지', addr: '', lat: P[130].lat, lng: P[130].lng } };
+    const q0 = dest(along(1000), 270, 3);
+    const X = [round6(q0.lat), round6(q0.lng), 50, 3, 0, 0, 0, -1, 5, 1]; X.e2 = 0; X.lv = 0; X.sl = X[0]; X.sg = X[1]; X.on = '시험로';
+    const keep = { drv: t.driverSpots.rows.slice(), shared: t.sharedSpots.slice(), mine: t.mySpots.slice() };
+    let base0 = null, fakeI = -1;
+    try {
+      t.driverSpots.rows.length = 0; t.sharedSpots.length = 0; t.mySpots.length = 0; t.applyUserSpots();
+      base0 = t.cams.rows.length; fakeI = base0; t.cams.rows.push(X);
+      const gk = Math.floor(X[0] / 0.01) + ':' + Math.floor(X[1] / 0.01); if (!t.cams.grid.has(gk)) t.cams.grid.set(gk, []); t.cams.grid.get(gk).push(fakeI);
+      t.cams.arrows.set(X, ['시험출발', '시험역']);
+      t.cams.userBase = null; t.applyUserSpots();
+      const on = async (eb) => { X.eb = eb; await resetApp(); softReset(); await planAndStart(R); t.ensureRouteCams(); const v = !!(t.nav.routeCams && t.nav.routeCams.has(X)); t.endNav(); return v; };
+      r.arrow = { cross77: await on(257), along: await on(180), opposite: await on(0) };
+      // (b) 운전자 지점: 신호·과속 50 (1600m), 후면단속 80 (2000m)
+      const s1 = dest(along(1600), 270, 3), s2 = dest(along(2000), 270, 3);
+      t.driverSpots.rows.push([round6(s1.lat), round6(s1.lng), 180, 60, 50, 3], [round6(s2.lat), round6(s2.lng), 180, 79, 80, 1, 1]);
+      t.applyUserSpots();
+      const u = t.cams.rows.slice(t.cams.userBase);
+      r.rows = u.map((c) => c[3] + '/' + (c[10] | 0) + '/' + c[2]);
+      await resetApp(); softReset(); await planAndStart(R);
+      const seen = {};
+      for (let s = 1100; s <= 2040; s += 10) {
+        const q = pointAt(R, s); feed(q.p, 15, q.h, { dt: 700 });
+        const tg = t.camState.target; if (!tg) continue;
+        const k = tg.c === u[0] ? 'sig' : tg.c === u[1] ? 'rear' : null; if (!k) continue;
+        const lb = text('#camType'), dist = text('#camDist');
+        if (!seen[k]) seen[k] = { label: lb, limit: text('#camLimit') };
+        if (k === 'rear' && s > 2010) seen.rearAfter = dist;
+      }
+      t.endNav();
+      r.spots = seen;
+    } finally {
+      t.driverSpots.rows.length = 0; t.mySpots.length = 0; t.sharedSpots.length = 0; t.applyUserSpots();
+      if (fakeI >= 0) {
+        t.cams.arrows.delete(X);
+        const gk = Math.floor(X[0] / 0.01) + ':' + Math.floor(X[1] / 0.01), a2 = t.cams.grid.get(gk); if (a2) { const j = a2.indexOf(fakeI); if (j >= 0) a2.splice(j, 1); }
+        t.camState.passed.delete(fakeI); t.camMiss.near.delete(fakeI); t.camState.saidById.delete(fakeI);
+        t.cams.rows.length = base0; t.cams.userBase = null;
+      }
+      keep.drv.forEach((x) => t.driverSpots.rows.push(x)); keep.shared.forEach((x) => t.sharedSpots.push(x)); keep.mine.forEach((x) => t.mySpots.push(x));
+      t.applyUserSpots();
+      await resetApp(); softReset();
+    }
+    const sp = r.spots || {};
+    const ok = r.arrow.cross77 === false && r.arrow.along === true && r.arrow.opposite === true &&
+      r.rows[0] === '3/4/50' && r.rows[1] === '1/5/80' &&
+      !!sp.sig && sp.sig.label === '운전자 신고 신호·과속단속' && sp.sig.limit === '50' &&
+      !!sp.rear && sp.rear.label === '운전자 신고 후면단속' && sp.rear.limit === '80' && sp.rearAfter === '후면단속 중';
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

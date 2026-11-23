@@ -59,7 +59,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-193'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-194'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -2522,8 +2522,9 @@
     if (best) return best.c[2];
     return named && isExpwyName(rn) ? 100 : 0;
   }
-  function userSpotRow(lat, lng, h, kmh, who, lim) {
-    const r = [lat, lng, lim > 0 ? lim : 0, 1, 0, 0, 0, -1, kmh >= 70 ? 1 : 4, 1, USER_FLAG];
+  // v194: 운전자 지점은 종류(1 과속 · 3 신호·과속)와 후면단속(flags 1)도 가질 수 있다 (네이버 길안내 확인, data/driver_spots.json 6·7째 값)
+  function userSpotRow(lat, lng, h, kmh, who, lim, kind, flags) {
+    const r = [lat, lng, lim > 0 ? lim : 0, kind === 3 ? 3 : 1, 0, 0, 0, -1, kmh >= 70 ? 1 : 4, 1, USER_FLAG | ((flags | 0) & 1)];
     r.eb = h == null ? -1 : h; r.e2 = 0; r.lv = 0; r.sl = lat; r.sg = lng; r.on = ''; r.who = who;
     return r;
   }
@@ -2553,7 +2554,7 @@
     }
     cams.userBase = cams.rows.length;
     const add = [];
-    for (const d of driverSpots.rows) add.push({ lat: d[0], lng: d[1], h: d[2], kmh: d[3] || 0, who: 'driver', lim: d[4] || 0 });
+    for (const d of driverSpots.rows) add.push({ lat: d[0], lng: d[1], h: d[2], kmh: d[3] || 0, who: 'driver', lim: d[4] || 0, kind: d[5] || 1, flags: d[6] || 0 });
     // v171 모든 사용자 신고 지점. v175: 운영자가 확인하기 전 자동 반영(src 'auto', 서로 다른 운전자 3명 넘게)은 '사용자 제보'로 따로 보인다
     for (const d of sharedSpots) if (!add.some((x) => sameSpot(x, d))) add.push({ lat: d.lat, lng: d.lng, h: d.h, kmh: 0, who: d.src === 'auto' ? 'crowd' : 'driver', lim: d.lim || 0 });
     for (const m of mySpots) if (!add.some((x) => (x.who === 'mine' ? sameSpot(x, m) : sameSpotAhead(m, x)))) add.push({ lat: m.lat, lng: m.lng, h: m.h, kmh: m.kmh, who: 'mine', lim: m.lim || 0, rn: m.rn, m });
@@ -2563,7 +2564,7 @@
         x.lim = spotLimit(x, x.rn);
         if (x.m && x.lim > 0) { x.m.lim = x.lim; filled = true; }   // 나중에 채워졌으면 저장한다
       }
-      const i = cams.rows.length, r = userSpotRow(x.lat, x.lng, x.h, x.kmh, x.who, x.lim);
+      const i = cams.rows.length, r = userSpotRow(x.lat, x.lng, x.h, x.kmh, x.who, x.lim, x.kind, x.flags);
       cams.rows.push(r);
       const k = keyOf(r);
       if (!cams.grid.has(k)) cams.grid.set(k, []);
@@ -2837,7 +2838,13 @@
     return zone + (isRear(c) ? '후면 ' : '') + what;
   }
   function camLabel(c) {
-    if (isUserSpot(c)) return c.who === 'mine' ? '내가 신고한 단속 지점' : c.who === 'crowd' ? '사용자 제보 단속 지점' : '운전자 신고 단속 지점';   // v169: 제한속도 모름 · v175 확인 전 자동 반영
+    if (isUserSpot(c)) {
+      const who = c.who === 'mine' ? '내가 신고한' : c.who === 'crowd' ? '사용자 제보' : '운전자 신고';   // v169: 제한속도 모름 · v175 확인 전 자동 반영
+      // v194: 네이버로 확인한 운전자 지점은 종류까지 ('운전자 신고 신호·과속단속', '운전자 신고 후면단속')
+      if (isRear(c)) return who + ' ' + (c[3] === 3 ? '신호·과속 ' : '') + '후면단속';
+      if (c[3] === 3) return who + ' 신호·과속단속';
+      return who + ' 단속 지점';
+    }
     let s = c[4] === 1 ? '구간단속 시작' : c[4] === 2 ? '구간단속 끝' : (KIND_NAME[c[3]] || '단속 카메라');
     if (c[6] === 2) s = '어린이보호구역 ' + (c[3] === 2 ? '단속' : s);
     else if (c[6] === 1) s = '노인보호구역 ' + s;
@@ -3189,8 +3196,12 @@
     // 찍는 방향이 이 자리 경로 방향과 50° 안. 교차로에서 꺾는 곳이면 들어오는 쪽(30m 전)·나가는 쪽(30m 뒤) 방향도 본다
     // (가락시장역교차로에서 좌회전: 들어오는 송파대로 북행 카메라). 설치장소 'A→B' 가 안내 문구로 갈리면 그게 먼저:
     // 반대면 빼고, 내 방향이라고 나오면 기하 판단과 달라도 알린다 (2026-11-14 하남 창우로 J2735, 11-15 가천대역 '복정역→성남시청')
-    const arrow = cams.arrows && cams.arrows.has(c) ? arrowSays(c, at) : 0;
+    let arrow = cams.arrows && cams.arrows.has(c) ? arrowSays(c, at) : 0;
     if (arrow < 0) return null;
+    // v194 (2026-11-23 둔촌사거리 '틀림', 네이버 확인: 그 접근에는 카메라 없음): 25557 '방이동,올림픽공원북2문교차로→둔촌오륜역'(찍는 방향 119°)이
+    // 안내 문구의 '둔촌오륜역'과 맞아 남남서(196°)로 곧게 지나는 경로에서 떴다. 글로 가르는 것은 같은 길의 앞·뒤(0°·180°)를 가를 때만 —
+    // 카메라가 경로를 가로지르는 방향(60~120°)이면 다른 접근로이니 기하 판단을 따른다
+    if (arrow > 0 && camHasDir(c)) { const cx = angleDiff(c.eb, bearing(a, b)); if (cx > 60 && cx < 120) arrow = 0; }
     if (arrow <= 0 && !camDirOk(c, bearing(a, b)) && !camDirOk(c, routeBearingAt(at - 30, at)) && !camDirOk(c, routeBearingAt(at, at + 30))) return null;
     return at;
   }
@@ -3758,7 +3769,8 @@
       card.classList.toggle('aisign', !!sgImg);
       card.classList.toggle('ainum', !!(sgImg && sgImg.num));   // 숫자까지 그린 그림이면 얹은 숫자는 숨긴다 (글은 화면 읽기·시험용으로 남김)
       if (sgEl.dataset.img !== sgUrl) { sgEl.style.backgroundImage = sgUrl; sgEl.dataset.img = sgUrl; }
-      $('#camDist').textContent = tg.after ? '통과' : fmtDist(camShownDist(tg));   // v112: 지나친 뒤 '0m' 대신 (문구 검토)
+      // v112: 지나친 뒤 '0m' 대신 '통과'. v194: 후면단속은 지난 뒤가 단속 자리라 네이버처럼 '후면단속 중'
+      $('#camDist').textContent = tg.after ? (isRear(tg.c) ? '후면단속 중' : '통과') : fmtDist(camShownDist(tg));
       const sd = camShownDist(tg);
       card._d = tg.after ? 0 : Math.max(0, sd);   // 서랍 칸 순서 (v158)
       const span = Math.max(Number.isFinite(tg.first) ? tg.first : sd, 300);
