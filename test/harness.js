@@ -2882,7 +2882,7 @@
     { id: 'S69', name: 'S69 signal cameras: warning kept only 5 m after passing; no spoken speeding line (beep instead); straight underpass entry shows the tunnel icon and "OO지하차도까지"', fn: s69 },
     { id: 'S68', name: 'S68 free drive with a wrong GPS heading still catches the speed camera ahead (track bearing); a camera passed without an alert is counted as missed', fn: s68 },
     // v184·v186: 멀리(경로 시작점에서 80km) 주행 화면으로 달리므로 맨 끝에 (앞에 두면 S86→S88 의 지도 상태가 흔들린다)
-    { id: 'S119', name: "S119 cameras the driver confirmed (v186, data/driver_spots.json with a limit: 신중부대로·남북대로 80): a row's own limit is kept, it alerts as '운전자 신고 단속 지점' 80 from 900 m along a route in its direction, not on the way back", fn: s119 },
+    { id: 'S119', name: "S119 cameras the driver confirmed (v186, data/driver_spots.json with a limit: 신중부대로·남북대로 80): a row's own limit is kept, it alerts as '운전자 신고 단속 지점' 80 from 900 m along a route in its direction, not on the way back; v188: my own '놓침' spot 75 m behind it in the same direction is the same camera (one row, status '모든 사용자에게 반영됨'), facing the other way it is not", fn: s119 },
     { id: 'S120', name: "S120 side-road cameras beside an expressway (v187, driver's '틀림' 2026-11-23 on 경부 southbound south of 신갈JC at 50 km/h: the 신정로 상미사거리 school-zone 30 #20526, 23 m beside 경부, showed because a '놓침' three days earlier had put a 'route' fix on it): with that fix it is still not on a 경부 route; a '놓침' pressed after passing it fixes nothing on it; free drive on 경부 at 50 km/h drops a school-zone 30 10 m to the side; expressway cameras (on the line, and 25 m off with a 'route' fix) still alert, guided and free", fn: s120 },
   ];
 
@@ -5568,6 +5568,15 @@
       };
       r.south = await run(false);
       r.north = await run(true);
+      // (d) v188: 같은 방향 75m 뒤의 내 신고 지점('놓침'은 약 3초 전 자리)은 같은 카메라 — 한 번만. 반대 방향이면 다른 지점
+      t.mySpots.length = 0;
+      const back = dest(spotP, 0, 75);   // 남행이므로 북쪽이 뒤
+      t.mySpots.push({ lat: round6(back.lat), lng: round6(back.lng), h: 180, t: Date.now(), days: ['x'], kmh: 90, lim: 100, rn: '' });
+      t.applyUserSpots();
+      const rowsD = t.cams.rows.slice(t.cams.userBase);
+      r.mine = { rows: rowsD.length, who: rowsD.map((c) => c.who).join(','), status: t.mySpotStatus(t.mySpots[0]) };
+      t.mySpots[0].h = 0; t.applyUserSpots();
+      r.mine.oppRows = t.cams.rows.length - t.cams.userBase;
     } finally {
       t.mySpots.length = 0; keep.mine.forEach((x) => t.mySpots.push(x));
       t.driverSpots.rows.length = 0; keep.drv.forEach((x) => t.driverSpots.rows.push(x));
@@ -5575,7 +5584,8 @@
       t.applyUserSpots();
       await resetApp(); softReset();
     }
-    const ok = r.data.confirmed >= 6 && r.data.kept && r.south.on && r.south.seen !== null && r.south.seen >= 900 && /운전자 신고 단속 지점/.test(r.south.label) && /80/.test(r.south.limit) && !r.north.on && r.north.seen === null;
+    const ok = r.data.confirmed >= 6 && r.data.kept && r.south.on && r.south.seen !== null && r.south.seen >= 900 && /운전자 신고 단속 지점/.test(r.south.label) && /80/.test(r.south.limit) && !r.north.on && r.north.seen === null &&
+      r.mine.rows === 1 && r.mine.who === 'driver' && r.mine.status === 'driver' && r.mine.oppRows === 2;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

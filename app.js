@@ -59,7 +59,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-187'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-188'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -2525,6 +2525,10 @@
     return r;
   }
   const sameSpot = (a, b) => haversine(a, b) < 60 && (a.h == null || b.h == null || angleDiff(a.h, b.h) <= 45);
+  // v188: 내 신고 지점 m 이 모든 사용자 지점 d(운전자 신고·여러 운전자 제보)와 같은 카메라인지. '놓침' 자리는 약 3초 전 궤적 점이라
+  // 빠른 길에서는 같은 카메라라도 70~100m 뒤에 찍힌다(2026-11-23 경부 죽전·신갈JC 북쪽: 73m·79m 뒤, 제한 100 과 110 으로 두 번 뜰 뻔) —
+  // 60m 안이거나, 120m 안에서 같은 방향이고 그 지점이 내 진행 방향 앞(30° 안)이면 같다
+  const sameSpotAhead = (m, d) => sameSpot(m, d) || (haversine(m, d) < 120 && m.h != null && d.h != null && angleDiff(m.h, d.h) <= 45 && angleDiff(bearing(m, d), m.h) <= 30);
   function applyUserSpots() {
     if (!cams.loaded) return;
     const keyOf = (c) => Math.floor(c[0] / CELL) + ':' + Math.floor(c[1] / CELL);
@@ -2542,7 +2546,7 @@
     for (const d of driverSpots.rows) add.push({ lat: d[0], lng: d[1], h: d[2], kmh: d[3] || 0, who: 'driver', lim: d[4] || 0 });
     // v171 모든 사용자 신고 지점. v175: 운영자가 확인하기 전 자동 반영(src 'auto', 서로 다른 운전자 3명 넘게)은 '사용자 제보'로 따로 보인다
     for (const d of sharedSpots) if (!add.some((x) => sameSpot(x, d))) add.push({ lat: d.lat, lng: d.lng, h: d.h, kmh: 0, who: d.src === 'auto' ? 'crowd' : 'driver', lim: d.lim || 0 });
-    for (const m of mySpots) if (!add.some((x) => sameSpot(x, m))) add.push({ lat: m.lat, lng: m.lng, h: m.h, kmh: m.kmh, who: 'mine', lim: m.lim || 0, rn: m.rn, m });
+    for (const m of mySpots) if (!add.some((x) => (x.who === 'mine' ? sameSpot(x, m) : sameSpotAhead(m, x)))) add.push({ lat: m.lat, lng: m.lng, h: m.h, kmh: m.kmh, who: 'mine', lim: m.lim || 0, rn: m.rn, m });
     let filled = false;
     for (const x of add) {
       if (!(x.lim > 0)) {
@@ -2745,8 +2749,8 @@
       }
     }
     if (!(m.lim > 0) && !(spotLimit(m, m.rn) > 0)) return 'nolimit';   // v179: 제한속도를 몰라 알리지 않는 지점
-    if (driverSpots.rows.some((d) => sameSpot({ lat: d[0], lng: d[1], h: d[2] }, m))) return 'driver';
-    const sh = sharedSpots.find((d) => sameSpot(d, m));
+    if (driverSpots.rows.some((d) => sameSpotAhead(m, { lat: d[0], lng: d[1], h: d[2] }))) return 'driver';
+    const sh = sharedSpots.find((d) => sameSpotAhead(m, d));
     if (sh) return sh.src === 'auto' ? 'crowd' : 'driver';
     return m.days.length >= 2 ? 'twice' : 'mine';
   }
