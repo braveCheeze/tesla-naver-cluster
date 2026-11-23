@@ -39,6 +39,7 @@
     weather: store.get('weather') !== '0',
     // v172 (2026-11-20 공개 전 보안 점검): '놓침'·'틀림'을 누르면 그 자리 근처 카메라 후보와 진행 방향을 서버로 보낸다 (설정에서 끌 수 있음, 기본 켬)
     share: store.get('share') !== '0',
+    passStats: store.get('passStats') !== '0',   // v196: 단속 카메라를 지날 때 알림이 됐는지 익명 통계 (설정에서 끌 수 있음, 기본 켬)
     car: ({ my: 'tesla_grey', red: 'tesla_red', white: 'tesla_white' })[store.get('car')] || store.get('car') || 'cute',             // 내 차 아이콘 (설정에서 고름)
     headingUp: store.get('hup') !== '0',
     // 멈추면 북쪽 위로: 진행 방향 위 화면은 지도 그림째 돌려서 가게 글자도 눕는다. 3초 넘게 서 있으면 북쪽 위로 돌려 글자를 바로 세운다
@@ -59,7 +60,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-195'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-196'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -7006,6 +7007,162 @@
       });
     });
   }
+
+  // ---------- v196 익명 통과 통계 (2026-11-24 운전자 '앞으로 우리 테슬라클러스터 네비 이용자들 지나간곳 모조리 체크해서 과속 단속 체크해줘
+  // 신고를 하지 않았더라도 내역도 남겨놓고') ----------
+  // 누르지 않아도, 우리 자료의 단속 카메라를 지날 때마다(같은 방향·같은 길·30m 안) 이 차 안에서 경고 카드를 띄웠는지 판정해 한 건으로 남긴다.
+  // 경고 판정은 건드리지 않고 camState.target 을 읽기만 한다.
+  // 보내는 것: 카메라 번호(카메라 자리 + 찍는 방향 8방위), 경고 카드를 띄운 거리(10m 단위, 0 = 안 띄움), 같은 자리 다른 행을 경고했는지,
+  //   일부러 안 알린 카메라인지(제한 모름·'틀림' 표시), 지날 때 속도(5km/h 단위), 제한속도, 길안내 여부, 앱 버전, 한국 날짜.
+  // 보내지 않는 것: 차 위치·지나온 길·시각(날짜만)·기기 번호·접속 번호(sid). 3~6분씩 모아 순서를 섞어 보낸다 (카메라를 이어 붙여 길을 되살리지 못하게).
+  // 자료에 없는 단속 후보: 시속 60km 넘게 달리다 20km 넘게 갑자기 줄였다 다시 올린 곳(카메라 앞 감속처럼, 시속 40km 아래로는 안 내려감, 곧은 길)인데
+  //   400m 안에 우리 카메라가 없고 150m 안에 과속방지턱도 없으면, 약 100m 격자(위도·경도 0.001°)·8방위·감속 폭(5km/h 단위)만 보낸다.
+  // 운영자 차(토큰)는 통과마다 카메라 자리·시각·가장 가까웠던 거리·도로 이름도 함께, 경고 없이 지난 곳은 직전 40초 궤적까지 보낸다.
+  // 설정 '단속 카메라 알림 통계 보내기'(기본 켬)를 끄면 기록도 전송도 하지 않는다.
+  const PASS_R = 30, PASS_LEAVE = 60, PASS_QMAX = 300;
+  const passStats = {
+    near: new Map(), shown: new Map(), sp: [], q: [], cand: [], op: [], lastCandOdo: -1e9, nextAt: 0, busy: false, inTest: false, opTr: 0,
+    post: (body) => {
+      const s = JSON.stringify(body);
+      return fetch(proxyUrl() + '/pass', { method: 'POST', body: s, headers: authHeaders({ 'Content-Type': 'application/json' }), keepalive: s.length < 60000 });
+    },
+  };
+  const kstDayOf = (t) => new Date(t + 9 * 3600e3).toISOString().slice(0, 10);
+  const passKey = (c) => c[0] + ',' + c[1] + '|' + (c.eb != null && c.eb >= 0 ? Math.round(c.eb / 45) % 8 : 'x');
+  try {
+    const s = JSON.parse(store.get('passQ') || 'null');
+    if (s && typeof s === 'object') {
+      if (Array.isArray(s.q)) passStats.q = s.q.slice(-PASS_QMAX);
+      if (Array.isArray(s.cand)) passStats.cand = s.cand.slice(-30);
+      if (Array.isArray(s.op)) passStats.op = s.op.slice(-80);
+    }
+  } catch (e) { /* 저장소 막힘·깨짐: 빈 함으로 */ }
+  function passSave() {
+    const n = passStats.q.length + passStats.cand.length + passStats.op.length;
+    store.set('passQ', n ? JSON.stringify({ q: passStats.q, cand: passStats.cand, op: passStats.op }) : null);
+  }
+  function passClear() {
+    passStats.q = []; passStats.cand = []; passStats.op = []; passStats.near.clear(); passStats.shown.clear(); passStats.sp.length = 0; passStats.nextAt = 0;
+    passSave();
+  }
+  const passArm = () => { if (!passStats.nextAt) passStats.nextAt = Date.now() + 180000 + Math.random() * 180000; };
+  function passTick(f) {
+    if (!prefs.passStats || !cams.loaded || !prefs.cams || state.demoTimer) { passStats.near.clear(); passStats.sp.length = 0; return; }
+    const now = f.t, tg = camState.target;
+    // 경고 카드를 띄운 거리 (카메라마다 가장 먼 것)
+    if (tg && !tg.after && tg.c) {
+      const s = passStats.shown.get(tg.i);
+      passStats.shown.set(tg.i, { first: Math.max(tg.first || 0, s ? s.first : 0), t: now });
+    }
+    passStats.shown.forEach((s, i) => { if (now - s.t > 300000 || now < s.t) passStats.shown.delete(i); });
+    if (state.speedKmh >= 8) {
+      for (const it of camsNear(f.lat, f.lng, 45)) {
+        const c = it.c;
+        if (isUserSpot(c) || (!isSpeedCam(c) && !prefs.signalCams && !c.forceWanted)) continue;   // 신고 지점·켜지 않은 신호 전용은 세지 않는다
+        const d = Math.min(it.d, haversine(f, camPt(c)));
+        let m = passStats.near.get(it.i);
+        if (!m) { m = { minD: 1e9, c, t: now }; passStats.near.set(it.i, m); }
+        m.seen = now;
+        if (d < m.minD) {
+          m.minD = d; m.t = now; m.kmh = state.speedKmh; m.hdg = state.heading; m.road = road.name; m.nav = !!nav.active; m.side = sideOf(f, c, it.d);
+        }
+      }
+    }
+    passStats.near.forEach((m, i) => {
+      const c = cams.rows[i];
+      if (c !== m.c) { passStats.near.delete(i); return; }   // 자료가 바뀌었다(다시 받음·시험)
+      const dl = Math.min(haversine(f, { lat: c[0], lng: c[1] }), haversine(f, camPt(c)));
+      if (dl < PASS_LEAVE && now - m.seen < 300000 && now >= m.seen) return;   // 아직 옆이다 (신호 대기 포함, 5분 넘게 소식이 없으면 끝)
+      passStats.near.delete(i);
+      if (m.minD > PASS_R || !(m.kmh >= 10)) return;
+      if (!camDirOk(c, m.hdg) || camRoadDiffers(m.road, c)) return;   // 반대 방향 카메라·가로지른 옆 도로
+      passRecord(i, c, m, f);
+    });
+    passCandTick(f);
+    passFlush(false);
+  }
+  function passRecord(i, c, m, f) {
+    const s = passStats.shown.get(i), fl = camFlag(c, m.hdg);
+    const hid = !camWanted(c) ? 1 : fl === 'hide' ? 2 : fl === 'doubt' ? 3 : 0;
+    const a = s ? Math.min(5000, Math.max(10, Math.round(s.first / 10) * 10)) : 0;
+    const g = !s && (camState.passed.has(i) || camState.saidById.has(i)) ? 1 : 0;   // 같은 자리 다른 행을 알리고 함께 지남
+    const rec = { k: passKey(c), d: kstDayOf(m.t), lim: c[2] | 0, kind: c[3], a, g, hid, kmh: Math.round(m.kmh / 5) * 5, nav: m.nav ? 1 : 0 };
+    passStats.q.push(rec);
+    if (passStats.q.length > PASS_QMAX) passStats.q.splice(0, passStats.q.length - PASS_QMAX);
+    if (isOp()) {
+      const miss = !a && !g && !hid, t1 = f.t;
+      const op = Object.assign({}, rec, { t: m.t, lat: c[0], lng: c[1], eb: c.eb != null ? Math.round(c.eb) : null, sec: c[4] | 0, kmhAt: Math.round(m.kmh),
+        hdg: m.hdg == null ? null : Math.round(m.hdg), minD: Math.round(m.minD), side: Math.round(m.side || 0), myRoad: m.road || '', camRoad: camRoad(c),
+        label: camLabel(c), miss: miss ? 1 : 0, v: APP_VERSION });
+      if (miss && passStats.opTr < 30) { passStats.opTr++; op.trace = fixLog.slice(-40).map((e) => [Math.round((e[0] - t1) / 100) / 10].concat(e.slice(1))); }
+      passStats.op.push(op);
+      if (passStats.op.length > 80) passStats.op.splice(0, passStats.op.length - 80);
+    }
+    passArm();
+    passSave();
+  }
+  // 자료에 없는 단속 후보: 1초마다 [시각, 속도, 위도, 경도, 방향] 을 60초 남겨 두고, 지금 다시 올라가는 중이면 앞의 감속을 본다
+  function passCandTick(f) {
+    const sp = passStats.sp, now = f.t;
+    if (sp.length && now - sp[sp.length - 1][0] < 900) return;
+    sp.push([now, state.speedKmh, f.lat, f.lng, state.heading]);
+    while (sp.length && now - sp[0][0] > 60000) sp.shift();
+    if (sp.length < 12 || state.odo - passStats.lastCandOdo < 1500) return;
+    let jm = -1;   // 최근 25초 안에서 가장 느렸던 점
+    for (let j = sp.length - 1; j >= 0 && now - sp[j][0] <= 25000; j--) if (jm < 0 || sp[j][1] < sp[jm][1]) jm = j;
+    if (jm < 0) return;
+    const vmin = sp[jm][1], tm = sp[jm][0];
+    if (vmin < 40 || now - tm < 2000) return;   // 서다시피 한 것(막힘·신호)은 빼고, 지금 다시 올라가는 중이어야
+    let pre = -1, jp = -1;   // 줄이기 전: 가장 느린 점 3~15초 앞의 가장 빠른 속도
+    for (let j = jm - 1; j >= 0 && tm - sp[j][0] <= 15000; j--) if (tm - sp[j][0] >= 3000 && sp[j][1] > pre) { pre = sp[j][1]; jp = j; }
+    if (jp < 0 || pre < 60) return;
+    const drop = pre - vmin;
+    if (drop < 20 || drop > 70 || state.speedKmh - vmin < 15 || state.speedKmh < pre - 15) return;
+    const h0 = sp[jp][4], h1 = sp[jm][4], h2 = state.heading;
+    if (h0 == null || h1 == null || h2 == null || angleDiff(h0, h1) > 25 || angleDiff(h1, h2) > 25) return;   // 굽은 길·꺾는 곳은 빼고
+    const p = { lat: sp[jm][2], lng: sp[jm][3] };
+    if (camsNear(p.lat, p.lng, 400).length || bumpsNear(p.lat, p.lng, 150).length) return;
+    passStats.lastCandOdo = state.odo;
+    sp.length = 0;
+    passStats.cand.push({ c: Math.round(p.lat * 1000) + ',' + Math.round(p.lng * 1000), o: Math.round(h1 / 45) % 8, dr: Math.min(120, Math.round(drop / 5) * 5), d: kstDayOf(tm) });
+    if (passStats.cand.length > 30) passStats.cand.splice(0, passStats.cand.length - 30);
+    passArm();
+    passSave();
+  }
+  function passShuffle(a) {
+    for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const x = a[i]; a[i] = a[j]; a[j] = x; }
+    return a;
+  }
+  // 돌려주는 값: true 보냄 · false 못 보냄(함에 남김) · null 보낼 때가 아님
+  async function passFlush(force) {
+    if (passStats.busy || botLike || (testPage && !passStats.inTest) || !prefs.passStats) return null;
+    if (!(passStats.q.length + passStats.cand.length + passStats.op.length)) { passStats.nextAt = 0; return null; }
+    if (!force && Date.now() < passStats.nextAt) return null;
+    const take = { q: passStats.q.slice(0, 150), cand: passStats.cand.slice(0, 20), op: isOp() ? passStats.op.slice(0, 20) : [] };
+    const body = { v: APP_VERSION, items: passShuffle(take.q.slice()), cand: passShuffle(take.cand.slice()) };
+    if (take.op.length) body.op = take.op;
+    passStats.busy = true;
+    let ok = false, drop = false;
+    try {
+      const r = await passStats.post(body);
+      ok = !!(r && r.ok);
+      drop = ok || !!(r && (r.status === 400 || r.status === 413));   // 받았거나(저장 꺼짐·한도도) 다시 보내도 안 받을 것: 뺀다
+    } catch (e) { ok = false; }
+    finally { passStats.busy = false; }
+    if (drop) {
+      passStats.q = passStats.q.filter((x) => !take.q.includes(x));
+      passStats.cand = passStats.cand.filter((x) => !take.cand.includes(x));
+      passStats.op = take.op.length ? passStats.op.filter((x) => !take.op.includes(x)) : (isOp() ? passStats.op : []);
+    }
+    const left = passStats.q.length + passStats.cand.length + passStats.op.length;
+    passStats.nextAt = left ? Date.now() + (ok ? 60000 : 600000) : 0;
+    passSave();
+    return ok;
+  }
+  setInterval(() => { passFlush(false); }, 60000);
+  window.addEventListener('online', () => { passFlush(false); });
+  window.addEventListener('pagehide', () => { passFlush(true); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') passFlush(true); });
   const hdgFix = { n: 0, bad: 0, sum: 0 };
   function onFix(f) {
     const t0 = performance.now();
@@ -7062,6 +7219,7 @@
     saveTripNow();       // 화면의 주행 거리·시간·최고 속도 (새 버전으로 바뀌어도 이어서)
     evalCameras(f);
     camMissCheck(f);
+    passTick(f);        // v196 익명 통과 통계 (경고 판정은 읽기만)
     tunnelDarkTick();   // v172
     updateSoundPill();
     if (cams.failed || cams.mobileMissing) renderCamStatus();
@@ -8253,6 +8411,7 @@
     renderCamFlags();
     renderMySpots();
     $('#optShare').checked = prefs.share;
+    $('#optPassStats').checked = prefs.passStats;
     renderVoiceState();
     $('#verText').textContent = APP_VERSION;
     renderDevMenu();
@@ -8304,6 +8463,7 @@
     }
   };
   $('#optShare').onchange = (e) => { prefs.share = e.target.checked; store.set('share', prefs.share ? null : '0'); };
+  $('#optPassStats').onchange = (e) => { prefs.passStats = e.target.checked; store.set('passStats', prefs.passStats ? null : '0'); if (!prefs.passStats) passClear(); };
   $('#closeSheet').onclick = () => { sheet.hidden = true; };
   // v161: 설정 — '틀림'으로 표시한 카메라 목록 (하나씩·모두 되돌리기)
   function renderCamFlags() {
@@ -8641,6 +8801,7 @@
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,
+      passStats, passTick, passFlush, passClear, passKey,
     };
   }
 })();

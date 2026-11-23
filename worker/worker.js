@@ -13,6 +13,9 @@
 //   IP_SALT             (v175, 선택) 고침 자동 반영에서 접속지를 셀 때 IP 에 섞는 소금. 없으면 ADMIN_TOKEN 에서 만들어 쓴다(새 Secret 불필요).
 //                       둘 다 없으면 자동 반영을 하지 않는다
 // 요청 제한(선택): Bindings 에 Rate Limiting 을 변수명 RL 로(예: 60초에 120번) 연결하면 함께 쓴다. 없으면 메모리 기준으로만 막는다.
+// 카메라 통과 통계(v196, 선택): Storage & Databases > D1 에서 데이터베이스(이름 아무거나, 예: tnc-stats)를 만들고,
+//   이 Worker > Settings > Bindings > Add > D1 database 로 변수명 STATS 에 연결한다. 표는 처음 쓸 때 Worker 가 만든다.
+//   없으면 /pass 는 {ok:false} 만 돌려주고 아무것도 저장하지 않는다 (앱은 그 묶음을 버린다).
 
 const ALLOWED_ORIGINS = [
   'https://bravecheeze.github.io',
@@ -32,12 +35,12 @@ const routeHits = new Map();
 // Origin 은 위조할 수 있으므로 유료 API(네이버 클라우드)와 KV 쓰기를 이것으로 지킨다.
 // v175: 공유 IP(CGNAT) 뒤의 여러 차가 정상으로 써도 막히지 않게 넉넉히 (비용은 하루 상한이 지킨다)
 const LIMITS = { '/route': 40, '/geocode': 60, '/reverse': 150, '/search': 60, '/hipass': 60, '/weather': 60, '/config': 120,
-  '/event': 60, '/log': 3, '/fix': 30, '/fixes': 60, '/events': 30, '/fix/review': 30 };
+  '/event': 60, '/log': 3, '/fix': 30, '/fixes': 60, '/events': 30, '/fix/review': 30, '/pass': 20, '/passes': 30 };
 const PAID = new Set(['/route', '/geocode', '/reverse', '/search']);
 const KV_WRITE = new Set(['/event', '/fix', '/fix/review']);
-const DAY_CAP = { paid: 20000, kv: 900 };
+const DAY_CAP = { paid: 20000, kv: 900, pass: 40000 };   // pass: 하루 통과 기록 건수 (D1 무료 한도 쓰기 하루 10만 행 안)
 const hits = new Map();
-const day = { d: '', paid: 0, kv: 0 };
+const day = { d: '', paid: 0, kv: 0, pass: 0 };
 // 넘었으면 다시 해도 되는 데까지 남은 초(1~60), 아니면 0
 function overLimit(ip, path) {
   const lim = LIMITS[path];
@@ -49,7 +52,7 @@ function overLimit(ip, path) {
 }
 function overDay(path) {
   const d = new Date().toISOString().slice(0, 10);
-  if (day.d !== d) { day.d = d; day.paid = 0; day.kv = 0; }
+  if (day.d !== d) { day.d = d; day.paid = 0; day.kv = 0; day.pass = 0; }
   if (PAID.has(path)) return ++day.paid > DAY_CAP.paid;
   if (KV_WRITE.has(path)) return ++day.kv > DAY_CAP.kv;
   return false;
@@ -99,6 +102,39 @@ async function loadFixes(env) {
   try { const l = JSON.parse((await env.LOGS.get(FIX_KEY)) || '[]'); return Array.isArray(l) ? l : []; } catch (e) { return []; }
 }
 const saveFixes = (env, list) => env.LOGS.put(FIX_KEY, JSON.stringify(list), { expirationTtl: 60 * 60 * 24 * 90 });
+// ---- v196 카메라 통과 익명 통계 (아래 /pass 설명) ----
+// 카메라 번호: 카메라 자리 'lat,lng' + '|' + 찍는 방향 8방위(0 북 … 7 북서, x 모름). 후보 격자: 위도·경도 × 1000 반올림 'y,x'
+const PASS_KEY = /^(-?\d{1,3}\.\d{1,8}),(-?\d{1,3}\.\d{1,8})\|([0-7x])$/;
+const CELL_KEY = /^(\d{5}),(\d{6})$/;
+const PASS_KINDS = new Set([1, 2, 3, 8, 9]);
+const PASS_OP_DAYS = 90, PASS_CAND_DAYS = 180;   // 운영자 차 통과 기록·후보 격자 날짜별 합계 보관 일수 (카메라 날짜별 합계는 지우지 않는다)
+const inKorea = (lat, lng) => lat > 33 && lat < 39 && lng > 124 && lng < 132;
+const intIn = (v, lo, hi) => { const n = Math.round(Number(v)); return Number.isFinite(n) && n >= lo && n <= hi ? n : null; };
+let passReady = null, passCleaned = '';
+async function passDb(env) {
+  if (!env.STATS) return null;
+  if (!passReady) {
+    const S = env.STATS;
+    passReady = S.batch([
+      S.prepare('CREATE TABLE IF NOT EXISTS cam_day (day TEXT NOT NULL, cam TEXT NOT NULL, lim INTEGER, kind INTEGER, n INTEGER NOT NULL DEFAULT 0, ' +
+        'alerted INTEGER NOT NULL DEFAULT 0, covered INTEGER NOT NULL DEFAULT 0, missed INTEGER NOT NULL DEFAULT 0, hidden INTEGER NOT NULL DEFAULT 0, ' +
+        'flagged INTEGER NOT NULL DEFAULT 0, navn INTEGER NOT NULL DEFAULT 0, over INTEGER NOT NULL DEFAULT 0, adist INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, cam))'),
+      S.prepare('CREATE TABLE IF NOT EXISTS cand_day (day TEXT NOT NULL, cell TEXT NOT NULL, dir INTEGER NOT NULL, n INTEGER NOT NULL DEFAULT 0, ' +
+        'dsum INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, cell, dir))'),
+      S.prepare('CREATE TABLE IF NOT EXISTS op_pass (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, day TEXT NOT NULL, cam TEXT NOT NULL, missed INTEGER NOT NULL, rec TEXT NOT NULL)'),
+      S.prepare('CREATE INDEX IF NOT EXISTS op_pass_at ON op_pass (at)'),
+    ]).then(() => true, (e) => { passReady = null; throw e; });
+  }
+  await passReady;
+  return env.STATS;
+}
+// 날짜 'YYYY-MM-DD' 가 오늘(한국)부터 3일 전 ~ 1일 뒤면 그대로, 아니면 오늘
+function passDay(d, today) {
+  if (typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return today;
+  const k = daysBetween(d, today);
+  return k >= -1 && k <= 3 ? d : today;
+}
+const dayBefore = (today, n) => new Date(Date.parse(today) - n * 86400000).toISOString().slice(0, 10);
 // 바깥 API 오류는 상태와 짧은 글만 돌려준다 (응답 전체를 그대로 내보내지 않게)
 function brief(d) {
   if (!d || typeof d !== 'object') return '';
@@ -152,7 +188,8 @@ export default {
     const isEventPost = req.method === 'POST' && url.pathname === '/event';
     const isFixPost = req.method === 'POST' && url.pathname === '/fix';
     const isReviewPost = req.method === 'POST' && url.pathname === '/fix/review';
-    if (req.method !== 'GET' && !isLogPost && !isEventPost && !isFixPost && !isReviewPost) return json({ error: 'method' }, 405, cors);
+    const isPassPost = req.method === 'POST' && url.pathname === '/pass';
+    if (req.method !== 'GET' && !isLogPost && !isEventPost && !isFixPost && !isReviewPost && !isPassPost) return json({ error: 'method' }, 405, cors);
     // v172: 접속지(IP)별 횟수 제한 → 하루 상한 → 운영자 토큰 순서 (토큰 맞히기 시도도 횟수 제한에 걸린다)
     const ip = req.headers.get('CF-Connecting-IP') || 'x';
     const wait = overLimit(ip, url.pathname);
@@ -163,7 +200,7 @@ export default {
     const bearer = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
     const isAdmin = !!env.ADMIN_TOKEN && String(env.ADMIN_TOKEN).length >= 16 && sameToken(bearer, String(env.ADMIN_TOKEN));
     // 남의 신고·진단 기록을 읽거나 진단 기록을 올리는 것은 운영자만 (Origin 은 위조할 수 있다)
-    if ((url.pathname === '/events' || url.pathname === '/log') && !isAdmin) {
+    if ((url.pathname === '/events' || url.pathname === '/log' || url.pathname === '/passes') && !isAdmin) {
       return json({ error: 'unauthorized' }, 401, cors);
     }
     if (!isAdmin && overDay(url.pathname)) return json({ error: 'daily limit', retryAfter: 3600 }, 429, cors);
@@ -176,6 +213,7 @@ export default {
         logs: !!env.LOGS,
         hipass: !!env.EX_KEY,
         autoFix: !!ipSalt(env),
+        stats: !!env.STATS,
       }, 200, cors);
     }
     // 브라우저가 아닌 곳에서 마구 부르는 것을 1차로 막는다 (Origin 은 위조 가능하므로 완벽하진 않음)
@@ -332,6 +370,124 @@ export default {
         const items = list.map((e) => ({ e, st: fixState(e, day) })).filter((x) => FIX_PUBLIC.has(x.st))
           .map(({ e, st }) => ({ kind: e.kind, k: e.k, lat: e.lat, lng: e.lng, h: e.h, src: st === 'ok' ? 'op' : 'auto' }));
         return json({ v: 1, items }, 200, cors, 300);
+      }
+
+      // v196 카메라 통과 익명 통계 (2026-11-24 운전자 '앞으로 우리 테슬라클러스터 네비 이용자들 지나간곳 모조리 체크해서 과속 단속 체크해줘
+      // 신고를 하지 않았더라도 내역도 남겨놓고'): 앱은 단속 카메라를 지날 때마다 그 차 안에서 경고를 띄웠는지 판정하고, 몇 분씩 모아 순서를 섞어 보낸다.
+      // 받은 묶음은 저장하지 않는다. 카메라별·날짜별 합계(통과·경고·같은 자리 다른 행이 경고·놓침·제한 모름으로 숨김·'틀림' 표시·길안내·
+      // 과속 통과·경고 거리 합)에 더하기만 한다. 기기 번호·접속 번호·IP·차 위치·시각은 받지도 저장하지도 않는다.
+      // 자료에 없는 단속 후보(달리다 크게 줄였다 다시 올린 곳, 400m 안에 우리 카메라 없음)는 약 100m 격자·8방위·감속 폭만 받아 격자·날짜별 합계로 둔다.
+      // 운영자 차(토큰)만 통과마다 카메라·시각·가장 가까웠던 거리·놓친 곳의 궤적을 op_pass 에 남긴다.
+      // 보관: 카메라 날짜별 합계는 계속, 후보 격자 날짜별 합계 180일, 운영자 차 기록 90일 (그날 첫 /pass 때 지운다).
+      // 운영자 통로(토큰): GET /passes?days=30[&op=1&opDays=7&candDays=2&candN=3]
+      if (url.pathname === '/pass' && isPassPost) {
+        const text = await req.text();
+        if (text.length > (isAdmin ? 300000 : 30000)) return json({ error: 'too large' }, 413, cors);
+        let b;
+        try { b = JSON.parse(text); } catch (e) { return json({ error: 'bad json' }, 400, cors); }
+        if (!b || typeof b !== 'object') return json({ error: 'bad pass' }, 400, cors);
+        const db = await passDb(env);
+        if (!db) return json({ ok: false, why: 'off' }, 200, cors);
+        const today = kstDay();
+        const items = Array.isArray(b.items) ? b.items.slice(0, 150) : [];
+        const cands = Array.isArray(b.cand) ? b.cand.slice(0, 20) : [];
+        const ops = isAdmin && Array.isArray(b.op) ? b.op.slice(0, 80) : [];
+        if (!isAdmin) {
+          day.pass += items.length + cands.length;
+          if (day.pass > DAY_CAP.pass) return json({ ok: false, why: 'cap' }, 200, cors);
+        }
+        const agg = new Map();
+        for (const it of items) {
+          if (!it || typeof it !== 'object') continue;
+          const k = String(it.k || ''), m = PASS_KEY.exec(k);
+          if (!m || !inKorea(+m[1], +m[2])) continue;
+          const d = passDay(it.d, today), lim = intIn(it.lim, 0, 130) || 0, a = intIn(it.a, 0, 5000) || 0;
+          const hid = intIn(it.hid, 0, 3) || 0, kmh = intIn(it.kmh, 0, 250);
+          let e = agg.get(d + '#' + k);
+          if (!e) {
+            e = { day: d, cam: k, lim, kind: PASS_KINDS.has(+it.kind) ? +it.kind : 0, n: 0, alerted: 0, covered: 0, missed: 0, hidden: 0, flagged: 0, navn: 0, over: 0, adist: 0 };
+            agg.set(d + '#' + k, e);
+          }
+          e.n++;
+          if (a > 0) { e.alerted++; e.adist += a; }   // 이 카메라 경고 카드를 띄움 (거리 합은 평균 경고 거리용)
+          else if (it.g) e.covered++;                  // 같은 자리 다른 행(같은 기둥 다른 제한 등)을 경고하고 함께 지남
+          else if (hid === 1) e.hidden++;              // 제한속도를 몰라 일부러 안 알림 (v179)
+          else e.missed++;
+          if (hid >= 2) e.flagged++;                   // 이 차에서 '틀림'으로 표시한 카메라
+          if (it.nav) e.navn++;
+          if (kmh !== null && lim > 0 && kmh > lim) e.over++;
+        }
+        const cagg = new Map();
+        for (const c of cands) {
+          if (!c || typeof c !== 'object') continue;
+          const cell = String(c.c || ''), m = CELL_KEY.exec(cell), o = intIn(c.o, 0, 7), dr = intIn(c.dr, 10, 120);
+          if (!m || o === null || dr === null || !inKorea(+m[1] / 1000, +m[2] / 1000)) continue;
+          const d = passDay(c.d, today), key = d + '#' + cell + '#' + o;
+          const e = cagg.get(key) || { day: d, cell, dir: o, n: 0, dsum: 0 };
+          e.n++; e.dsum += dr;
+          cagg.set(key, e);
+        }
+        const stmts = [];
+        const UP = 'INSERT INTO cam_day (day, cam, lim, kind, n, alerted, covered, missed, hidden, flagged, navn, over, adist) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ' +
+          'ON CONFLICT(day, cam) DO UPDATE SET lim = excluded.lim, kind = excluded.kind, n = n + excluded.n, alerted = alerted + excluded.alerted, ' +
+          'covered = covered + excluded.covered, missed = missed + excluded.missed, hidden = hidden + excluded.hidden, flagged = flagged + excluded.flagged, ' +
+          'navn = navn + excluded.navn, over = over + excluded.over, adist = adist + excluded.adist';
+        for (const e of agg.values()) {
+          stmts.push(db.prepare(UP).bind(e.day, e.cam, e.lim, e.kind, e.n, e.alerted, e.covered, e.missed, e.hidden, e.flagged, e.navn, e.over, e.adist));
+        }
+        const CUP = 'INSERT INTO cand_day (day, cell, dir, n, dsum) VALUES (?, ?, ?, ?, ?) ON CONFLICT(day, cell, dir) DO UPDATE SET n = n + excluded.n, dsum = dsum + excluded.dsum';
+        for (const e of cagg.values()) stmts.push(db.prepare(CUP).bind(e.day, e.cell, e.dir, e.n, e.dsum));
+        let opN = 0;
+        for (const r of ops) {
+          if (!r || typeof r !== 'object' || !PASS_KEY.test(String(r.k || ''))) continue;
+          const s = JSON.stringify(r);
+          if (s.length > 8000) continue;
+          const at = Number.isFinite(+r.t) && +r.t > 0 ? Math.round(+r.t) : Date.now();
+          const missed = !(r.a > 0) && !r.g && !r.hid ? 1 : 0;
+          stmts.push(db.prepare('INSERT INTO op_pass (at, day, cam, missed, rec) VALUES (?, ?, ?, ?, ?)').bind(at, passDay(r.d, today), String(r.k), missed, s));
+          opN++;
+        }
+        if (passCleaned !== today) {
+          passCleaned = today;
+          stmts.push(db.prepare('DELETE FROM op_pass WHERE day < ?').bind(dayBefore(today, PASS_OP_DAYS)));
+          stmts.push(db.prepare('DELETE FROM cand_day WHERE day < ?').bind(dayBefore(today, PASS_CAND_DAYS)));
+        }
+        if (stmts.length) await db.batch(stmts);
+        return json({ ok: true, cams: agg.size, cand: cagg.size, op: opN }, 200, cors);
+      }
+      if (url.pathname === '/passes') {
+        const today = kstDay();
+        const db = await passDb(env);
+        if (!db) return json({ v: 1, day: today, stats: false, cams: [], cands: [], daily: [], op: [] }, 200, cors);
+        const days = intIn(p.get('days'), 1, 400) || 30, from = dayBefore(today, days - 1);
+        const candDays = intIn(p.get('candDays'), 1, 30) || 2, candN = intIn(p.get('candN'), 1, 1000) || 3;
+        const [r1, r2, r3] = await Promise.all([
+          db.prepare('SELECT cam, MAX(lim) AS lim, MAX(kind) AS kind, SUM(n) AS n, SUM(alerted) AS alerted, SUM(covered) AS covered, SUM(missed) AS missed, ' +
+            'SUM(hidden) AS hidden, SUM(flagged) AS flagged, SUM(navn) AS navn, SUM(over) AS over, SUM(adist) AS adist, COUNT(*) AS days, MAX(day) AS last ' +
+            'FROM cam_day WHERE day >= ? GROUP BY cam ORDER BY SUM(missed) DESC, SUM(n) DESC LIMIT 3000').bind(from).all(),
+          db.prepare('SELECT cell, dir, SUM(n) AS n, SUM(dsum) AS dsum, COUNT(DISTINCT day) AS days, MAX(day) AS last FROM cand_day WHERE day >= ? ' +
+            'GROUP BY cell, dir HAVING COUNT(DISTINCT day) >= ? AND SUM(n) >= ? ORDER BY SUM(n) DESC LIMIT 500').bind(from, candDays, candN).all(),
+          db.prepare('SELECT day, SUM(n) AS n, SUM(alerted) AS alerted, SUM(covered) AS covered, SUM(missed) AS missed, SUM(hidden) AS hidden ' +
+            'FROM cam_day WHERE day >= ? GROUP BY day ORDER BY day').bind(from).all(),
+        ]);
+        const cams = (r1.results || []).map((r) => {
+          const m = PASS_KEY.exec(r.cam) || [];
+          return { k: r.cam, lat: +m[1], lng: +m[2], dir: m[3] && m[3] !== 'x' ? +m[3] * 45 : null, lim: r.lim, kind: r.kind, n: r.n,
+            alerted: r.alerted, covered: r.covered, missed: r.missed, hidden: r.hidden, flagged: r.flagged, nav: r.navn, over: r.over,
+            missRate: r.n ? Math.round(r.missed / r.n * 1000) / 1000 : 0, overRate: r.n ? Math.round(r.over / r.n * 1000) / 1000 : 0,
+            avgAlert: r.alerted ? Math.round(r.adist / r.alerted) : null, days: r.days, last: r.last };
+        });
+        const cands = (r2.results || []).map((r) => {
+          const m = CELL_KEY.exec(r.cell) || [];
+          return { cell: r.cell, lat: +m[1] / 1000, lng: +m[2] / 1000, dir: r.dir * 45, n: r.n, days: r.days, avgDrop: r.n ? Math.round(r.dsum / r.n) : 0, last: r.last };
+        });
+        let op = [];
+        if (p.get('op') === '1') {
+          const opDays = intIn(p.get('opDays'), 1, PASS_OP_DAYS) || 7;
+          const r4 = await db.prepare('SELECT rec FROM op_pass WHERE day >= ? ORDER BY missed DESC, at DESC LIMIT 400').bind(dayBefore(today, opDays - 1)).all();
+          op = (r4.results || []).map((r) => { try { return JSON.parse(r.rec); } catch (e) { return null; } }).filter(Boolean);
+        }
+        return json({ v: 1, day: today, from, stats: true, cams, cands, daily: r3.results || [], op }, 200, cors);
       }
 
       // 운영 모니터링: 페이지가 보내는 접속·오류 이벤트 (위치 없음, 7일 보관)

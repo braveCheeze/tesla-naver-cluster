@@ -2889,6 +2889,7 @@
     { id: 'S123', name: "S123 tunnel dark in one go and no white flash (v193, driver: 'GL 모드에서 터널에 들어가 다크 모드로 바뀔 때 너무 느리게 탁 탁 탁 … 한번에 딱', '가끔 주행 중 화면이 하얀색으로 번쩍'): a daytime tunnel keeps the day map style and only inverts the GL canvas (instant, day route palette, night UI), undone at once on exit; at night the dark style is used and the map box background is dark instead of the light rgb(248,249,250) that showed through", fn: s123 },
     { id: 'S124', name: "S124 spots checked on Naver guidance (v194, driver: '네이버지도 과속단속을 나는 제일 신뢰하니까 저걸 기반으로 넣어줘'): place text 'A→B' saying my direction no longer keeps a camera that crosses the route at 77° (둔촌사거리 25557) — along (0°) or written the other way (180°) it still decides; a driver spot with kind 3 reads '운전자 신고 신호·과속단속', with the rear flag '운전자 신고 후면단속' and after passing '후면단속 중'", fn: s124 },
     { id: 'S125', name: "S125 other-route bubble during guidance (v195, driver: '가능하면 이런 기능도 있으면 좋을거 같긴 해' — Naver's '3분 증가 · 874m 증가 · 통행료 없음'): the traffic refresh asks for several options in one request, keeps the current option's route, and offers the other one that branches 1.2 km ahead as a light line and a bubble (time, distance, toll, traffic bar); tapping it switches to that route, passing the branch without tapping clears it", fn: s125 },
+    { id: 'S126', name: "S126 anonymous camera pass records (v196, driver '지나간곳 모조리 체크해서 과속 단속 체크해줘 신고를 하지 않았더라도 내역도 남겨놓고'): passing a camera in its direction records alerted (card distance) or missed, the other direction is not counted, an unknown limit counts as hidden; the batch has only camera number, alert, 5 km/h speed, limit, nav, date — no position, time or sid; a 90→60→90 dip with no camera within 400 m is a 100 m-cell candidate, a jam is not; the operator car adds the camera spot and trace; the settings switch stops it", fn: s126 },
   ];
 
   // S55: 주의 표지 (전국도로안전표지표준데이터의 주의표지, data/signs.json · tools/build_signs.py, 2026-11-14 요청).
@@ -6093,6 +6094,113 @@
       /3분 증가/.test(r.a.text || '') && /m 증가/.test(r.a.text || '') && /통행료 없음/.test(r.a.text || '') && r.a.bar >= 2 &&
       r.b.route && r.b.option === 'trafast' && !r.b.bubble && !r.b.line &&
       r.c.before && !r.c.after && r.c.route;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S126: (v196, 운전자 '앞으로 우리 테슬라클러스터 네비 이용자들 지나간곳 모조리 체크해서 과속 단속 체크해줘 신고를 하지 않았더라도 내역도 남겨놓고')
+  //       카메라를 지날 때마다 익명 통과 기록 — 경고함·놓침·반대 방향은 안 셈·제한 모름 숨김, 보내는 묶음에 위치·sid 없음,
+  //       자료에 없는 감속 후보(격자·방위·감속 폭), 운영자 차는 궤적, 설정에서 끄면 기록 없음
+  async function s126() {
+    const t = T(), r = {}, ps = t.passStats;
+    const CAM = { lat: 37.3066, lng: 127.10576 };   // 용구대로 보정 60 신호·과속 남행 (S68)
+    const keep = { post: ps.post, pref: t.prefs.passStats, tok: t.store.get('adminToken'), q: t.store.get('passQ'), road: t.road.name };
+    const bodies = [];
+    const pick = (k) => ps.q.filter((x) => x.k === k).map((x) => ({ a: x.a, g: x.g, hid: x.hid, kmh: x.kmh, lim: x.lim }));
+    // 경고 판정 없이 카메라 옆을 바로 지나가게 한다 (passTick 만): 북쪽 150m 에서 남쪽 120m 까지, 또는 그 반대로
+    const direct = (north) => {
+      ps.near.clear(); ps.shown.clear();
+      t.camState.target = null; t.camState.passed.clear(); t.camState.saidById.clear();
+      t.road.name = ''; t.state.speedKmh = 62; t.state.heading = north ? 0 : 180;
+      const top = dest(CAM, 0, 150);
+      let tt = Date.now();
+      for (let s = 0; s <= 270; s += 10) { tt += 600; const p = dest(top, 180, north ? 270 - s : s); t.passTick({ lat: p.lat, lng: p.lng, t: tt }); }
+    };
+    let row = null;
+    try {
+      ps.inTest = true;
+      ps.post = async (b) => { bodies.push(JSON.parse(JSON.stringify(b))); return { ok: true, status: 200 }; };
+      t.store.set('adminToken', null); t.prefs.passStats = true; t.passClear();
+      row = t.cams.rows.find((c) => sameCam(c, CAM));
+      const key = row ? t.passKey(row) : null;
+      r.key = key;
+      // (a) 길안내 없이 남쪽으로 시속 60km: 경고 카드를 띄우고 지남 (앞 시험이 남긴 도로 이름은 지운다: 다른 길이면 세지 않으므로)
+      await resetApp(); softReset();
+      t.road.name = '';
+      const A0 = dest(CAM, 0, 600);
+      for (let s = 0; s <= 760; s += 17) feed(dest(A0, 180, s), 16.7, 180);
+      r.a = pick(key);
+      // (b) 경고 없이 같은 방향으로 지남 = 놓침, (c) 반대 방향은 안 셈, (d) 제한속도를 모르면 '숨김'
+      ps.q.length = 0;
+      direct(false); r.b = pick(key);
+      ps.q.length = 0;
+      direct(true); r.c = pick(key);
+      ps.q.length = 0;
+      const lim0 = row[2]; row[2] = 0;
+      try { direct(false); } finally { row[2] = lim0; }
+      r.d = pick(key);
+      // (e) 보내는 묶음: 정해진 칸뿐, 위치·시각·sid 없음, 받으면 함이 빈다
+      ps.q.length = 0;
+      direct(false);
+      ps.nextAt = 0;
+      const sent = await t.passFlush(true);
+      const b = bodies[bodies.length - 1] || {};
+      const okKeys = (o, allow) => Object.keys(o).every((k) => allow.includes(k));
+      r.e = { sent, body: Object.keys(b).sort().join(','), items: (b.items || []).length,
+        itemKeys: (b.items || []).every((x) => okKeys(x, ['k', 'd', 'lim', 'kind', 'a', 'g', 'hid', 'kmh', 'nav'])),
+        kmh5: (b.items || []).every((x) => x.kmh % 5 === 0), noSid: !/"(sid|dev|lat|lng|t|trace)"/.test(JSON.stringify(b)), left: ps.q.length, stored: t.store.get('passQ') };
+      // (f) 자료에 없는 감속: 시속 90 → 60 → 90 (곧은 길, 400m 안 카메라 없음) 이면 후보 1, 막힘처럼 시속 18까지 줄면 아님
+      const O = dest(NAV_ORIGIN, 90, 80000);
+      const prof = [];
+      for (let k = 0; k < 20; k++) prof.push(25);
+      [23.3, 21.7, 20, 18.3, 16.7, 16.7, 16.7, 17.7, 18.7, 19.7, 20.7, 21.7, 22.7, 23.7, 25, 25, 25, 25, 25].forEach((v) => prof.push(v));
+      const drive = async (vs, at) => {
+        await resetApp(); softReset();
+        ps.cand.length = 0; ps.sp.length = 0; ps.lastCandOdo = -1e9;
+        let p = at; const pts = [];
+        for (const v of vs) { p = dest(p, 0, v); pts.push(p); feed(p, v, 0); }
+        return pts;
+      };
+      const pts = await drive(prof, O);
+      const cells = [25, 26].map((k) => Math.round(pts[k].lat * 1000) + ',' + Math.round(pts[k].lng * 1000));
+      r.f = { cand: ps.cand.map((x) => ({ c: x.c, o: x.o, dr: x.dr })), cells };
+      const jam = prof.map((v) => (v < 25 ? Math.max(5, v - 12) : v));
+      await drive(jam, dest(O, 0, 3000));
+      r.f.jam = ps.cand.length;
+      ps.cand.length = 0;
+      // (g) 운영자 차(토큰): 놓친 곳은 카메라 자리·궤적까지
+      t.store.set('adminToken', 'T'.repeat(24));
+      ps.q.length = 0; ps.op.length = 0; ps.opTr = 0;
+      direct(false);
+      const op = ps.op.find((x) => x.k === key);
+      ps.nextAt = 0;
+      await t.passFlush(true);
+      const bo = bodies[bodies.length - 1] || {};
+      r.g = { op: op ? { miss: op.miss, lat: op.lat, trace: Array.isArray(op.trace) ? op.trace.length : 0, minD: op.minD } : 'none',
+        sentOp: (bo.op || []).length, pubLat: (bo.items || []).some((x) => 'lat' in x || 'trace' in x) };
+      t.store.set('adminToken', null);
+      // (h) 설정에서 끄면 함을 비우고 더 기록하지 않는다
+      const cb = document.getElementById('optPassStats');
+      ps.q.length = 0; direct(false);
+      cb.checked = false; cb.onchange({ target: cb });
+      const offNow = { pref: t.prefs.passStats, stored: t.store.get('passStats'), left: ps.q.length };
+      direct(false);
+      r.h = Object.assign(offNow, { after: ps.q.length, label: cb.closest('label') ? cb.closest('label').textContent.trim() : '' });
+      cb.checked = true; cb.onchange({ target: cb });
+      r.h.back = t.prefs.passStats && t.store.get('passStats') == null;
+    } finally {
+      ps.post = keep.post; ps.inTest = false; t.prefs.passStats = keep.pref;
+      t.store.set('adminToken', keep.tok); t.passClear(); t.store.set('passQ', keep.q); t.road.name = keep.road;
+      await resetApp(); softReset();
+    }
+    const one = (a) => Array.isArray(a) && a.length === 1 ? a[0] : null;
+    const A = one(r.a), B = one(r.b), D = one(r.d), F = one(r.f.cand);
+    const ok = !!r.key && A && A.a >= 100 && A.g === 0 && A.hid === 0 && A.kmh === 60 && A.lim === 60 &&
+      B && B.a === 0 && B.g === 0 && B.hid === 0 && B.kmh === 60 &&
+      r.c.length === 0 && D && D.hid === 1 && D.a === 0 &&
+      r.e.sent === true && r.e.body === 'cand,items,v' && r.e.items >= 1 && r.e.itemKeys && r.e.kmh5 && r.e.noSid && r.e.left === 0 && r.e.stored == null &&
+      F && F.dr === 30 && F.o === 0 && r.f.cells.includes(F.c) && r.f.jam === 0 &&
+      r.g.op !== 'none' && r.g.op.miss === 1 && r.g.op.lat === CAM.lat && r.g.op.trace > 0 && r.g.sentOp >= 1 && !r.g.pubLat &&
+      r.h.pref === false && r.h.stored === '0' && r.h.left === 0 && r.h.after === 0 && /통계/.test(r.h.label) && r.h.back;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

@@ -213,6 +213,84 @@ ok((await call('GET', '/fixes', { e: env3 })).j.items.some((x) => x.src === 'aut
 await send('bad00001', '6.6.6.6', [{ kind: 'dir', k: '<script>', lat: 37.5, lng: 127.1 }]);
 ok(!(await all()).items.some((x) => x.k === '<script>'), 'bad key rejected');
 
+// ---------------- v196 카메라 통과 익명 통계 (/pass · /passes, D1 바인딩 STATS) ----------------
+// 가짜 D1: node 의 내장 SQLite (prepare/bind/run/all/first, batch)
+let sqlite = null;
+try { sqlite = await import('node:sqlite'); } catch (e) { sqlite = null; }
+if (!sqlite) {
+  console.log('SKIP /pass tests (node:sqlite not available in this node)');
+} else {
+  const db = new sqlite.DatabaseSync(':memory:');
+  const st = (sql, args) => ({
+    bind: (...a) => st(sql, a),
+    run: async () => { db.prepare(sql).run(...(args || [])); return { success: true }; },
+    all: async () => ({ results: db.prepare(sql).all(...(args || [])) }),
+    first: async () => db.prepare(sql).get(...(args || [])) || null,
+    _sync: () => (/^\s*select/i.test(sql) ? db.prepare(sql).all(...(args || [])) : db.prepare(sql).run(...(args || []))),
+  });
+  const STATS = { prepare: (sql) => st(sql), batch: async (list) => { db.exec('BEGIN'); try { const r = list.map((s) => s._sync()); db.exec('COMMIT'); return r; } catch (e) { db.exec('ROLLBACK'); throw e; } } };
+  const envS = { ...env, STATS };
+  const rows = (sql, ...a) => db.prepare(sql).all(...a);
+  const kst = (ms) => new Date(ms + 9 * 3600e3).toISOString().slice(0, 10);
+  const today = () => kst(Date.now());
+  const K1 = '37.3066,127.10576|4', K2 = '37.51701,127.14377|2';
+  const it = (k, o) => Object.assign({ k, d: today(), lim: 60, kind: 3, a: 0, g: 0, hid: 0, kmh: 60, nav: 0 }, o);
+  // (1) D1 이 없으면 저장하지 않고 ok:false
+  const off = await call('POST', '/pass', { body: { items: [it(K1, { a: 400 })] } });
+  ok(off.s === 200 && off.j.ok === false && off.j.why === 'off', '/pass without STATS → ok:false, nothing stored');
+  ok((await call('GET', '/health', { origin: '' })).j.stats === false && (await call('GET', '/health', { origin: '', e: envS })).j.stats === true, '/health shows the stats binding');
+  // (2) 합계: 경고 2(거리 400·300) · 같은 자리 1 · 놓침 1 · 제한 모름 1 · 과속 1 · 길안내 1, 다른 카메라 1
+  const b1 = { v: 'x', sid: 'leak01', dev: 'leakdev1', lat: 37.123456, lng: 127.654321,
+    items: [it(K1, { a: 400, kmh: 75, nav: 1 }), it(K1, { a: 300 }), it(K1, { g: 1 }), it(K1, {}), it(K1, { hid: 1, lim: 0, kmh: 80 }), it(K2, { lim: 50, kind: 1, a: 250 })] };
+  const p1 = await call('POST', '/pass', { body: b1, e: envS });
+  ok(p1.s === 200 && p1.j.ok === true && p1.j.cams === 2, '/pass stores daily totals per camera');
+  let c1 = rows('SELECT * FROM cam_day WHERE cam = ?', K1)[0];
+  ok(c1 && c1.n === 5 && c1.alerted === 2 && c1.adist === 700 && c1.covered === 1 && c1.missed === 1 && c1.hidden === 1 && c1.over === 1 && c1.navn === 1,
+    'counts: passes 5, alerted 2 (700 m), covered 1, missed 1, hidden 1, over 1, nav 1');
+  // 받은 값(sid·기기·위치)은 어디에도 남지 않는다: 표는 정해진 칸뿐이고 값에도 없다
+  const dump = JSON.stringify([rows('SELECT * FROM cam_day'), rows('SELECT * FROM cand_day'), rows('SELECT * FROM op_pass')]);
+  ok(!/leak01|leakdev1|37\.123456|127\.654321/.test(dump) && rows('SELECT * FROM op_pass').length === 0, 'no sid, device id or car position stored; no operator rows from a public post');
+  await call('POST', '/pass', { body: { items: [it(K1, {}), it(K1, { a: 500 })] }, e: envS });
+  c1 = rows('SELECT * FROM cam_day WHERE cam = ?', K1)[0];
+  ok(c1.n === 7 && c1.missed === 2 && c1.alerted === 3, 'a second batch adds to the same row');
+  // (3) 나쁜 값: 한국 밖·이상한 키·큰 묶음
+  await call('POST', '/pass', { body: { items: [it('1.0,1.0|4', {}), it('<x>', {}), it('37.5,127.1|9', {}), { k: 5 }, null] }, e: envS });
+  ok(rows('SELECT COUNT(*) AS n FROM cam_day')[0].n === 2, 'bad keys, out-of-Korea and bad direction rejected');
+  ok((await call('POST', '/pass', { body: { items: [], pad: 'x'.repeat(40000) }, e: envS })).s === 413, 'public batch over 30KB → 413');
+  // (4) 날짜: 3일보다 오래되거나 미래면 오늘로
+  await call('POST', '/pass', { body: { items: [it(K2, { d: '2020-01-01', lim: 50, kind: 1 })] }, e: envS });
+  ok(rows('SELECT day FROM cam_day WHERE cam = ?', K2).every((r) => r.day === today()), 'an old or odd date counts as today');
+  // (5) 후보 격자: 서로 다른 날 2번 넘게 + 3번 넘게 모인 것만 /passes 에
+  const cand = (c, o, dr, d) => ({ c, o, dr, d: d || today() });
+  await call('POST', '/pass', { body: { cand: [cand('37400,127100', 2, 30), cand('37400,127100', 2, 20), cand('37410,127110', 0, 25), cand('99999,999999', 0, 30), cand('37400,127100', 9, 30)] }, e: envS });
+  shift += DAY;
+  await call('POST', '/pass', { body: { cand: [cand('37400,127100', 2, 40), cand('37410,127110', 0, 25), cand('37410,127110', 0, 25)] }, e: envS });
+  ok((await call('GET', '/passes')).s === 401, '/passes without token → 401');
+  const ps = (await call('GET', '/passes?days=7&op=1', { token: TOKEN, e: envS })).j;
+  ok(ps.stats === true && ps.cams[0].k === K1 && ps.cams[0].missed === 2 && ps.cams[0].missRate === Math.round(2 / 7 * 1000) / 1000 && ps.cams[0].avgAlert === 400 &&
+    ps.cams[0].lat === 37.3066 && ps.cams[0].dir === 180, '/passes lists cameras by misses with rate, average alert distance and position');
+  const cA = ps.cands.find((x) => x.cell === '37400,127100'), cB = ps.cands.find((x) => x.cell === '37410,127110');
+  ok(cA && cA.n === 3 && cA.days === 2 && cA.avgDrop === 30 && cA.dir === 90 && cA.lat === 37.4 && cB && cB.n === 3 && ps.cands.length === 2,
+    'candidate cells need 2 days and 3 passes; bad cells dropped');
+  ok(ps.daily.length >= 1 && ps.daily.some((d) => d.n >= 7), '/passes gives daily totals');
+  // (6) 운영자 차: 통과마다 카메라·시각·궤적, 토큰 없이 보낸 op 는 버린다
+  const opRec = (k, o) => Object.assign({ k, d: today(), t: Date.now(), lat: 37.3066, lng: 127.10576, a: 0, g: 0, hid: 0, kmh: 63, minD: 4, trace: [[-3, 37.31, 127.1, 5, 17, 180, 180]] }, o);
+  await call('POST', '/pass', { body: { items: [it(K1, {})], op: [opRec(K1, {})] }, e: envS });
+  ok(rows('SELECT COUNT(*) AS n FROM op_pass')[0].n === 0, 'operator rows need the token');
+  await call('POST', '/pass', { body: { items: [it(K1, {}), it(K2, { a: 300 })], op: [opRec(K1, {}), opRec(K2, { a: 300, trace: undefined })] }, token: TOKEN, e: envS });
+  const ps2 = (await call('GET', '/passes?days=7&op=1', { token: TOKEN, e: envS })).j;
+  ok(ps2.op.length === 2 && ps2.op[0].k === K1 && Array.isArray(ps2.op[0].trace) && ps2.op[1].a === 300, 'operator passes stored, misses first, with trace');
+  // (7) 보관: 운영자 기록 90일, 후보 180일 (그날 첫 /pass 때 지움), 카메라 합계는 그대로
+  shift += 100 * DAY;
+  await call('POST', '/pass', { body: { items: [] }, e: envS });
+  ok(rows('SELECT COUNT(*) AS n FROM op_pass')[0].n === 0 && rows('SELECT COUNT(*) AS n FROM cand_day')[0].n > 0 && rows('SELECT COUNT(*) AS n FROM cam_day')[0].n >= 2,
+    'after 100 days operator rows are gone, candidate and camera totals kept');
+  shift += 100 * DAY;
+  await call('POST', '/pass', { body: { items: [] }, e: envS });
+  ok(rows('SELECT COUNT(*) AS n FROM cand_day')[0].n === 0 && rows('SELECT COUNT(*) AS n FROM cam_day')[0].n >= 2, 'after 200 days candidate cells are gone, camera totals kept');
+  shift = 0;
+}
+
 Date.now = realNow;
 console.log(fail ? fail + ' FAILED' : 'ALL PASS');
 process.exit(fail ? 1 : 0);
