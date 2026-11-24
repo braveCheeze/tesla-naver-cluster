@@ -337,6 +337,14 @@
   .soundpill.campill { top: 72px; min-height: 36px; font-size: 14px; background: #c62828; color: #fff; cursor: default; display: flex; align-items: center; }
   #map.navigating .soundpill.campill { top: auto; bottom: 84px; }
   .soundpill.campill[hidden] { display: none; }
+  /* v239: 경로 서버 일시 장애 — 작고 차분하게 (지금 경로로 계속 안내 중). 누를 것이 아니다 */
+  .netpill {
+    position: absolute; left: 50%; bottom: 94px; transform: translateX(-50%); z-index: 1060;
+    padding: 7px 14px; border-radius: 999px; background: rgba(28, 32, 40, .84); color: #e9eef5;
+    font-size: 14px; font-weight: 600; white-space: nowrap; pointer-events: none; box-shadow: 0 4px 12px rgba(0, 0, 0, .25);
+  }
+  .netpill::before { content: ''; display: inline-block; width: 8px; height: 8px; margin-right: 8px; border-radius: 50%; background: #f5b83d; vertical-align: 1px; }
+  .netpill[hidden] { display: none; }
   .attrib {
     position: absolute; right: 8px; bottom: 6px; z-index: 1000; pointer-events: none;
     font-size: 11px; color: #333; background: rgba(255,255,255,.75); padding: 1px 6px; border-radius: 4px;
@@ -2252,8 +2260,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-238"></script>
-<script src="img/ai/picks.js?v=2026.11.16-238"></script>
-<script src="app.js?v=2026.11.16-238"></script>
+<script src="icons.js?v=2026.11.16-239"></script>
+<script src="img/ai/picks.js?v=2026.11.16-239"></script>
+<script src="app.js?v=2026.11.16-239"></script>
 </body>
 </html>

@@ -37,6 +37,9 @@ globalThis.fetch = async (u) => {
     const q = new URL(u).searchParams, opt = q.get('option') || 'trafast', route = {};
     const [sx, sy] = (q.get('start') || '').split(',').map(Number);
     routeCalls.push(q.get('start'));
+    // v239: 530 한 번 뒤 정상 (127.77,37.77) · 늘 530 (127.78,37.78)
+    if (q.get('start') === '127.77,37.77' && routeCalls.filter((s) => s === '127.77,37.77').length === 1) return new Response('error code: 1016', { status: 530 });
+    if (q.get('start') === '127.78,37.78') return new Response('error code: 1016', { status: 530 });
     // v215 자동 확인 길 검사: 바다(경도 129.6 넘게)는 네이버가 오류, 길 밖 시험 점(37.757,128.92)은 300m 떨어진 길로 붙임, 그 밖은 그 자리
     if (sx > 129.6) return new Response(JSON.stringify({ error: { errorCode: '400', message: 'bad start' } }), { status: 400 });
     let r1 = ROUTE1;
@@ -133,6 +136,17 @@ ok(codes[31] === 429, 'token guessing gets rate limited');
 const rv = await call('GET', '/reverse?coords=127.1,37.5');
 ok(rv.s === 502 && rv.j.message === 'Permission Denied' && !JSON.stringify(rv.j).includes('secretish'), 'upstream error trimmed');
 ok((await call('GET', '/config', { origin: 'https://evil.example' })).s === 403, 'other origin → 403');
+{
+  // v239: 길찾기 위쪽이 잠깐 530 이면 Worker 가 다시 묻는다
+  const n0 = routeCalls.length;
+  const b1 = await call('GET', '/route?start=127.77,37.77&goal=127.2,37.6&option=trafast', { ip: '100.64.7.1' });
+  ok(b1.s === 200 && routeCalls.length - n0 === 2, 'upstream 530 once → retried → 200');
+  const n1 = routeCalls.length;
+  const b2 = await call('GET', '/route?start=127.78,37.78&goal=127.2,37.6&option=trafast', { ip: '100.64.7.2' });
+  ok(b2.s === 502 && b2.j.error === 'upstream' && b2.j.status === 530 && routeCalls.length - n1 === 3, 'upstream 530 every time → 3 tries → 502 upstream');
+  const b3 = await call('GET', '/route?start=127.78,37.78&goal=127.2,37.6&options=traoptimal:trafast', { ip: '100.64.7.3' });
+  ok(b3.s === 404 && b3.j.error === 'no route' && b3.j.code == null, 'multi-option call with a dead upstream → no route without a Naver code (the app treats it as upstream)');
+}
 const hl = await call('GET', '/health', { origin: '' });
 ok(hl.s === 200 && hl.j.autoFix === true, '/health open, autoFix on (salt from ADMIN_TOKEN, no IP_SALT needed)');
 

@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-238'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-239'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -4779,6 +4779,66 @@
       if (nav.active && nav.gen === g0 && !nav.onRoute && !nav.busy) planRoute(dest, reroute);
     }, Math.min(ms, 61000));
   }
+  // v239 (2026-11-25 01:5x Worker /route 가 몇 분 동안 네이버 길찾기 530 으로 모든 경로에 실패했다 — 달리는 중에 걸리면 재탐색이 막힌다):
+  //   경로 서버 쪽 일시 장애(5xx, 그리고 여러 옵션 묻기의 '경로 없음'인데 네이버 답 코드가 없는 것)는 1초·3초·8초 뒤 다시 묻는다.
+  //   여러 옵션 묻기(options=)가 실패하면 먼저 한 가지 옵션 묻기(option=)로 바꿔 묻는다. 그동안 지금 경로·안내는 그대로 두고
+  //   작은 상태 표시('경로 서버 응답 대기 · 지금 경로로 안내 중')만 띄운다(빨간 실패 안내 없이). 교통 갱신은 예전처럼 조용히 넘긴다.
+  //   진단: 관리 화면이 보도록 /event 'route upstream failed|recovered' (첫 상태, 다시 물은 횟수, 한 가지 옵션으로 바꿨는지)
+  const routeNet = { backoff: [1000, 3000, 8000], log: [], pillT: null };
+  const routeUpstream = (e) => !!e && ((e.status >= 500 && e.status < 600) ||
+    (e.status === 404 && !!e.detail && e.detail.error === 'no route' && e.detail.code == null));
+  function routeNetNote(kind, o) {
+    routeNet.log.push(Object.assign({ kind, t: Date.now() }, o));
+    if (routeNet.log.length > 20) routeNet.log.shift();
+    report(kind === 'recovered' ? 'info' : 'warn', Object.assign({ msg: 'route upstream ' + kind }, o));
+  }
+  function routeNetPill(on) {
+    let el = document.getElementById('routeNetPill');
+    clearTimeout(routeNet.pillT);
+    if (!on) { if (el) el.hidden = true; return; }
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'routeNetPill'; el.className = 'netpill'; el.setAttribute('role', 'status');
+      el.textContent = '경로 서버 응답 대기 · 지금 경로로 안내 중';
+      $('#map').appendChild(el);
+    }
+    el.hidden = false;
+    routeNet.pillT = setTimeout(() => { el.hidden = true; }, 90000);   // 다시 벗어나 재탐색하면 또 뜬다
+  }
+  async function routeCall(q, waitMs, gen, reroute, refresh) {
+    let waits = 0, fell = false, first = null;
+    for (;;) {
+      try {
+        const res = await api('/route', q, null, waitMs);
+        if (first !== null) routeNetNote('recovered', { status: first, waits, fallback: fell ? 1 : 0, reroute: String(reroute || '') });
+        routeNetPill(false);
+        return res;
+      } catch (e) {
+        if (!routeUpstream(e) || reroute === 'traffic' || gen !== nav.gen) throw e;
+        if (first === null) {
+          first = e.status;
+          if (!reroute) toast('경로 서버 응답이 늦어 다시 묻는 중…', '', 4000);
+        }
+        if (nav.active) routeNetPill(true);
+        if (q.options && !fell) {   // 여러 옵션 묻기만 막혔을 수 있다: 지금 고른 옵션 하나로 바로 다시
+          fell = true; q.option = q.options.split(':')[0]; delete q.options;
+        } else {
+          if (waits >= routeNet.backoff.length) {
+            routeNetNote('failed', { status: e.status, first, waits, fallback: fell ? 1 : 0, reroute: String(reroute || '') });
+            e.upstream = true;
+            throw e;
+          }
+          await new Promise((ok) => setTimeout(ok, routeNet.backoff[waits++]));
+          if (gen !== nav.gen) throw e;
+        }
+        if (refresh) refresh();
+        if (q.option) {   // 한 가지 옵션 길찾기는 60초에 4번 (routeReqs)
+          if (routeBudget() <= 0) { routeNetNote('failed', { status: e.status, first, waits, fallback: fell ? 1 : 0, budget: 1, reroute: String(reroute || '') }); e.upstream = true; throw e; }
+          routeReqs.push(routeNow());
+        }
+      }
+    }
+  }
   async function planRoute(dest, reroute) {
     if (!state.fix) { toast('현재 위치를 아직 모릅니다. GPS 신호를 기다려 주세요.', 'bad', 5000); return; }
     if (reroute && nav.busy) return;
@@ -4841,7 +4901,7 @@
       let res;
       const okRoute = (x) => x && Array.isArray(x.path) && x.path.length >= 2;
       for (;;) {
-        try { res = await api('/route', q, null, waitMs); } catch (e1) {
+        try { res = await routeCall(q, waitMs, gen, reroute, ahead ? () => { q.start = startOf(); } : null); } catch (e1) {
           if (e1.name !== 'AbortError' && !/abort/i.test(e1.message)) throw e1;
           if (gen !== nav.gen) return;
           if (ahead) q.start = startOf();
@@ -4970,7 +5030,9 @@
       if (reroute === 'traffic') return; // 교통 갱신 실패는 지금 경로로 계속 안내 (화면에 띄우지 않음)
       const slow = e.name === 'AbortError' || /abort/i.test(e.message || '');
       if (reroute) { // 재탐색 실패: 지금 경로를 유지하고, 계속 벗어나 있으면 잠시 뒤 다시 시도한다
-        toast(slow ? '통신이 느려 경로를 다시 찾지 못했어요. 잠시 후 다시 시도합니다.' : '경로를 다시 찾지 못했어요. 잠시 후 다시 시도합니다.', 'bad', 5000);
+        // v239: 빨간 실패 안내 대신 작은 상태 표시 (지금 경로·안내는 그대로). 비교·경유처럼 운전자가 누른 것은 짧게 알려 준다
+        if (nav.active) routeNetPill(true);
+        if (reroute === 'compare' || reroute === 'via' || reroute === 'manual') toast(slow ? '통신이 느려 경로를 찾지 못했어요. 지금 경로로 계속 안내합니다.' : '경로 서버가 응답하지 않아요. 지금 경로로 계속 안내합니다.', '', 4000);
         return;
       }
       if (slow) { toast('통신이 느려 경로를 찾지 못했어요. 다시 시도해 주세요.', 'bad', 6000); return; }
@@ -5338,6 +5400,7 @@
   }
   function endNav() {
     nav.gen++; nav.busy = false; nav.byDemo = false;
+    routeNetPill(false);
     if (live.on && !state.demoTimer && !live.pending) liveClear();   // v200: 끝냈거나 도착했으면 다시 열려도 이어 가지 않는다
     clearTimeout(nav.retryT); nav.retryT = null;
     nav.active = false; nav.preview = false;
@@ -10406,7 +10469,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams, passWhy, pruneTurnCams, camDirOk, findBuilding, sunPosStored, eventBody, routeArrived, routeIdleCheck, routeStartup, routeHide, tripEndGap, routeHeading, startsReversed, ROUTE_AHEAD, fitSigns, nvSceneFits, planScene, routeTurnSum, renderJunction, juncState,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams, passWhy, pruneTurnCams, camDirOk, routeNet, routeUpstream, findBuilding, sunPosStored, eventBody, routeArrived, routeIdleCheck, routeStartup, routeHide, tripEndGap, routeHeading, startsReversed, ROUTE_AHEAD, fitSigns, nvSceneFits, planScene, routeTurnSum, renderJunction, juncState,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,

@@ -346,8 +346,16 @@ function json(body, status, cors, cacheSeconds) {
 
 function round6(n) { return Math.round(n * 1e6) / 1e6; }
 
+// v239 (2026-11-25 01:5x~02:2x 네이버 길찾기 요청이 절반쯤 530 — Cloudflare 가 maps.apigw.ntruss.com 에 닿지 못함):
+// 잠깐 닿지 않는 응답(502·503·504, 520~530)은 0.3초·0.8초 뒤 두 번까지 다시 묻는다 (앱도 1·3·8초 뒤 다시 묻지만 옛 앱도 버티게)
+const UPSTREAM_RETRY = [300, 800];
+const blip = (s) => s === 502 || s === 503 || s === 504 || (s >= 520 && s <= 530);
 async function upstream(url, headers) {
-  const r = await fetch(url, { headers });
+  let r = await fetch(url, { headers });
+  for (let k = 0; k < UPSTREAM_RETRY.length && blip(r.status); k++) {
+    await new Promise((ok) => setTimeout(ok, UPSTREAM_RETRY[k]));
+    r = await fetch(url, { headers });
+  }
   const text = await r.text();
   let data;
   try { data = JSON.parse(text); } catch (e) { data = { raw: text.slice(0, 300) }; }

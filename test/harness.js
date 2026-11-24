@@ -2917,6 +2917,7 @@
     { id: 'S154', name: "S154 dark from the first frame (v230): index.html decides night before any CSS or script (setting, or sun height at the last rough position), the page background is dark at once, the font CSS does not block painting, a night GL map hides its day style until the dark style is ready, and /event carries the anonymous device id", fn: s154 },
     { id: 'S155', name: "S155 intersection cameras only for their approach (v236, the driver's 강동세무서 drawing): turning left into the direction of a camera that enforces the leg before the junction gives no alert and is not a miss; going straight on that leg alerts; a camera on the new road past the junction alerts; passing a 30 camera on a parallel road at 90 km/h is recorded as another road, not a miss", fn: s155 },
     { id: 'S156', name: "S156 the intersection camera rule everywhere (v237, driver '그런 건 전국에 다 해당되는 건 알지?', '직진으로 오는 차였으면 저기에 50 단속이 있으면 감지해주는 게 맞고'): on seven synthetic junctions (4-way left and right, T-junction, 60 and 120 deg skewed lefts, a U-turn on a divided road, two-way cameras on a crossing road), guided and free: a camera at the stop line of the leg the car turns into (one-way or two-way) never alerts, a camera on the new road past the junction and on the car's own approach does, straight through on the camera's leg alerts with limit 50 at the normal 400 m; a two-way camera on a crossing road does not alert or record a pass for straight-through traffic; a left-turn pass of the stop-line camera is 'turned', the new-road camera is a normal pass", fn: s156 },
+    { id: 'S157', name: "S157 riding out a route server blip (v239, 2026-11-25 Worker /route failed for minutes with Naver 530): the first search falls back from options= to one option= after an upstream 'no route' and retries a 502 after a short backoff, then shows the route card; a reroute that keeps failing retries 3 times and stops, keeping the current route and guidance (no red failure toast, a small status chip, a diag note) and guidance keeps advancing; the next good reroute clears the chip; a 400, Naver's own 'no route' (with a code) and the traffic refresh are not retried", fn: s157 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -8088,6 +8089,75 @@
       both(r.D, { K: 0, W: 1 }) && r.D.drops >= 1 && both(r.E, { K: 0, W: 1 }) && r.E.drops >= 1 &&
       both(r.F, { K: 0, W: 1, A: 1 }) && r.F.drops >= 1 &&
       both(G, { Kt: 0, O: 1, K: 0 }) && G.pass.Kt.length === 0 && G.pass.O.length === 1;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S157: 경로 서버 일시 장애에 버티기 (v239, 2026-11-25 Worker /route 가 몇 분 동안 네이버 길찾기 530 으로 모두 실패했다)
+  //   (a) 처음 길찾기: 여러 옵션 묻기가 '경로 없음'(네이버 답 코드 없음)이면 한 가지 옵션 묻기로 바로 바꾸고, 그것도 502 면 잠시 뒤 다시 → 경로 카드
+  //   (b) 길안내 중 재탐색: 계속 502 면 정해진 만큼(3번) 다시 묻고 멈춘다 — 지금 경로·안내는 그대로, 빨간 실패 안내 없이 작은 상태 표시, 진단 기록
+  //   (c) 다음 재탐색이 되면 상태 표시가 사라진다
+  //   (d) 잘못된 요청(400)·네이버가 답한 '경로 없음'(code 있음)·교통 갱신은 다시 묻지 않는다
+  async function s157() {
+    const t = T(), R = buildNavRoute(), r = {}, net = t.routeNet, keep = net.backoff.slice();
+    const pill = () => { const el = document.getElementById('routeNetPill'); return !!el && !el.hidden; };
+    const seq = (list) => { let k = 0; return (q) => { const v = list[Math.min(k, list.length - 1)]; k++; return typeof v === 'function' ? v(q) : v; }; };
+    const E502 = { __status: 502, body: { error: 'upstream', status: 530, message: '' } };
+    const NOROUTE = { __status: 404, body: { error: 'no route', message: '' } };
+    try {
+      net.backoff.splice(0, net.backoff.length, 30, 60, 90);
+      net.log.length = 0;
+      // (a)
+      await resetApp(); softReset();
+      feed(R.P[0], 0, null);
+      let c0 = stub.calls.length;
+      stub.canned['/route'] = seq([NOROUTE, E502, R.route]);
+      await withTimeout(t.planRoute(R.dest, false), 8000, 'planRoute a');
+      const ca = stub.since(c0, '/route').map((c) => (c.query.options ? 'multi' : 'single:' + c.query.option));
+      r.a = { calls: ca, preview: !!t.nav.preview, alts: (t.nav.alts || []).length, card: visible('#routeCard'), log: net.log.map((x) => x.kind + ':' + x.fallback) };
+      t.endNav();
+      // (b) 길안내 중 재탐색이 계속 502
+      stub.canned['/route'] = R.route;
+      softReset();
+      await planAndStart(R);
+      for (let s = 20; s <= 200; s += 20) { const a = pointAt(R, s); feed(a.p, 14, a.h, { dt: s === 20 ? 65000 : 1000 }); }   // (한 가지 옵션 길찾기 60초 4번 창을 비운다)
+      const route0 = t.nav.route, along0 = t.nav.along;
+      net.log.length = 0;
+      c0 = stub.calls.length;
+      stub.canned['/route'] = E502;
+      await withTimeout(t.planRoute(R.dest, true), 8000, 'planRoute b');
+      const tEl = document.getElementById('toast');
+      r.b = { calls: stub.since(c0, '/route').length, active: !!t.nav.active, same: t.nav.route === route0, pill: pill(),
+        redToast: !!tEl && !tEl.hidden && tEl.classList.contains('bad'), panel: visible('#navPanel'), turn: text('#turnText').length > 0,
+        log: net.log.map((x) => x.kind + ':' + x.waits) };
+      // 안내는 계속된다: 경로를 따라 더 가면 남은 거리가 줄어든다
+      for (let s = 220; s <= 300; s += 20) { const a = pointAt(R, s); feed(a.p, 14, a.h, { dt: s === 220 ? 65000 : 1000 }); }
+      r.b.moved = t.nav.along > along0 + 50;
+      // (c) 다음 재탐색이 되면 상태 표시가 사라진다
+      stub.canned['/route'] = R.route;
+      await withTimeout(t.planRoute(R.dest, true), 8000, 'planRoute c');
+      r.c = { pill: pill(), active: !!t.nav.active };
+      // (d) 다시 묻지 않는 경우
+      { const a = pointAt(R, 300); feed(a.p, 14, a.h, { dt: 65000 }); }
+      const once = async (resp, mode) => { const k0 = stub.calls.length; stub.canned['/route'] = resp; await withTimeout(t.planRoute(R.dest, mode), 8000, 'planRoute d'); return stub.since(k0, '/route').length; };
+      r.d = {
+        bad400: await once({ __status: 400, body: { error: 'bad coords' } }, 'compare'),
+        naverNo: await once({ __status: 404, body: { error: 'no route', code: 1, message: '출발지와 도착지가 같습니다' } }, 'compare'),
+        traffic: await once(E502, 'traffic'),
+        upstream: [502, 530, 404].map((st) => t.routeUpstream({ status: st, detail: st === 404 ? { error: 'no route' } : {} })),
+      };
+      t.endNav();
+      r.d.pillAfterEnd = pill();
+    } finally {
+      net.backoff.splice(0, net.backoff.length, ...keep);
+      stub.canned['/route'] = R.route;
+      t.endNav();
+      await resetApp(); softReset();
+    }
+    const a = r.a || {}, b = r.b || {}, c = r.c || {}, d = r.d || {};
+    const ok = a.calls.join(',') === 'multi,single:traoptimal,single:traoptimal' && a.preview && a.alts >= 1 && a.log.join(',') === 'recovered:1' &&
+      b.calls === 4 && b.active && b.same && b.pill && !b.redToast && b.panel && b.turn && b.log.join(',') === 'failed:3' && b.moved &&
+      !c.pill && c.active &&
+      d.bad400 === 1 && d.naverNo === 1 && d.traffic === 1 && d.upstream.every(Boolean) && !d.pillAfterEnd;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
