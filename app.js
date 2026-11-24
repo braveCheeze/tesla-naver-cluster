@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-236'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-237'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -3114,7 +3114,11 @@
   const CAM_TOL = 15, CAM_DIR_TOL = 50;
   const camPt = (c) => ({ lat: c.sl != null ? c.sl : c[0], lng: c.sg != null ? c.sg : c[1] });
   const camHasDir = (c) => c.eb != null && c.eb >= 0 && !c.e2;
-  const camDirOk = (c, brg) => !camHasDir(c) || brg == null || angleDiff(c.eb, brg) <= CAM_DIR_TOL;
+  // v237 (운전자 '그런 건 전국에 다 해당되는 건 알지?' — 교차로 카메라는 그 접근로를 달린 차에만): 양방향 카메라(e2)도 찍는 길의 축이 있다
+  //   (eb 또는 eb+180). 예전엔 양방향이면 방향을 아예 안 봐서, 교차로에서 가로지르는 길의 양방향 카메라가 내 길에서 15m 안이면
+  //   곧장 지나는 차에도 떴다. 찍는 방향들: 한 방향 [eb], 양방향 [eb, eb+180], 모름 null
+  const camDirs = (c) => (c.eb != null && c.eb >= 0 ? (c.e2 ? [c.eb, (c.eb + 180) % 360] : [c.eb]) : null);
+  const camDirOk = (c, brg) => { const ds = camDirs(c); return !ds || brg == null || ds.some((d) => angleDiff(d, brg) <= CAM_DIR_TOL); };
   // 층(c.lv): 1 지하차도 안, 2 고가 위, 4 지상 카메라 옆을 지하차도가 지나감, 8 고가가 지나감, 16 지하차도·고가 카메라 옆에 지상 길.
   // 경로가 그 자리에서 지하차도·고가로 들어가면(네이버 진입 안내) 지상 카메라(4·8)는 빼고, 지상으로 가면 지하·고가 카메라(16)는 뺀다
   // 경로 거리 s0 → s1 사이의 진행 방향
@@ -3199,7 +3203,15 @@
     // v190: 이 속도로는 옆길 카메라 (도로 이름은 역지오코딩이 옆길 이름을 주곤 해서 쓰지 않는다)
     if (tooFastForCam(c, side, null)) return false;
     // v165 (2차 점검 G): 굽은 길은 그 자리의 진행 방향(현 방향 + 거리 × 곡률)으로도 본다 (100° 넘게 돈 고리 길 뒤의 카메라가 버려졌다)
-    return camDirOk(c, pb) || camDirOk(c, pathTangent(dp));
+    const tan = pathTangent(dp);
+    if (!camDirOk(c, pb) && !camDirOk(c, tan)) return false;
+    // v237 (교차로 카메라는 그 접근로를 달린 차에만, 전국): 교차로에서 꺾는 중에는 꺾어 들어가는 길의 정지선 카메라가 가까이(60m 안)
+    //   같은 방향으로 보인다(60° 비스듬한 좌회전·중앙분리대 유턴). 카메라가 찍는 방향으로 재서 차보다 앞에 있어야 그 접근로를 달리는 것이다
+    if (dp <= 60) {
+      const ds = (camDirs(c) || []).filter((d) => [pb, tan].some((w) => w != null && angleDiff(d, w) <= CAM_DIR_TOL));
+      if (ds.length && ds.every((d) => dp * Math.cos(toRad(angleDiff(bearing(f, p), d))) <= 0)) return false;
+    }
+    return true;
   }
   // v190: 길안내 경로 위로 잡힌 카메라인데 지금 속도로는 그 길일 수 없는지 (카메라 차로 위 점과 경로선 사이 거리로 본다)
   function tooFastOnRoute(c) {
@@ -3399,8 +3411,21 @@
   // 꺾은 지점 60m 전 ~ 40m 뒤의 카메라 중, 찍는 방향이 들어오는 방향(꺾기 40m 전~3m 전)과 맞는 것이 있으면
   // 꺾은 뒤 방향만 맞는 신호 카메라(제한속도가 그것들과 다른 것)를 경로 위 목록에서 뺀다. 접근로 카메라가 없으면 그대로 둔다
   const TURN_CAM_KINDS = new Set(['u', 'l', 'r', 'sl', 'sr', 'sharp_l', 'sharp_r']);
+  // 경로 거리 from 뒤 150m 안에서 이 카메라가 경로 옆에 있는 자리 (없으면 null). 선분 시작에 걸린 자리(카메라가 그 자리보다 뒤)는 아니다
+  function camAtAfter(c, from) {
+    const C = nav.cum, p = camPt(c);
+    for (let i = routeSegAt(from); i < nav.pts.length - 1 && C[i] < from + 150; i++) {
+      const at = camAtSeg(c, i);
+      if (at === null || at <= from) continue;
+      const q = routePointAt(at), b = bearing(nav.pts[i], nav.pts[i + 1]), d = haversine(q, p);
+      if (d > 1 && d * Math.cos(toRad(angleDiff(bearing(q, p), b))) < -3) continue;
+      return at;
+    }
+    return null;
+  }
   function pruneTurnCams() {
     const list = nav.routeCamList, m = nav.routeCams, last = nav.cum.length - 1;
+    let moved = false;
     const drop = (x) => {
       const k = list.indexOf(x);
       if (k < 0) return;
@@ -3419,8 +3444,25 @@
       //   그런 경우는 거의 없지만 그럼 보여주고'): 꺾어 들어가는 방향을 찍는 카메라가 회전점 앞이나 회전점(8m 안)에 있으면, 그 길로 곧장 와서
       //   교차로를 넘기 전 차를 찍는 카메라다 — 꺾어 들어온 차는 그 구간을 달리지 않았으므로 뺀다(카메라가 하나뿐이어도).
       //   회전점을 8m 넘게 지나 꺾어 들어간 길 위에 있으면 그 길을 달리므로 그대로 알린다. 내 접근 방향을 찍는 카메라는 그대로
-      for (const x of list.filter((q) => q.at >= T - 60 && q.at <= T + 8)) {
-        if (camHasDir(x.c) && angleDiff(x.c.eb, inB) > CAM_DIR_TOL && angleDiff(x.c.eb, outB) <= CAM_DIR_TOL) drop(x);
+      // v237: 전국 모든 교차로에 같은 규칙 (운전자 '그런 건 전국에 다 해당되는 건 알지?'). 회전점에서 나가는 방향(outB)으로 잰 카메라 자리 u 로 가른다:
+      //   신호 카메라는 u 8m 까지(정지선·교차로 한가운데에 찍힌 원본 좌표), 과속·구간 카메라는 u -3m 까지(교차로 바로 앞)만 뺀다 —
+      //   교차로를 막 지난 새 길의 과속 카메라(전국 1,017대, 어린이 30 등)는 꺾어 들어온 차도 그 앞을 지나므로 알린다.
+      //   양방향 카메라는 두 방향 중 하나라도 내 접근 방향이면 남긴다. 남기는 카메라가 회전 전 자리로 잡혔으면(중앙분리대 길 유턴의
+      //   건너편 차로) 회전 뒤 자리로 옮긴다
+      const PT = routePointAt(T);
+      for (const x of list.filter((q) => q.at >= T - 60 && q.at <= T + 40)) {
+        if (!camDirs(x.c) || camDirOk(x.c, inB) || !camDirOk(x.c, outB)) continue;
+        const p = camPt(x.c), d = haversine(PT, p), u = d < 1 ? 0 : d * Math.cos(toRad(angleDiff(bearing(PT, p), outB)));
+        if (u > (isSignalCam(x.c) ? 8 : -3)) {
+          if (x.at >= T) continue;
+          const later = camAtAfter(x.c, T);
+          if (later !== null && !(m.get(x.c) || []).some((v) => v !== x.at && Math.abs(v - later) < 100)) {
+            const arr = (m.get(x.c) || []).filter((v) => v !== x.at);
+            arr.push(later); m.set(x.c, arr); x.at = later; moved = true;
+          }
+          continue;
+        }
+        drop(x);
       }
       const near = list.filter((x) => x.at >= T - 60 && x.at <= T + 40 && camWanted(x.c));
       if (near.length < 2) continue;
@@ -3448,6 +3490,7 @@
         drop(x);
       }
     }
+    if (moved) list.sort((x, y) => x.at - y.at);
   }
   // 길안내 중: 카메라가 남은 경로 위(경고 거리 안)에 있는지
   function camOnRouteAhead(c) {
@@ -7688,7 +7731,7 @@
         if (!isSpeedCam(it.c) || !camWanted(it.c) || isUserSpot(it.c)) continue;
         let m = camMiss.near.get(it.i);
         if (!m) { m = { minD: 1e9, side: 0, alerted: false }; camMiss.near.set(it.i, m); }
-        if (it.d < m.minD) { m.minD = it.d; m.side = sideOf(f, it.c, it.d); m.kmh = Math.round(state.speedKmh); m.hdg = state.heading; }
+        if (it.d < m.minD) { m.minD = it.d; m.side = sideOf(f, it.c, it.d); m.kmh = Math.round(state.speedKmh); m.hdg = state.heading; m.t = f.t; }
         if (tg && tg.i === it.i) m.alerted = true;
       }
     }
@@ -7727,6 +7770,7 @@
       const cr = camRoad(c);
       if (specificRoad(cr) && specificRoad(road.name) && !sameRoad(cr, road.name)) return;   // 가로지른 옆 도로
       if (!camDirOk(c, m.hdg)) return;                                                          // 내 방향이 아니다
+      if (m.t && passWhy(c, m)) return;   // v237: 그 카메라의 접근로를 달리지 않음 (꺾어 들어옴·옆 길)
       if (camMiss.sent >= 5) return;
       camMiss.sent++;
       const t0 = f.t;
@@ -7815,16 +7859,29 @@
   // v236 (운전자 강동세무서 사거리 그림 — 좌회전해 들어온 길의 카메라, 경부 옆 신갈 신호·과속 30 을 80km/h 로): 카메라 30m 안을 같은 방향으로
   // 지났어도 그 카메라가 찍는 접근로를 달리지 않았으면 '경고 없음'으로 세지 않는다. 돌려주는 값: 0 접근로를 달림 · 1 꺾어 들어옴 · 2 나란한 다른 길
   //  - 2: 카메라 제한보다 45km/h 넘게 빠르게, 차로 위 점에서 6m 넘게 옆으로 지났고 카메라 길 이름과 같은 길이 아니면 (경고의 tooFastForCam 과 같은 기준)
-  //  - 1: 가장 가까웠던 때 전 1분 궤적 중 카메라에서 30~130m 앞(접근로) 점들의 진행 방향이 절반 넘게 카메라 방향과 50° 넘게 다르면
+  //  - 1 (v237 고침, 경고와 같은 규칙): 가장 가까웠던 때 전 1분, 카메라 130m 안 궤적에서 진행 방향이 찍는 방향과 50° 넘게 달랐던
+  //    마지막 점(꺾은 곳) J 를 찾아, 카메라가 J 에서 찍는 방향으로 신호 카메라는 8m, 과속 카메라는 -3m 넘게 앞이 아니면(교차로 앞 정지선 쪽).
+  //    J 가 없으면(줄곧 카메라 방향) 접근로를 달렸다. 교차로를 지난 새 길의 카메라는 꺾어 들어온 차도 지나가므로 보통 통과다
+  //    (v236 은 거리로만 봐서, 좌회전해 들어간 길 60m 뒤 카메라도 지나온 남쪽 길 점이 많아 '꺾어 들어옴'으로 셌다).
+  //    양방향 카메라는 지날 때 방향에 가까운 쪽을 찍는 방향으로 본다
   //  - 그 앞 궤적을 모르면(막 켬·점이 모자람) 0 (예전처럼)
   function passWhy(c, m) {
-    if (!camHasDir(c)) return 0;
+    const ds = camDirs(c);
+    if (!ds) return 0;
     if (Math.abs(m.side || 0) > 6 && c[2] > 0 && m.kmh - c[2] >= 45 && c[8] !== 1 && !(m.road && sameCamRoad(m.road, c))) return 2;
-    const P = camPt(c), back = trace1.filter((e) => e[0] <= m.t && e[0] >= m.t - 60000 && e[4] != null);
-    const appr = back.filter((e) => { const d = haversine({ lat: e[1], lng: e[2] }, P); return d >= 30 && d <= 130; });
-    if (appr.length < 2) return 0;
-    const off = appr.filter((e) => angleDiff(e[4], c.eb) > CAM_DIR_TOL).length;
-    return off * 2 > appr.length ? 1 : 0;
+    const eb = m.hdg == null ? ds[0] : ds.reduce((b, d) => (angleDiff(d, m.hdg) < angleDiff(b, m.hdg) ? d : b));
+    const P = camPt(c);
+    let near = 0, J = null;
+    for (const e of trace1) {
+      if (!(e[0] <= m.t && e[0] >= m.t - 60000) || e[4] == null) continue;
+      const q = { lat: e[1], lng: e[2] };
+      if (haversine(q, P) > 130) continue;
+      near++;
+      if (angleDiff(e[4], eb) > CAM_DIR_TOL) J = q;
+    }
+    if (near < 2 || !J) return 0;
+    const d = haversine(J, P), u = d < 1 ? 0 : d * Math.cos(toRad(angleDiff(bearing(J, P), eb)));
+    return u > (isSignalCam(c) ? 8 : -3) ? 0 : 1;
   }
   function passRecord(i, c, m, f, why) {
     const s = passStats.shown.get(i), fl = camFlag(c, m.hdg);
@@ -10301,7 +10358,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams, passWhy, pruneTurnCams, findBuilding, sunPosStored, eventBody, routeArrived, routeIdleCheck, routeStartup, routeHide, tripEndGap, routeHeading, startsReversed, ROUTE_AHEAD, fitSigns, nvSceneFits, planScene, routeTurnSum, renderJunction, juncState,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams, passWhy, pruneTurnCams, camDirOk, findBuilding, sunPosStored, eventBody, routeArrived, routeIdleCheck, routeStartup, routeHide, tripEndGap, routeHeading, startsReversed, ROUTE_AHEAD, fitSigns, nvSceneFits, planScene, routeTurnSum, renderJunction, juncState,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,

@@ -380,7 +380,7 @@
   // test drives at 70 km/h.
   const CAM_ISO_B = { lat: 36.85538, lng: 127.26662, limit: 50 };
   // S3: school-zone (zone 2) signal+speed camera [34.96209,127.26828,30,2,0,0,2]; no other camera within 3.5 km.
-  const CAM_SCHOOL = { lat: 34.96209, lng: 127.26828, limit: 30 };
+  const CAM_SCHOOL = { lat: 34.96209, lng: 127.26828, limit: 30, eb: 119 };   // #1760 쌍향수길 양방향, 길 축 119°/299° (v237: 양방향도 길 축으로 다가가야 뜬다)
   // S5/S6 route origin and S9 drive origin: no camera within 4 km of either point, so camera logic stays quiet.
   const NAV_ORIGIN = { lat: 37.70, lng: 128.30 };
   const TRIP_ORIGIN = { lat: 37.80, lng: 127.90 };
@@ -462,7 +462,7 @@
     const t = T(), C = CAM_SCHOOL;
     let label = null, at = null, tile = null;
     for (let s = 0; s <= 650 && label === null; s += 10) {
-      feed(dest(C, 180, 700 - s), 10, 0);
+      feed(dest(C, (C.eb + 180) % 360, 700 - s), 10, C.eb);
       const tg = t.camState.target;
       if (tg && sameCam(tg.c, C)) {
         label = text('#camType'); at = r0(tg.d);
@@ -1377,7 +1377,7 @@
       softReset();
       let o = null;
       for (let s = 0; s <= 400 && !o; s += 10) {
-        feed(dest(C, 180, 600 - s), kmh / 3.6, 0);
+        feed(dest(C, (C.eb + 180) % 360, 600 - s), kmh / 3.6, C.eb);
         const tg = t.camState.target;
         if (tg && sameCam(tg.c, C)) {
           const box = (sel) => { const e = document.querySelector(sel); return e && e.getClientRects().length ? e.getBoundingClientRect() : null; };
@@ -2859,7 +2859,7 @@
     { id: 'S101', name: "S101 camera data v164/v166 (2026-11-19 data audit, driver '과속단속만 완벽하면 이제 그냥 네비임', '서울 경기 전역을 일단 한번 해봐바'): a pole with a camera for each direction is two rows that point opposite ways on their own lanes and each alerts only its own direction (경수대로 어바인퍼스트 앞 60 both ways, was one row = one direction); lane-split records of one carriageway are not paired (영동고속도로 51.2km 1,2·3,4·5차로); the 수도권제1순환 23.5k booth is 100 on the expressway, not '어린이보호구역 50' (PDF table glued to it); 경부선 307.6 booth (no 'k') is an expressway 100; a school-zone booth is 30; GGB rear cameras read '후면'; section lengths are not 1000× too long; older records of the same camera number are gone (권선초교 J6049's old copy sat in the sea at 125.70) and misplaced ones moved to their address (세종포천 120 ×4 off 긴밭뜰삼거리 50, 개포동역 K0377); changed spots are in unflag; v166: 50s on city roads off the expressway mainline, the 서울양양 19.8K booth at its address, the 세종포천 section end with a direction, no level flags on mobile spots", fn: s101 },
     { id: 'S95', name: "S95 expressway booth limits (v159, 놓침·틀림 reports 11-16~19): the 경기남부 고속도로순찰대 booth list has no limits, so the nearest street camera's 50/60 was used — the 송파IC 10.3k booth never showed (missed twice) and the 판교JC 1.25k booth read '박스형 60' (wrong twice); on a straight 수도권제1순환고속도로 route through each booth at 90 km/h both now show from 500 m+ with the expressway limit 100", fn: s95 },
     { id: 'S94', name: "S94 closer rows on top (v158, 이배재터널 안 '370m 터널 출구까지' above '↗ 230m' looked upside down — 230m was measured from the left turn, 2.0 km from the car): card rows (tunnel, rest, next guide, parking entrance), drawer cards (lanes, junction, camera, section, hi-pass) and small chips are ordered by distance from the car; the next row keeps Naver's distance from the guide above but says so ('230m 좌회전 후', '830m 터널 지나'); rows within 25 m keep their place, the order changes only once on a 1 km sweep, hidden rows go back to HTML order", fn: s94 },
-    { id: 'S93', name:"S93 U-turn picks the approach camera (v157, 송파IC 진출램프 끝 유턴: we showed 위례중앙로 50, Naver and the road show 30): after the highway exit guide a section still named '수도권제1순환고속도로' no longer hides the ramp's signal+speed 30, the card 80 m before the U-turn reads 30, and the 50 on the road we turn into is dropped; with equal limits both stay", fn: s93 },
+    { id: 'S93', name:"S93 U-turn picks the approach camera (v157, 송파IC 진출램프 끝 유턴: we showed 위례중앙로 50, Naver and the road show 30): after the highway exit guide a section still named '수도권제1순환고속도로' no longer hides the ramp's signal+speed 30, the card 80 m before the U-turn reads 30, and the 50 on the road we turn into is dropped; with equal limits the 50 is dropped too (v237: a stop-line signal camera of the road we turn into, whatever its limit)", fn: s93 },
     { id: 'S92', name: "S92 split-then-merge (v156, 수도권1순환 북행 '분기도로 진입' showed '직진'): a direction-less fork on the mainline reads '분기 후 합류' like Naver, with the JC icon whose two arrows go round both sides of the island (symmetric, two arrowheads) and no junction picture; a keep-left on the same mainline is still '직진'", fn: s92 },
     { id: 'S91', name: "S91 highway fork lanes (v153, 신갈분기점 '차선표기'): the next fork cross-section within 1 km shows its lanes in the drawer; the lanes that lead to the branch the route really takes are blue (exit → only the exit lane, main → the through lanes without the bus lane); nothing when neither branch is on the route; real data/forks.json loads", fn: s91 },
     { id: 'S85', name: "S85 hi-pass lanes only for the direction you are driving (v142, driver '가는 방향이 있어 확실히 있는 거야?'): the real 경부·수도권제1순환 route both ways (서울TG exit 1-4,14-16 / entry 1-4,9; 성남TG 상행 1 2 3 8 9 11 / 하행 1 2 3 6 7 9), ring road near-sideways heading = common lanes only, same name for a closed and an open office (대동·서영암·가락) = no lanes", fn: s85 },
@@ -2916,6 +2916,7 @@
     { id: 'S153', name: "S153 trip end and continuation (v229): an 11-minute stop while navigating stays one trip, a reload keeps the trip while navigating (ends without), arrival ends it after a minute stopped even without further GPS, and closing the page after arrival sends the end with keepalive while a mid-drive reload does not end it", fn: s153 },
     { id: 'S154', name: "S154 dark from the first frame (v230): index.html decides night before any CSS or script (setting, or sun height at the last rough position), the page background is dark at once, the font CSS does not block painting, a night GL map hides its day style until the dark style is ready, and /event carries the anonymous device id", fn: s154 },
     { id: 'S155', name: "S155 intersection cameras only for their approach (v236, the driver's 강동세무서 drawing): turning left into the direction of a camera that enforces the leg before the junction gives no alert and is not a miss; going straight on that leg alerts; a camera on the new road past the junction alerts; passing a 30 camera on a parallel road at 90 km/h is recorded as another road, not a miss", fn: s155 },
+    { id: 'S156', name: "S156 the intersection camera rule everywhere (v237, driver '그런 건 전국에 다 해당되는 건 알지?', '직진으로 오는 차였으면 저기에 50 단속이 있으면 감지해주는 게 맞고'): on seven synthetic junctions (4-way left and right, T-junction, 60 and 120 deg skewed lefts, a U-turn on a divided road, two-way cameras on a crossing road), guided and free: a camera at the stop line of the leg the car turns into (one-way or two-way) never alerts, a camera on the new road past the junction and on the car's own approach does, straight through on the camera's leg alerts with limit 50 at the normal 400 m; a two-way camera on a crossing road does not alert or record a pass for straight-through traffic; a left-turn pass of the stop-line camera is 'turned', the new-road camera is a normal pass", fn: s156 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -4855,7 +4856,8 @@
   //      실제 네이버 경로(수도권1순환 → 송파IC 출구 → 램프 끝 유턴): 구간 이름이 유턴 지점까지 '수도권제1순환고속도로'라 램프의 신호·과속 30
   //      ('송파IC 진출램프', 원본 도로명 '서울외곽순환고속도로')이 고속도로 규칙으로 빠지고 유턴 뒤 위례중앙로 50 만 떴다.
   //      이제: 출구 안내를 지났으니 램프 30 은 경로 위 카메라, 유턴 80m 앞 카드는 30, 위례중앙로 50(꺾어 들어간 길의 카메라)은 안 뜬다.
-  //      대조: 램프 카메라를 50 으로 바꾸면(제한속도가 같으면) 위례중앙로 50 은 그대로 둔다
+  //      대조: 램프 카메라를 50 으로 바꿔도(제한속도가 같아도) 위례중앙로 50 은 뺀다 — v237 (운전자 '그런 건 전국에 다 해당되는 건 알지?'):
+  //      유턴 지점에서 나가는 방향으로 5.7m 인 꺾어 들어간 길의 정지선 신호 카메라는 제한속도와 상관없이 그 접근로를 곧장 온 차를 찍는다 (예전 v157 은 남겼다)
   async function s93() {
     const t = T(), RAMP30 = { lat: 37.47585, lng: 127.12836 }, ROAD50 = { lat: 37.47555, lng: 127.12838 };
     const rows = t.cams.rows, ramp = rows.find((c) => sameCam(c, RAMP30)), road = rows.find((c) => sameCam(c, ROAD50));
@@ -4895,7 +4897,7 @@
     } finally { await resetApp(); softReset(); }
     const a = r.real, b = r.same;
     const ok = a.ramp && a.ramp.limit === '30' && a.at80 === '30' && !a.road && a.onRoute.ramp && !a.onRoute.road && a.drops >= 1 &&
-      b.onRoute.ramp && b.onRoute.road && b.drops === 0;
+      b.onRoute.ramp && !b.onRoute.road && b.drops >= 1;
     return { pass: !!ok, detail: 'U-turn at ' + r0(U) + ' m ' + JSON.stringify(r) };
   }
 
@@ -7951,6 +7953,137 @@
       b.kOnRoute && b.kAlert &&
       c.left.length === 1 && c.left[0].o === 1 && c.left[0].a === 0 && c.straight.length === 1 && c.straight[0].o === 0 &&
       d.length === 1 && d[0].o === 2;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S156: 교차로 카메라 규칙은 전국 모든 교차로에 (v237, 운전자 '그런 건 전국에 다 해당되는 건 알지?', '만약 저게 좌회전이 아니라
+  //   직진으로 오는 차였으면 저기에 50 단속이 있으면 감지해주는 게 맞고'). 바다 위 합성 교차로 7곳, 길 모양과 경로(길안내)·궤적(길안내 없이)만으로:
+  //   A 사거리 좌회전(남→서): 꺾어 들어간 길의 접근로 정지선 카메라 K(한 방향)·Kt(양방향) 안 뜸, 지나간 새 길 60m 카메라 W·내 접근로 카메라 A 뜸,
+  //     교차로를 막 지난(회전점 2.5m 뒤) 새 길의 과속 30 S 도 길안내에서 뜬다(전국 1,017대 — 신호 카메라만 회전점 8m 뒤까지 뺀다).
+  //     같은 K 를 천호대로처럼 서쪽으로 곧장 지나면 뜬다 — 제한 50, 경고 거리 400m 그대로. 통과 통계: 좌회전 K 는 '꺾어 들어옴'(o 1), W·S 는 보통(o 0)
+  //   B 사거리 우회전(북→서), C 삼거리(동행 큰길에서 남쪽 옆길로 우회전: 내 접근로 E 뜸, 서행 접근 K·옆길 북행 접근 N 안 뜸 / 서행 곧장: K 뜸),
+  //   D 60° 비스듬한 좌회전, E 120° 비스듬한 좌회전, F 중앙분리대 있는 길 유턴(건너편 차로 교차로 앞 K 안 뜸, 유턴 뒤 W·내 접근로 A 뜸),
+  //   G 양방향 카메라: 가로지르는 길의 양방향 Kt 는 곧장 지나는 차에 안 뜸(길안내·길안내 없이 모두, 통과 기록도 없음), 내 길의 양방향 O 는 뜸
+  async function s156() {
+    const t = T(), r = {}, ps = t.passStats;
+    const X0 = { lat: 36.8, lng: 129.8 };   // 바다 위 (실제 카메라 없음)
+    const XAt = (k) => dest(X0, 90, 6000 * k);
+    const en = (X, e, n) => dest(dest(X, e >= 0 ? 90 : 270, Math.abs(e)), n >= 0 ? 0 : 180, Math.abs(n));   // X 에서 동쪽 e·북쪽 n 미터
+    const keep = { drv: t.driverSpots.rows.slice(), shared: t.sharedSpots.slice(), mine: t.mySpots.slice(), post: ps.post, pref: t.prefs.passStats, q: t.store.get('passQ') };
+    const fakes = [], fakeCams = [];
+    let base0 = null;
+    const mk = (p, eb, lim, kind, two) => { const c = [round6(p.lat), round6(p.lng), lim, kind, 0, 0, 0, -1, 4, 1]; c.eb = eb; c.e2 = two ? 1 : 0; c.lv = 0; c.sl = c[0]; c.sg = c[1]; c.on = ''; return c; };
+    const route = (pts, gi, gt, gs) => {
+      const PP = pts.map((p) => ({ lat: round6(p.lat), lng: round6(p.lng) })), cum = [0];
+      for (let i = 1; i < PP.length; i++) cum.push(cum[i - 1] + hav(PP[i - 1], PP[i]));
+      const total = cum[cum.length - 1];
+      const g = [{ i: gi, t: gt, s: gs, d: r0(cum[gi]), ms: 10000 }, { i: PP.length - 1, t: 88, s: '목적지', d: r0(total), ms: 1000 }];
+      return { route: { distance: r0(total), duration: r0(total / 14 * 1000), tollFare: 0, fuelPrice: 0, path: PP.map((p) => [p.lng, p.lat]), guide: g,
+        sections: [{ i: 0, n: PP.length, name: '', speed: 50, cong: 1 }] }, P: PP, cum, total, dest: { name: '시험', addr: '', lat: PP[PP.length - 1].lat, lng: PP[PP.length - 1].lng } };
+    };
+    // hin 방향으로 X 에 들어와 hout 방향으로 나가는 경로 (모서리는 X 앞뒤 10m 를 잇는 곡선)
+    const turnPath = (X, hin, hout, gt, gs) => {
+      const pts = [];
+      for (let m = 500; m > 10; m -= 20) pts.push(dest(X, (hin + 180) % 360, m));
+      const P0 = dest(X, (hin + 180) % 360, 10), P2 = dest(X, hout, 10), gi = pts.length + 4;
+      for (let k = 0; k <= 8; k++) { const u = k / 8, a = (1 - u) * (1 - u), b = 2 * u * (1 - u), c = u * u; pts.push({ lat: a * P0.lat + b * X.lat + c * P2.lat, lng: a * P0.lng + b * X.lng + c * P2.lng }); }
+      for (let m = 30; m <= 500; m += 20) pts.push(dest(X, hout, m));
+      return route(pts, gi, gt, gs);
+    };
+    const add = (c) => { const i = t.cams.rows.length; t.cams.rows.push(c); fakes.push(i); const k = Math.floor(c[0] / 0.01) + ':' + Math.floor(c[1] / 0.01); if (!t.cams.grid.has(k)) t.cams.grid.set(k, []); t.cams.grid.get(k).push(i); return c; };
+    const drive = async (R2, nav) => {
+      const hit = new Map();
+      hit.onRoute = new Set(); hit.drops = 0;
+      if (nav) {
+        softReset(); await planAndStart(R2); t.ensureRouteCams();
+        for (const x of t.nav.routeCamList || []) hit.onRoute.add(x.c);
+        hit.drops = t.nav.turnCamDrops || 0;
+      } else { await resetApp(); softReset(); }
+      hit.close = new Map();   // 카메라마다 가장 가까웠던 때 { d, t, h }
+      for (let s = 0; s <= R2.total; s += 50 / 3.6) {
+        const a = pointAt(R2, s);
+        const fx = feed(a.p, 50 / 3.6, a.h, { dt: 1000, acc: 3 });
+        for (const c of fakeCams) { const d = hav(a.p, { lat: c[0], lng: c[1] }), o = hit.close.get(c); if (!o || d < o.d) hit.close.set(c, { d, t: fx.t, h: a.h }); }
+        const tg = t.camState.target;
+        if (tg && tg.c && !hit.has(tg.c)) hit.set(tg.c, { first: Math.round(tg.first), lim: text('#camLimit') });
+      }
+      for (let k = 0; k < 3; k++) { const a = pointAt(R2, R2.total); feed(dest(a.p, a.h, 80 * (k + 1)), 50 / 3.6, a.h, { dt: 1000, acc: 3 }); }
+      if (nav) t.endNav();
+      return hit;
+    };
+    const recOf = (c) => ps.q.filter((x) => x.k === c[0] + ',' + c[1] + '|' + (Math.round(c.eb / 45) % 8)).map((x) => ({ o: x.o || 0, a: x.a }));
+    const say = (hit, cs) => { const o = {}; for (const [n, c] of Object.entries(cs)) o[n] = hit.has(c) ? 1 : 0; return o; };
+    try {
+      t.driverSpots.rows.length = 0; t.sharedSpots.length = 0; t.mySpots.length = 0;
+      t.applyUserSpots(); base0 = t.cams.rows.length;
+      const X = [0, 1, 2, 3, 4, 5, 6].map(XAt);
+      const cs = {
+        A: { K: mk(en(X[0], 6, 4), 270, 50, 3), Kt: mk(en(X[0], 10, 0), 90, 60, 1, true), W: mk(en(X[0], -60, 0), 270, 50, 1), A: mk(en(X[0], 3, -50), 0, 60, 1), S: mk(en(X[0], -5, 0), 270, 30, 1) },
+        B: { K: mk(en(X[1], 6, 4), 270, 50, 3), W: mk(en(X[1], -60, 0), 270, 50, 1) },
+        C: { K: mk(en(X[2], 6, 4), 270, 50, 3), E: mk(en(X[2], -6, -4), 90, 50, 3), N: mk(en(X[2], -4, -6), 0, 50, 3) },
+        D: { K: mk(en(X[3], 6, 4), 270, 50, 3), W: mk(en(X[3], -60, 0), 270, 50, 1) },
+        E: { K: mk(en(X[4], 6, 4), 270, 50, 3), W: mk(en(X[4], -60, 0), 270, 50, 1) },
+        F: { K: mk(en(X[5], 14, 6), 270, 50, 3), W: mk(en(X[5], -25, 6), 270, 50, 1), A: mk(en(X[5], -40, -6), 90, 60, 1) },
+        G: { Kt: mk(en(X[6], 10, 0), 90, 50, 1, true), O: mk(en(X[6], 3, -60), 0, 60, 1, true), K: mk(en(X[6], 6, 4), 270, 50, 3) },
+      };
+      for (const s of Object.values(cs)) for (const c of Object.values(s)) { add(c); fakeCams.push(c); }
+      t.cams.userBase = null; t.applyUserSpots();
+      ps.inTest = true; t.prefs.passStats = true; ps.post = async () => ({ ok: true, status: 200 }); ps.q.length = 0;
+      // 중앙분리대 있는 길: 동행 차로 y=-6, 서행 차로 y=+6. 동행으로 와서 X 에서 반지름 6m 유턴
+      const uPts = [];
+      for (let x = -500; x <= 0; x += 20) uPts.push(en(X[5], x, -6));
+      const ugi = uPts.length + 5;
+      for (let th = -75; th <= 90; th += 15) uPts.push(en(X[5], 6 * Math.cos(th * Math.PI / 180), 6 * Math.sin(th * Math.PI / 180)));
+      for (let x = -20; x >= -500; x -= 20) uPts.push(en(X[5], x, 6));
+      const R = {
+        A: turnPath(X[0], 0, 270, 2, '좌회전'), Astr: turnPath(X[0], 270, 270, 1, '직진'),
+        B: turnPath(X[1], 180, 270, 3, '우회전'),
+        C: turnPath(X[2], 90, 180, 3, '우회전'), Cstr: turnPath(X[2], 270, 270, 1, '직진'),
+        D: turnPath(X[3], 330, 270, 2, '좌회전'), E: turnPath(X[4], 30, 270, 2, '좌회전'),
+        F: route(uPts, ugi, 6, '유턴'),
+        G: turnPath(X[6], 0, 0, 1, '직진'),
+      };
+      for (const k of Object.keys(R)) {
+        const sc = cs[k[0]];
+        const g = await drive(R[k], true);
+        ps.q.length = 0;
+        const f = await drive(R[k], false);
+        r[k] = { nav: say(g, sc), free: say(f, sc), drops: g.drops, route: say({ has: (c) => g.onRoute.has(c) }, sc) };
+        if (k === 'Astr' || k === 'Cstr') r[k].K = { nav: g.get(sc.K) || null, free: f.get(sc.K) || null };
+        if (k === 'A') {
+          r[k].pass = { K: recOf(sc.K), W: recOf(sc.W), S: recOf(sc.S) };
+          // 통과 통계 판정(passWhy)을 바로 본다: 가장 가까웠던 때의 궤적으로 (기록은 1초 간격이라 모서리 카메라는 방향이 안 맞아 안 남기도 한다)
+          const why = (c) => { const o = f.close.get(c); return o ? t.passWhy(c, { t: o.t, hdg: o.h, kmh: 50, side: 0, road: '' }) : -1; };
+          r[k].why = { K: why(sc.K), Kt: why(sc.Kt), W: why(sc.W), S: why(sc.S) };
+        }
+        if (k === 'Astr') { const o = f.close.get(sc.K); r[k].why = { K: o ? t.passWhy(sc.K, { t: o.t, hdg: o.h, kmh: 50, side: 0, road: '' }) : -1 }; }
+        if (k === 'G') r[k].pass = { Kt: recOf(sc.Kt), O: recOf(sc.O) };
+      }
+    } finally {
+      ps.post = keep.post; ps.inTest = false; t.prefs.passStats = keep.pref; ps.q.length = 0; t.store.set('passQ', keep.q);
+      t.endNav();
+      t.driverSpots.rows.length = 0; t.mySpots.length = 0; t.sharedSpots.length = 0; t.applyUserSpots();
+      if (base0 !== null) {
+        for (const i of fakes.slice().reverse()) { const c = t.cams.rows[i]; if (!c) continue; const k = Math.floor(c[0] / 0.01) + ':' + Math.floor(c[1] / 0.01); const a = t.cams.grid.get(k); if (a) { const j = a.indexOf(i); if (j >= 0) a.splice(j, 1); } t.camMiss.near.delete(i); t.camState.passed.delete(i); t.camState.saidById.delete(i); ps.near.delete(i); ps.shown.delete(i); }
+        t.cams.rows.length = base0; t.cams.userBase = null;
+      }
+      keep.drv.forEach((x) => t.driverSpots.rows.push(x)); keep.shared.forEach((x) => t.sharedSpots.push(x)); keep.mine.forEach((x) => t.mySpots.push(x));
+      t.applyUserSpots();
+      await resetApp(); softReset();
+    }
+    const eq = (o, want) => !!o && Object.entries(want).every(([k, v]) => o[k] === v);
+    const both = (x, want) => !!x && eq(x.nav, want) && eq(x.free, want);
+    const strOk = (x) => !!x && ['nav', 'free'].every((m) => x[m] && x[m].lim === '50' && x[m].first > 385 && x[m].first <= 400);
+    const A = r.A || {}, G = r.G || {};
+    const ok = both(A, { K: 0, Kt: 0, W: 1, A: 1 }) && A.nav.S === 1 && A.drops >= 2 && eq(A.route, { K: 0, Kt: 0, W: 1, A: 1, S: 1 }) &&
+      A.pass.K.every((x) => x.o === 1) && A.pass.W.length === 1 && A.pass.W[0].o === 0 && A.pass.S.every((x) => x.o === 0) &&
+      eq(A.why, { K: 1, W: 0, S: 0 }) &&
+      both(r.Astr, { K: 1, W: 1, A: 0, S: 1 }) && r.Astr.route.Kt === 1 && strOk(r.Astr.K) && r.Astr.why.K === 0 &&
+      both(r.B, { K: 0, W: 1 }) && r.B.drops >= 1 &&
+      both(r.C, { K: 0, E: 1, N: 0 }) && both(r.Cstr, { K: 1, E: 0, N: 0 }) && strOk(r.Cstr.K) &&
+      both(r.D, { K: 0, W: 1 }) && r.D.drops >= 1 && both(r.E, { K: 0, W: 1 }) && r.E.drops >= 1 &&
+      both(r.F, { K: 0, W: 1, A: 1 }) && r.F.drops >= 1 &&
+      both(G, { Kt: 0, O: 1, K: 0 }) && G.pass.Kt.length === 0 && G.pass.O.length === 1;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
