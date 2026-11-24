@@ -6925,7 +6925,7 @@
       c.label === '어린이보호구역 신호·과속단속' && c.zone === 2 && !c.blue &&
       d.label === '운전자 신고 신호·과속단속' && d.blue && d.short === '신고 지점' && d.voice === '신고된 단속 지점' &&
       e.label === '과속단속' && !e.blue &&
-      f.rows === 22 && f.checked === 22 && f.zone === 3 &&   // v210: keys 네이버 확인 — 구갈·삼가 남동 확인(네이버 자리로), 판교JC 하행 합류는 없음(뺌). v213: 비룡로 신호·과속 50 더함. v233: 동해대로 80 174° 더함
+      f.rows === 26 && f.checked === 26 && f.zone === 3 &&   // v210: keys 네이버 확인 — 구갈·삼가 남동 확인(네이버 자리로), 판교JC 하행 합류는 없음(뺌). v213: 비룡로 신호·과속 50 더함. v233: 동해대로 80 174° 더함
       g.w15 === 9 && g.w17 === 14 && g.w18 === 16 && g.w165 === 12.5 && g.casing17 === 18 && g.dots === 3.4 && g.casingColor === '#141414' &&
       g.arrow17 && g.arrow17.inner === 14 && g.arrow17.shaft === 18;
     return { pass: !!ok, detail: JSON.stringify(r) };
@@ -7311,6 +7311,11 @@
     const ds = t.cams.rows.slice(t.cams.userBase).find((x) => hav({ lat: x[0], lng: x[1] }, { lat: 37.056037, lng: 129.405295 }) < 3);
     r.spot174 = ds ? { eb: ds.eb, lim: ds[2], kind: ds[3] } : null;
     r.kept18364 = [rows[18364].eb, rows[18364][2], rows[18370].eb, rows[18370][2]].join();
+    // v234: keys 네이버 판정 — 18364(175°)는 없음(끔), 18370(355°)은 있음(4m). 천호 50 신호과속 145°·324°, 올림픽로 50 신호과속 206°·후면 26°
+    r.off18364 = !inGrid(18364) && inGrid(18370);
+    const uRows = t.cams.rows.slice(t.cams.userBase);
+    const spotAt = (lat, lng) => { const x = uRows.find((q) => hav({ lat: q[0], lng: q[1] }, { lat, lng }) < 3); return x ? [x.eb, x[2], x[3], /후면/.test(t.camLabel(x)) ? 'rear' : ''].join() : 'none'; };
+    r.v234 = [spotAt(37.500405, 127.11154), spotAt(37.500305, 127.111628), spotAt(37.520222, 127.114359), spotAt(37.519582, 127.113968)];
     const D = r.dir;
     const ok = r.off.length === 0 && r.kept.length === 0 &&
       D.r743 === '108,0,-' && D.r17901 === '186,0,-' && D.r21632 === '115,0,-' && D.r23272 === '321,0,T' && D.r27681 === '117,0,-' &&
@@ -7319,7 +7324,8 @@
       /후면/.test(r.r23035.label) && /어린이보호구역/.test(r.r23035.label) && !r.r23035.text &&
       r.lane17901 && r.lim40.join() === '40,40' &&
       r.r18495.at.join() === '37.068206,129.391278' && r.r18495.eb === 112 && r.r18495.lane.join() === '37.068206,129.391278' && r.r18495.lim === 80 && r.r18495.text &&
-      !!r.spot174 && r.spot174.eb === 174 && r.spot174.lim === 80 && r.spot174.kind === 1 && r.kept18364 === '175,80,355,80';
+      !!r.spot174 && r.spot174.eb === 174 && r.spot174.lim === 80 && r.spot174.kind === 1 && r.kept18364 === '175,80,355,80' &&
+      r.off18364 && r.v234.join('|') === '145,50,3,|324,50,3,|206,50,3,|26,50,1,rear';
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
