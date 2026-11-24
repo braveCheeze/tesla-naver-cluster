@@ -7140,11 +7140,13 @@
     const hv = (x, la, lo) => hav({ lat: x[0], lng: x[1] }, { lat: la, lng: lo });
     const d110 = t.driverSpots.rows.filter((x) => hv(x, 37.290964, 127.103557) < 400 && x[4] === 110);
     r.d = d110.length; r.dAt = d110[0] ? [d110[0][0], d110[0][1], d110[0][2], d110[0][5]] : null;
+    // (e) v217: keys 가 네이버 '남은 거리' 칸으로 다시 잰 운전자 지점 22곳 중 30m 넘게 다른 것은 6번 줄 하나 — 43m 앞(37.229751,127.182203)으로
+    r.e = t.driverSpots.rows[6] ? t.driverSpots.rows[6].slice(0, 5) : null;
     const A = r.a, B = r.b, C = r.c;
     const ok = A.lat === 37.305554 && A.lng === 127.105888 && A.eb === 2 && A.sl === A.lat && A.sg === A.lng && !A.arrow && A.lim === 60 &&
       B.rear && B.eb === 197 && /후면/.test(B.label) &&
       C.n === 1 && C.lim === 50 && C.kind === 3 && C.eb === 61 && C.nv && !C.unchecked && !/운전자/.test(C.label) &&
-      r.d === 1 && JSON.stringify(r.dAt) === '[37.29103,127.10356,180,8]';
+      r.d === 1 && JSON.stringify(r.dAt) === '[37.29103,127.10356,180,8]' && JSON.stringify(r.e) === '[37.229751,127.182203,122,84,80]';
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
