@@ -334,7 +334,22 @@ if (!sqlite) {
   ok(recs.some((r) => r.cam === K1 && r.res === 'alert' && r.a === 400) && recs.some((r) => r.res === 'miss') && recs.some((r) => r.res === 'hidden') &&
     recs.some((r) => r.res === 'cover') && recs.some((r) => r.cam === K2 && r.v === '2026.11.16-198' && r.a === 350 && r.kmh === 60),
     'each pass kept in pass_rec with its verdict, card distance, speed and app version');
-  ok(cols('pass_rec') === 'id,day,cam,v,lim,kind,a,g,hid,kmh,nav,res,flag', 'pass_rec has no trip id, time or position column');
+  ok(cols('pass_rec') === 'id,day,cam,v,lim,kind,a,g,hid,kmh,nav,res,flag,at', 'pass_rec has no trip id, session, device or position column (v235: a time column, kept 30 days)');
+  // v235: 지난 시각 — 분 단위로 뭉개고, 지금에서 많이 먼 값은 비운다. 카메라마다 최근 통과(운영자만)
+  const K3 = '37.4001,127.1002|0', tNow = Date.now();
+  await call('POST', '/pass', { body: { v: '2026.11.16-235', items: [it(K3, { a: 420, t: tNow - 3 * 3600e3 + 12345 }), it(K3, { a: 0, t: tNow - 600e3 }),
+    it(K3, { a: 300, t: tNow + 3600e3 }), it(K3, { a: 280, t: tNow - 9 * 86400e3 }), it(K3, { a: 250, sid: 'sx', dev: 'dx' })] }, e: envS });
+  const r3 = rows('SELECT at FROM pass_rec WHERE cam = ? ORDER BY id', K3).map((x) => x.at);
+  ok(r3[0] === Math.round((tNow - 3 * 3600e3 + 12345) / 60000) * 60000 && r3[1] === Math.round((tNow - 600e3) / 60000) * 60000 && r3[2] === null && r3[3] === null && r3[4] === null,
+    'a pass time is kept to the minute; one in the future, days old or missing is stored empty');
+  ok((await call('GET', '/passes?cam=' + encodeURIComponent(K3))).s === 401, '/passes?cam= needs the operator token');
+  ok((await call('GET', '/passes?cam=bad', { token: TOKEN, e: envS })).s === 400, '/passes?cam= with a bad key → 400');
+  const pc = (await call('GET', '/passes?cam=' + encodeURIComponent(K3), { token: TOKEN, e: envS })).j;
+  ok(pc.cam === K3 && pc.keepTimeDays === 30 && pc.passes.length === 5 && pc.passes[0].at === r3[1] && pc.passes[1].at === r3[0] && pc.passes[0].res === 'miss' && pc.passes[1].res === 'alert' &&
+    pc.passes[1].a === 420 && pc.passes[1].kmh === 60 && pc.passes[1].v === '2026.11.16-235' && pc.passes[4].at === null &&
+    !pc.passes.some((x) => 'sid' in x || 'dev' in x || 'lat' in x || 'rid' in x), "/passes?cam= gives that camera's passes newest first: time, result, alert distance, speed, nav, version — no session, device, trip or position");
+  for (let i = 0; i < 60; i++) await call('POST', '/pass', { body: { items: [it(K3, { a: 100, t: tNow - i * 1000 })] }, e: envS, ip: '10.1.' + i + '.1' });
+  ok((await call('GET', '/passes?cam=' + encodeURIComponent(K3), { token: TOKEN, e: envS })).j.passes.length === 50, '/passes?cam= gives at most 50');
   // (8) v198 테스터 주행 경로: 무작위 주행 번호, 출발부터 도착까지 그대로, 조각으로
   const RID = 'abc123def456ghi7';
   const P = Array.from({ length: 30 }, (_, i) => [i * 5, 3727000 + i * 10, 12710576, 60, 180]);
@@ -346,6 +361,10 @@ if (!sqlite) {
   ok(t1.s === 200 && t1.j.ok && t1.j.stored === 30 && rows('SELECT COUNT(*) AS n FROM pass_rec')[0].n === nRec0, '/trip stores a part (bad points dropped); passes already sent by /pass are not counted twice');
   await call('POST', '/trip', { body: { rid: RID, part: 1, d: today(), end: 1, ps: 0, pts: P.map((q) => [q[0] + 200, q[1] + 400, q[2], q[3], q[4]]), cams: [camT({ s: 230, a: 300 })], sid: 'BAD SID!', t0: Date.now() - 9 * 86400000 }, e: envS });
   ok(rows('SELECT COUNT(*) AS n FROM pass_rec')[0].n === nRec0 + 1, 'a car with pass statistics off: its route passes go to pass_rec at once');
+  // v235: 그 통과의 시각 = 조각 t0 - 첫 점의 출발 뒤 초 + 카메라의 출발 뒤 초
+  await call('POST', '/trip', { body: { rid: 'tripat000001', part: 0, d: today(), end: 1, ps: 0, t0: T0, pts: P.map((q) => [q[0] + 100, q[1], q[2], q[3], q[4]]), cams: [camT({ s: 130, k: K2 })] }, e: envS });
+  const lastRec = rows('SELECT at FROM pass_rec ORDER BY id DESC LIMIT 1')[0];
+  ok(lastRec.at === Math.round((T0 - 100 * 1000 + 130 * 1000) / 60000) * 60000, 'a route pass from a car with statistics off gets its time from the part start (t0)');
   // v231 (운전자 '접속만 잇기 (A)'): 접속 번호(sid)와 조각 첫 점 시각(t0)은 남긴다. 기기 번호·브라우저·IP 는 여전히 없다
   ok(cols('trips') === 'id,day,rid,part,endf,op,v,n,km,ncam,misses,pts,cams,sid,t0' && !/leak|devleak1/.test(JSON.stringify(rows('SELECT * FROM trips'))),
     'trips keep the session id and start time, but no device id, browser or IP');
@@ -372,6 +391,7 @@ if (!sqlite) {
   await call('POST', '/pass', { body: { items: [] }, e: envS });
   ok(rows('SELECT COUNT(*) AS n FROM trips')[0].n === 0 && rows('SELECT COUNT(*) AS n FROM op_pass')[0].n > 0 && keep().join() === k0.join(),
     'after 31 days the raw routes are gone; operator rows, pass records, totals, cells and handoffs kept');
+  ok(rows('SELECT COUNT(*) AS n FROM pass_rec WHERE at IS NOT NULL')[0].n === 0, 'after 31 days the pass times are cleared (the pass records stay)');
   ok((await call('GET', '/trips?rid=' + RID, { token: TOKEN, e: envS })).j.parts.length === 0, 'an old route is not served');
   shift += 70 * DAY;
   await call('POST', '/pass', { body: { items: [] }, e: envS });
@@ -473,6 +493,9 @@ if (sqlite) {
     'op INTEGER NOT NULL, v TEXT, n INTEGER NOT NULL, km REAL NOT NULL, ncam INTEGER NOT NULL, misses INTEGER NOT NULL, pts TEXT NOT NULL, cams TEXT NOT NULL)');
   const kd = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
   db3.prepare("INSERT INTO trips (day, rid, part, endf, op, v, n, km, ncam, misses, pts, cams) VALUES (?, 'oldtrip000001', 0, 1, 0, 'v', 1, 0.1, 0, 0, '[]', '[]')").run(kd);
+  // v235: 예전 pass_rec (at 없음)
+  db3.exec('CREATE TABLE pass_rec (id INTEGER PRIMARY KEY AUTOINCREMENT, day TEXT NOT NULL, cam TEXT NOT NULL, v TEXT, lim INTEGER, kind INTEGER, ' +
+    'a INTEGER NOT NULL, g INTEGER NOT NULL, hid INTEGER NOT NULL, kmh INTEGER, nav INTEGER NOT NULL, res TEXT NOT NULL, flag INTEGER NOT NULL DEFAULT 0)');
   const st3 = (sql, args) => ({ bind: (...a) => st3(sql, a), run: async () => { db3.prepare(sql).run(...(args || [])); return { success: true }; },
     all: async () => ({ results: db3.prepare(sql).all(...(args || [])) }), first: async () => db3.prepare(sql).get(...(args || [])) || null,
     _sync: () => (/^\s*(select|pragma)/i.test(sql) ? db3.prepare(sql).all(...(args || [])) : db3.prepare(sql).run(...(args || []))) });
@@ -483,6 +506,7 @@ if (sqlite) {
   const old3 = db3.prepare("SELECT sid, t0 FROM trips WHERE rid = 'oldtrip000001'").get(), new3 = db3.prepare("SELECT sid FROM trips WHERE rid = 'newtrip000001'").get();
   ok(r3.status === 200 && c3.endsWith(',sid,t0') && old3 && old3.sid === null && new3 && new3.sid === 'sess0003',
     'an old trips table gets the sid and t0 columns on the first request, old rows kept (empty), new rows filled');
+  ok(db3.prepare('PRAGMA table_info(pass_rec)').all().map((c) => c.name).join(',').endsWith(',flag,at'), 'an old pass_rec table gets the at column');
 }
 
 Date.now = realNow;

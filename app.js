@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-234'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-235'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -7807,7 +7807,8 @@
     const hid = !camWanted(c) ? 1 : fl === 'hide' ? 2 : fl === 'doubt' ? 3 : 0;
     const a = s ? Math.min(5000, Math.max(10, Math.round(s.first / 10) * 10)) : 0;
     const g = !s && (camState.passed.has(i) || camState.saidById.has(i)) ? 1 : 0;   // 같은 자리 다른 행을 알리고 함께 지남
-    const rec = { k: passKey(c), d: kstDayOf(m.t), lim: c[2] | 0, kind: c[3], a, g, hid, kmh: Math.round(m.kmh / 5) * 5, nav: m.nav ? 1 : 0 };
+    // v235 (운전자 '시간 언제인지 뭐 그런 거 있으면 좋겠다'): 지난 시각 t (분 단위로 뭉갬). 서버는 30일만 두고 지운다
+    const rec = { k: passKey(c), d: kstDayOf(m.t), t: Math.round(m.t / 60000) * 60000, lim: c[2] | 0, kind: c[3], a, g, hid, kmh: Math.round(m.kmh / 5) * 5, nav: m.nav ? 1 : 0 };
     if (testPage) rec.x = 1;   // v219: 시험 페이지에서 만든 기록 (서버가 버린다)
     routeCam(rec, m);   // v198: 주행 경로에도 카메라마다 통과·경고·거리·속도·제한
     if (!prefs.passStats) return;

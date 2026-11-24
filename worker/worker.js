@@ -203,6 +203,8 @@ const PASS_KINDS = new Set([1, 2, 3, 8, 9]);
 //   테스터 주행 경로 원본(trips) 30일, 운영자 차 통과 기록(op_pass) 90일. 그 밖의 표(통과 기록 pass_rec, 카메라 날짜별 합계 cam_day,
 //   자료에 없는 단속 후보 격자 cand_day, 넘긴 내역 handoff)는 원본과 따로 두고 지우지 않는다.
 const PASS_OP_DAYS = 90, TRIP_DAYS = 30;
+// v235 (운전자 '시간 언제인지 뭐 그런 거 있으면 좋겠다'): 통과 한 건(pass_rec)의 시각(at, 분 단위 ms)은 30일만 두고 지운다 — 줄(판정·경고 거리·속도)은 예전처럼 계속
+const PASS_TIME_DAYS = 30;
 const inKorea = (lat, lng) => lat > 33 && lat < 39 && lng > 124 && lng < 132;
 const intIn = (v, lo, hi) => { const n = Math.round(Number(v)); return Number.isFinite(n) && n >= lo && n <= hi ? n : null; };
 const appVer = (v) => (typeof v === 'string' && /^[0-9][0-9.\-]{0,23}$/.test(v) ? v : '');
@@ -241,6 +243,9 @@ async function passDb(env) {
       const add = [];
       if (!have.has('sid')) add.push(S.prepare('ALTER TABLE trips ADD COLUMN sid TEXT'));
       if (!have.has('t0')) add.push(S.prepare('ALTER TABLE trips ADD COLUMN t0 INTEGER'));
+      // v235: 통과 한 건의 시각 (30일 뒤 지운다)
+      const haveP = new Set(((await S.prepare('PRAGMA table_info(pass_rec)').all()).results || []).map((c) => c.name));
+      if (!haveP.has('at')) add.push(S.prepare('ALTER TABLE pass_rec ADD COLUMN at INTEGER'));
       if (add.length) await S.batch(add);
       return true;
     }).then(() => true, (e) => { passReady = null; throw e; });
@@ -256,10 +261,10 @@ const CAM_UP = 'INSERT INTO cam_day (day, cam, lim, kind, n, alerted, covered, m
   'ON CONFLICT(day, cam) DO UPDATE SET lim = excluded.lim, kind = excluded.kind, n = n + excluded.n, alerted = alerted + excluded.alerted, ' +
   'covered = covered + excluded.covered, missed = missed + excluded.missed, hidden = hidden + excluded.hidden, flagged = flagged + excluded.flagged, ' +
   'navn = navn + excluded.navn, over = over + excluded.over, adist = adist + excluded.adist';
-const REC_INS = 'INSERT INTO pass_rec (day, cam, v, lim, kind, a, g, hid, kmh, nav, res, flag) ' +
+const REC_INS = 'INSERT INTO pass_rec (day, cam, v, lim, kind, a, g, hid, kmh, nav, res, flag, at) ' +
   "SELECT json_extract(value, '$.day'), json_extract(value, '$.cam'), json_extract(value, '$.v'), json_extract(value, '$.lim'), json_extract(value, '$.kind'), " +
   "json_extract(value, '$.a'), json_extract(value, '$.g'), json_extract(value, '$.hid'), json_extract(value, '$.kmh'), json_extract(value, '$.nav'), " +
-  "json_extract(value, '$.res'), json_extract(value, '$.flag') FROM json_each(?)";
+  "json_extract(value, '$.res'), json_extract(value, '$.flag'), json_extract(value, '$.at') FROM json_each(?)";
 function passStmts(db, items, dayOf, v, stmts) {
   const agg = new Map(), recs = [];
   for (const it of items) {
@@ -284,7 +289,9 @@ function passStmts(db, items, dayOf, v, stmts) {
     if (hid >= 2) e.flagged++;                           // 이 차에서 '틀림'으로 표시한 카메라
     if (nav) e.navn++;
     if (kmh !== null && lim > 0 && kmh > lim) e.over++;
-    recs.push({ day: d, cam: k, v, lim, kind, a, g, hid, kmh, nav, res, flag: hid >= 2 ? 1 : 0 });
+    // v235: 지난 시각(분 단위). 지금보다 10분 넘게 뒤거나 나흘 넘게 앞이면 비운다
+    const t = Number(it.t), at = Number.isFinite(t) && t <= Date.now() + 600000 && t >= Date.now() - 4 * 86400000 ? Math.round(t / 60000) * 60000 : null;
+    recs.push({ day: d, cam: k, v, lim, kind, a, g, hid, kmh, nav, res, flag: hid >= 2 ? 1 : 0, at });
   }
   if (agg.size) stmts.push(db.prepare(CAM_UP).bind(JSON.stringify([...agg.values()])));
   if (recs.length) stmts.push(db.prepare(REC_INS).bind(JSON.stringify(recs)));
@@ -296,6 +303,7 @@ function passCleanup(db, today, stmts) {
   passCleaned = today;
   stmts.push(db.prepare('DELETE FROM op_pass WHERE day < ?').bind(dayBefore(today, PASS_OP_DAYS)));
   stmts.push(db.prepare('DELETE FROM trips WHERE day < ?').bind(dayBefore(today, TRIP_DAYS)));
+  stmts.push(db.prepare('UPDATE pass_rec SET at = NULL WHERE at IS NOT NULL AND day < ?').bind(dayBefore(today, PASS_TIME_DAYS)));   // v235
 }
 // 날짜 'YYYY-MM-DD' 가 오늘(한국)부터 3일 전 ~ 1일 뒤면 그대로, 아니면 오늘
 // v219: 오늘(한국 날짜)보다 뒤 날짜는 받지 않는다 (null: 버림). 2026-11-24 운영 통계에 시험 페이지의 가짜 시계 기록(11-25)이 들어왔다.
@@ -756,6 +764,15 @@ export default {
         const db = await passDb(env);
         if (!db) return json({ v: 1, day: today, stats: false, cams: [], cands: [], daily: [], op: [] }, 200, cors);
         const days = intIn(p.get('days'), 1, 400) || 30, from = dayBefore(today, days - 1);
+        // v235: 한 카메라의 최근 통과 (운영자만 — /passes 는 토큰): 시각·판정·경고 거리·속도·길안내·앱 버전, 최근 것부터 50건.
+        // 시각은 30일만 남으므로 그보다 오래된 줄은 at 이 비어 있다. 주행 번호·접속·기기·위치는 없다(카메라 열쇠뿐)
+        const camQ = p.get('cam');
+        if (camQ !== null) {
+          if (!PASS_KEY.test(camQ)) return json({ error: 'bad cam' }, 400, cors);
+          const rp = await db.prepare('SELECT at, day, res, a, kmh, nav, v, lim, kind, flag FROM pass_rec WHERE cam = ? AND day >= ? ' +
+            'ORDER BY (at IS NULL), at DESC, id DESC LIMIT 50').bind(camQ, from).all();
+          return json({ v: 1, cam: camQ, from, keepTimeDays: PASS_TIME_DAYS, passes: rp.results || [] }, 200, cors);
+        }
         const candDays = intIn(p.get('candDays'), 1, 30) || 2, candN = intIn(p.get('candN'), 1, 1000) || 3;
         const [r1, r2, r3] = await Promise.all([
           db.prepare('SELECT cam, MAX(lim) AS lim, MAX(kind) AS kind, SUM(n) AS n, SUM(alerted) AS alerted, SUM(covered) AS covered, SUM(missed) AS missed, ' +
@@ -834,7 +851,9 @@ export default {
         const stmts = [db.prepare('INSERT INTO trips (day, rid, part, endf, op, v, n, km, ncam, misses, pts, cams, sid, t0) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
           .bind(d, rid, intIn(b.part, 0, 100000) || 0, b.end ? 1 : 0, isAdmin ? 1 : 0, appVer(b.v), pts.length, Math.round(km * 100) / 100, cams.length, misses,
             JSON.stringify(pts), JSON.stringify(cams), sid, t0)];
-        if (b.ps === 0) passStmts(db, cams, () => d, appVer(b.v), stmts);   // 통과 통계를 끈 차: 경로 조각에서 바로 통과 기록을 남긴다
+        // 통과 통계를 끈 차: 경로 조각에서 바로 통과 기록을 남긴다. v235: 시각은 조각 첫 점 시각(t0)과 그 점의 '출발 뒤 초'로 주행 시작을 되짚어
+        const base = t0 !== null ? t0 - (pts.length ? pts[0][0] * 1000 : 0) : null;
+        if (b.ps === 0) passStmts(db, cams.map((c) => (base !== null ? Object.assign({}, c, { t: base + c.s * 1000 }) : c)), () => d, appVer(b.v), stmts);
         passCleanup(db, today, stmts);
         await db.batch(stmts);
         return json({ ok: true, stored: pts.length, cams: cams.length }, 200, cors);

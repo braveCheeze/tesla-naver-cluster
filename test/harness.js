@@ -6203,7 +6203,7 @@
       const lim0 = row[2]; row[2] = 0;
       try { direct(false); } finally { row[2] = lim0; }
       r.d = pick(key);
-      // (e) 보내는 묶음: 정해진 칸뿐, 위치·시각·sid 없음, 받으면 함이 빈다
+      // (e) 보내는 묶음: 정해진 칸뿐, 위치·sid·기기 없음(v235: 시각 t 는 분 단위로 뭉개서), 받으면 함이 빈다
       ps.q.length = 0;
       direct(false);
       ps.nextAt = 0;
@@ -6211,9 +6211,10 @@
       const b = bodies[bodies.length - 1] || {};
       const okKeys = (o, allow) => Object.keys(o).every((k) => allow.includes(k));
       r.e = { sent, body: Object.keys(b).sort().join(','), items: (b.items || []).length,
-        itemKeys: (b.items || []).every((x) => okKeys(x, ['k', 'd', 'lim', 'kind', 'a', 'g', 'hid', 'kmh', 'nav', 'x'])),
+        itemKeys: (b.items || []).every((x) => okKeys(x, ['k', 'd', 't', 'lim', 'kind', 'a', 'g', 'hid', 'kmh', 'nav', 'x'])),
+        tMin: (b.items || []).length > 0 && (b.items || []).every((x) => Number.isFinite(x.t) && x.t % 60000 === 0),
         synth: (b.items || []).length > 0 && (b.items || []).every((x) => x.x === 1),   // v219: 시험 페이지에서 만든 기록은 x: 1 (서버가 버린다)
-        kmh5: (b.items || []).every((x) => x.kmh % 5 === 0), noSid: !/"(sid|dev|lat|lng|t|trace)"/.test(JSON.stringify(b)), left: ps.q.length, stored: t.store.get('passQ') };
+        kmh5: (b.items || []).every((x) => x.kmh % 5 === 0), noSid: !/"(sid|dev|lat|lng|trace|rid)"/.test(JSON.stringify(b)), left: ps.q.length, stored: t.store.get('passQ') };
       // (f) 자료에 없는 감속: 시속 90 → 60 → 90 (곧은 길, 400m 안 카메라 없음) 이면 후보 1, 막힘처럼 시속 18까지 줄면 아님
       const O = dest(NAV_ORIGIN, 90, 80000);
       const prof = [];
@@ -6263,7 +6264,7 @@
     const ok = !!r.key && A && A.a >= 100 && A.g === 0 && A.hid === 0 && A.kmh === 60 && A.lim === 60 &&
       B && B.a === 0 && B.g === 0 && B.hid === 0 && B.kmh === 60 &&
       r.c.length === 0 && D && D.hid === 1 && D.a === 0 &&
-      r.e.sent === true && r.e.body === 'cand,items,v' && r.e.items >= 1 && r.e.itemKeys && r.e.synth && r.e.kmh5 && r.e.noSid && r.e.left === 0 && r.e.stored == null &&
+      r.e.sent === true && r.e.body === 'cand,items,v' && r.e.items >= 1 && r.e.itemKeys && r.e.tMin && r.e.synth && r.e.kmh5 && r.e.noSid && r.e.left === 0 && r.e.stored == null &&
       F && F.dr === 30 && F.o === 0 && r.f.cells.includes(F.c) && r.f.jam === 0 &&
       r.g.op !== 'none' && r.g.op.miss === 1 && r.g.op.lat === CAM.lat && r.g.op.trace > 0 && r.g.sentOp >= 1 && !r.g.pubLat &&
       r.h.pref === false && r.h.stored === '0' && r.h.left === 0 && r.h.after === 0 && /통계/.test(r.h.label) && r.h.back;
