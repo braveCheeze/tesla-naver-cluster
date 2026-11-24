@@ -37,12 +37,23 @@ def dist_m(a_lat, a_lng, b_lat, b_lng):
     return math.hypot((a_lat - b_lat) * 110540.0, (a_lng - b_lng) * 111320.0 * math.cos(math.radians((a_lat + b_lat) / 2)))
 
 
-def find(rows, o):
+def texts_of(d):
+    """줄 번호 -> 설치장소 글 [A, B] (없으면 없음)"""
+    al, an = d.get('arrows') or [], d.get('arrowNames') or []
+    return {al[k]: [an[al[k + 1]], an[al[k + 2]]] for k in range(0, len(al) - 2, 3)}
+
+
+def find(rows, o, texts=None):
+    """v215: 한 기둥 짝의 두 줄은 자리·제한·종류가 같아서, was 에 zone(보호구역)·text(설치장소 글, null 이면 글 없음)가 있으면 그것도 맞춘다"""
     w, n = o['was'], o['now']
     spots = [(w['lat'], w['lng'])] + ([(n['lat'], n['lng'])] if 'lat' in n else [])
     out = []
     for i, r in enumerate(rows):
         if r[2] != w['limit'] or r[3] != w['kind']:
+            continue
+        if 'zone' in w and r[6] != w['zone']:
+            continue
+        if 'text' in w and (texts or {}).get(i) != w['text']:
             continue
         if any(dist_m(r[0], r[1], la, lo) <= NEAR_M for la, lo in spots):
             out.append(i)
@@ -68,10 +79,11 @@ def apply(d, spec=None):
     """d: cameras.json 자료(dict). 고친 줄마다 결과 {'row 21232': 'ok 21232', ...}, 못 찾으면 'MISSING'·'AMBIGUOUS [..]'"""
     spec = spec or load()
     rows, dirs = d['rows'], d.get('dirs')
+    texts = texts_of(d)
     report = {}
     for o in spec['cams']:
         key = '%s %s' % (o['ver'], o['row'])
-        hit = find(rows, o)
+        hit = find(rows, o, texts)
         if len(hit) != 1:
             report[key] = 'MISSING' if not hit else 'AMBIGUOUS %s' % hit
             continue

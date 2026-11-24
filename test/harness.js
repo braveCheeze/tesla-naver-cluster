@@ -2905,6 +2905,7 @@
     { id: 'S142', name: "S142 wider trip card and a gap above the speed (v212, driver '너무 붙어있는 느낌이라 조금 와이드하게 UI 개선해주고 속도도 조금 갭을 줘'): the bottom-left glass card is wider with even cells and a thin line under the compass row; on a wide screen the big speed sits the card's height plus 18 px above it (it used to touch the card), and only the speed hides when the drawer or report button reaches it", fn: s142 },
     { id: 'S143', name: "S143 old driver reports checked on Naver both ways (v213): 용구대로 60 (row 21232) moves to Naver's northbound point and faces north, without the old '보정역→구성역' place text; 남북대로 80 (row 19618) is a rear camera like Naver; a missing 신호·과속 50 on 비룡로 (남양주 화도) is added as a checked spot; 신갈JC has one 이동식 110 spot, moved 210 m north to Naver's point in v214", fn: s143 },
     { id: 'S144', name: "S144 report's nearby cameras say where each came from (v215, keys 2026-11-24: an 울산 report listed the driver's own 놓침 spot, limit 0 and no direction, and the admin page showed it as a real camera '과속 제한 모름'): src 'cam' for police fixed cameras, 'mobile' for box and mobile points, 'spot' for spots the app adds, with who ('mine' this car, 'driver' driver or shared spot, 'crowd') and nv for Naver-checked", fn: s144 },
+    { id: 'S145', name: "S145 single-pole camera pairs follow their place text (v216): in 184 pairs the two records swap directions so each direction matches its own 'A→B' text (lane point moves with the direction); 6 pairs stay as before (5 where the two records differ in school or elder zone, until Naver shows which way the zone is, and 6741/6742)", fn: s145 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -7183,6 +7184,21 @@
     }
     const ok = r.base === 'cam' && r.mine && r.mine.who === 'mine' && r.mine.eb === -1 && !r.mine.nv && r.allHaveSrc && r.noWhoOnCams &&
       r.mobile === 'mobile/cam' && r.firstCam === 'cam' && r.driver === 'spot';
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S145: 한 기둥 짝 (v216). 184 쌍은 줄마다 설치장소 글 방향으로 (두 줄의 방향 칸을 맞바꿈, 차로 위 점도 따라감), 6 쌍은 그대로
+  //   (a) 129/130 완도 청해진서로 30: 129 '완도읍→군외면' 은 273°, 130 '군외면→완도읍' 은 93° (예전 93°·273°), 차로 위 점은 방향을 따라감
+  //   (b) 보류: 1115/1116 평인일주로(보호구역 다름) 318°·138°, 6741/6742 68° 문제 248°·68° 그대로
+  async function s145() {
+    const t = T(), r = {};
+    await waitFor(() => t.cams.loaded, 10000, 100);
+    const rows = t.cams.rows, at = (i) => ({ eb: rows[i].eb, lane: [Math.round(rows[i].sl * 1e5), Math.round(rows[i].sg * 1e5)] });
+    r.a = { r129: at(129), r130: at(130) };
+    r.b = { r1115: rows[1115].eb, r1116: rows[1116].eb, r6741: rows[6741].eb, r6742: rows[6742].eb };
+    const a = r.a, b = r.b;
+    const ok = a.r129.eb === 273 && a.r130.eb === 93 && a.r129.lane.join() === '3432457,12670131' && a.r130.lane.join() === '3432458,12670123' &&
+      b.r1115 === 318 && b.r1116 === 138 && b.r6741 === 248 && b.r6742 === 68;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

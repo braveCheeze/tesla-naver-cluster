@@ -20,7 +20,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 CAMS = os.path.join(ROOT, 'data', 'cameras.json')
 OV = runpy.run_path(os.path.join(HERE, 'cam_overrides.py'))
-apply, load, find, problems = OV['apply'], OV['load'], OV['find'], OV['problems']
+apply, load, find0, problems, texts_of = OV['apply'], OV['load'], OV['find'], OV['problems'], OV['texts_of']
+
+
+def find(d, o):
+    return find0(d['rows'], o, texts_of(d))
 STAGES = ['build_cams.py', 'osm_cams.py', 'osm_arrows.py', 'osm_stopline.py', 'cam_fill.py']
 
 fails = []
@@ -40,7 +44,7 @@ def revert(d, spec):
     """고침을 고치기 전 값으로 되돌린다 (경찰청 원본·OSM 으로 다시 만든 자료처럼)"""
     rows, dirs = d['rows'], d.get('dirs')
     for o in spec['cams']:
-        hit = find(rows, o)
+        hit = find(d, o)
         assert len(hit) == 1, (o['row'], hit)
         i, w, n = hit[0], o['was'], o['now']
         r = rows[i]
@@ -81,7 +85,7 @@ def main():
     revert(d2, spec)
     check('revert really undoes the fixes', dump(d2) != raw)
     for o in spec['cams']:
-        i = find(d2['rows'], o)[0]
+        i = find(d2, o)[0]
         r = d2['rows'][i]
         check('reverted %s %s is back at the police point' % (o['ver'], o['row']), [r[0], r[1]] == [o['was']['lat'], o['was']['lng']])
     rep2 = apply(d2, spec)
@@ -93,7 +97,7 @@ def main():
     al = d2['arrows']
     arrow_rows = {al[k] for k in range(0, len(al) - 2, 3)}
     for o in spec['cams']:
-        i = find(rows, o)[0]
+        i = find(d2, o)[0]
         n, r, e = o['now'], rows[i], dirs[i]
         ok = True
         if 'lat' in n:
@@ -111,7 +115,7 @@ def main():
     # 3. 원본이 바뀌면 알린다
     d3 = copy.deepcopy(now)
     o = spec['cams'][-1]
-    d3['rows'][find(d3['rows'], o)[0]][2] += 10
+    d3['rows'][find(d3, o)[0]][2] += 10
     rep3 = apply(d3, spec)
     check('a camera that changed in the source is reported, not silently skipped', rep3.get('%s %s' % (o['ver'], o['row'])) == 'MISSING', json.dumps(rep3, ensure_ascii=False))
 

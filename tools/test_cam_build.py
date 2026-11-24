@@ -142,9 +142,12 @@ def build(csv, pbf, work):
         check('two rebuilds give a byte-identical %s (hash seeds 1 and 2)' % f, x == y, '%d vs %d bytes' % (len(x), len(y)))
     cam = json.load(open(os.path.join(a, 'data', 'cameras.json'), encoding='utf-8'))
     votes = json.load(open(os.path.join(a, 'pair_votes.json'), encoding='utf-8'))
+    ov = runpy.run_path(os.path.join(HERE, 'cam_overrides.py'))
+    # v216: 네이버 고침(cam_overrides.json)으로 일부러 묶어 둔 짝(보호구역이 다른 짝 등)은 글과 달라도 된다
+    pinned = {int(v.split()[1]) for v in ov['apply'](json.loads(json.dumps(cam))).values() if v.startswith('ok')}
     bad, moved, decided = [], [], 0
     for di, i, j, ei, ej, ci, cj, tv in votes:
-        if di != 0:
+        if di != 0 or i in pinned or j in pinned:
             continue
         if ei < 0 or ej < 0 or ci or cj:
             continue
@@ -159,7 +162,6 @@ def build(csv, pbf, work):
             moved.append((i, j, ei, fi, ej, fj))
     check('every pole pair agrees with its place text (%d pairs with text)' % decided, not bad, bad[:10])
     check('later stages do not turn pole pairs around', not moved, moved[:10])
-    ov = runpy.run_path(os.path.join(HERE, 'cam_overrides.py'))
     rep = ov['apply'](json.loads(json.dumps(cam)))
     check('Naver overrides are in the rebuilt file', not ov['problems'](rep), rep)
     print('rebuilt files kept in', work)
