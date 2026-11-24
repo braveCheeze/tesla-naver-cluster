@@ -2903,7 +2903,7 @@
     { id: 'S140', name: "S140 arrival like Naver (v209, driver '네이버 지도 보면은 도착지점 거의 도착할 때 화살표로 알려 주잖아', '도착 건물에만 나오면 될 거 같아 화살표로 들어가는 것까지 표기 해 주면 좋을 것 같다'): the last turn before the goal stays its own row (row 2 shows ↰ with its distance, then the goal pin); from where the route ends a thick white arrow with a black outline goes into the building instead of the dotted line, and the goal distance counts to the building; with no turn left, the row says which side the building is on ('목적지 · 왼쪽/오른쪽' with an arrow-and-pin icon); a walk from a parking entrance keeps the dots", fn: s140 },
     { id: 'S141', name: "S141 arrow size has a limit (v211, driver '저 확대한다고해서 저화살표가 계속 커지는게 아니고 어느정도 한계가 있다고봐야 해 크기가 너무 커져도 이상해져버리니까'): route line and arrows stop growing at zoom 18 (16px); on the GL map the arrow head is sized for the GL scale (it was drawn twice as big as meant); an arrow that was removed stays hidden even if the map puts it back; a last turn just before the route end joins the building arrow into one arrow (all arrows go away on arrival); a short stretch after the last turn still points the head the way you turn", fn: s141 },
     { id: 'S142', name: "S142 wider trip card and a gap above the speed (v212, driver '너무 붙어있는 느낌이라 조금 와이드하게 UI 개선해주고 속도도 조금 갭을 줘'): the bottom-left glass card is wider with even cells and a thin line under the compass row; on a wide screen the big speed sits the card's height plus 18 px above it (it used to touch the card), and only the speed hides when the drawer or report button reaches it", fn: s142 },
-    { id: 'S143', name: "S143 old driver reports checked on Naver both ways (v213): 용구대로 60 (row 21232) moves to Naver's northbound point and faces north, without the old '보정역→구성역' place text; 남북대로 80 (row 19618) is a rear camera like Naver; a missing 신호·과속 50 on 비룡로 (남양주 화도) is added as a checked spot; nothing new at 신갈JC, where the 이동식 110 spot already is", fn: s143 },
+    { id: 'S143', name: "S143 old driver reports checked on Naver both ways (v213): 용구대로 60 (row 21232) moves to Naver's northbound point and faces north, without the old '보정역→구성역' place text; 남북대로 80 (row 19618) is a rear camera like Naver; a missing 신호·과속 50 on 비룡로 (남양주 화도) is added as a checked spot; 신갈JC has one 이동식 110 spot, moved 210 m north to Naver's point in v214", fn: s143 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -7119,7 +7119,8 @@
   //       경찰 자료의 '보정역→구성역'(남행) 글은 뺀다 — 남아 있으면 글이 기하보다 먼저라 남행에 뜨고 북행에서 빠진다
   //   (b) 19618 남북대로 80: 네이버 '후면단속'(197°) → 후면 표시, 이름 '후면 과속단속'
   //   (c) 남양주 화도 비룡로 신호·과속 50 (37.687098,127.311909, 61°): 공공자료에 없던 것, 네이버 확인 지점으로 더함 (보통 카메라처럼)
-  //   (d) 신갈JC 하행 이동식 110: 새로 넣지 않는다 — 이미 있는 확인 지점(37.289158)과 200m 거리라 같은 카메라로 두 번 뜰 수 있다
+  //   (d) 신갈JC 하행 이동식 110: 한 대뿐 (v214, keys 가 네이버 '목적지까지 남은 거리' 칸으로 다시 잼: 37.29103,127.10356).
+  //       v191 자리(37.289158)에서 210m 북쪽으로 옮겼고, 두 번째 지점은 넣지 않는다
   async function s143() {
     const t = T(), r = {};
     await waitFor(() => t.cams.loaded, 10000, 100);
@@ -7131,12 +7132,13 @@
     const nv = rows.slice(base).filter((c) => Math.abs(c[0] - 37.687098) < 1e-6 && Math.abs(c[1] - 127.311909) < 1e-6);
     r.c = nv.length ? { n: nv.length, lim: nv[0][2], kind: nv[0][3], eb: nv[0].eb, nv: !!nv[0].nv, unchecked: t.spotUnchecked(nv[0]), label: t.camLabel(nv[0]) } : { n: 0 };
     const hv = (x, la, lo) => hav({ lat: x[0], lng: x[1] }, { lat: la, lng: lo });
-    r.d = t.driverSpots.rows.filter((x) => hv(x, 37.290964, 127.103557) < 400 && x[4] === 110).length;
+    const d110 = t.driverSpots.rows.filter((x) => hv(x, 37.290964, 127.103557) < 400 && x[4] === 110);
+    r.d = d110.length; r.dAt = d110[0] ? [d110[0][0], d110[0][1], d110[0][2], d110[0][5]] : null;
     const A = r.a, B = r.b, C = r.c;
     const ok = A.lat === 37.305554 && A.lng === 127.105888 && A.eb === 2 && A.sl === A.lat && A.sg === A.lng && !A.arrow && A.lim === 60 &&
       B.rear && B.eb === 197 && /후면/.test(B.label) &&
       C.n === 1 && C.lim === 50 && C.kind === 3 && C.eb === 61 && C.nv && !C.unchecked && !/운전자/.test(C.label) &&
-      r.d === 1;
+      r.d === 1 && JSON.stringify(r.dAt) === '[37.29103,127.10356,180,8]';
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
