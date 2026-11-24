@@ -1794,6 +1794,8 @@
   .colorrow.cl-left .sp-far2 { left: auto; right: 2px; }
   .colorrow.split #colorDist { position: absolute; left: 14px; bottom: 6px; font-size: 21px; }
   #app.tesla .colorrow.split { border-top: 0; border-bottom: 1px solid var(--nv-line); }
+  /* v209 목적지가 어느 쪽인지: 곧은 초록 화살표 끝 옆에 빨간 핀 (안내 줄·그다음 칸) */
+  .turnicon svg.goal-side, .nexticon svg.goal-side, #app.tesla .turnicon svg.goal-side, #app.tesla .nexticon svg.goal-side { stroke: none; }
   /* 분기점 확대 그림도: 다른 갈래 표지는 흐리게(읽히게), 우리 갈래 표지가 진하다 */
   .junccard.nv .jc-label.jc-other { opacity: .74; filter: saturate(.45); box-shadow: none; }
 </style>
@@ -2158,8 +2160,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-208"></script>
-<script src="img/ai/picks.js?v=2026.11.16-208"></script>
-<script src="app.js?v=2026.11.16-208"></script>
+<script src="icons.js?v=2026.11.16-209"></script>
+<script src="img/ai/picks.js?v=2026.11.16-209"></script>
+<script src="app.js?v=2026.11.16-209"></script>
 </body>
 </html>

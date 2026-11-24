@@ -61,7 +61,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-208'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-209'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -806,6 +806,12 @@
     el.innerHTML = (window.TNC_ICONS && window.TNC_ICONS.goal) ? ico('goal') : PIN_ICON;
     return el;
   }
+  // v209: 경로 끝 → 건물 화살표를 그릴지 (12m 넘게 떨어졌고, 주차장 입구로 가는 길이 아닐 때)
+  function legOf(d, end) {
+    if (!d || !end) return false;
+    const pk = parkGoalOf(d);
+    return !(pk && !pk.gate) && haversine(end, d) >= 12;
+  }
   // 경로 끝(차가 서는 곳)과 실제 목적지 사이 점선 점들 (12m 넘게 떨어졌을 때)
   function destDots(end, d) {
     if (!end || !d) return [];
@@ -922,7 +928,7 @@
       });
       N.Event.addListener(this.map, 'dragstart', onUserPan);
       // 배율이 바뀌면 회전 화살표의 화살촉 크기를 다시 맞춘다
-      N.Event.addListener(this.map, 'zoom_changed', () => { clearTimeout(this._arrowT); this._arrowT = setTimeout(() => { this.routeZoom(); this.drawArrow(); }, 120); });
+      N.Event.addListener(this.map, 'zoom_changed', () => { clearTimeout(this._arrowT); this._arrowT = setTimeout(() => { this.routeZoom(); this.drawArrow(); this.drawLeg(); }, 120); });
       this.setTraffic(prefs.traffic);
       if (this.gl) { this.initDark(this.map); this.watchGl(el, this.map); }
     },
@@ -1146,6 +1152,19 @@
         icon: { content: restEl(), anchor: new N.Point(12, 12) } }));
     },
     setTurnArrow(pts, ti, color) { this._arrow = pts; this._arrowTi = ti; this._arrowColor = color; this.drawArrow(); },
+    drawLeg() {   // v209 경로 끝 → 건물 화살표
+      (this._legObjs || []).forEach((o) => o.setMap(null));
+      this._legObjs = [];
+      const z = this.map && this.map.getZoom();
+      if (!this._leg || !this.map || z < ARROW_MIN_ZOOM) return;
+      const N = naver.maps, g = arrowGeom(this._leg, z, 1), P = (q) => new N.LatLng(q.lat, q.lng), H = g.H;
+      const line = (w, c, zi) => new N.Polyline({ map: this.map, path: g.shaft.map(P), strokeColor: c, strokeWeight: w, strokeOpacity: 1, strokeLineCap: 'round', strokeLineJoin: 'round', zIndex: zi, clickable: false });
+      const head = (tri, c, zi) => new N.Polygon({ map: this.map, paths: [tri.map(P)], fillColor: c, fillOpacity: 1, strokeColor: c, strokeOpacity: 1, strokeWeight: 1, zIndex: zi, clickable: false });
+      if (g.shaft.length >= 2) this._legObjs.push(line(H.shaft, ROUTE_CASING, 68));
+      this._legObjs.push(head(g.headOut, ROUTE_CASING, 68));
+      if (g.shaft.length >= 2) this._legObjs.push(line(H.inner, '#ffffff', 69));
+      this._legObjs.push(head(g.headIn, '#ffffff', 69));
+    },
     // v208: 배율이 바뀌면 경로선 굵기를 맞춘다 (0.1px 넘게 달라진 조각만)
     routeZoom() {
       if (!this.route || !this.map) return;
@@ -1170,8 +1189,11 @@
       const N = naver.maps;
       (this.destMk || []).forEach((m) => m.setMap(null));
       this.destMk = [];
+      this._leg = null; this.drawLeg();
       if (!d || !this.map) return;
-      destDots(end, d).forEach((q) => this.destMk.push(new N.Marker({ position: new N.LatLng(q.lat, q.lng), map: this.map, clickable: false, zIndex: 94,
+      // v209: 경로 끝에서 건물로 들어가는 굵은 흰 화살표(검정 테두리, 회전 화살표와 같은 모양). 주차장 입구로 가면 걸어가는 길이라 점선 그대로
+      if (legOf(d, end)) { this._leg = [end, { lat: d.lat, lng: d.lng }]; this.drawLeg(); }
+      else destDots(end, d).forEach((q) => this.destMk.push(new N.Marker({ position: new N.LatLng(q.lat, q.lng), map: this.map, clickable: false, zIndex: 94,
         icon: { content: dotEl(), anchor: new N.Point(4, 4) } })));
       // 도착 핀은 카메라·방지턱·휴게소·주정차 표지보다 늘 위 (2026-11-14: 명동역 '50' 카메라 표지가 핀을 덮었다)
       this.destMk.push(new N.Marker({ position: new N.LatLng(d.lat, d.lng), map: this.map, clickable: false, zIndex: 300,
@@ -1256,7 +1278,7 @@
       }).addTo(this.map);
       this.marker = null;
       this.map.on('dragstart', onUserPan);
-      this.map.on('zoomend', () => { this.routeZoom(); this.drawArrow(); });
+      this.map.on('zoomend', () => { this.routeZoom(); this.drawArrow(); this.drawLeg(); });
     },
     setMe(lat, lng) {
       if (this.marker) { this.marker.setLatLng([lat, lng]); return; }
@@ -1359,6 +1381,19 @@
       }).addTo(this.map));
     },
     setTurnArrow(pts, ti, color) { this._arrow = pts; this._arrowTi = ti; this._arrowColor = color; this.drawArrow(); },
+    drawLeg() {   // v209 경로 끝 → 건물 화살표
+      (this._legObjs || []).forEach((o) => o.remove());
+      this._legObjs = [];
+      const z = this.map && this.map.getZoom();
+      if (!this._leg || !this.map || z < ARROW_MIN_ZOOM) return;
+      const g = arrowGeom(this._leg, z, 1), P = (q) => [q.lat, q.lng], H = g.H;
+      const line = (w, c) => L.polyline(g.shaft.map(P), { color: c, weight: w, opacity: 1, lineCap: 'round', lineJoin: 'round', interactive: false }).addTo(this.map);
+      const head = (tri, c) => L.polygon(tri.map(P), { color: c, weight: 1, fillColor: c, fillOpacity: 1, interactive: false }).addTo(this.map);
+      if (g.shaft.length >= 2) this._legObjs.push(line(H.shaft, ROUTE_CASING));
+      this._legObjs.push(head(g.headOut, ROUTE_CASING));
+      if (g.shaft.length >= 2) this._legObjs.push(line(H.inner, '#ffffff'));
+      this._legObjs.push(head(g.headIn, '#ffffff'));
+    },
     routeZoom() {   // v208
       if (!this.route || !this.map) return;
       const z = this.map.getZoom();
@@ -1379,8 +1414,10 @@
     setDest(d, end) {
       (this.destMk || []).forEach((m) => m.remove());
       this.destMk = [];
+      this._leg = null; this.drawLeg();
       if (!d || !this.map) return;
-      destDots(end, d).forEach((q) => this.destMk.push(L.marker([q.lat, q.lng], {
+      if (legOf(d, end)) { this._leg = [end, { lat: d.lat, lng: d.lng }]; this.drawLeg(); }   // v209
+      else destDots(end, d).forEach((q) => this.destMk.push(L.marker([q.lat, q.lng], {
         icon: L.divIcon({ html: '<div class="destdot"></div>', className: 'me-wrap', iconSize: [8, 8], iconAnchor: [4, 4] }), interactive: false, keyboard: false,
       }).addTo(this.map)));
       this.destMk.push(L.marker([d.lat, d.lng], {
@@ -4760,7 +4797,39 @@
     }
   }
 
-  const FINAL_TURN = new Set(['l', 'r', 'sl', 'sr', 'sharp_l', 'sharp_r', 'kl', 'kr']);
+  // v209 (2026-11-24 운전자 '도착 건물에만 나오면 될 거 같아 화살표로 들어가는 것까지 표기 해 주면 좋을 것 같다'): 더샵강동센트럴시티오피스텔은
+  // 경로가 네이버 '…오피스텔입구'(건물 115m 동쪽 길가)에서 끝나고 핀까지는 흐린 점선뿐이었다. 그 입구로 가는 길은 네이버 앱과 같다
+  // (천호대로161길 우회전 → 230m 좌회전). 건물로 바로 가게 하면 네이버가 건물 뒷길에 붙여 2.1km 를 돈다 → 길은 그대로, 마지막을 화살표로.
+  // 경로 끝(차가 서는 길)에서 목적지 건물까지 — 12m 넘으면 그 거리를 도착 거리에 더하고(카드 거리는 건물까지), 지도에 굵은 화살표로 들어간다.
+  // 주차장 입구로 가는 길은 걸어가는 거리라 더하지 않는다(점선 그대로). side: 경로 끝 진행 방향에서 본 건물 쪽 (l·r, 거의 앞이면 s)
+  function finalLeg(dest) {
+    nav.leg = 0; nav.goalSide = '';
+    const P = nav.pts;
+    if (!dest || !P || P.length < 2) return;
+    const pk = parkGoalOf(dest);
+    if (pk && !pk.gate) return;
+    const E = P[P.length - 1], d = haversine(E, dest);
+    // 마지막 회전 뒤의 길 방향으로 본다 (회전 지점을 넘어 뒤로 가지 않는다 — 회전 직후에 끝나면 회전 전 방향이 섞인다)
+    const gs = (nav.route && nav.route.guide) || [];
+    let lastTurn = 0;
+    gs.forEach((g) => { if (g.t !== 88 && g.t !== 87 && g.i < P.length - 1) lastTurn = Math.max(lastTurn, g.i); });
+    let k = P.length - 2;
+    while (k > lastTurn && haversine(P[k], E) < 15) k--;
+    if (d >= 12) nav.leg = Math.round(d);
+    if (d < 6 || haversine(P[k], E) < 3) { nav.goalSide = 's'; return; }
+    const diff = ((bearing(E, dest) - bearing(P[k], E) + 540) % 360) - 180;
+    nav.goalSide = Math.abs(diff) < 25 ? 's' : diff < 0 ? 'l' : 'r';
+  }
+  // 목적지 아이콘: 곧은 초록 화살표 끝 옆에 빨간 핀 — 건물이 그쪽 (네이버 '목적지 오른쪽'처럼). s 면 원래 핀
+  function goalSideIco(side) {
+    if (side !== 'l' && side !== 'r') return null;
+    const pin = '<g transform="translate(' + (side === 'r' ? 25 : 3) + ' 4)"><path d="M10 0a9.5 9.5 0 0 1 9.5 9.5C19.5 16.4 10 25 10 25S.5 16.4.5 9.5A9.5 9.5 0 0 1 10 0z" fill="#e5484d"/>' +
+      '<circle cx="10" cy="9.4" r="3.6" fill="#fff"/></g>';
+    const x = side === 'r' ? 17 : 31;
+    return '<svg class="goal-side gs-' + side + '" viewBox="0 0 48 48" aria-hidden="true"><path d="M' + x + ' 45V17" style="fill:none;stroke:var(--nv-green,#03c75a);stroke-width:6.5;stroke-linecap:round"/>' +
+      '<path d="M' + (x - 8.5) + ' 20 ' + x + ' 8 ' + (x + 8.5) + ' 20z" style="fill:var(--nv-green,#03c75a);stroke:none"/>' + pin + '</svg>';
+  }
+  const SIDE_WORD = { l: '왼쪽', r: '오른쪽' };
   function setRoute(r, dest, keepAlerts) {
     clearSideAlt();   // v195: 경로가 바뀌면 다른 경로 말풍선은 내린다 (교통 갱신이면 바로 다시 고른다)
     nav.route = r; nav.dest = dest;
@@ -4769,6 +4838,7 @@
     nav.cum = [0];
     for (let i = 1; i < nav.pts.length; i++) nav.cum.push(nav.cum[i - 1] + haversine(nav.pts[i - 1], nav.pts[i]));
     nav.total = nav.cum[nav.cum.length - 1];
+    finalLeg(dest);   // v209: 경로 끝에서 건물까지 (거리·어느 쪽)
     nav.seg = 0; nav.along = 0; nav.off = 0; nav.gi = 0;
     nav.onRoute = false; nav.onCount = 0;
     // 달리는 중 다시 찾은 경로(재탐색·재추천·경유지·교통 갱신)는 출발 직후 유예(주차장 출발용 20초) 없이 바로 벗어남을 센다
@@ -4784,13 +4854,9 @@
     if (!keepAlerts) { nav.said = {}; nav.gap = 10000; }
     nav.remain = nav.total; nav.next = null; nav.dg = null;
     nav.guides = (r.guide || []).filter((g) => g.i < nav.pts.length).sort((a, b) => a.i - b.i);
-    // v145: 도착 20m 앞의 회전(주차장 입구로 들어가는 마지막 꺾음 '우회전 → 8m 도착')은 따로 알리지 않고 도착으로 (네이버처럼 '좌회전 후 도착')
-    {
-      const n = nav.guides.length, last = nav.cum.length - 1;
-      const gl = nav.guides[n - 1], gp = nav.guides[n - 2];
-      if (gl && gp && (gl.t === 88 || /목적지/.test(gl.s || '')) && FINAL_TURN.has(turnKind(gp)) &&
-          nav.cum[last] - nav.cum[Math.min(gp.i, last)] <= 20) nav.guides.splice(n - 2, 1);
-    }
+    // v145 에서는 도착 20m 앞의 마지막 회전('우회전 → 8m 도착')을 빼고 도착으로 보였다. v209 (2026-11-24 운전자 '네이버 지도 보면은 도착지점 거의
+    // 도착할 때 화살표로 알려 주잖아'): 네이버는 그 회전을 따로 보인다(더샵강동센트럴시티오피스텔 '↱ 645m' 밑 '↰ 229m') → 회전 그대로 둔다.
+    // 그다음 칸이 그 회전 화살표·거리, 회전을 지나면 도착 (건물까지 굵은 화살표)
     if (mapA) mapA.drawRoute(nav.pts, r.sections);
     if (mapA && mapA.setDest) mapA.setDest(dest, nav.pts[nav.pts.length - 1]);
     nav.arrowKey = null;
@@ -6914,9 +6980,12 @@
     if (restMain) $('#restCard').hidden = true;   // 위 안내 줄이 휴게소면 밑 파란 줄은 숨김
     turnRow.style.setProperty('--tnp', tnMain && ta0.inside ? Math.round(Math.max(0, Math.min(1, ta0.p)) * 100) + '%' : '0%');
     // 산 터널은 터널 그림, 지하차도는 지하차도 입구 그림(초록 경로선), 고가는 고가 그림
+    // v209: 다음 안내가 목적지면 거리는 건물까지(경로 끝 + 건물까지 남은 길), 아이콘은 건물 쪽 (곧은 화살표 옆 핀)
+    const toGoal = !restMain && !tnMain && !tunnelStep && !overStep && (!g || (iconKind(g) === 'goal' && g.t !== 87 && !/경유지/.test(g.s || '')));
+    const goalIco = toGoal ? goalSideIco(nav.goalSide) : null;
     $('#turnIcon').innerHTML = restMain ? REST_SIGN : tunnelStep || (tnMain && underName(ta0.t.name)) ? (pickImg('under_s', 'ti') || pickImg('tunnel', 'ti tn-ai') || TUNNEL_ICON)
-      : tnMain ? (pickImg('tunnel', 'ti tn-ai') || TUNNEL_ICON) : overStep ? ico('over_s') : ico(g ? iconKind(g) : kind0);
-    $('#turnDist').textContent = fmtDist(Math.max(10, restMain ? rs.d : tnMain ? ta0.d : nav.dg != null ? nav.dg : nav.total));   // '0m' 대신 최소 10m (음성과 같게)
+      : tnMain ? (pickImg('tunnel', 'ti tn-ai') || TUNNEL_ICON) : overStep ? ico('over_s') : goalIco || ico(g ? iconKind(g) : kind0);
+    $('#turnDist').textContent = fmtDist(Math.max(10, (restMain ? rs.d : tnMain ? ta0.d : nav.dg != null ? nav.dg : nav.total) + (toGoal ? nav.leg || 0 : 0)));   // '0m' 대신 최소 10m (음성과 같게)
     if (restMain) {
       $('#turnText').textContent = rs.name;
     } else if (tnMain) {
@@ -6933,7 +7002,7 @@
       const d = dm ? dirNames(dm[1]) : [];
       $('#turnText').textContent = d.length ? d.join(', ') + ' 방면' : (m ? m[1] : tunnelStep ? '지하차도' : '고가차도') + '까지';
     } else {
-      $('#turnText').textContent = g ? guideText(g.s, mainStraight(g)) : nav.dest.name;
+      $('#turnText').textContent = (g ? guideText(g.s, mainStraight(g)) : nav.dest.name) + (toGoal && SIDE_WORD[nav.goalSide] ? ' · ' + SIDE_WORD[nav.goalSide] : '');
     }
     renderLanes(tnMain ? null : g);   // 회전 500m 앞부터 차로 칸 (정밀도로지도가 있는 곳만)
     renderLaneTip(g);                 // 지도 위 다음 회전 교차로 말풍선 (1km 앞부터)
@@ -6961,8 +7030,9 @@
       nn.classList.toggle('goal', isGoal);
       nn.classList.toggle('via', isVia);
       if (isGoal || isVia) {
-        $('#nextIcon').innerHTML = pinIco(isVia);
-        $('#nextDist').textContent = fmtDist(gap);
+        // v209: 목적지면 건물 쪽 아이콘(곧은 화살표 옆 핀)과 건물까지 거리
+        $('#nextIcon').innerHTML = (isGoal && goalSideIco(nav.goalSide)) || pinIco(isVia);
+        $('#nextDist').textContent = fmtDist(gap + (isGoal ? nav.leg || 0 : 0));
       } else {
         $('#nextIcon').innerHTML = ico(iconKind(g2));
         $('#nextDist').textContent = fmtDist(gap);
@@ -6978,7 +7048,7 @@
     $('#parkGoal')._d = remain;
     const clFirst = placeColorRow();   // v207: 같은 갈림이면 맨 위 (거리 순서에서 뺀다)
     orderByDist([[nn], [clFirst ? null : $('#colorRow')], [$('#tunnelRow')], [$('#restCard')], [$('#parkGoal')]]);
-    $('#navRemain').textContent = fmtDist(remain);
+    $('#navRemain').textContent = fmtDist(remain + (nav.leg || 0));   // v209: 건물까지
     $('#navTime').textContent = fmtMin(remMs);
     $('#navEta').textContent = hhmm(new Date(Date.now() + remMs)) + ' 도착';   // 오른쪽 막대·경로 카드와 같은 순서
   }
@@ -9610,7 +9680,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, spotUnchecked, camSpoken, checkTripCover, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,

@@ -2900,6 +2900,7 @@
     { id: 'S137', name: "S137 voice feedback reachable and readable (v206, driver '피드백 음성 버튼이 일단 무슨 버튼인지 잘 모를 거 같고 눌러도 반응이 없어'): during guidance with a camera card, the mic sits in the glass card's compass row, a real tap lands on it and never on the '잘못된 정보 신고' pill (if the pill reaches the card, the card hides and the mic takes no taps); the card is opaque enough over map labels; every failure is shown and logged by stage: start() throwing, a 'network' error, and no onstart within 4 s; a good start logs tap, start, onstart, onaudiostart", fn: s137 },
     { id: 'S138', name: "S138 colour guide line as a split picture, first (v207, driver '이럴 때는 분홍색을 첫 번째 있는 걸로 보여 주고 … 그림을 알려 주는 게 훨씬 더 좋아', '굳이 그림이 표기돼 있으면은 분홍색 화살표로 안 바꿔도 돼', '우리가 가지 않는 방향이라고 해도 그림에서 표지판에 표기를 해 주는 게 좋아'): on the real 서울TG → 판교분기점 route, 990 m before the split the guide card starts with a small split picture: 경부 goes straight with a dim '① 경부' sign, our branch goes right with the pink line and a strong '[100] 일산 · 구리' sign; no pink arrow, the turn row keeps its green arrow and the distance; at 600 m the close-up takes over with pink lanes and both signs; at night the roads turn dark", fn: s138 },
     { id: 'S139', name: "S139 Naver-checked driver spots look like normal cameras (v208, driver: '운전자 신고 신호 과속 단속 이라고 파란 글씨로 나오는데 … 네이버 지도는 신호 과속 이라고만 표기 하는데'); route line and turn arrow thicker with zoom and a black outline (v208, '여기도 네이버지도처럼 약간 두껍게', '검정색 테두리로 통일하자'): rows with flag 2 read '신호·과속단속' / '이동식단속' with the red (or real-mobile blue) card, sign and voice of normal cameras, flag 4 makes a child zone, /check finds count as checked, unchecked rows keep '운전자 신고 …' in blue; in the data 18 of 21 rows are checked; the route width grows with zoom (9 → 14 → 17 px at 15/17/18) under a black casing 4 px wider, and the arrow's rim is black", fn: s139 },
+    { id: 'S140', name: "S140 arrival like Naver (v209, driver '네이버 지도 보면은 도착지점 거의 도착할 때 화살표로 알려 주잖아', '도착 건물에만 나오면 될 거 같아 화살표로 들어가는 것까지 표기 해 주면 좋을 것 같다'): the last turn before the goal stays its own row (row 2 shows ↰ with its distance, then the goal pin); from where the route ends a thick white arrow with a black outline goes into the building instead of the dotted line, and the goal distance counts to the building; with no turn left, the row says which side the building is on ('목적지 · 왼쪽/오른쪽' with an arrow-and-pin icon); a walk from a parking entrance keeps the dots", fn: s140 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -3548,8 +3549,10 @@
       run(380, 420);                        // 우회전(600m) 200m 앞, 시속 43km
       r.turn = calls.length ? calls.slice(-1)[0] : Math.round(m.getZoom());   // 이미 17 이면 바꾸지 않는다
       r.turnNo18 = !calls.includes(18);
+      const nCalls = calls.length;
       run(R.total - 300, R.total - 250);    // 목적지 250m 앞
-      r.arrive = calls.slice(-1)[0];
+      // 이미 18 이면 다시 부르지 않는다 (앞 시험이 목적지 가까이에서 끝나 18 로 남아 있을 때) — 위 r.turn 과 같은 방식
+      r.arrive = calls.length > nCalls ? calls.slice(-1)[0] : Math.round(m.getZoom());
     } finally {
       m.setZoom = orig;
       t.endNav(); softReset();
@@ -3632,7 +3635,7 @@
   // S86: 목적지 주차장 입구 v145 (2026-11-16 '기흥역엘리시아트윈101동입구'에서 블록 한 바퀴: 네이버엔 '…101동주차장입출구'로 올라 있는데
   //      '입구'만 찾고 '출구'가 든 이름을 빼던 규칙에 걸려 못 찾았다. 운전자 '입구를 보고 입구로 안내해줘야 해'). 실제 좌표 없이 같은 모양으로:
   //      (a) '입출구'도 입구, 나가기만 하는 '출구'는 뺀다  (b) 목적지가 '101동입구'면 핀에 더 가까운 102동 입구보다 101동 입구
-  //      (c) 경로 끝 8m 앞 우회전(주차장으로 꺾어 들어감)은 안내하지 않는다 — 좌회전 다음이 바로 도착 (네이버 '좌회전 후 도착')
+  //      (c) 경로 끝 8m 앞 우회전(주차장으로 꺾어 들어감)도 안내한다 (v209: 네이버처럼 마지막 회전을 따로 — 예전 v145 는 빼고 '좌회전 후 도착')
   //      (d) 도착 700m 안에서 안내 칸에 'P 101동 주차장 입출구 · 거리' 줄, 지도 경로 끝에 P 표지
   async function s86() {
     const t = T(), r = {};
@@ -3708,7 +3711,7 @@
       t.endNav(); softReset();
       stub.canned['/search'] = { items: [] };
     }
-    const ok = r.goal === '101' && r.guides === '2,88' && /^101동 주차장 입출구 2\d0m$/.test(r.row) && r.nextGoal && r.pMark !== false &&
+    const ok = r.goal === '101' && r.guides === '2,3,88' /* v209: 마지막 회전도 안내 */ && /^101동 주차장 입출구 2\d0m$/.test(r.row) && !r.nextGoal && r.pMark !== false &&
       r.gateGoal === 'car' && r.gateQueries === '테스트오피스텔 주차장입구|테스트오피스텔 입구' && /^입구로 안내 · 테스트오피스텔차량출입구$/.test(r.gateCard) &&
       !r.gateRow && r.gateP !== true && r.entranceKept;
     return { pass: !!ok, detail: JSON.stringify(r) };
@@ -4022,6 +4025,7 @@
       const m = t.getMap();
       r.pin = !!document.querySelector('.destpin');
       r.dots = document.querySelectorAll('.destdot').length;
+      r.leg = (t.getMap()._legObjs || []).length;   // v209: 경로 끝에서 건물로 들어가는 화살표 (테두리·흰 몸통·화살촉)
       // 경로선 (v92 요청): 검은 테두리 없이 빛 번짐·본선·가운데 빛·흰 점
       r.kinds = [...new Set((m.route || []).map((pc) => pc.kind))].sort().join('+');
       let a = pointAt(R, 100); feed(a.p, 15, a.h); t.renderNav();
@@ -4046,11 +4050,11 @@
       a = pointAt(R, R.cum[5] + 40); feed(a.p, 15, a.h); t.renderNav();
       r.after = (m._arrowObjs || []).length;                    // 그다음은 목적지: 화살표 없음
       t.endNav();
-      r.cleared = !(m.destMk || []).length && !(m._arrowObjs || []).length && !document.querySelector('.destpin');
+      r.cleared = !(m.destMk || []).length && !(m._arrowObjs || []).length && !(m._legObjs || []).length && !document.querySelector('.destpin');
     } finally {
       softReset();
     }
-    const ok = r.pin && r.dots >= 3 && /^base\+dots\+glow\+shine/.test(r.kinds) && r.farNone && r.near === 4 && r.corner >= 2 && r.corner <= 4 && Math.abs(r.arrowCorner - r.corner) < 0.3 && r.span >= 25 && r.span <= 100 && r.endFromTurn >= 0 && r.endFromTurn <= 3 &&
+    const ok = r.pin && r.dots === 0 && r.leg === 4 && /^base\+dots\+glow\+shine/.test(r.kinds) && r.farNone && r.near === 4 && r.corner >= 2 && r.corner <= 4 && Math.abs(r.arrowCorner - r.corner) < 0.3 && r.span >= 25 && r.span <= 100 && r.endFromTurn >= 0 && r.endFromTurn <= 3 &&
       r.zoomOutHidden && r.zoomBack === 4 && r.after === 0 && r.cleared;
     return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + r[k]).join(', ') };
   }
@@ -6898,6 +6902,76 @@
       f.rows === 21 && f.checked === 18 && f.zone === 3 &&
       g.w15 === 9 && g.w17 === 14 && g.w18 === 17 && g.w165 === 12.5 && g.casing17 === 18 && g.dots === 3.4 && g.casingColor === '#141414' &&
       g.arrow17 && g.arrow17.inner === 14 && g.arrow17.shaft === 18;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S140: 도착을 네이버처럼 (v209, 운전자 '네이버 지도 보면은 도착지점 거의 도착할 때 화살표로 알려 주잖아. 그것처럼 우리도 그렇게 알려 주면 좋지 않을까?',
+  //       '도착 건물에만 나오면 될 거 같아 화살표로 들어가는 것까지 표기 해 주면 좋을 것 같다').
+  //   시험 경로: 북쪽 600m → 우회전 → 동쪽 480m, 끝 8m 앞에 좌회전(건물 쪽으로 꺾어 들어감)
+  //   (a) 마지막 회전도 안내: 우회전 뒤 큰 줄 '좌회전', 그다음 칸은 도착 핀 + 건물까지 거리
+  //   (b) 경로 끝 → 건물(북쪽 60m): 점선 대신 굵은 화살표(검정 테두리·흰 몸통), 거리는 건물까지(경로 끝 + 60m)
+  //   (c) 회전이 없고 건물이 경로 끝 왼쪽이면 '목적지 · 왼쪽' + 화살표 옆 핀 그림, 오른쪽이면 '오른쪽', 거의 앞이면 쪽 없이 원래 핀
+  //   (d) 주차장 입구로 가는 길(걸어가는 거리)은 점선 그대로, 거리에 더하지 않음
+  async function s140() {
+    const t = T(), r = {};
+    const mk = (finalTurn, bldBrg, bldM) => {
+      const R = buildNavRoute();
+      R.route = JSON.parse(JSON.stringify(R.route));
+      const last = R.P.length - 1;
+      if (finalTurn) {
+        // 끝 바로 앞(8m)에 좌회전: 마지막 점을 북쪽으로 8m 옮긴다
+        const pre = dest(R.P[last], 270, 8), end = dest(pre, 0, 8);
+        R.route.path[last] = [round6(pre.lng), round6(pre.lat)];
+        R.route.path.push([round6(end.lng), round6(end.lat)]);
+        R.route.guide = R.route.guide.filter((g) => g.t !== 88).concat([{ i: last, t: 2, s: '좌회전', d: 0, ms: 2000 }, { i: last + 1, t: 88, s: '목적지', d: 8, ms: 2000 }]);
+      }
+      R.P = R.route.path.map((x) => ({ lat: x[1], lng: x[0] }));
+      R.cum = [0];
+      for (let i = 1; i < R.P.length; i++) R.cum.push(R.cum[i - 1] + hav(R.P[i - 1], R.P[i]));
+      R.total = R.cum[R.cum.length - 1];
+      const E = R.P[R.P.length - 1], b = dest(E, bldBrg, bldM);
+      R.dest = Object.assign({}, R.dest, { lat: b.lat, lng: b.lng });
+      return R;
+    };
+    const snap = () => ({ turn: text('#turnDist') + ' ' + text('#turnText'), icon: (() => { const q = document.querySelector('#turnIcon svg'); return q ? q.getAttribute('class') || '' : ''; })(),
+      next: visible('#nextTurn') ? text('#nextDist') + '|' + (document.getElementById('nextTurn').classList.contains('goal') ? 'goal' : 'turn') : '',
+      remain: text('#navRemain'), leg: (t.getMap()._legObjs || []).length, dots: document.querySelectorAll('.destdot').length });
+    try {
+      await waitFor(() => t.getMap(), 5000);
+      // (a)(b) 마지막 좌회전 + 건물 북쪽 60m
+      softReset();
+      const A = mk(true, 0, 60);
+      await planAndStart(A);
+      let p = pointAt(A, A.cum[5] + 60); feed(p.p, 10, p.h); t.renderNav();
+      r.a = snap(); r.a.guides = t.nav.guides.map((g) => g.t).join(','); r.a.legM = t.nav.leg;
+      t.endNav();
+      // (c) 회전 없음: 건물이 끝에서 왼쪽(북쪽 50m) · 오른쪽(남쪽 50m) · 앞(동쪽 20m)
+      for (const [k, brg] of [['left', 0], ['right', 180], ['ahead', 90]]) {
+        softReset();
+        const C = mk(false, brg, brg === 90 ? 20 : 50);
+        await planAndStart(C);
+        p = pointAt(C, C.cum[5] + 300); feed(p.p, 10, p.h); t.renderNav();
+        r[k] = snap(); r[k].side = t.nav.goalSide;
+        t.endNav();
+      }
+      // (d) 주차장 입구로 (걸어가는 길): 점선, 거리 더하지 않음
+      softReset();
+      const D = mk(false, 0, 60);
+      D.dest = Object.assign({}, D.dest, { park: { name: '시험 주차장입구', lat: D.P[D.P.length - 1].lat, lng: D.P[D.P.length - 1].lng, d: 60 } });
+      await planAndStart(D);
+      p = pointAt(D, D.cum[5] + 300); feed(p.p, 10, p.h); t.renderNav();
+      r.park = snap(); r.park.legM = t.nav.leg;
+      t.endNav();
+    } finally {
+      t.endNav(); softReset();
+    }
+    const a = r.a || {}, L = r.left || {}, Rr = r.right || {}, S = r.ahead || {}, P = r.park || {};
+    const num = (x) => { const m = String(x || '').match(/([\d.]+)(k?m)/); return m ? +m[1] * (m[2] === 'km' ? 1000 : 1) : -1; };
+    const ok = a.guides === '1,3,2,88' && /좌회전$/.test(a.turn) && a.next.endsWith('|goal') && num(a.next) >= 60 && num(a.next) <= 80 && a.leg === 4 && a.dots === 0 && a.legM === 60 &&
+      L.side === 'l' && /목적지 · 왼쪽$/.test(L.turn) && /goal-side gs-l/.test(L.icon) && num(L.turn) >= 220 && num(L.turn) <= 240 &&
+      Rr.side === 'r' && /목적지 · 오른쪽$/.test(Rr.turn) && /goal-side gs-r/.test(Rr.icon) &&
+      S.side === 's' && /목적지$/.test(S.turn) && !/goal-side/.test(S.icon) &&
+      P.legM === 0 && P.leg === 0 && P.dots >= 3;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
