@@ -1762,6 +1762,40 @@
   .fbbtn.listening .fb-mic-s, .fbbtn.sending .fb-mic-s { stroke: #0b7a43; }
   #app.tesla .trip .fbbtn .fb-ring { -webkit-mask: radial-gradient(circle, transparent 24px, #000 25px); mask: radial-gradient(circle, transparent 24px, #000 25px); }
   #app.tesla .trip .fb-label { position: absolute; right: 0; bottom: calc(100% + 10px); box-shadow: var(--nv-shadow); }
+
+  /* ================= v207 색깔 유도선 = 갈림 그림 (2026-11-24 운전자 '분홍색을 첫 번째 있는 걸로 보여 주고 … 그림을 알려 주는 게 훨씬 더 좋아',
+     '굳이 그림이 표기돼 있으면은 분홍색 화살표로 안 바꿔도 돼', '우리가 가지 않는 방향이라고 해도 그림에서 표지판에 표기를 해 주는 게 좋아') =================
+     위에서 내려다본 작은 갈림: 아래 줄기가 둘로 갈라지고, 갈 갈래에 그 색 선. 갈래마다 표지 — 우리 갈래는 진한 초록(왼쪽 끝 색 띠), 다른 갈래는 흐린 회색.
+     오른쪽으로 가는 그림, 왼쪽은 그림만 좌우 뒤집고 표지 자리는 바꾼다. 거리는 왼쪽 아래 */
+  .colorrow.split { display: block; position: relative; padding: 6px 12px 4px; }
+  .colorrow.split .cl-sw, .colorrow.split .cl-sw:has(svg) { display: block; position: relative; width: auto; height: auto; }
+  .colorrow.split .cl-sw svg.sp-pic { display: block; width: 100%; height: auto; overflow: visible; transform: none; }
+  .colorrow.split.cl-left .cl-sw svg.sp-pic { transform: scaleX(-1); }
+  .sp-pic .sp-road { fill: none; stroke: #d3d8de; stroke-linecap: butt; }
+  .sp-pic .sp-edge { fill: none; stroke: #aeb5be; stroke-linecap: butt; }
+  body:has(#map.night) .sp-pic .sp-edge { stroke: #6a727d; }
+  .sp-pic .sp-oth { stroke: #e2e5e9; }
+  .sp-pic .sp-dash { fill: none; stroke: #fff; stroke-width: 1.8; stroke-dasharray: 5 5; }
+  .sp-pic .sp-band { fill: none; stroke: var(--cl, #ff4fa3); stroke-width: 6.5; stroke-linecap: round; stroke-linejoin: round; }
+  body:has(#map.night) .sp-pic .sp-road { stroke: #4b525c; }
+  body:has(#map.night) .sp-pic .sp-oth { stroke: #3d434b; }
+  body:has(#map.night) .sp-pic .sp-dash { stroke: #c9cfd6; }
+  .sp-sign { position: absolute; top: 1px; display: inline-flex; align-items: center; gap: 3px; max-width: 47%; padding: 3px 7px; border-radius: 4px;
+    font-size: 13px; line-height: 1.15; color: #fff; white-space: nowrap; overflow: hidden; box-shadow: 0 1px 3px rgba(0, 0, 0, .22); }
+  .sp-sign b { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 800; }
+  .sp-sign .sg-shield { flex: none; display: block; }
+  .sp-sign .sg-shield svg { display: block; width: 16px; height: 17px; }
+  .sp-ours { background: #0b7a43; padding-left: 10px; box-shadow: inset 4px 0 0 var(--cl, #ff4fa3), 0 1px 3px rgba(0, 0, 0, .22); }
+  .sp-other { background: #6b7280; opacity: .72; font-size: 12px; box-shadow: none; }
+  .sp-other b { font-weight: 700; }
+  .sp-far { right: 2px; } .sp-mid { right: 54%; } .sp-far2 { left: 2px; }
+  .colorrow.cl-left .sp-far { right: auto; left: 2px; }
+  .colorrow.cl-left .sp-mid { right: auto; left: 54%; }
+  .colorrow.cl-left .sp-far2 { left: auto; right: 2px; }
+  .colorrow.split #colorDist { position: absolute; left: 14px; bottom: 6px; font-size: 21px; }
+  #app.tesla .colorrow.split { border-top: 0; border-bottom: 1px solid var(--nv-line); }
+  /* 분기점 확대 그림도: 다른 갈래 표지는 흐리게(읽히게), 우리 갈래 표지가 진하다 */
+  .junccard.nv .jc-label.jc-other { opacity: .74; filter: saturate(.45); box-shadow: none; }
 </style>
 </head>
 <body>
@@ -2124,8 +2158,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-206"></script>
-<script src="img/ai/picks.js?v=2026.11.16-206"></script>
-<script src="app.js?v=2026.11.16-206"></script>
+<script src="icons.js?v=2026.11.16-207"></script>
+<script src="img/ai/picks.js?v=2026.11.16-207"></script>
+<script src="app.js?v=2026.11.16-207"></script>
 </body>
 </html>

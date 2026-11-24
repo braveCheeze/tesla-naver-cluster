@@ -2898,6 +2898,7 @@
     { id: 'S135', name: "S135 time-limited school zones (v204, driver '이것도 중요하긴 해'; Naver shows 50 at night after '표지판 확인') and the 경부 northbound mobile 110s: around the real child-zone camera 25719, a test school with 30 from 08–20 and 50 otherwise makes it 50 at 22:00 (the warning card too) and 30 at 10:00, cameras outside the radius stay; weekday-only rows give 50 on a Sunday; windows across midnight work; clearing the data restores 30; the 죽전 mobile 110 moved 71 m north to Naver's point and a 판교 northbound mobile 110 was added, both '운전자 신고 이동식 단속'", fn: s135 },
     { id: 'S136', name: "S136 camera card sign alignment (v205, driver '가운데로 정렬 해서 보여줘야 되는 거 아니야 110 너무 밑에 있는 느낌이다'): in the Tesla drawer the round sign's top meets the label's top and its bottom meets the distance's bottom (the bar sits below), for section-end, fixed, mobile and child-zone cards alike", fn: s136 },
     { id: 'S137', name: "S137 voice feedback reachable and readable (v206, driver '피드백 음성 버튼이 일단 무슨 버튼인지 잘 모를 거 같고 눌러도 반응이 없어'): during guidance with a camera card, the mic sits in the glass card's compass row, a real tap lands on it and never on the '잘못된 정보 신고' pill (if the pill reaches the card, the card hides and the mic takes no taps); the card is opaque enough over map labels; every failure is shown and logged by stage: start() throwing, a 'network' error, and no onstart within 4 s; a good start logs tap, start, onstart, onaudiostart", fn: s137 },
+    { id: 'S138', name: "S138 colour guide line as a split picture, first (v207, driver '이럴 때는 분홍색을 첫 번째 있는 걸로 보여 주고 … 그림을 알려 주는 게 훨씬 더 좋아', '굳이 그림이 표기돼 있으면은 분홍색 화살표로 안 바꿔도 돼', '우리가 가지 않는 방향이라고 해도 그림에서 표지판에 표기를 해 주는 게 좋아'): on the real 서울TG → 판교분기점 route, 990 m before the split the guide card starts with a small split picture: 경부 goes straight with a dim '① 경부' sign, our branch goes right with the pink line and a strong '[100] 일산 · 구리' sign; no pink arrow, the turn row keeps its green arrow and the distance; at 600 m the close-up takes over with pink lanes and both signs; at night the roads turn dark", fn: s138 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -4693,7 +4694,7 @@
     const data = (pEnd, gEnd) => t.setColorLines({ v: 1, rows: [[spot.lat, spot.lng, 0, [['g', gEnd.lat, gEnd.lng], ['p', pEnd.lat, pEnd.lng]], '시험분기점']] });
     const el = () => document.getElementById('colorRow');
     const row = () => ({ shown: visible('#colorRow'), c: el().dataset.c || '', name: el().dataset.name || '', text: text('#colorText'), dist: text('#colorDist'),
-      cl: el().style.getPropertyValue('--cl'), aria: el().getAttribute('aria-label') || '', icon: !!el().querySelector('.cl-sw svg .cli-cl'), side: el().dataset.side || '',
+      cl: el().style.getPropertyValue('--cl'), aria: el().getAttribute('aria-label') || '', icon: !!el().querySelector('.cl-sw svg.sp-pic .sp-band') && !el().querySelector('.cli-cl'), side: el().dataset.side || '',   // v207: 화살표 대신 갈림 그림
       // v197: 분기점 장면이 바로 이 갈림이면 유도선은 그림 안에 (줄은 숨김)
       scene: (() => { const p = document.querySelector('#juncCard:not([hidden]) svg.nv .nv-cl'); return p ? p.style.fill : ''; })() });
     const go = (RR, m) => { const a = pointAt(RR, m); feed(a.p, 25, a.h); t.renderNav(); };
@@ -6325,7 +6326,7 @@
       await planAndStart(EXIT);
       for (let s = 20; s <= 700; s += 20) go(EXIT, s);
       const row = document.getElementById('colorRow'), sw = row.querySelector('.cl-sw svg');
-      r.e = { shown: visible('#colorRow'), text: text('#colorText'), icon: !!row.querySelector('.cl-sw svg .cli-cl'), side: row.dataset.side || '',
+      r.e = { shown: visible('#colorRow'), text: text('#colorText'), icon: !!row.querySelector('.cl-sw svg.sp-pic .sp-band') && !row.querySelector('.cli-cl'), side: row.dataset.side || '',
         flip: sw ? getComputedStyle(sw).transform : '', aria: row.getAttribute('aria-label') || '', junc: visible('#juncCard') };
       t.endNav();
     } finally {
@@ -6337,9 +6338,9 @@
     }
     const a = r.a || {}, b = r.b || {}, c = r.c || {}, d = r.d || {}, e = r.e || {};
     const ok = a.shown && a.nv && a.kind === 'jc-fork' && a.data && a.lanes === '6' && a.go === '5,6' && a.bus && /246, 140, 192/.test(a.cl) &&
-      a.sign1 === '50원주인천' && a.side1 === 'r' && !a.straight1 && a.sign2 === '1' && a.side2 === 'l' && a.straight2 && !a.place &&
+      a.sign1 === '50원주인천' && a.side1 === 'r' && !a.straight1 && a.sign2 === '1경부' && a.side2 === 'l' && a.straight2 && !a.place &&
       !a.laneRow && !a.colorRow && r.aPast && !r.aPast.shown &&
-      b.shown && b.nv && !b.data && b.lanes === '4' && b.go === '3,4' && !b.cl && b.sign1 === '50원주인천' && b.sign2 === '' &&
+      b.shown && b.nv && !b.data && b.lanes === '4' && b.go === '3,4' && !b.cl && b.sign1 === '50원주인천' && b.sign2 === '1경부' /* v207: 갈림길도 다른 갈래 표지 */ &&
       c.shown && c.kind === 'jc-main' && c.data && c.go === '2,3,4' && c.sign1 === '1서울' && c.side1 === 'l' && c.straight1 && c.sign2 === '' && !c.laneRow &&
       d.shown && d.goFill && d.goFill !== r.dDay && d.bgNight === 'block' &&
       e.shown && !e.junc && e.text === '' && e.icon && e.side === 'r' && e.flip === 'none' && /분홍색 유도선 따라가기/.test(e.aria);
@@ -6792,6 +6793,61 @@
       !c2.on && c2.toast === '음성 인식 서버에 연결하지 못했어요' && has(c2.steps, 'onstart') && has(c2.steps, 'error network') && has(c2.steps, 'fail network') &&
       !c3.on && c3.toast === '음성 인식이 응답하지 않아요' && has(c3.steps, 'fail nostart') &&
       d.on && ['tap', 'start', 'onstart', 'onaudiostart'].every((x) => has(d.steps, x));
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S138: 색깔 유도선 = 갈림 그림, 맨 위 (v207, 운전자 '이럴 때는 분홍색을 첫 번째 있는 걸로 보여 주고 저 분홍색 선 좌회전 하는 거 보다 그림을 알려 주는 게
+  //       훨씬 더 좋아', '굳이 그림이 표기돼 있으면은 분홍색 화살표로 안 바꿔도 돼', '그리고 우리가 가지 않는 방향이라고 해도 그림에서 표지판에 표기를 해 주는 게 좋아').
+  //   실제 경로 route-seoultg-n (서울TG → 판교분기점 '일산, 구리' 오른쪽 → '구리, 성남' 직진). 2026-11-24 09:39 사진: 990m 앞 안내 밑에 왼쪽으로 휜 분홍 화살표만 있었다.
+  //   (a) 990m 앞: 안내 카드 맨 위(회전 줄 위)에 갈림 그림 — 경부 본선은 곧게(흐린 '① 경부'), 우리 갈래는 오른쪽(분홍 선, 진한 '[100] 일산 · 구리').
+  //       분홍 화살표 없음, 회전 줄은 원래 초록 화살표·거리 그대로, 그림에는 거리 숫자 없음(바로 밑 줄에 있다)
+  //   (b) 600m 앞: 분기점 확대 그림이 맡는다 — 분홍 차로, 표지 둘(우리 '100일산구리', 다른 갈래 '1경부'), 그림 줄은 숨김
+  //   (c) 밤: 그림의 길이 어두운 색
+  async function s138() {
+    const t = T(), r = {};
+    const fx = await (await realFetch(harnessDir + 'fixtures/route-seoultg-n.json', { cache: 'no-store' })).json();
+    const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+    const cum = [0];
+    for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + hav(P[k - 1], P[k]));
+    const SR = { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '판교분기점', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    const go = (m) => { const a = pointAt(SR, m); feed(a.p, 25, a.h); t.renderNav(); };
+    const el = () => document.getElementById('colorRow');
+    const snap = () => {
+      const row = el(), turn = document.querySelector('#navPanel .turn');
+      return { shown: visible('#colorRow'), first: !!(row.nextElementSibling && row.nextElementSibling === turn), kind: row.dataset.kind || '', side: row.dataset.side || '',
+        pic: !!row.querySelector('svg.sp-pic .sp-band'), arrow: !!row.querySelector('.cli-cl'), dist: text('#colorDist'),
+        ours: (row.querySelector('.sp-ours') || {}).textContent || '', oursNo: !!row.querySelector('.sp-ours .sg-shield'),
+        other: (row.querySelector('.sp-other') || {}).textContent || '', otherDim: (() => { const o = row.querySelector('.sp-other'); return o ? +getComputedStyle(o).opacity : 1; })(),
+        turnDist: text('#turnDist'), turnGreen: !!document.querySelector('#turnIcon svg, #turnIcon img') && !document.querySelector('#turnIcon .cli-cl'),
+        road: (() => { const q = row.querySelector('.sp-road'); return q ? getComputedStyle(q).stroke : ''; })() };
+    };
+    try {
+      softReset();
+      await planAndStart(SR);
+      const g55 = cum[55];
+      for (let m = 50; m <= g55 - 990; m += 30) go(m);
+      go(g55 - 990);
+      r.a = snap();
+      document.getElementById('map').classList.add('night');
+      t.renderNav();
+      r.c = { road: snap().road };
+      document.getElementById('map').classList.remove('night');
+      t.renderNav();
+      for (let m = g55 - 960; m <= g55 - 600; m += 30) go(m);
+      try { document.getAnimations().forEach((a) => { try { a.finish(); } catch (e) { /* 무한 */ } }); } catch (e) { /* 미지원 */ }
+      t.renderNav();
+      r.b = { row: visible('#colorRow'), junc: visible('#juncCard'), cl: !!document.querySelector('#juncCard:not([hidden]) svg.nv .nv-cl'),
+        sign1: text('#juncLabel'), sign2: visible('#juncLabel2') ? text('#juncLabel2') : '', dim2: +getComputedStyle(document.getElementById('juncLabel2')).opacity };
+      t.endNav();
+    } finally {
+      document.getElementById('map').classList.remove('night');
+      softReset();
+    }
+    const a = r.a || {}, b = r.b || {}, c = r.c || {};
+    const ok = a.shown && a.first && a.kind === 'ramp' && a.side === 'r' && a.pic && !a.arrow && a.dist === '' &&
+      a.ours === '100일산 · 구리' && a.oursNo && a.other === '1경부' && a.otherDim < 0.9 && /^1\.0km$|^990m$/.test(a.turnDist) && a.turnGreen &&
+      b.junc && !b.row && b.cl && b.sign1 === '100일산구리' && b.sign2 === '1경부' && b.dim2 < 0.9 &&
+      c.road && c.road !== a.road;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
