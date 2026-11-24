@@ -2909,6 +2909,7 @@
     { id: 'S146', name: "S146 test runs never reach the real server (v219: synthetic passes reached production when a non-test page on the same origin — the S67 catalog frame or a hand-opened index.html — read the harness's saved queue): on the test page the send queues are stored under their own '@test' names, records made here carry x: 1, and pass records dated after today (a fake clock) are dropped before sending", fn: s146 },
     { id: 'S147', name: "S147 Naver verdicts on zone pairs and duplicate poles (v220-v223): labels, limits and rear flags follow Naver's badges, and duplicate records Naver does not show are switched off (kept in the data, left out of lookups) — 평인일주로 138° is a school-zone speed camera, 신재로 is school zone both ways, 해안로 is a school-zone signal-and-speed camera both ways, 적중로 is 50 (253° rear), 17755 moves to Naver's point without its place text", fn: s147 },
     { id: 'S148', name: "S148 Naver verdicts on the 18 single cameras (v224): wrong directions turned to Naver's, two-way cameras lose their one-way place text, records Naver does not show (and 30 duplicates of 40 or signal cameras) are switched off, 예술공원로 is a rear camera 35 m on", fn: s148 },
+    { id: 'S149', name: "S149 feedback button panel (v225): when speech recognition fails like on the Tesla (network), the panel opens with a record button and five picture buttons, later taps open it directly, one tap sends with the cards from the moment 의견 was tapped, a recording is queued until the server takes it, and a denied microphone leaves the picture buttons", fn: s149 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -6644,10 +6645,11 @@
       // (f) 음성 인식 없음
       window.SpeechRecognition = undefined;
       btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      r.f = { listening: btn.classList.contains('listening'), toast: text('#toast') };
+      r.f = { listening: btn.classList.contains('listening'), toast: text('#fbPanel .fbp-cap'), panel: t.fbP.open };   // v225: 까닭은 버튼판 위 글
       t.endNav();
     } finally {
       t.fbCancel(true);
+      t.fbPanelClose(); t.store.set('fbMode', null);   // v225: 음성 인식이 없으면 버튼판이 열린다
       t.fb.inTest = false; t.fb.last = null;
       window.SpeechRecognition = keepSR; window.webkitSpeechRecognition = keepW;
       softReset();
@@ -6658,7 +6660,7 @@
       c.text === '이 카메라 위치가 틀려요' && c.waited >= 1400 && c.navOn === true && c.hasPos && c.cards && c.toast === '보냈어요' && c.label && c.aborted &&
       !d.listening && d.aborted && d.toast === '취소했어요' && !d.sent &&
       !e.listening && e.aborted && !e.sent &&
-      !f.listening && /음성 인식을 지원하지 않아요/.test(f.toast);
+      !f.listening && /음성 인식을 지원하지 않아요/.test(f.toast) && f.panel;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
@@ -6767,21 +6769,26 @@
       pill.style.marginTop = ''; t.checkTripCover();
       // (c) 실패는 늘 보인다
       const steps = () => t.fb.steps.slice();
+      const clr = () => { t.fbPanelClose(); t.store.set('fbMode', null); };   // v225: 실패하면 버튼판이 열리고 이 기기는 버튼판으로 기억된다
+      t.store.set('fbMode', null);
       t.fb.steps.length = 0;
       window.webkitSpeechRecognition = undefined;
       window.SpeechRecognition = class { start() { throw new DOMException('busy', 'InvalidStateError'); } abort() {} };
       t.fbStart();
-      r.c1 = { on: t.fb.on, toast: text('#toast'), steps: steps(), listening: btn.classList.contains('listening') };
+      r.c1 = { on: t.fb.on, toast: text('#fbPanel .fbp-cap'), steps: steps(), listening: btn.classList.contains('listening'), panel: t.fbP.open };
+      clr();
       t.fb.steps.length = 0;
       window.SpeechRecognition = class { start() { setTimeout(() => { if (this.onstart) this.onstart(); if (this.onerror) this.onerror({ error: 'network' }); if (this.onend) this.onend(); }, 5); } abort() {} };
       t.fbStart();
       await waitFor(() => !t.fb.on, 1000, 10);
-      r.c2 = { on: t.fb.on, toast: text('#toast'), steps: steps() };
+      r.c2 = { on: t.fb.on, toast: text('#fbPanel .fbp-cap'), steps: steps(), panel: t.fbP.open };
+      clr();
       t.fb.steps.length = 0;
       window.SpeechRecognition = class { start() {} abort() {} };
       t.fbStart();
       t.fb.t0 -= 4500; t.fbTick();
-      r.c3 = { on: t.fb.on, toast: text('#toast'), steps: steps() };
+      r.c3 = { on: t.fb.on, toast: text('#fbPanel .fbp-cap'), steps: steps(), panel: t.fbP.open };
+      clr();
       // (d) 잘 되는 경우 (진짜 누름 자리에서 click)
       t.fb.steps.length = 0;
       window.SpeechRecognition = class { start() { setTimeout(() => { if (this.onstart) this.onstart(); if (this.onaudiostart) this.onaudiostart(); }, 5); } abort() {} };
@@ -6793,6 +6800,7 @@
       t.endNav();
     } finally {
       t.fbCancel(true);
+      t.fbPanelClose(); t.store.set('fbMode', null);
       pill.style.marginTop = '';
       t.camState.target = null; t.renderCam();
       t.fb.inTest = false; t.fb.last = null;
@@ -6803,9 +6811,9 @@
     const has = (arr, v) => Array.isArray(arr) && arr.includes(v);
     const ok = a.pill && !a.onPill && !a.overlap && (a.covered ? !a.hit : a.hit) && a.alpha >= 0.7 &&
       b.covered && !b.takes && b.pe === 'none' &&
-      !c1.on && c1.toast === '음성 인식을 시작하지 못했어요' && has(c1.steps, 'tap') && has(c1.steps, 'fail start InvalidStateError') && !c1.listening &&
-      !c2.on && c2.toast === '음성 인식 서버에 연결하지 못했어요' && has(c2.steps, 'onstart') && has(c2.steps, 'error network') && has(c2.steps, 'fail network') &&
-      !c3.on && c3.toast === '음성 인식이 응답하지 않아요' && has(c3.steps, 'fail nostart') &&
+      !c1.on && c1.toast === '음성 인식을 시작하지 못했어요 · 버튼으로 보내 주세요' && has(c1.steps, 'tap') && has(c1.steps, 'fail start InvalidStateError') && !c1.listening &&
+      !c2.on && c2.toast === '음성 인식 서버에 연결하지 못했어요 · 버튼으로 보내 주세요' && has(c2.steps, 'onstart') && has(c2.steps, 'error network') && has(c2.steps, 'fail network') &&
+      !c3.on && c3.toast === '음성 인식이 응답하지 않아요 · 버튼으로 보내 주세요' && has(c3.steps, 'fail nostart') && c1.panel && c2.panel && c3.panel &&
       d.on && ['tap', 'start', 'onstart', 'onaudiostart'].every((x) => has(d.steps, x));
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
@@ -7298,6 +7306,131 @@
       r.r23035.at.join() === '37.417135,126.917851' && r.r23035.eb === 10 && r.r23035.lane.join() === '37.417135,126.917851' &&
       /후면/.test(r.r23035.label) && !/보호구역/.test(r.r23035.label) && !r.r23035.text &&
       r.lane17901 && r.lim40.join() === '40,40';
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S149: 의견 버튼판 (v225, 2026-11-24 21:05 운전자 테슬라 '의견을 보내고 싶은데도 못 보내네' — '음성 인식 서버에 연결하지 못했어요').
+  //   (a) 음성 인식이 network 로 끝나면 알림 + 그 자리에서 버튼판(녹음 + 다섯), 이 기기는 fbMode 'panel'. 버튼은 88×72 이상, 진짜 누름이 닿는다, 길안내 카드와 겹치지 않는다
+  //   (b) 다음 누름은 음성 인식을 만들지 않고 바로 버튼판
+  //   (c) 버튼 하나 = 보내기 한 번: 글 '[카메라 이상]', 카드·위치는 '의견'을 누른 순간 것(그 뒤 카드가 사라져도), 판이 닫히고 '보냈어요'
+  //   (d) 판 밖을 누르면 보내지 않고 닫힘, (e) '의견'을 다시 누르면 닫힘
+  //   (f) 녹음: 누르고 → 다시 누르면 끝 → 녹음 함 → 올리고 번호를 받아 같은 qid 로 의견, 함은 빔. 못 올리면 함에 남고 '저장했어요 · 연결되면 보내요', 다음 보내기에서 빠짐
+  //   (g) 마이크 권한 거부: '마이크 권한이 꺼져 있어요', 녹음 칸은 숨고 그림 버튼은 그대로
+  async function s149() {
+    const t = T(), r = {}, keepSR = window.SpeechRecognition, keepW = window.webkitSpeechRecognition;
+    const md = navigator.mediaDevices, keepGum = md && md.getUserMedia, keepPost = t.fbA.post;
+    const btn = document.getElementById('fbBtn'), P = () => document.getElementById('fbPanel');
+    const R = buildNavRoute();
+    let made = 0, ac = null;
+    const hide = () => { const hp = document.getElementById('harnessPanel'); const d = hp ? hp.style.display : ''; if (hp) hp.style.display = 'none'; return () => { if (hp) hp.style.display = d; }; };
+    const B = (el) => el.getBoundingClientRect();
+    try {
+      t.fb.inTest = true;
+      t.store.set('fbMode', null); t.fb.micDenied = false; t.fbA.save([]);
+      softReset();
+      await planAndStart(R);
+      for (let s = 15; s <= 150; s += 15) { const a = pointAt(R, s); feed(a.p, 15, a.h); }
+      t.renderNav();
+      // (a)
+      window.webkitSpeechRecognition = undefined;
+      window.SpeechRecognition = class { constructor() { made++; } start() { setTimeout(() => { if (this.onstart) this.onstart(); if (this.onaudiostart) this.onaudiostart(); if (this.onerror) this.onerror({ error: 'network' }); if (this.onend) this.onend(); }, 5); } abort() {} };
+      const i = t.cams.rows.findIndex((x, j) => j < t.cams.userBase && x[4] === 0 && x[2] === 60 && x[3] === 1);
+      t.camState.target = { i, c: t.cams.rows[i], d: 400, r: 400, minD: 400, after: false, t0: Date.now(), first: 600 };
+      t.renderCam();
+      btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await waitFor(() => t.fbP.open, 1000, 10);
+      const bs = [...P().querySelectorAll('.fbp-btn')].filter((x) => !x.hidden);
+      const pick = document.getElementById('pickCard'), pickWas = pick.hidden;
+      pick.hidden = false;   // 지도에서 고른 곳 카드가 떠 있어도 버튼이 눌린다 (전체 시험에서 앞 시험이 남긴 카드가 덮었다)
+      const restore = hide();
+      const who = [];
+      const hits = bs.map((x) => { const b = B(x); const el = document.elementFromPoint((b.left + b.right) / 2, (b.top + b.bottom) / 2); const ok = !!(el && el.closest && el.closest('.fbp-btn') === x);
+        if (!ok) who.push(el ? (el.id || el.className || el.tagName) + '<' + ((el.parentElement && (el.parentElement.id || el.parentElement.className)) || '') : 'none'); return ok; });
+      const np = document.getElementById('navPanel'), pb = B(P()), nb = B(np), cd = document.getElementById('camDrawer'), fbb = B(btn);
+      const over = (x, y) => !(x.bottom <= y.top || x.top >= y.bottom || x.right <= y.left || x.left >= y.right);
+      restore();
+      pick.hidden = pickWas;
+      if (/[?&]hold=1/.test(location.search)) await sleep(12000);   // 눈으로 볼 때만: 버튼판이 열린 길안내 화면을 잠깐 둔다
+      r.a = { open: t.fbP.open, toast: text('#fbPanel .fbp-cap'), toastBox: !document.getElementById('toast').hidden, mode: t.store.get('fbMode'), labels: bs.map((x) => x.textContent), minW: Math.round(Math.min(...bs.map((x) => B(x).width))), minH: Math.round(Math.min(...bs.map((x) => B(x).height))),
+        hits: hits.every(Boolean), who, overNav: !np.hidden && over(pb, nb), overCam: !!cd && !cd.hidden && cd.getClientRects().length > 0 && over(pb, B(cd)), overBtn: over(pb, fbb),
+        inView: pb.left >= 0 && pb.right <= innerWidth && pb.top >= 0 && pb.bottom <= innerHeight, camShown: !!cd && cd.getClientRects().length > 0, pressed: btn.classList.contains('open') };
+      // (c) 카드가 사라진 뒤 눌러도 '의견'을 누른 때의 카드
+      t.camState.target = null; t.renderCam();
+      t.fb.last = null;
+      P().querySelector('.fbp-btn[data-k="cam"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      const p = t.fb.last || {};
+      await waitFor(() => /보냈어요/.test(text('#toast')), 2000, 20);
+      r.c = { text: p.text, preset: p.preset, navOn: p.navOn, cam: p.cards && p.cards.cam ? p.cards.cam.limit : null, hasPos: p.lat != null, closed: !t.fbP.open && P().hidden, toast: text('#toast') };
+      // (b) 다음 누름은 바로 버튼판 (음성 인식을 만들지 않는다)
+      const made0 = made;
+      btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      r.b = { open: t.fbP.open, made: made - made0 };
+      // (d) 판 밖을 누르면 닫힘, 보내지 않음
+      t.fb.last = null;
+      document.getElementById('map').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      r.d = { open: t.fbP.open, sent: !!t.fb.last };
+      // (e) '의견'을 다시 누르면 닫힘
+      btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      const o1 = t.fbP.open;
+      btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      r.e = { opened: o1, open: t.fbP.open };
+      // (f) 녹음 — 진짜 MediaRecorder 에 소리 나는 가짜 마이크
+      ac = new AudioContext();
+      const dst = ac.createMediaStreamDestination(), osc = ac.createOscillator();
+      osc.frequency.value = 220; osc.connect(dst); osc.start();
+      md.getUserMedia = async () => dst.stream.clone();
+      const posts = [];
+      let fail = true;
+      t.fbA.post = async (item) => { posts.push(item); return fail ? null : { id: 'A' + posts.length, via: 'fb' }; };
+      btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      const recBtn = P().querySelector('.fbp-btn.rec');
+      r.f = { recShown: !recBtn.hidden };
+      recBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await waitFor(() => !!t.fbP.rec, 2000, 20);
+      r.f.recording = !!t.fbP.rec && recBtn.classList.contains('on') && /^보내기 \d+$/.test(recBtn.textContent);
+      await sleep(1200);
+      t.fb.lastAudio = null;
+      recBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));   // 다시 누르면 끝내고 보낸다 (못 올림)
+      await waitFor(() => posts.length >= 1, 3000, 20);
+      await waitFor(() => /저장했어요/.test(text('#toast')), 2000, 20);
+      const q1 = t.fbA.load();
+      const ev = t.fb.last || {};
+      r.f.queued = { n: q1.length, mime: q1[0] && q1[0].mime, b64: !!(q1[0] && q1[0].b64 && q1[0].b64.length > 100), sec: q1[0] && q1[0].sec, x: q1[0] && q1[0].x, closed: !t.fbP.open, toast: text('#toast'), sent: !!t.fb.lastAudio,
+        ev: { text: ev.text, how: ev.how, qid: ev.qid === (q1[0] && q1[0].qid), navOn: ev.navOn, pos: ev.lat != null } };
+      fail = false;
+      const fr = await t.fbAudioFlush();
+      const la = t.fb.lastAudio || {};
+      r.f.flushed = { r: fr, left: t.fbA.load().length, audio: la.audio, qid: la.qid === (q1[0] && q1[0].qid), msg: la.msg, via: la.audioVia, pos: la.lat != null };
+      // (g) 마이크 권한 거부
+      md.getUserMedia = async () => { throw new DOMException('denied', 'NotAllowedError'); };
+      btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      P().querySelector('.fbp-btn.rec').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await waitFor(() => /마이크 권한/.test(text('#fbPanel .fbp-cap')), 2000, 20);
+      r.g = { toast: text('#fbPanel .fbp-cap'), recHidden: P().querySelector('.fbp-btn.rec').hidden, presets: [...P().querySelectorAll('.fbp-btn:not(.rec)')].filter((x) => !x.hidden).length, open: t.fbP.open };
+      t.fbPanelClose();
+      t.endNav();
+    } finally {
+      t.fbPanelClose();
+      t.fbCancel(true);
+      t.camState.target = null; t.renderCam();
+      t.fbA.post = keepPost; t.fbA.save([]);
+      if (md) md.getUserMedia = keepGum;
+      if (ac) { try { ac.close(); } catch (e) { /* 닫힘 */ } }
+      t.store.set('fbMode', null); t.fb.micDenied = false;
+      t.fb.inTest = false; t.fb.last = null; t.fb.lastAudio = null;
+      window.SpeechRecognition = keepSR; window.webkitSpeechRecognition = keepW;
+      softReset();
+    }
+    const a = r.a || {}, b = r.b || {}, c = r.c || {}, d = r.d || {}, e = r.e || {}, f = r.f || {}, g = r.g || {};
+    const q = f.queued || {}, fl = f.flushed || {};
+    const ok = a.open && a.toast === '음성 인식 서버에 연결하지 못했어요 · 버튼으로 보내 주세요' && !a.toastBox && a.mode === 'panel' &&
+      a.labels.join() === '녹음,카메라,길안내,화면,소리,좋아요' && a.minW >= 68 && a.minH >= 72 && a.hits && !a.overNav && !a.overCam && a.camShown && !a.overBtn && a.inView && a.pressed &&
+      c.text === '[카메라 이상]' && c.preset === 'cam' && c.navOn === true && c.cam === 60 && c.hasPos && c.closed && c.toast === '보냈어요' &&
+      b.open && b.made === 0 && !d.open && !d.sent && e.opened && !e.open &&
+      f.recShown && f.recording && q.n === 1 && /^audio\//.test(q.mime || '') && q.b64 && q.sec >= 1 && q.x === 1 && q.closed && q.toast === '저장했어요 · 연결되면 보내요' && !q.sent &&
+      q.ev && /^\(녹음 [\d.]+초\)$/.test(q.ev.text || '') && q.ev.how === 'audio' && q.ev.qid && q.ev.navOn === true && q.ev.pos &&
+      fl.r === true && fl.left === 0 && fl.audio === 'A2' && fl.qid && fl.msg === 'feedback audio' && fl.via === 'fb' && !fl.pos &&
+      g.toast === '마이크 권한이 꺼져 있어요 · 버튼으로 보내 주세요' && g.recHidden && g.presets === 5 && g.open;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

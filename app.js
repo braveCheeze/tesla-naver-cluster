@@ -10,7 +10,7 @@
   // 같은 주소(localhost:8765)의 다른 페이지(시험 S67 의 index.html?catalog 틀, 손으로 연 index.html)가 시험의 가짜 통과 기록(가짜 시계·바다 위 길·
   // 합성 카메라)을 그대로 읽어 실제 서버로 보냈다 — 그 페이지는 시험 페이지가 아니라서 막히지 않았다
   const IS_TEST_PAGE = /\/test\//.test(location.pathname);
-  const SEND_KEYS = new Set(['passQ', 'routeCur', 'routeOut', 'outbox', 'checks']);
+  const SEND_KEYS = new Set(['passQ', 'routeCur', 'routeOut', 'outbox', 'checks', 'fbAudio']);
   const skey = (k) => NS + k + (IS_TEST_PAGE && SEND_KEYS.has(k) ? '@test' : '');
   const store = {
     get(k) { try { return localStorage.getItem(skey(k)); } catch (e) { return null; } },
@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-224'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-225'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -8163,7 +8163,7 @@
     // 서 있을 때는 GPS 가 드문드문 와도 북쪽 위 전환이 늦지 않게 시계로도 본다
     if (state.fix && !state.demoTimer) checkStopNorth(state.fix.t + (Date.now() - lastFixWall));
     if (!state.demoTimer && !testPage) idleUpdate(Date.now());
-    if (!testPage && Date.now() - (outbox.tryAt || 0) > 60000) { outbox.tryAt = Date.now(); if (store.get('outbox')) outboxFlush(); }
+    if (!testPage && Date.now() - (outbox.tryAt || 0) > 60000) { outbox.tryAt = Date.now(); if (store.get('outbox')) outboxFlush(); if (fbA.load().length) fbAudioFlush(); }
     if (!testPage && Date.now() - (upd.peekAt || 0) > 2 * 60000) { upd.peekAt = Date.now(); peekVersion(); }
     maybeResume();
     if (nav.active) liveSave();   // v200: 5초마다 (후진 뒤 새로 열려도 이어 가게)
@@ -9106,6 +9106,9 @@
   function fbFail(name, text) {
     fbStep('fail ' + name);
     fbCancel(true);
+    // v225: 다시 해도 같은 실패(서버·권한·응답 없음)면 그 자리에서 버튼판을 열고(까닭은 판 위 글로 — 아래 알림은 버튼을 덮는다),
+    // 이 기기는 다음부터 바로 버튼판
+    if (FB_HARD.test(name)) { store.set('fbMode', 'panel'); fbPanelOpen(text || '음성 인식을 쓸 수 없어요'); return; }
     toast(text || '음성 인식을 쓸 수 없어요', 'warn', 3500);
   }
   const fbSupport = () => ({ sr: !!speechRec(), gum: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia), mr: typeof window.MediaRecorder === 'function' });
@@ -9156,9 +9159,10 @@
     if (fb.on) return;
     fb.t0 = Date.now();
     fbStep('tap');
+    if (store.get('fbMode') === 'panel') { fbPanelOpen(); return; }   // v225: 음성 인식이 안 되는 기기
     if (!speechRec()) {
       fbStep('fail unsupported');
-      toast('이 브라우저는 음성 인식을 지원하지 않아요', 'warn', 3500);
+      fbPanelOpen('이 브라우저는 음성 인식을 지원하지 않아요');
       return;
     }
     Object.assign(fb, { on: true, text: '', interim: '', t0: Date.now(), lastAt: Date.now(), heard: false, paused: false, started: false });
@@ -9235,9 +9239,239 @@
       fb.sendT = setTimeout(() => { fbUi(''); toast('보냈어요', '', 2000); }, 600);   // 짧게 돈 뒤
     });
   }
-  $('#fbBtn').addEventListener('click', (ev) => { ev.stopPropagation(); if (fb.on) fbCancel(); else fbStart(); });
-  // 듣는 중에 화면의 다른 곳을 누르면 취소 (그 누름은 원래 하던 일도 그대로 한다)
-  document.addEventListener('pointerdown', (ev) => { if (fb.on && !(ev.target && ev.target.closest && ev.target.closest('#fbBtn'))) fbCancel(); }, true);
+  // ---------- v225 의견 버튼판 (2026-11-24 21:05 운전자, 테슬라 길안내 중 '의견을 보내고 싶은데도 못 보내네' — '음성 인식 서버에 연결하지 못했어요') ----------
+  // 테슬라 브라우저(크롬 148, X11)의 음성 인식은 마이크를 연 뒤 'network'(글자로 바꾸는 서버에 닿지 못함)나 'not-allowed' 로 끝난다
+  // (v206 단계 기록 11-24 20:19 onaudiostart → error network, 21:06 → error not-allowed). 그래서 그런 실패면 그 자리에서 큰 그림 버튼판을 열고,
+  // 그 기기는 다음부터 '의견'을 누르면 바로 버튼판(fbMode 'panel').
+  // 버튼 하나 = 보내기 한 번 (카메라·길안내·화면·소리 이상, 좋아요). 보내는 카드·위치는 버튼을 누른 때가 아니라 '의견'을 누른 때의 것.
+  // 자리: 주행 기록 카드 오른쪽 한 줄 — 위의 단속 카드·'의견' 버튼·가운데 내 차를 가리지 않는다 (804×638)
+  // 녹음(마이크·MediaRecorder 가 있을 때): 누르면 녹음, 다시 누르거나 말이 끝나고 2.5초 조용하면 끝(최대 20초) → 이 기기에 넣어 두고(최대 4개)
+  // 서버(/fb, 아직 없으면 운영자 차는 /log)가 받을 때까지 1분마다·연결이 돌아오면 다시 보낸다. 의견은 모두 보낼 함을 거쳐 연결이 없어도 사라지지 않는다.
+  // 판 밖을 누르거나 '의견'을 다시 누르면 닫는다(녹음 중이면 버린다).
+  const FB_HARD = /^(network|not-allowed|service-not-allowed|audio-capture|language-not-supported|nostart|start\b)/;
+  const FB_ICON = {
+    rec: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2.8" width="6" height="11.4" rx="3" fill="currentColor"/><path d="M5.6 11a6.4 6.4 0 0 0 12.8 0M12 17.4V21M8.6 21h6.8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+    cam: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l1.6-2.4h6.8L17 8h3a1.5 1.5 0 0 1 1.5 1.5v8A1.5 1.5 0 0 1 20 19H4a1.5 1.5 0 0 1-1.5-1.5v-8A1.5 1.5 0 0 1 4 8z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13.3" r="3.3" fill="none" stroke="currentColor" stroke-width="2"/></svg>',
+    route: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 21v-7.5a4 4 0 0 1 4-4h7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M14.5 5.5l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    screen: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 20.5h6M12 16.5v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+    sound: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a7.8 7.8 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+    good: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 10.5V20h-3v-9.5zM7.5 10.5L11 3.8a1.9 1.9 0 0 1 3.4 1.4L13.6 9h5a2 2 0 0 1 2 2.4l-1.4 6.8a2.2 2.2 0 0 1-2.2 1.8H7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
+  };
+  const FB_PRESETS = [['cam', '카메라 이상', '카메라'], ['route', '길안내 이상', '길안내'], ['screen', '화면 이상', '화면'], ['sound', '소리 이상', '소리'], ['good', '좋아요', '좋아요']];   // [열쇠, 보내는 글, 버튼 글]
+  const FB_REC_MAX_MS = 20000, FB_REC_QUIET_MS = 2500, FB_AUDIO_MAX = 4;
+  const fbP = { open: false, snap: null, rec: null };
+  const fbA = {
+    busy: false, mem: null,   // mem: 저장소가 막힌 기기에서도 이 세션 동안은 잃지 않게
+    load() { if (this.mem) return this.mem.slice(); try { return JSON.parse(store.get('fbAudio') || '[]'); } catch (e) { return []; } },
+    save(a) {
+      let q = a.slice(-FB_AUDIO_MAX);
+      for (;;) {
+        const v = q.length ? JSON.stringify(q) : null;
+        store.set('fbAudio', v);
+        if (store.get('fbAudio') === v) { this.mem = null; return; }
+        if (q.length <= 1) { this.mem = q; return; }
+        q = q.slice(1);   // 저장소가 꽉 차면 가장 오래된 녹음부터
+      }
+    },
+    // 녹음 하나 올리기 → 서버가 준 번호 (못 올리면 null). 시험은 가짜를 끼운다
+    async post(item) {
+      const body = JSON.stringify({ qid: item.qid, mime: item.mime, sec: item.sec, v: item.v, sid: item.sid, b64: item.b64, x: item.x });
+      const send = (path) => fetch(proxyUrl() + path, { method: 'POST', body, headers: authHeaders({ 'Content-Type': 'application/json' }) });
+      let r = await send('/fb'), via = 'fb';
+      if ((r.status === 404 || r.status === 405) && isOp()) { r = await send('/log'); via = 'log'; }   // Worker 가 아직 /fb 를 모르면 운영자 차는 진단 기록 칸으로
+      if (!r.ok) return null;
+      const j = await r.json().catch(() => ({}));
+      return j.id || j.dropped ? { id: String(j.id || ''), via } : null;
+    },
+  };
+  function fbPanelRender() {
+    const el = $('#fbPanel');
+    if (!el || el.dataset.built) return;
+    el.dataset.built = '1';
+    const btn = (k, label, cls) => '<button type="button" class="fbp-btn' + (cls ? ' ' + cls : '') + '" data-k="' + k + '">' + FB_ICON[k] + '<span>' + label + '</span></button>';
+    el.innerHTML = '<div class="fbp-cap">누르면 바로 보내요</div><div class="fbp-row">' + btn('rec', '녹음', 'rec') + FB_PRESETS.map(([k, , b]) => btn(k, b)).join('') + '</div>';
+    el.addEventListener('click', (ev) => {
+      const b = ev.target.closest && ev.target.closest('.fbp-btn');
+      ev.stopPropagation();
+      if (!b) return;
+      if (b.dataset.k === 'rec') fbRecToggle(); else fbPreset(b.dataset.k);
+    });
+  }
+  const fbRecOk = () => !fb.micDenied && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && typeof window.MediaRecorder === 'function';
+  // 판 위 작은 글: 까닭이 있으면 '까닭 · 버튼으로 보내 주세요', 없으면 '누르면 바로 보내요'
+  function fbCap(why) {
+    const c = $('#fbPanel .fbp-cap');
+    if (c) c.textContent = why ? why + ' · 버튼으로 보내 주세요' : '누르면 바로 보내요';
+  }
+  function fbPanelOpen(why) {
+    fbPanelRender();
+    const el = $('#fbPanel');
+    if (!el) return;
+    fbCap(why);
+    clearTimeout(toastTimer); $('#toast').hidden = true;   // 아래 가운데 알림이 버튼 줄을 덮지 않게
+    fbP.snap = fbPayload('');   // '의견'을 누른 순간의 카드·위치
+    fbP.open = true;
+    const rb = el.querySelector('.fbp-btn.rec');
+    if (rb) { rb.hidden = !fbRecOk(); rb.classList.remove('on'); rb.querySelector('span').textContent = '녹음'; }
+    el.hidden = false;
+    $('#fbBtn').classList.add('open');
+    $('#app').classList.add('fb-open');   // 버튼판이 열린 동안은 지도 위 아래쪽 카드(고른 곳·경로 카드·알림)보다 위
+    fbStep('panel');
+  }
+  function fbPanelClose() {
+    if (fbP.rec) fbRecStop(false);
+    fbP.open = false;
+    const el = $('#fbPanel');
+    if (el) el.hidden = true;
+    $('#fbBtn').classList.remove('open');
+    $('#app').classList.remove('fb-open');
+  }
+  // 보낸 뒤: 초록 고리가 짧게 돌고 '보냈어요', 연결이 없어 함에 남으면 '저장했어요 · 연결되면 보내요'
+  function fbSent(p) {
+    fbUi('send');
+    Promise.resolve(p).then((r) => {
+      clearTimeout(fb.sendT);
+      fb.sendT = setTimeout(() => { fbUi(''); toast(r === false ? '저장했어요 · 연결되면 보내요' : '보냈어요', '', 2200); }, 600);
+    });
+  }
+  function fbPreset(k) {
+    const pr = FB_PRESETS.find((x) => x[0] === k);
+    if (!pr) return;
+    const body = Object.assign({}, fbP.snap || fbPayload(''), { text: '[' + pr[1] + ']', preset: k, how: 'button', ms: Date.now() - fb.t0 });
+    fb.last = body;
+    fbStep('preset ' + k);
+    fbPanelClose();
+    fbSent(fb.inTest ? true : reportSure('feedback', body));
+  }
+  async function fbRecToggle() {
+    if (fbP.rec) { fbRecStop(true); return; }   // 다시 누르면 끝내고 보낸다
+    if (fbP.starting) return;
+    fbStep('rec tap');
+    fbP.starting = true;
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    } catch (e) {
+      const n = String((e && e.name) || 'error').slice(0, 30);
+      fbStep('rec fail ' + n);
+      if (n === 'NotAllowedError' || n === 'SecurityError') fb.micDenied = true;
+      const rb = $('#fbPanel .fbp-btn.rec');
+      if (rb && fb.micDenied) rb.hidden = true;
+      fbCap(fb.micDenied ? '마이크 권한이 꺼져 있어요' : '마이크를 쓸 수 없어요');
+      return;
+    } finally { fbP.starting = false; }
+    if (!fbP.open) { stream.getTracks().forEach((t) => t.stop()); return; }   // 그새 닫았다
+    const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
+    const mime = types.find((m) => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) || '';
+    let mr;
+    try { mr = new MediaRecorder(stream, Object.assign({ audioBitsPerSecond: 24000 }, mime ? { mimeType: mime } : {})); } catch (e) {
+      stream.getTracks().forEach((t) => t.stop());
+      fbStep('rec fail recorder');
+      fbCap('녹음을 시작하지 못했어요');
+      return;
+    }
+    const rec = { mr, stream, chunks: [], t0: Date.now(), heard: false, loudAt: Date.now(), send: false, ac: null, an: null, tick: null };
+    fbP.rec = rec;
+    mr.ondataavailable = (e) => { if (e.data && e.data.size) rec.chunks.push(e.data); };
+    mr.onstop = () => {
+      clearInterval(rec.tick);
+      stream.getTracks().forEach((t) => t.stop());
+      try { if (rec.ac) rec.ac.close(); } catch (e) { /* 이미 닫힘 */ }
+      if (fbP.rec === rec) fbP.rec = null;
+      const sec = Math.round((Date.now() - rec.t0) / 100) / 10;
+      if (rec.send && rec.chunks.length) fbRecDone(new Blob(rec.chunks, { type: mr.mimeType || mime || 'audio/webm' }), sec);
+    };
+    // 말소리 크기: 말이 끝나고 조용하면 스스로 끝낸다 (재지 못하면 다시 누름·20초로만)
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      rec.ac = new AC();
+      rec.an = rec.ac.createAnalyser(); rec.an.fftSize = 1024;
+      rec.ac.createMediaStreamSource(stream).connect(rec.an);
+    } catch (e) { rec.an = null; }
+    const buf = new Float32Array(1024);
+    rec.tick = setInterval(() => {
+      const now = Date.now();
+      if (rec.an) {
+        rec.an.getFloatTimeDomainData(buf);
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+        if (Math.sqrt(sum / buf.length) > 0.02) { rec.heard = true; rec.loudAt = now; }
+      }
+      const rs = $('#fbPanel .fbp-btn.rec span');
+      if (rs) rs.textContent = '보내기 ' + Math.max(0, Math.ceil((FB_REC_MAX_MS - (now - rec.t0)) / 1000));
+      if (now - rec.t0 >= FB_REC_MAX_MS || (rec.heard && now - rec.loudAt >= FB_REC_QUIET_MS)) fbRecStop(true);
+    }, 200);
+    try { mr.start(1000); } catch (e) {
+      fbP.rec = null; clearInterval(rec.tick); stream.getTracks().forEach((t) => t.stop());
+      fbStep('rec fail start');
+      fbCap('녹음을 시작하지 못했어요');
+      return;
+    }
+    const rb = $('#fbPanel .fbp-btn.rec');
+    if (rb) { rb.classList.add('on'); rb.querySelector('span').textContent = '보내기 ' + Math.round(FB_REC_MAX_MS / 1000); }
+    fbStep('rec start');
+  }
+  function fbRecStop(send) {
+    const rec = fbP.rec;
+    if (!rec) return;
+    rec.send = !!send;
+    fbP.rec = null;
+    clearInterval(rec.tick);
+    try { if (rec.mr.state !== 'inactive') rec.mr.stop(); else rec.mr.onstop(); } catch (e) { rec.stream.getTracks().forEach((t) => t.stop()); }
+    if (send) fbPanelClose();
+  }
+  function fbB64(blob) {
+    return new Promise((res) => {
+      const fr = new FileReader();
+      fr.onload = () => res(String(fr.result || '').replace(/^data:[^,]*,/, ''));
+      fr.onerror = () => res('');
+      fr.readAsDataURL(blob);
+    });
+  }
+  async function fbRecDone(blob, sec) {
+    fbStep('rec done');
+    fbUi('send');
+    const b64 = await fbB64(blob);
+    if (!b64) { fbUi(''); toast('녹음을 저장하지 못했어요 · 버튼으로 보내 주세요', 'warn', 3500); return; }
+    const qid = tele.sid + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    // 의견(언제·어디·카드, qid)은 바로 보낼 함으로 — 녹음이 아직 못 올라가도 운영자가 의견이 있다는 것을 안다. 녹음은 같은 qid 로 따로 올린다
+    const payload = Object.assign({}, fbP.snap || fbPayload(''), { text: '(녹음 ' + sec + '초)', how: 'audio', sec, mime: blob.type, qid, ms: Date.now() - fb.t0 });
+    const item = { qid, at: Date.now(), v: APP_VERSION, sid: tele.sid, mime: blob.type || 'audio/webm', sec, b64 };
+    if (IS_TEST_PAGE) item.x = 1;
+    const q = fbA.load();
+    q.push(item);
+    fbA.save(q);
+    fb.last = payload;
+    const sent = fb.inTest ? true : reportSure('feedback', payload);
+    fbSent(Promise.all([sent, fbAudioFlush()]).then(([ev]) => (ev === false || fbA.load().some((x) => x.qid === qid) ? false : true)));
+  }
+  // 녹음 함 보내기: 녹음을 올리고(번호를 받고) → '녹음 올림'(qid·번호)을 보낼 함에 → 함에서 뺀다
+  async function fbAudioFlush() {
+    if (fbA.busy || sendOff(fb.inTest)) return null;
+    if (!fbA.load().length) return null;
+    fbA.busy = true;
+    let last = null;
+    try {
+      for (const item of fbA.load()) {
+        let got = null;
+        try { got = await fbA.post(item); } catch (e) { got = null; }
+        if (!got) { last = false; break; }
+        const body = { msg: 'feedback audio', qid: item.qid, audio: got.id, audioVia: got.via, sec: item.sec, mime: item.mime };
+        if (fb.inTest) fb.lastAudio = body; else reportSure('feedback', body);
+        fbA.save(fbA.load().filter((x) => x.qid !== item.qid));
+        last = true;
+      }
+    } finally { fbA.busy = false; }
+    return last;
+  }
+  window.addEventListener('online', () => { fbAudioFlush(); });
+  $('#fbBtn').addEventListener('click', (ev) => { ev.stopPropagation(); if (fb.on) fbCancel(); else if (fbP.open) fbPanelClose(); else fbStart(); });
+  // 듣는 중에 화면의 다른 곳을 누르면 취소 (그 누름은 원래 하던 일도 그대로 한다). v225: 버튼판도 판 밖을 누르면 닫는다
+  document.addEventListener('pointerdown', (ev) => {
+    const at = (sel) => !!(ev.target && ev.target.closest && ev.target.closest(sel));
+    if (fb.on && !at('#fbBtn')) fbCancel();
+    if (fbP.open && !at('#fbBtn') && !at('#fbPanel')) fbPanelClose();
+  }, true);
 
   function applyTesla() {
     $('#app').classList.add('tesla');   // 테슬라 모드만 쓴다 (2026-11-14)
@@ -9754,7 +9988,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,

@@ -1762,6 +1762,33 @@
   .fbbtn.listening .fb-mic-s, .fbbtn.sending .fb-mic-s { stroke: #0b7a43; }
   #app.tesla .trip .fbbtn .fb-ring { -webkit-mask: radial-gradient(circle, transparent 24px, #000 25px); mask: radial-gradient(circle, transparent 24px, #000 25px); }
   #app.tesla .trip .fb-label { position: absolute; right: 0; bottom: calc(100% + 10px); box-shadow: var(--nv-shadow); }
+  /* v225 의견 버튼판 (테슬라 '음성 인식 서버에 연결하지 못했어요'): 주행 기록 카드 오른쪽 한 줄 — 위의 단속 카드·'의견' 버튼·가운데 내 차를 가리지 않는다.
+     운전 중에도 누르기 쉬운 큰 칸(72×76)에 그림 + 짧은 글, 바탕은 불투명(뒤 지도가 비치지 않게) */
+  .fbpanel { display: none; }
+  #app.tesla.fb-open .trip { z-index: 1120; }   /* 열린 동안은 지도 위 아래쪽 카드(고른 곳 1065·경로 카드·알림 1100)가 버튼을 덮지 않게 */
+  #app.tesla .fbpanel:not([hidden]) {
+    position: absolute; left: calc(100% + 10px); bottom: 0; z-index: 5; pointer-events: auto;
+    display: flex; flex-direction: column; gap: 6px; padding: 8px 8px 10px; border-radius: 18px;
+    background: var(--nv-bg); box-shadow: var(--nv-shadow-lg, 0 6px 22px rgba(0, 0, 0, .3)); text-shadow: none;
+    animation: fbpIn .16s ease-out;
+  }
+  @keyframes fbpIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
+  .fbp-cap { font-size: 12px; font-weight: 700; color: var(--nv-sub); padding: 0 4px; }
+  .fbp-row { display: flex; gap: 6px; }
+  .fbp-btn {
+    width: 72px; height: 76px; border: 0; border-radius: 14px; padding: 0; cursor: pointer; font: inherit; flex: none;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+    background: var(--nv-soft); color: var(--nv-fg); box-shadow: inset 0 0 0 1.5px rgba(128, 132, 140, .28);
+    transition: transform .08s ease, background-color .15s ease;
+  }
+  .fbp-btn[hidden] { display: none; }
+  .fbp-btn:active { transform: scale(.95); }
+  .fbp-btn svg { width: 30px; height: 30px; }
+  .fbp-btn span { font-size: 14px; font-weight: 800; letter-spacing: -.02em; line-height: 1; }
+  .fbp-btn.rec { background: #0b7a43; color: #fff; box-shadow: none; }
+  .fbp-btn.rec.on { background: #03c75a; animation: fbpRec 1.1s ease-in-out infinite; }
+  @keyframes fbpRec { 0%, 100% { box-shadow: 0 0 0 0 rgba(3, 199, 90, .55); } 50% { box-shadow: 0 0 0 8px rgba(3, 199, 90, 0); } }
+  .fbbtn.open { box-shadow: inset 0 0 0 2px var(--nv-green), 0 0 0 4px rgba(3, 199, 90, .18); }
 
   /* ================= v207 색깔 유도선 = 갈림 그림 (2026-11-24 운전자 '분홍색을 첫 번째 있는 걸로 보여 주고 … 그림을 알려 주는 게 훨씬 더 좋아',
      '굳이 그림이 표기돼 있으면은 분홍색 화살표로 안 바꿔도 돼', '우리가 가지 않는 방향이라고 해도 그림에서 표지판에 표기를 해 주는 게 좋아') =================
@@ -1901,6 +1928,8 @@
         <b class="fb-cap" aria-hidden="true">의견</b>
         </button><span id="fbLabel" class="fb-label" hidden></span></div>
       </div>
+      <!-- v225: 음성 인식이 안 되는 차(테슬라)는 '의견'을 누르면 이 버튼판 — 녹음 + 그림 버튼 다섯 (app.js 가 채운다) -->
+      <div id="fbPanel" class="fbpanel" role="group" aria-label="의견 보내기" hidden></div>
       <div class="stat"><div class="k">주행 거리</div><div class="v"><span id="tripKm">0.0</span><small>km</small></div></div>
       <div class="stat"><div class="k">주행 시간</div><div class="v" id="tripTime">0:00</div></div>
       <div class="stat"><div class="k">평균 속도</div><div class="v"><span id="tripAvg">0</span><small> km/h</small></div></div>
@@ -2172,8 +2201,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-224"></script>
-<script src="img/ai/picks.js?v=2026.11.16-224"></script>
-<script src="app.js?v=2026.11.16-224"></script>
+<script src="icons.js?v=2026.11.16-225"></script>
+<script src="img/ai/picks.js?v=2026.11.16-225"></script>
+<script src="app.js?v=2026.11.16-225"></script>
 </body>
 </html>

@@ -82,6 +82,24 @@ ok((await call('POST', '/log', { body: { a: 1 } })).s === 401, 'POST /log withou
 const lp = await call('POST', '/log', { body: { a: 1 }, token: TOKEN });
 ok(lp.s === 200 && lp.j.id && (await call('GET', '/log?id=' + lp.j.id, { token: TOKEN })).s === 200, '/log with token → stored and readable');
 ok((await call('POST', '/log', { body: { big: 'x'.repeat(600000) }, token: TOKEN, ip: '9.9.9.9' })).s === 413, '/log over 500KB → 413');
+// v225: 의견 녹음 — 누구나 하나 올리고(400KB), 같은 qid 는 덮어쓰고, 듣기는 운영자만. 위치는 받지 않는다
+{
+  const a1 = await call('POST', '/fb', { body: { qid: 'abc-123', mime: 'audio/webm;codecs=opus', sec: 6, v: 't', sid: 's', b64: 'AAAA', lat: 37.5, lng: 127 }, ip: '8.8.1.1' });
+  ok(a1.s === 200 && a1.j.id === 'abc-123', 'POST /fb without token → stored under its qid');
+  const a2 = await call('POST', '/fb', { body: { qid: 'abc-123', mime: 'audio/webm', sec: 6, b64: 'BBBB' }, ip: '8.8.1.1' });
+  ok(a2.s === 200 && a2.j.id === 'abc-123', 'the same qid again overwrites (a retry stays one recording)');
+  ok((await call('GET', '/fb?id=abc-123')).s === 401 && (await call('GET', '/fb')).s === 401, 'listening to /fb needs the operator token');
+  const g = await call('GET', '/fb?id=abc-123', { token: TOKEN });
+  ok(g.s === 200 && g.j.b64 === 'BBBB' && g.j.mime === 'audio/webm' && g.j.lat === undefined && g.j.lng === undefined, '/fb?id= with token → the audio, no position stored');
+  const li = await call('GET', '/fb', { token: TOKEN });
+  ok(li.s === 200 && li.j.ids.includes('abc-123'), '/fb with token lists ids');
+  ok((await call('POST', '/fb', { body: { qid: 'q2', mime: 'text/plain', b64: 'AAAA' }, ip: '8.8.1.2' })).s === 400, '/fb rejects a non-audio type');
+  ok((await call('POST', '/fb', { body: { qid: 'q3', mime: 'audio/webm', b64: 'x'.repeat(410000) }, ip: '8.8.1.3' })).s === 413, '/fb over 400KB → 413');
+  const xt = await call('POST', '/fb', { body: { qid: 'q4', mime: 'audio/webm', b64: 'AAAA', x: 1 }, ip: '8.8.1.4' });
+  ok(xt.s === 200 && xt.j.dropped === 'test' && (await call('GET', '/fb?id=q4', { token: TOKEN })).s === 404, 'a test recording (x) is answered but not stored');
+  const dv = await call('POST', '/fb', { body: { qid: 'q5', mime: 'audio/webm', b64: 'AAAA' }, ip: '8.8.1.5', origin: 'http://localhost:8765' });
+  ok(dv.s === 200 && dv.j.dropped === 'dev', 'a recording from a localhost page is answered but not stored');
+}
 await call('POST', '/event', { body: { type: 'warn', msg: 'pub', trace: [[0, 37, 127]] } });
 await call('POST', '/event', { body: { type: 'warn', msg: 'op', trace: [[0, 37, 127]] }, token: TOKEN });
 const ev = (await call('GET', '/events', { token: TOKEN })).j.items;

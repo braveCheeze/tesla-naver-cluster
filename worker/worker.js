@@ -35,10 +35,10 @@ const routeHits = new Map();
 // Origin 은 위조할 수 있으므로 유료 API(네이버 클라우드)와 KV 쓰기를 이것으로 지킨다.
 // v175: 공유 IP(CGNAT) 뒤의 여러 차가 정상으로 써도 막히지 않게 넉넉히 (비용은 하루 상한이 지킨다)
 const LIMITS = { '/route': 40, '/geocode': 60, '/reverse': 150, '/search': 60, '/hipass': 60, '/weather': 60, '/config': 120,
-  '/event': 60, '/log': 3, '/fix': 30, '/fixes': 60, '/events': 30, '/fix/review': 30, '/pass': 20, '/passes': 30, '/trip': 30, '/trips': 60, '/handoff': 30,
+  '/event': 60, '/log': 3, '/fb': 6, '/fix': 30, '/fixes': 60, '/events': 30, '/fix/review': 30, '/pass': 20, '/passes': 30, '/trip': 30, '/trips': 60, '/handoff': 30,
   '/check': 10, '/check/status': 30, '/check/next': 120, '/check/result': 120, '/check/unmatched': 30, '/check/results': 30 };
 const PAID = new Set(['/route', '/geocode', '/reverse', '/search']);
-const KV_WRITE = new Set(['/event', '/fix', '/fix/review', '/check']);
+const KV_WRITE = new Set(['/event', '/fix', '/fix/review', '/check', '/fb']);
 const DAY_CAP = { paid: 20000, kv: 900, pass: 30000, trip: 3000 };   // pass: 하루 통과 기록 건수, trip: 경로 조각 수 (D1 무료 한도 쓰기 하루 10만 행 안)
 const hits = new Map();
 const day = { d: '', paid: 0, kv: 0, pass: 0, trip: 0 };
@@ -354,7 +354,8 @@ export default {
     const isTripPost = req.method === 'POST' && url.pathname === '/trip';
     const isHandoffPost = req.method === 'POST' && url.pathname === '/handoff';
     const isCheckPost = req.method === 'POST' && (url.pathname === '/check' || url.pathname === '/check/result');
-    if (req.method !== 'GET' && !isLogPost && !isEventPost && !isFixPost && !isReviewPost && !isPassPost && !isTripPost && !isHandoffPost && !isCheckPost) return json({ error: 'method' }, 405, cors);
+    const isFbPost = req.method === 'POST' && url.pathname === '/fb';   // v225: 의견 녹음
+    if (req.method !== 'GET' && !isLogPost && !isEventPost && !isFixPost && !isReviewPost && !isPassPost && !isTripPost && !isHandoffPost && !isCheckPost && !isFbPost) return json({ error: 'method' }, 405, cors);
     // v172: 접속지(IP)별 횟수 제한 → 하루 상한 → 운영자 토큰 순서 (토큰 맞히기 시도도 횟수 제한에 걸린다)
     const ip = req.headers.get('CF-Connecting-IP') || 'x';
     const wait = overLimit(ip, url.pathname);
@@ -366,14 +367,15 @@ export default {
     const isAdmin = !!env.ADMIN_TOKEN && String(env.ADMIN_TOKEN).length >= 16 && sameToken(bearer, String(env.ADMIN_TOKEN));
     // 남의 신고·진단 기록을 읽거나 진단 기록을 올리는 것은 운영자만 (Origin 은 위조할 수 있다)
     if ((url.pathname === '/events' || url.pathname === '/log' || url.pathname === '/passes' || url.pathname === '/trips' || url.pathname === '/handoff' ||
-      url.pathname === '/check/next' || url.pathname === '/check/result' || url.pathname === '/check/unmatched' || url.pathname === '/check/results') && !isAdmin) {
+      url.pathname === '/check/next' || url.pathname === '/check/result' || url.pathname === '/check/unmatched' || url.pathname === '/check/results' ||
+      (url.pathname === '/fb' && !isFbPost)) && !isAdmin) {
       return json({ error: 'unauthorized' }, 401, cors);
     }
     if (!isAdmin && overDay(url.pathname)) return json({ error: 'daily limit', retryAfter: 3600 }, 429, cors);
     // v219: 개발용 페이지(이 컴퓨터의 localhost)에서 온 통과 기록·주행 경로·고침·실시간 확인 요청은 받은 것으로 답하고 저장하지 않는다
     // (2026-11-24 운영 통계에 시험 주행 — 바다 위 합성 길·가짜 시계·S1 구간 — 이 섞였다. 실제 차는 Pages 주소에서 보낸다)
     if (!isAdmin && /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(origin) &&
-      (isPassPost || isTripPost || isFixPost || (req.method === 'POST' && url.pathname === '/check'))) {
+      (isPassPost || isTripPost || isFixPost || isFbPost || (req.method === 'POST' && url.pathname === '/check'))) {
       return json({ ok: true, dropped: 'dev' }, 200, cors);
     }
 
@@ -934,6 +936,33 @@ export default {
         const oldest = items.length ? items[0].serverAt || null : null;
         if (p.get('user') === '1') items = items.filter((e) => e.user);   // 운전자가 누른 '놓침'·'틀림'만
         return json(before ? { items, oldest } : { items }, 200, cors);
+      }
+
+      // v225 (2026-11-24 운전자 테슬라 '의견을 보내고 싶은데도 못 보내네'): 테슬라 브라우저는 음성 인식 서버에 닿지 못해(network) 말을 글자로 못 바꾼다.
+      // 그래서 앱이 녹음(MediaRecorder)을 올린다. 누구나 한 번에 하나(400KB 까지), 30일 보관, 같은 qid 로 다시 보내면 덮어쓴다(재시도해도 하나).
+      // 위치·카드는 받지 않는다 — 그건 같은 qid 의 /event 'feedback' 에 있다. 듣기(GET)는 운영자만: /fb (목록), /fb?id=
+      if (url.pathname === '/fb') {
+        if (!env.LOGS) return json({ error: 'storage not configured' }, 501, cors);
+        if (isFbPost) {
+          const text = await req.text();
+          if (text.length > 400000) return json({ error: 'too large' }, 413, cors);
+          let b;
+          try { b = JSON.parse(text); } catch (e) { return json({ error: 'bad json' }, 400, cors); }
+          if (!b || typeof b.b64 !== 'string' || !b.b64 || !/^audio\/[a-z0-9.+-]+/i.test(String(b.mime || ''))) return json({ error: 'bad audio' }, 400, cors);
+          if (b.x) return json({ ok: true, dropped: 'test' }, 200, cors);
+          const id = String(b.qid || '').replace(/[^a-z0-9-]/gi, '').slice(0, 40) || crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+          const rec = { at: Date.now(), mime: String(b.mime).slice(0, 60), sec: Math.max(0, Math.min(60, Number(b.sec) || 0)), v: String(b.v || '').slice(0, 30),
+            sid: String(b.sid || '').slice(0, 20), qid: id, country: (req.cf && req.cf.country) || '', b64: b.b64 };
+          await env.LOGS.put('fba:' + id, JSON.stringify(rec), { expirationTtl: 60 * 60 * 24 * 30 });
+          return json({ ok: true, id }, 200, cors);
+        }
+        const id = (p.get('id') || '').replace(/[^a-z0-9-]/gi, '');
+        if (id) {
+          const v = await env.LOGS.get('fba:' + id);
+          return v ? new Response(v, { status: 200, headers: { ...cors, 'Content-Type': 'application/json' } }) : json({ error: 'not found' }, 404, cors);
+        }
+        const l = await env.LOGS.list({ prefix: 'fba:', limit: 200 });
+        return json({ ids: l.keys.map((k) => k.name.slice(4)) }, 200, cors);
       }
 
       if (url.pathname === '/log') {
