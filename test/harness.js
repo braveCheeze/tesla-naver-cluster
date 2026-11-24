@@ -7304,13 +7304,17 @@
     r.r23035 = { at: [c[0], c[1]], eb: c.eb, lane: [c.sl, c.sg], label: t.camLabel(c), text: t.cams.arrows.has(c) };
     r.lane17901 = [rows[17901].sl, rows[17901].sg].join() === [rows[17901][0], rows[17901][1]].join();
     r.lim40 = [rows[21328][2], rows[21329][2]];
+    // v232: 7번국도 동해대로 80 과속 — 네이버 자리 112° 한 방향 (경찰 자료는 201m 아래·292° 로 거꾸로였다)
+    const c18 = rows[18495];
+    r.r18495 = { at: [c18[0], c18[1]], eb: c18.eb, lane: [c18.sl, c18.sg], lim: c18[2], text: t.cams.arrows.has(c18) };
     const D = r.dir;
     const ok = r.off.length === 0 && r.kept.length === 0 &&
       D.r743 === '108,0,-' && D.r17901 === '186,0,-' && D.r21632 === '115,0,-' && D.r23272 === '321,0,T' && D.r27681 === '117,0,-' &&
       D.r812 === '27,1,-' && D.r1143 === '290,1,-' && D.r2075 === '98,1,-' && D.r29494 === '139,1,-' && D.r16085 === '9,0,T' && D.r22693 === '337,0,-' &&
       r.r23035.at.join() === '37.417022,126.917881' && r.r23035.eb === 6 && r.r23035.lane.join() === '37.417022,126.917881' &&   // v226: keys 재확인 — 어린이 표시, 네이버 자리
       /후면/.test(r.r23035.label) && /어린이보호구역/.test(r.r23035.label) && !r.r23035.text &&
-      r.lane17901 && r.lim40.join() === '40,40';
+      r.lane17901 && r.lim40.join() === '40,40' &&
+      r.r18495.at.join() === '37.068206,129.391278' && r.r18495.eb === 112 && r.r18495.lane.join() === '37.068206,129.391278' && r.r18495.lim === 80 && r.r18495.text;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
