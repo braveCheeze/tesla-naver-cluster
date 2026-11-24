@@ -2907,7 +2907,7 @@
     { id: 'S144', name: "S144 report's nearby cameras say where each came from (v215, keys 2026-11-24: an 울산 report listed the driver's own 놓침 spot, limit 0 and no direction, and the admin page showed it as a real camera '과속 제한 모름'): src 'cam' for police fixed cameras, 'mobile' for box and mobile points, 'spot' for spots the app adds, with who ('mine' this car, 'driver' driver or shared spot, 'crowd') and nv for Naver-checked", fn: s144 },
     { id: 'S145', name: "S145 single-pole camera pairs follow their place text (v216): in 184 pairs the two records swap directions so each direction matches its own 'A→B' text (lane point moves with the direction); 6 pairs stay as before (5 where the two records differ in school or elder zone, until Naver shows which way the zone is, and 6741/6742)", fn: s145 },
     { id: 'S146', name: "S146 test runs never reach the real server (v219: synthetic passes reached production when a non-test page on the same origin — the S67 catalog frame or a hand-opened index.html — read the harness's saved queue): on the test page the send queues are stored under their own '@test' names, records made here carry x: 1, and pass records dated after today (a fake clock) are dropped before sending", fn: s146 },
-    { id: 'S147', name: "S147 Naver verdicts on zone pairs and duplicate poles (v220): labels, limits and rear flags follow Naver's badges, and duplicate records Naver does not show are switched off (kept in the data, left out of lookups) — 평인일주로 138° is a school-zone speed camera, 신재로 is school zone both ways, 해안로 is a school-zone signal-and-speed camera both ways, 적중로 is 50 (253° rear), 17755 moves to Naver's point without its place text", fn: s147 },
+    { id: 'S147', name: "S147 Naver verdicts on zone pairs and duplicate poles (v220-v222): labels, limits and rear flags follow Naver's badges, and duplicate records Naver does not show are switched off (kept in the data, left out of lookups) — 평인일주로 138° is a school-zone speed camera, 신재로 is school zone both ways, 해안로 is a school-zone signal-and-speed camera both ways, 적중로 is 50 (253° rear), 17755 moves to Naver's point without its place text", fn: s147 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -7253,7 +7253,16 @@
     // v221: 7623 (295° 어린이 30) 은 네이버 자리 35.628158,128.32214 진행 방향 296 — 기둥 점보다 104m 앞
     const c2 = rows[7623];
     r.r7623 = { at: [c2[0], c2[1]], eb: c2.eb, lane: [c2.sl, c2.sg], label: t.camLabel(c2) };
-    const ok = r.labels.r1115 === '어린이보호구역 신호·과속단속' && r.labels.r1116 === '어린이보호구역 과속단속' &&
+    // v222: 재주행 판정 — 고주로 215°·거제북로 179°·합천 96° 는 카메라 없음(끔), 거제북로 359° 는 노인보호, 학동로 서행은 네이버 자리 244°
+    r.off2 = [5313, 2027, 7265, 7269].filter((i) => inGrid(i));
+    r.kept2 = [5312, 2028, 7267, 7268, 25548, 25549].filter((i) => !inGrid(i));
+    const c3 = rows[25548];
+    r.r25548 = { at: [c3[0], c3[1]], eb: c3.eb, lane: [c3.sl, c3.sg], label: t.camLabel(c3), e66: rows[25549].eb };
+    r.r2028 = { label: L(2028), eb: rows[2028].eb };
+    const ok = r.off2.length === 0 && r.kept2.length === 0 &&
+      r.r25548.at.join() === '37.520509,127.058439' && r.r25548.eb === 244 && r.r25548.lane.join() === '37.520509,127.058439' &&
+      r.r25548.label === '어린이보호구역 신호·과속단속' && r.r25548.e66 === 66 &&
+      r.r2028.label === '노인보호구역 과속단속' && r.r2028.eb === 359 &&r.labels.r1115 === '어린이보호구역 신호·과속단속' && r.labels.r1116 === '어린이보호구역 과속단속' &&
       r.labels.r2066 === '어린이보호구역 과속단속' && r.labels.r2067 === '어린이보호구역 과속단속' &&
       r.labels.r26256 === '어린이보호구역 신호·과속단속' && r.labels.r26257 === '어린이보호구역 신호·과속단속' &&
       r.labels.r6998 === '과속단속 50' && /후면/.test(r.labels.r6999) && / 50$/.test(r.labels.r6999) &&
