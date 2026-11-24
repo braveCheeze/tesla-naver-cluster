@@ -2906,6 +2906,7 @@
     { id: 'S143', name: "S143 old driver reports checked on Naver both ways (v213): 용구대로 60 (row 21232) moves to Naver's northbound point and faces north, without the old '보정역→구성역' place text; 남북대로 80 (row 19618) is a rear camera like Naver; a missing 신호·과속 50 on 비룡로 (남양주 화도) is added as a checked spot; 신갈JC has one 이동식 110 spot, moved 210 m north to Naver's point in v214", fn: s143 },
     { id: 'S144', name: "S144 report's nearby cameras say where each came from (v215, keys 2026-11-24: an 울산 report listed the driver's own 놓침 spot, limit 0 and no direction, and the admin page showed it as a real camera '과속 제한 모름'): src 'cam' for police fixed cameras, 'mobile' for box and mobile points, 'spot' for spots the app adds, with who ('mine' this car, 'driver' driver or shared spot, 'crowd') and nv for Naver-checked", fn: s144 },
     { id: 'S145', name: "S145 single-pole camera pairs follow their place text (v216): in 184 pairs the two records swap directions so each direction matches its own 'A→B' text (lane point moves with the direction); 6 pairs stay as before (5 where the two records differ in school or elder zone, until Naver shows which way the zone is, and 6741/6742)", fn: s145 },
+    { id: 'S146', name: "S146 test runs never reach the real server (v219: synthetic passes reached production when a non-test page on the same origin — the S67 catalog frame or a hand-opened index.html — read the harness's saved queue): on the test page the send queues are stored under their own '@test' names, records made here carry x: 1, and pass records dated after today (a fake clock) are dropped before sending", fn: s146 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -6202,7 +6203,8 @@
       const b = bodies[bodies.length - 1] || {};
       const okKeys = (o, allow) => Object.keys(o).every((k) => allow.includes(k));
       r.e = { sent, body: Object.keys(b).sort().join(','), items: (b.items || []).length,
-        itemKeys: (b.items || []).every((x) => okKeys(x, ['k', 'd', 'lim', 'kind', 'a', 'g', 'hid', 'kmh', 'nav'])),
+        itemKeys: (b.items || []).every((x) => okKeys(x, ['k', 'd', 'lim', 'kind', 'a', 'g', 'hid', 'kmh', 'nav', 'x'])),
+        synth: (b.items || []).length > 0 && (b.items || []).every((x) => x.x === 1),   // v219: 시험 페이지에서 만든 기록은 x: 1 (서버가 버린다)
         kmh5: (b.items || []).every((x) => x.kmh % 5 === 0), noSid: !/"(sid|dev|lat|lng|t|trace)"/.test(JSON.stringify(b)), left: ps.q.length, stored: t.store.get('passQ') };
       // (f) 자료에 없는 감속: 시속 90 → 60 → 90 (곧은 길, 400m 안 카메라 없음) 이면 후보 1, 막힘처럼 시속 18까지 줄면 아님
       const O = dest(NAV_ORIGIN, 90, 80000);
@@ -6253,7 +6255,7 @@
     const ok = !!r.key && A && A.a >= 100 && A.g === 0 && A.hid === 0 && A.kmh === 60 && A.lim === 60 &&
       B && B.a === 0 && B.g === 0 && B.hid === 0 && B.kmh === 60 &&
       r.c.length === 0 && D && D.hid === 1 && D.a === 0 &&
-      r.e.sent === true && r.e.body === 'cand,items,v' && r.e.items >= 1 && r.e.itemKeys && r.e.kmh5 && r.e.noSid && r.e.left === 0 && r.e.stored == null &&
+      r.e.sent === true && r.e.body === 'cand,items,v' && r.e.items >= 1 && r.e.itemKeys && r.e.synth && r.e.kmh5 && r.e.noSid && r.e.left === 0 && r.e.stored == null &&
       F && F.dr === 30 && F.o === 0 && r.f.cells.includes(F.c) && r.f.jam === 0 &&
       r.g.op !== 'none' && r.g.op.miss === 1 && r.g.op.lat === CAM.lat && r.g.op.trace > 0 && r.g.sentOp >= 1 && !r.g.pubLat &&
       r.h.pref === false && r.h.stored === '0' && r.h.left === 0 && r.h.after === 0 && /통계/.test(r.h.label) && r.h.back;
@@ -7207,6 +7209,35 @@
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
+  // S146: 시험 주행이 실제 서버로 가지 않게 (v219, 2026-11-24 운영 통계: 바다 위 합성 길·가짜 시계 11-25·S1 구간 같은 시험 기록이 섞임).
+  //   (a) 시험 페이지의 보낼 함(passQ·routeCur·routeOut·outbox·checks)은 'tnc.<이름>@test' 로 — 같은 주소의 다른 페이지는 'tnc.<이름>' 만 본다
+  //   (b) 오늘(한국 날짜)보다 뒤 날짜 통과 기록은 보내지 않고 버린다 (기기 시계가 틀렸거나 시험의 가짜 시계)
+  async function s146() {
+    const t = T(), r = {}, ps = t.passStats;
+    const keep = { post: ps.post, q: ps.q.slice(), cand: ps.cand.slice(), op: ps.op.slice(), pref: t.prefs.passStats, raw: localStorage.getItem('tnc.passQ@test') };
+    const bodies = [];
+    try {
+      t.store.set('passQ', JSON.stringify({ q: [{ k: '1,1|0', d: '2000-01-01' }] }));
+      r.a = { plain: localStorage.getItem('tnc.passQ'), test: !!localStorage.getItem('tnc.passQ@test'), outboxPlain: localStorage.getItem('tnc.outbox'), routePlain: localStorage.getItem('tnc.routeOut') };
+      ps.inTest = true; t.prefs.passStats = true;
+      ps.post = async (b) => { bodies.push(JSON.parse(JSON.stringify(b))); return { ok: true, status: 200 }; };
+      const day = (n) => new Date(Date.now() + 9 * 3600e3 + n * 86400e3).toISOString().slice(0, 10);
+      ps.q = [{ k: '37.5,127|0', d: day(0), lim: 50, kind: 1, a: 300, g: 0, hid: 0, kmh: 50, nav: 0, x: 1 }, { k: '37.6,127|0', d: day(1), lim: 50, kind: 1, a: 300, g: 0, hid: 0, kmh: 50, nav: 0, x: 1 }];
+      ps.cand = [{ c: '37500,127000', o: 0, dr: 30, d: day(1), x: 1 }]; ps.op = []; ps.nextAt = 0;
+      const sent = await t.passFlush(true);
+      const b = bodies[bodies.length - 1] || {};
+      r.b = { sent, items: (b.items || []).map((x) => x.k + '@' + (x.d === day(0) ? 'today' : x.d)), cand: (b.cand || []).length, left: ps.q.length + ps.cand.length };
+    } finally {
+      ps.post = keep.post; ps.inTest = false; t.prefs.passStats = keep.pref;
+      ps.q = keep.q; ps.cand = keep.cand; ps.op = keep.op;
+      if (keep.raw == null) localStorage.removeItem('tnc.passQ@test'); else localStorage.setItem('tnc.passQ@test', keep.raw);
+    }
+    const a = r.a, b = r.b;
+    const ok = a.plain === null && a.test && a.outboxPlain === null && a.routePlain === null &&
+      b.sent === true && b.items.join() === '37.5,127|0@today' && b.cand === 0 && b.left === 0;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
   // S127: (v198, 운전자 '어차피 다 테스터이고 익명이라서 누군지는 몰라 그래서 쓸 수 있음', 테스터 쪽지 동의, '출발지 도착지 모두 남는 방향으로 해 줘
   //       원본은 30일 뒤에 자동으로 지우는걸로') 테스터 주행 경로 — 처음 안내는 멈춰 있을 때만(운전 중엔 안 띄우고 기록도 안 함),
   //       출발부터 도착까지 2~5초 간격, 카메라 통과(경고 거리) 표시, 주행마다 새 무작위 번호, 기기·접속 번호 없음, 끄면 지움
@@ -7268,7 +7299,7 @@
     }
     const ok = r.a.whileDriving == null && !r.a.cur && r.a.parked === '1' && r.a.toast &&
       r.b.parts >= 1 && r.b.end === 1 && /^[a-z0-9]{12}$/.test(r.b.rid || '') && r.b.ps === 1 && r.b.startM <= 40 && r.b.endM <= 40 && r.b.s0 >= 0 &&
-      r.b.gapMin >= 2 && r.b.gapMax <= 5 && r.b.keys === 'cams,d,end,part,ps,pts,rid,v' && r.b.cam !== 'none' && r.b.cam.a >= 100 && r.b.cam.lim === 60 &&
+      r.b.gapMin >= 2 && r.b.gapMax <= 5 && r.b.keys === 'cams,d,end,part,ps,pts,rid,v,x' && r.b.cam !== 'none' && r.b.cam.a >= 100 && r.b.cam.lim === 60 &&
       /^[a-z0-9]{12}$/.test(r.c.rid || '') && r.c.rid !== r.b.rid && r.c.ps === 0 &&
       r.d.pref === false && r.d.stored === '0' && !r.d.cur && r.d.saved == null && !r.d.after && r.d.sent === 0 && /주행 경로/.test(r.d.label) && r.d.back;
     return { pass: !!ok, detail: JSON.stringify(r) };

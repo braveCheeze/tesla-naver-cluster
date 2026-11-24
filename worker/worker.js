@@ -255,9 +255,11 @@ function passStmts(db, items, dayOf, v, stmts) {
   const agg = new Map(), recs = [];
   for (const it of items) {
     if (!it || typeof it !== 'object') continue;
+    if (it.x) continue;   // v219: 시험 페이지에서 만든 기록
     const k = String(it.k || ''), m = PASS_KEY.exec(k);
     if (!m || !inKorea(+m[1], +m[2])) continue;
     const d = dayOf(it.d), lim = intIn(it.lim, 0, 130) || 0, a = intIn(it.a, 0, 5000) || 0;
+    if (d === null) continue;   // v219: 오늘보다 뒤 날짜
     const hid = intIn(it.hid, 0, 3) || 0, kmh = intIn(it.kmh, 0, 250), g = it.g ? 1 : 0, nav = it.nav ? 1 : 0;
     const kind = PASS_KINDS.has(+it.kind) ? +it.kind : 0, res = passRes(a, g, hid);
     let e = agg.get(d + '#' + k);
@@ -287,10 +289,12 @@ function passCleanup(db, today, stmts) {
   stmts.push(db.prepare('DELETE FROM trips WHERE day < ?').bind(dayBefore(today, TRIP_DAYS)));
 }
 // 날짜 'YYYY-MM-DD' 가 오늘(한국)부터 3일 전 ~ 1일 뒤면 그대로, 아니면 오늘
+// v219: 오늘(한국 날짜)보다 뒤 날짜는 받지 않는다 (null: 버림). 2026-11-24 운영 통계에 시험 페이지의 가짜 시계 기록(11-25)이 들어왔다.
+// 예전엔 하루 뒤까지 받았다. 날짜가 없거나 사흘 넘게 지난 것은 예전처럼 오늘로
 function passDay(d, today) {
   if (typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return today;
   const k = daysBetween(d, today);
-  return k >= -1 && k <= 3 ? d : today;
+  return k < 0 ? null : k <= 3 ? d : today;
 }
 const dayBefore = (today, n) => new Date(Date.parse(today) - n * 86400000).toISOString().slice(0, 10);
 // 바깥 API 오류는 상태와 짧은 글만 돌려준다 (응답 전체를 그대로 내보내지 않게)
@@ -366,6 +370,12 @@ export default {
       return json({ error: 'unauthorized' }, 401, cors);
     }
     if (!isAdmin && overDay(url.pathname)) return json({ error: 'daily limit', retryAfter: 3600 }, 429, cors);
+    // v219: 개발용 페이지(이 컴퓨터의 localhost)에서 온 통과 기록·주행 경로·고침·실시간 확인 요청은 받은 것으로 답하고 저장하지 않는다
+    // (2026-11-24 운영 통계에 시험 주행 — 바다 위 합성 길·가짜 시계·S1 구간 — 이 섞였다. 실제 차는 Pages 주소에서 보낸다)
+    if (!isAdmin && /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(origin) &&
+      (isPassPost || isTripPost || isFixPost || (req.method === 'POST' && url.pathname === '/check'))) {
+      return json({ ok: true, dropped: 'dev' }, 200, cors);
+    }
 
     if (url.pathname === '/health') {
       return json({
@@ -698,10 +708,11 @@ export default {
         const nCams = passStmts(db, items, (d) => passDay(d, today), appVer(b.v), stmts);
         const cagg = new Map();
         for (const c of cands) {
-          if (!c || typeof c !== 'object') continue;
+          if (!c || typeof c !== 'object' || c.x) continue;   // v219: 시험 페이지 기록은 버린다
           const cell = String(c.c || ''), m = CELL_KEY.exec(cell), o = intIn(c.o, 0, 7), dr = intIn(c.dr, 10, 120);
           if (!m || o === null || dr === null || !inKorea(+m[1] / 1000, +m[2] / 1000)) continue;
           const d = passDay(c.d, today), key = d + '#' + cell + '#' + o;
+          if (d === null) continue;
           const e = cagg.get(key) || { day: d, cell, dir: o, n: 0, dsum: 0 };
           e.n++; e.dsum += dr;
           cagg.set(key, e);
@@ -713,7 +724,8 @@ export default {
         }
         const opRows = [];
         for (const r of ops) {
-          if (!r || typeof r !== 'object' || !PASS_KEY.test(String(r.k || ''))) continue;
+          if (!r || typeof r !== 'object' || r.x || !PASS_KEY.test(String(r.k || ''))) continue;
+          if (passDay(r.d, today) === null) continue;   // v219
           const s = JSON.stringify(r);
           if (s.length > 8000) continue;
           const at = Number.isFinite(+r.t) && +r.t > 0 ? Math.round(+r.t) : Date.now();
@@ -780,6 +792,7 @@ export default {
         try { b = JSON.parse(text); } catch (e) { return json({ error: 'bad json' }, 400, cors); }
         const rid = String((b && b.rid) || '');
         if (!/^[a-z0-9]{8,24}$/.test(rid)) return json({ error: 'bad trip' }, 400, cors);
+        if (b.x) return json({ ok: true, dropped: 'test' }, 200, cors);   // v219: 시험 페이지에서 만든 주행 (받은 것으로 알려 다시 보내지 않게)
         const db = await passDb(env);
         if (!db) return json({ ok: false, why: 'off' }, 200, cors);
         if (!isAdmin && ++day.trip > DAY_CAP.trip) return json({ ok: false, why: 'cap' }, 200, cors);

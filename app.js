@@ -6,15 +6,23 @@
   // app.js 가 있는 폴더 주소 (img/ 같은 그림 파일은 이 기준: 테스트 페이지는 /test/ 에서 ../app.js 를 불러온다)
   const APP_BASE = (() => { try { return new URL('.', document.currentScript.src).href; } catch (e) { return ''; } })();
   const NS = 'tnc.';
+  // v219 (2026-11-24 운영 통계에 시험 주행이 섞임): 보낼 함(통과 기록·주행 경로·신고·실시간 확인)은 시험 페이지(/test/)에서 다른 이름으로 둔다.
+  // 같은 주소(localhost:8765)의 다른 페이지(시험 S67 의 index.html?catalog 틀, 손으로 연 index.html)가 시험의 가짜 통과 기록(가짜 시계·바다 위 길·
+  // 합성 카메라)을 그대로 읽어 실제 서버로 보냈다 — 그 페이지는 시험 페이지가 아니라서 막히지 않았다
+  const IS_TEST_PAGE = /\/test\//.test(location.pathname);
+  const SEND_KEYS = new Set(['passQ', 'routeCur', 'routeOut', 'outbox', 'checks']);
+  const skey = (k) => NS + k + (IS_TEST_PAGE && SEND_KEYS.has(k) ? '@test' : '');
   const store = {
-    get(k) { try { return localStorage.getItem(NS + k); } catch (e) { return null; } },
+    get(k) { try { return localStorage.getItem(skey(k)); } catch (e) { return null; } },
     set(k, v) {
       try {
-        if (v == null || v === '') localStorage.removeItem(NS + k);
-        else localStorage.setItem(NS + k, String(v));
+        if (v == null || v === '') localStorage.removeItem(skey(k));
+        else localStorage.setItem(skey(k), String(v));
       } catch (e) { /* 저장 불가 환경: 이번 세션만 사용 */ }
     },
   };
+  // 시험 페이지는 예전 시험이 보통 이름으로 남긴 보낼 함을 지운다 (이 주소에서 실제로 달린 기록은 없다 — 차는 Pages 주소)
+  if (IS_TEST_PAGE) { try { SEND_KEYS.forEach((k) => localStorage.removeItem(NS + k)); } catch (e) { /* 저장소 막힘 */ } }
 
   const PROXY_DEFAULT = 'https://tesla-nav.cy6789.workers.dev';
   const DEFAULT_CENTER = { lat: 37.5658, lng: 126.9772 }; // 서울시청
@@ -61,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-218'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-219'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -73,7 +81,7 @@
     return out;
   })();
   const tele = { sid: Math.random().toString(36).slice(2, 10), sent: 0, seen: new Set(), ctx: null };
-  const testPage = /\/test\//.test(location.pathname);
+  const testPage = IS_TEST_PAGE;
   // 브라우저에 저장된 예전 index.html 이 새 app.js 를 불러온 경우(화면 요소가 맞지 않아 버튼 연결에서 멈춘다):
   // index.html 이 부른 app.js?v= 와 이 파일의 버전이 다르면 새 버전 주소(?v=)로 한 번 다시 연다.
   // (2026-11-14 16:37: PC 크롬에 11-13 화면이 남아 있어 'Cannot set properties of null (setting onclick)' 으로 멈췄다)
@@ -89,6 +97,10 @@
     }
   } catch (e) { /* 저장소 막힘 등: 그대로 진행 */ }
   const botLike = /bot|crawler|spider|headless/i.test(navigator.userAgent) || navigator.webdriver === true;
+  // v219: 이 컴퓨터에서 연 앱(localhost·127.0.0.1)은 개발용이다 — 실제 차는 Pages 주소. 시험이 가짜 보내기로 바꾼 때(inTest)가 아니면
+  // 통과 기록·주행 경로·신고·고침·실시간 확인을 실제 서버로 보내지 않는다 (손으로 연 index.html 에서 흉내 낸 주행이 운영 통계에 섞이지 않게)
+  const devHost = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+  const sendOff = (inTest) => botLike || (testPage && !inTest) || (devHost && !(testPage && inTest));
   function eventBody(type, data) {
     let ctx = {};
     try { ctx = tele.ctx ? tele.ctx() : {}; } catch (e) { /* 초기화 전 오류 */ }
@@ -108,7 +120,7 @@
     post: (body) => fetch(proxyUrl() + '/event', { method: 'POST', body: JSON.stringify(body), headers: authHeaders({ 'Content-Type': 'application/json' }) }),
   };
   async function outboxFlush() {
-    if (outbox.busy || botLike) return null;
+    if (outbox.busy || sendOff(outbox.inTest)) return null;   // v219: 시험 페이지·이 컴퓨터(localhost)에서는 시험이 켤 때만
     if (!outbox.load().length) return null;
     outbox.busy = true;
     let last = null;
@@ -125,7 +137,7 @@
   }
   // 돌려주는 값: true 보냄 · false 못 보내 함에 남김 · null (보내지 않는 환경)
   async function reportSure(type, data) {
-    if (botLike || (testPage && !outbox.inTest)) return null;
+    if (sendOff(outbox.inTest)) return null;
     const body = eventBody(type, data);
     body.qid = tele.sid + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
     const a = outbox.load(); a.push(body); outbox.save(a);
@@ -134,7 +146,7 @@
   }
   window.addEventListener('online', () => { outboxFlush(); });
   function report(type, data) {
-    if (testPage || botLike || tele.sent >= 40) return; // 검색엔진 로봇·자동화 접속은 보고하지 않음
+    if (testPage || botLike || devHost || tele.sent >= 40) return; // 검색엔진 로봇·자동화 접속·이 컴퓨터(localhost, v219)는 보고하지 않음
     const key = type + '|' + (data && data.msg);
     if (tele.seen.has(key)) return; // 같은 내용은 세션당 한 번만
     tele.seen.add(key);
@@ -2861,7 +2873,7 @@
   // 고침을 기기 번호와 함께 보낸다 (예전 길안내 서버는 405: 그냥 넘어간다)
   // v172: 운영자 토큰이 있으면 모든 사용자에게 바로, 없으면 서버에 후보로만 쌓인다. '신고 위치 보내기'를 끄면 보내지 않는다
   function sendFixes(items) {
-    if (!items.length || botLike || testPage || !prefs.share) return;
+    if (!items.length || sendOff(false) || !prefs.share) return;
     try { fetch(proxyUrl() + '/fix', { method: 'POST', body: JSON.stringify({ dev: devId, items }), headers: authHeaders({ 'Content-Type': 'application/json' }) }).catch(() => {}); } catch (e) { /* 없이 */ }
   }
   // 모든 사용자 고침 (길안내 서버 /fixes): 운영자 토큰으로 보냈거나 운영자가 확인한 것(op), 서로 다른 운전자 3명 넘게 보내 자동 반영된 것(auto, v175).
@@ -7581,6 +7593,7 @@
     const a = s ? Math.min(5000, Math.max(10, Math.round(s.first / 10) * 10)) : 0;
     const g = !s && (camState.passed.has(i) || camState.saidById.has(i)) ? 1 : 0;   // 같은 자리 다른 행을 알리고 함께 지남
     const rec = { k: passKey(c), d: kstDayOf(m.t), lim: c[2] | 0, kind: c[3], a, g, hid, kmh: Math.round(m.kmh / 5) * 5, nav: m.nav ? 1 : 0 };
+    if (testPage) rec.x = 1;   // v219: 시험 페이지에서 만든 기록 (서버가 버린다)
     routeCam(rec, m);   // v198: 주행 경로에도 카메라마다 통과·경고·거리·속도·제한
     if (!prefs.passStats) return;
     passStats.q.push(rec);
@@ -7620,7 +7633,7 @@
     if (camsNear(p.lat, p.lng, 400).length || bumpsNear(p.lat, p.lng, 150).length) return;
     passStats.lastCandOdo = state.odo;
     sp.length = 0;
-    passStats.cand.push({ c: Math.round(p.lat * 1000) + ',' + Math.round(p.lng * 1000), o: Math.round(h1 / 45) % 8, dr: Math.min(120, Math.round(drop / 5) * 5), d: kstDayOf(tm) });
+    passStats.cand.push(Object.assign({ c: Math.round(p.lat * 1000) + ',' + Math.round(p.lng * 1000), o: Math.round(h1 / 45) % 8, dr: Math.min(120, Math.round(drop / 5) * 5), d: kstDayOf(tm) }, testPage ? { x: 1 } : {}));
     if (passStats.cand.length > 30) passStats.cand.splice(0, passStats.cand.length - 30);
     passArm();
     passSave();
@@ -7631,9 +7644,16 @@
   }
   // 돌려주는 값: true 보냄 · false 못 보냄(함에 남김) · null 보낼 때가 아님
   async function passFlush(force) {
-    if (passStats.busy || botLike || (testPage && !passStats.inTest) || !prefs.passStats) return null;
+    if (passStats.busy || sendOff(passStats.inTest) || !prefs.passStats) return null;
     if (!(passStats.q.length + passStats.cand.length + passStats.op.length)) { passStats.nextAt = 0; return null; }
     if (!force && Date.now() < passStats.nextAt) return null;
+    // v219: 오늘(한국 날짜)보다 뒤 날짜 기록은 기기 시계가 틀렸거나 시험의 가짜 시계다 — 보내지 않고 버린다
+    const today = kstDayOf(Date.now()), future = (x) => x && typeof x.d === 'string' && x.d > today;
+    if (passStats.q.some(future) || passStats.cand.some(future) || passStats.op.some(future)) {
+      passStats.q = passStats.q.filter((x) => !future(x)); passStats.cand = passStats.cand.filter((x) => !future(x)); passStats.op = passStats.op.filter((x) => !future(x));
+      passSave();
+      if (!(passStats.q.length + passStats.cand.length + passStats.op.length)) return null;
+    }
     const take = { q: passStats.q.slice(0, 150), cand: passStats.cand.slice(0, 20), op: isOp() ? passStats.op.slice(0, 20) : [] };
     const body = { v: APP_VERSION, items: passShuffle(take.q.slice()), cand: passShuffle(take.cand.slice()) };
     if (take.op.length) body.op = take.op;
@@ -7704,7 +7724,7 @@
     const now = f.t, moving = state.speedKmh >= 8;
     let c = routeRec.cur;
     if (c && (now - c.lastMove > TRIP_GAP || now < c.lastMove - 60000)) { routeEnd(now); c = null; }
-    if (!c && moving) c = routeRec.cur = { rid: routeRid(), d: kstDayOf(now), t0: now, part: 0, pts: [], cams: [], lastMove: now, cutAt: now };
+    if (!c && moving) c = routeRec.cur = Object.assign({ rid: routeRid(), d: kstDayOf(now), t0: now, part: 0, pts: [], cams: [], lastMove: now, cutAt: now }, testPage ? { x: 1 } : {});
     if (!c) return;
     if (moving) c.lastMove = now;
     const s = Math.round((now - c.t0) / 1000), lp = c.pts[c.pts.length - 1];
@@ -7728,7 +7748,7 @@
     const tiny = c.part === 0 && end && c.pts.length < 5;   // 주차장 안에서 조금 움직인 것은 버린다
     if (!tiny && (c.pts.length || c.cams.length)) {
       // ps: 통과 통계(/pass)를 켰는지 — 끈 차의 카메라 통과는 서버가 이 조각에서 바로 통과 기록으로 남긴다
-      routeRec.out.push({ rid: c.rid, part: c.part, d: c.d, end: end ? 1 : 0, ps: prefs.passStats ? 1 : 0, pts: c.pts, cams: c.cams });
+      routeRec.out.push(Object.assign({ rid: c.rid, part: c.part, d: c.d, end: end ? 1 : 0, ps: prefs.passStats ? 1 : 0, pts: c.pts, cams: c.cams }, c.x ? { x: 1 } : {}));
       c.part++;
     }
     c.pts = []; c.cams = []; c.cutAt = now || Date.now();
@@ -7745,7 +7765,7 @@
   }
   // 돌려주는 값: true 다 보냄 · false 못 보냄(함에 남김, 10분 뒤 다시) · null 보낼 때가 아님
   async function routeFlush(force) {
-    if (routeRec.busy || botLike || (testPage && !routeRec.inTest) || !prefs.routeShare || !routeRec.out.length) return null;
+    if (routeRec.busy || sendOff(routeRec.inTest) || !prefs.routeShare || !routeRec.out.length) return null;
     if (!force && Date.now() < routeRec.retryAt) return null;
     routeRec.busy = true;
     let ok = true;
@@ -8995,7 +9015,7 @@
     return p;
   }
   function sendCheck() {
-    if (!prefs.share || botLike || (testPage && !checkSt.inTest)) return null;
+    if (!prefs.share || sendOff(checkSt.inTest)) return null;
     const p = reportPoint();
     if (!p) return null;
     const id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-6);
@@ -9025,7 +9045,7 @@
   }
   const CHECK_KIND_TEXT = { '신호과속': '신호·과속단속', '과속단속': '과속단속', '박스형': '박스형 단속', '이동식': '이동식 단속', '후면단속': '후면단속' };
   async function checkPoll(force) {
-    if (checkSt.busy || botLike || (testPage && !checkSt.inTest)) return;
+    if (checkSt.busy || sendOff(checkSt.inTest)) return;
     const a = checksLoad();
     if (!a.length) return;
     if (!force && Date.now() - checkSt.at < CHECK_POLL_MS) return;

@@ -272,6 +272,23 @@ if (!sqlite) {
   // (4) 날짜: 3일보다 오래되거나 미래면 오늘로
   await call('POST', '/pass', { body: { items: [it(K2, { d: '2020-01-01', lim: 50, kind: 1 })] }, e: envS });
   ok(rows('SELECT day FROM cam_day WHERE cam = ?', K2).every((r) => r.day === today()), 'an old or odd date counts as today');
+  // (4b) v219: 시험 페이지에서 만든 기록(x)과 오늘보다 뒤 날짜(가짜 시계)는 버린다 — 2026-11-24 운영 통계에 시험 기록이 섞였다
+  {
+    const sum0 = rows('SELECT SUM(n) AS n FROM cam_day')[0].n, rec0 = rows('SELECT COUNT(*) AS n FROM pass_rec')[0].n;
+    const tomorrow = kst(Date.now() + DAY);
+    await call('POST', '/pass', { body: { items: [it(K2, { x: 1, a: 300 }), it(K2, { d: tomorrow, a: 300 })],
+      cand: [{ c: '37420,127120', o: 1, dr: 30, d: today(), x: 1 }, { c: '37430,127130', o: 1, dr: 30, d: tomorrow }] }, e: envS });
+    ok(rows('SELECT SUM(n) AS n FROM cam_day')[0].n === sum0 && rows('SELECT COUNT(*) AS n FROM pass_rec')[0].n === rec0 &&
+      rows("SELECT COUNT(*) AS n FROM cand_day WHERE cell IN ('37420,127120', '37430,127130')")[0].n === 0 && !rows('SELECT day FROM cam_day').some((r) => r.day > today()),
+      'items marked as made on the test page, and items dated after today, are dropped (passes and candidate cells)');
+    const tx = await call('POST', '/trip', { body: { rid: 'testpage000x1', x: 1, d: today(), pts: [[0, 3727000, 12710576, 60, 180], [5, 3727010, 12710576, 60, 180]] }, e: envS });
+    ok(tx.s === 200 && tx.j.dropped === 'test' && rows("SELECT COUNT(*) AS n FROM trips WHERE rid = 'testpage000x1'")[0].n === 0, 'a trip marked as made on the test page is answered but not stored');
+    // 이 컴퓨터(localhost)에서 연 개발용 페이지가 보낸 것: 받은 것으로 답하고 저장하지 않는다 (운영자 토큰이면 저장)
+    const dv = await call('POST', '/pass', { body: { items: [it(K2, { a: 300 })] }, origin: 'http://localhost:8765', e: envS });
+    const dt = await call('POST', '/trip', { body: { rid: 'devpage0000001', d: today(), pts: [[0, 3727000, 12710576, 60, 180], [5, 3727010, 12710576, 60, 180]] }, origin: 'http://127.0.0.1:8765', e: envS });
+    ok(dv.s === 200 && dv.j.dropped === 'dev' && dt.j.dropped === 'dev' && rows('SELECT SUM(n) AS n FROM cam_day')[0].n === sum0 &&
+      rows("SELECT COUNT(*) AS n FROM trips WHERE rid = 'devpage0000001'")[0].n === 0, 'passes and trips from a localhost page are answered but not stored');
+  }
   // (5) 후보 격자: 서로 다른 날 2번 넘게 + 3번 넘게 모인 것만 /passes 에
   const cand = (c, o, dr, d) => ({ c, o, dr, d: d || today() });
   await call('POST', '/pass', { body: { cand: [cand('37400,127100', 2, 30), cand('37400,127100', 2, 20), cand('37410,127110', 0, 25), cand('99999,999999', 0, 30), cand('37400,127100', 9, 30)] }, e: envS });
