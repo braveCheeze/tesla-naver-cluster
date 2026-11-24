@@ -2901,6 +2901,7 @@
     { id: 'S138', name: "S138 colour guide line as a split picture, first (v207, driver '이럴 때는 분홍색을 첫 번째 있는 걸로 보여 주고 … 그림을 알려 주는 게 훨씬 더 좋아', '굳이 그림이 표기돼 있으면은 분홍색 화살표로 안 바꿔도 돼', '우리가 가지 않는 방향이라고 해도 그림에서 표지판에 표기를 해 주는 게 좋아'): on the real 서울TG → 판교분기점 route, 990 m before the split the guide card starts with a small split picture: 경부 goes straight with a dim '① 경부' sign, our branch goes right with the pink line and a strong '[100] 일산 · 구리' sign; no pink arrow, the turn row keeps its green arrow and the distance; at 600 m the close-up takes over with pink lanes and both signs; at night the roads turn dark", fn: s138 },
     { id: 'S139', name: "S139 Naver-checked driver spots look like normal cameras (v208, driver: '운전자 신고 신호 과속 단속 이라고 파란 글씨로 나오는데 … 네이버 지도는 신호 과속 이라고만 표기 하는데'); route line and turn arrow thicker with zoom and a black outline (v208, '여기도 네이버지도처럼 약간 두껍게', '검정색 테두리로 통일하자'): rows with flag 2 read '신호·과속단속' / '이동식단속' with the red (or real-mobile blue) card, sign and voice of normal cameras, flag 4 makes a child zone, /check finds count as checked, unchecked rows keep '운전자 신고 …' in blue; in the data all 20 rows are checked (v210); the route width grows with zoom (9 → 14 → 17 px at 15/17/18) under a black casing 4 px wider, and the arrow's rim is black", fn: s139 },
     { id: 'S140', name: "S140 arrival like Naver (v209, driver '네이버 지도 보면은 도착지점 거의 도착할 때 화살표로 알려 주잖아', '도착 건물에만 나오면 될 거 같아 화살표로 들어가는 것까지 표기 해 주면 좋을 것 같다'): the last turn before the goal stays its own row (row 2 shows ↰ with its distance, then the goal pin); from where the route ends a thick white arrow with a black outline goes into the building instead of the dotted line, and the goal distance counts to the building; with no turn left, the row says which side the building is on ('목적지 · 왼쪽/오른쪽' with an arrow-and-pin icon); a walk from a parking entrance keeps the dots", fn: s140 },
+    { id: 'S141', name: "S141 arrow size has a limit (v211, driver '저 확대한다고해서 저화살표가 계속 커지는게 아니고 어느정도 한계가 있다고봐야 해 크기가 너무 커져도 이상해져버리니까'): route line and arrows stop growing at zoom 18 (16px); on the GL map the arrow head is sized for the GL scale (it was drawn twice as big as meant); an arrow that was removed stays hidden even if the map puts it back; a last turn just before the route end joins the building arrow into one arrow (all arrows go away on arrival); a short stretch after the last turn still points the head the way you turn", fn: s141 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -6863,7 +6864,7 @@
   //   (b) 표시 2 이동식 110: '이동식단속', 파란 카드(진짜 이동식)  (c) 표시 6(확인 + 어린이보호구역) 30: '어린이보호구역 신호·과속단속'
   //   (d) 표시 없는 운전자 지점: 예전처럼 '운전자 신고 신호·과속단속', 파란 카드  (e) /check 로 찾은 공유 지점(ck): 확인됨
   //   (f) 실제 자료: 20줄 모두 확인됨(v210), 그중 3줄이 보호구역
-  //   (g) 경로선 굵기: 배율 15·17·18 에서 9·14·17px, 검정 테두리 = 굵기 + 4, 화살표 테두리는 검정
+  //   (g) 경로선 굵기: 배율 15·17·18 에서 9·14·16px (v211: 18 에서 16px 이 끝), 검정 테두리 = 굵기 + 4, 화살표 테두리는 검정
   async function s139() {
     const t = T(), r = {};
     const keep = { drv: t.driverSpots.rows.slice(), shared: t.sharedSpots.slice(), mine: t.mySpots.slice() };
@@ -6900,7 +6901,7 @@
       d.label === '운전자 신고 신호·과속단속' && d.blue && d.short === '신고 지점' && d.voice === '신고된 단속 지점' &&
       e.label === '과속단속' && !e.blue &&
       f.rows === 20 && f.checked === 20 && f.zone === 3 &&   // v210: keys 네이버 확인 — 구갈·삼가 남동 확인(네이버 자리로), 판교JC 하행 합류는 없음(뺌)
-      g.w15 === 9 && g.w17 === 14 && g.w18 === 17 && g.w165 === 12.5 && g.casing17 === 18 && g.dots === 3.4 && g.casingColor === '#141414' &&
+      g.w15 === 9 && g.w17 === 14 && g.w18 === 16 && g.w165 === 12.5 && g.casing17 === 18 && g.dots === 3.4 && g.casingColor === '#141414' &&
       g.arrow17 && g.arrow17.inner === 14 && g.arrow17.shaft === 18;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
@@ -6972,6 +6973,99 @@
       Rr.side === 'r' && /목적지 · 오른쪽$/.test(Rr.turn) && /goal-side gs-r/.test(Rr.icon) &&
       S.side === 's' && /목적지$/.test(S.turn) && !/goal-side/.test(S.icon) &&
       P.legM === 0 && P.leg === 0 && P.dots >= 3;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S141: 화살표 크기 한계 (v211, 운전자 '저 확대한다고해서 저화살표가 계속 커지는게 아니고 어느정도 한계가 있다고봐야 해 크기가 너무 커져도 이상해져버리니까').
+  //   2026-11-24 강동 더샵 센트럴시티 화면: 화살촉만 아주 크고 몸통은 가늘었다. 원인 셋:
+  //   - 네이버 GL 지도는 같은 배율 숫자에서 래스터의 두 배로 그린다 → 화살촉(미터로 그림)이 화면에서 두 배
+  //   - 지운 화살표를 네이버 GL 이 잠시 뒤 다시 붙이는 때가 있다 → 먼 배율에서 그린 큰 화살표가 남았다
+  //   - 마지막 회전 6m 뒤 경로가 끝나 회전 화살표와 건물 화살표가 겹쳤다
+  //   (a) 굵기 한계: 배율 18·19·20·21 모두 16px, 화살표 크기도 18 과 20 이 같다
+  //   (b) GL 이면 화살촉을 미터로 바꿀 때 배율 + 1 (래스터는 그대로): 화살촉 밑변(미터) = 2×half px × 그 배율의 1px 미터. 몸통 테두리 = W + 4
+  //       (화면 픽셀로 재면 3D 기울기에 따라 달라서 미터로 잰다. GL 이 같은 배율에서 두 배로 그리는 것은 2026-11-24 기울기 0 에서 확인: 15·17·19 모두 2.000)
+  //   (c) 지운 화살표를 지도에 다시 붙여도 보이지 않고, 잠시 뒤(1.5초) 다시 떨어진다
+  //   (d) 마지막 좌회전 8m 뒤 경로 끝 + 건물 60m: 회전 → 경로 끝 → 건물 한 화살표(화살촉이 건물), 따로 그리던 건물 화살표는 숨김.
+  //       회전을 지나면 경로 끝 30m 안이라 도착 — 안내가 끝나고 화살표가 모두 지워진다 (남는 화살표 없음)
+  //   (e) 건물 화살표 없이(목적지 = 경로 끝) 좌회전 5m 뒤 끝: 화살촉이 회전 뒤 방향(북쪽)을 가리킨다 (예전엔 회전 전 방향이 섞였다)
+  async function s141() {
+    const t = T(), r = {};
+    const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
+    const mk = (bldM, afterM) => {
+      const R = buildNavRoute();
+      R.route = JSON.parse(JSON.stringify(R.route));
+      const last = R.P.length - 1;
+      const pre = dest(R.P[last], 270, afterM), end = dest(pre, 0, afterM);
+      R.route.path[last] = [round6(pre.lng), round6(pre.lat)];
+      R.route.path.push([round6(end.lng), round6(end.lat)]);
+      R.route.guide = R.route.guide.filter((g) => g.t !== 88).concat([{ i: last, t: 2, s: '좌회전', d: 0, ms: 2000 }, { i: last + 1, t: 88, s: '목적지', d: afterM, ms: 2000 }]);
+      R.P = R.route.path.map((x) => ({ lat: x[1], lng: x[0] }));
+      R.cum = [0];
+      for (let i = 1; i < R.P.length; i++) R.cum.push(R.cum[i - 1] + hav(R.P[i - 1], R.P[i]));
+      R.total = R.cum[R.cum.length - 1];
+      const E = R.P[R.P.length - 1], b = bldM ? dest(E, 0, bldM) : E;
+      R.dest = Object.assign({}, R.dest, { lat: b.lat, lng: b.lng });
+      return R;
+    };
+    const tri = (o) => { const a = []; o.getPaths().getAt(0).forEach((q) => a.push({ lat: q.lat(), lng: q.lng() })); return a; };
+    r.a = { w18: t.routeW(18), w19: t.routeW(19), w20: t.routeW(20), w21: t.routeW(21), a18: JSON.stringify(t.arrowPx(18)), a20: JSON.stringify(t.arrowPx(20)) };
+    try {
+      await waitFor(() => t.getMap(), 5000);
+      const m = t.getMap();
+      const naverOn = !!(m.map && window.naver && naver.maps && m.map.getProjection);
+      // (d) 한 화살표
+      softReset();
+      const D = mk(60, 8);
+      await planAndStart(D);
+      let p = pointAt(D, D.cum[5] + 300); feed(p.p, 10, p.h); t.renderNav();
+      if (naverOn) { m.map.setZoom(18, false); await sleep(350); }
+      const head = m._arrowObjs && m._arrowObjs[1];
+      r.d = { arrow: (m._arrowObjs || []).length, leg: (m._legObjs || []).length, joined: !!m._arrowJoined,
+        tipToBld: head && naverOn ? Math.round(hav(tri(head)[0], D.dest) * 10) / 10 : -1 };
+      // (b) GL 배율: 화살촉 밑변을 미터로 재서 그 배율(GL 이면 + 1)의 1px 미터와 비교
+      r.b = { gl: !!m.gl, px18: m.pxZoom ? m.pxZoom(18) : null };
+      if (naverOn && m._arrowObjs && m._arrowObjs[1]) {
+        const h = tri(m._arrowObjs[1]), z = m.map.getZoom(), zp = m.pxZoom(z);
+        const mpp = 156543.03392 * Math.cos(h[0].lat * Math.PI / 180) / Math.pow(2, zp);
+        r.b.z = z; r.b.headPx = Math.round(hav(h[1], h[2]) / mpp * 10) / 10; r.b.want = Math.round(2 * t.arrowPx(z).half * 10) / 10;
+        r.b.shaft = m._arrowObjs[0].getOptions('strokeWeight'); r.b.wantShaft = t.arrowPx(z).shaft;
+      }
+      // (c) 지운 화살표를 다시 붙여 본다 (네이버 GL 이 잠시 뒤 다시 붙이는 것 흉내)
+      if (naverOn) {
+        const old = (m._arrowObjs || []).slice();
+        m.drawArrow();
+        old.forEach((o) => o.setMap(m.map));
+        r.c = { n: old.length, hidden: old.every((o) => o.getVisible && !o.getVisible()), now: (m._arrowObjs || []).length };
+        await sleep(1700);
+        r.c.gone = old.every((o) => !o.getMap());
+      }
+      // (d) 회전을 지나면 도착 (경로 끝 30m 안): 화살표가 모두 지워진다
+      p = pointAt(D, D.total - 2); feed(p.p, 5, p.h); t.renderNav();
+      await sleep(50);
+      r.d.after = { arrow: (m._arrowObjs || []).length, leg: (m._legObjs || []).length, joined: !!m._arrowJoined, active: !!t.nav.active };
+      t.endNav();
+      // (e) 건물 화살표 없이 회전 5m 뒤 끝
+      softReset();
+      const E = mk(0, 5);
+      await planAndStart(E);
+      p = pointAt(E, E.cum[5] + 300); feed(p.p, 10, p.h); t.renderNav();
+      const he = m._arrowObjs && m._arrowObjs[1];
+      r.e = { arrow: (m._arrowObjs || []).length, leg: (m._legObjs || []).length, joined: !!m._arrowJoined, legM: t.nav.leg };
+      if (he && naverOn) {
+        const q = tri(he), mid = { lat: (q[1].lat + q[2].lat) / 2, lng: (q[1].lng + q[2].lng) / 2 };
+        r.e.dir = Math.round(((brg(mid, q[0]) + 540) % 360) - 180);   // 북쪽이 0
+      }
+      t.endNav();
+    } finally {
+      t.endNav(); softReset();
+    }
+    const a = r.a || {}, b = r.b || {}, c = r.c || {}, d = r.d || {}, e = r.e || {}, da = d.after || {};
+    const ok = a.w18 === 16 && a.w19 === 16 && a.w20 === 16 && a.w21 === 16 && a.a18 === a.a20 &&
+      b.px18 === (b.gl ? 19 : 18) && (!b.gl || (Math.abs(b.headPx - b.want) <= 1 && b.shaft === b.wantShaft)) &&
+      (c.n == null || (c.n === 4 && c.hidden && c.gone && c.now === 4)) &&
+      d.arrow === 4 && d.leg === 0 && d.joined && d.tipToBld >= 0 && d.tipToBld < 4 &&
+      da.arrow === 0 && da.leg === 0 && !da.joined && !da.active &&
+      e.arrow === 4 && e.leg === 0 && !e.joined && e.legM === 0 && Math.abs(e.dir) <= 30;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

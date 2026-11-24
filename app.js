@@ -61,7 +61,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-210'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-211'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -254,7 +254,9 @@
   // 바깥 빛 번짐(glow, 색별 28%) 대신 검정 테두리(양쪽 2px). 회전 화살표도 같은 굵기의 흰 몸통 + 검정 테두리.
   // 흰 점은 굵기·간격을 그대로 둔다 (점이 땅에 붙어 있게 자르는 간격 DOT_PERIOD_PX 가 점 굵기에 묶여 있다)
   const ROUTE_CASING = '#141414';
-  const ROUTE_W = [[12, 5], [14, 7], [15, 9], [16, 11], [17, 14], [18, 17], [19, 20], [20, 23]];
+  // v211 (2026-11-24 운전자 '확대한다고해서 저화살표가 계속 커지는게 아니고 어느정도 한계가 있다고봐야 해 크기가 너무 커져도 이상해져버리니까'):
+  // 배율 18 에서 16px 이 끝 — 더 확대해도 경로선·회전 화살표·건물 화살표가 더 굵어지지 않는다 (예전엔 19 에서 20, 20 에서 23px)
+  const ROUTE_W = [[12, 5], [14, 7], [15, 9], [16, 11], [17, 14], [18, 16]];
   function routeW(z) {
     const zz = Number.isFinite(z) ? z : 17;
     if (zz <= ROUTE_W[0][0]) return ROUTE_W[0][1];
@@ -766,7 +768,10 @@
     const mpp = 156543.03392 * Math.cos(toRad(lat)) / Math.pow(2, zoom);
     return { before: Math.min(150, Math.max(35, 40 * mpp)), after: Math.min(100, Math.max(25, 26 * mpp)) };
   }
-  function arrowGeom(pts0, zoom, ti) {
+  // v211: zPx — 화면 픽셀을 미터로 바꿀 때 쓰는 배율. 네이버 GL 지도는 같은 배율 숫자에서 그림(래스터) 지도의 두 배로 크게 그려서
+  // (타일 512px) 화살촉·화살 끝을 래스터 식으로 미터로 바꾸면 화면에서 두 배가 됐다 — 몸통(선 굵기, 픽셀)은 그대로인데 화살촉만 커져
+  // 확대할수록 '너무 커 보이는' 화살표 (2026-11-24 강동 더샵 센트럴시티). GL 에서는 배율 + 1 로 바꾼다. 덮는 길이(arrowSpan)는 그대로
+  function arrowGeom(pts0, zoom, ti, zPx) {
     let pts = pts0;
     const sp = arrowSpan(pts0[ti != null ? ti : pts0.length - 1].lat, zoom || 17);
     if (pts0.some((q) => q.rel != null)) pts = pts0.filter((q) => q.rel == null || (q.rel >= -sp.before - 0.01 && q.rel <= sp.after + 0.01));
@@ -777,11 +782,14 @@
     const loc = (q) => ({ x: (q.lng - E.lng) * kx, y: (q.lat - E.lat) * ky });
     const back = (m) => ({ lat: E.lat + m.y / ky, lng: E.lng + m.x / kx });
     // 끝 방향: 끝에서 6m 넘게 떨어진 앞 점으로
+    // v211: 단, 회전 지점(rel 0)을 넘어가지는 않는다 — 회전 6m 뒤에 경로가 끝나면 회전 전 방향이 섞여 화살촉이 엉뚱한 쪽을 가리켰다
+    const tp = pts.findIndex((q) => q.rel != null && Math.abs(q.rel) < 0.05);
+    const stop = tp >= 0 && tp < pts.length - 1 && haversine(pts[tp], E) >= 2 ? tp : 0;
     let j = pts.length - 2;
-    while (j > 0 && haversine(pts[j], E) < 6) j--;
+    while (j > stop && haversine(pts[j], E) < 6) j--;
     const A = loc(pts[j]);
     const n0 = Math.hypot(A.x, A.y) || 1, d = { x: -A.x / n0, y: -A.y / n0 }, nn = { x: -d.y, y: d.x };
-    const mpp = 156543.03392 * Math.cos(toRad(E.lat)) / Math.pow(2, zoom || 17);
+    const mpp = 156543.03392 * Math.cos(toRad(E.lat)) / Math.pow(2, zPx != null ? zPx : (zoom || 17));
     const px = (v) => v * sc * mpp;
     const at = (o, along, side) => ({ x: o.x + d.x * along + nn.x * side, y: o.y + d.y * along + nn.y * side });
     const O = { x: 0, y: 0 }, H = arrowPx(zoom || 17);
@@ -798,6 +806,16 @@
     const sh = pts.slice(0, -1).filter((q) => haversine(q, E) > cut).map(loc);
     sh.push(at(O, -cut, 0));
     return { shaft: sh.map(back), headOut: tri(T, Bo, px(H.half)), headIn: tri(Ti, Bi, px(lenIn * tanA)), sc, pts, span: sp, H };
+  }
+  // v211: 네이버 GL 지도는 도형(선·다각형)을 만든 바로 뒤 지우면 잠시 뒤 지도에 다시 붙이는 때가 있다 — 지운 화살표가 지도에 그대로 남아
+  // (먼 배율에서 그린 것이라 화살촉이 아주 크다) 확대할수록 커 보였다 (2026-11-24 강동 더샵 센트럴시티).
+  // 지울 때 먼저 숨기고 떼고, 잠시 뒤 다시 붙어 있으면 한 번 더 뗀다 — 다시 붙더라도 보이지 않는다
+  function nvDrop(o) {
+    if (!o) return;
+    try { if (o.setVisible) o.setVisible(false); } catch (e) { /* 떼기만 */ }
+    o.setMap(null);
+    const again = () => { try { if (o.getMap && o.getMap()) o.setMap(null); } catch (e) { /* 이미 없음 */ } };
+    setTimeout(again, 1500); setTimeout(again, 5000);
   }
   // 목적지 핀 (사용자가 그린 '도착' 핀이 있으면 그것)
   function destPinEl() {
@@ -886,7 +904,7 @@
   const NaverAdapter = {
     setSideAlt(pts, bubble) {
       const N = naver.maps;
-      if (this.sideLine) { this.sideLine.setMap(null); this.sideLine = null; }
+      if (this.sideLine) { nvDrop(this.sideLine); this.sideLine = null; }
       if (this.sideMk) { this.sideMk.setMap(null); this.sideMk = null; }
       if (!pts || pts.length < 2) return;
       this.sideLine = new N.Polyline({ map: this.map, path: pts.map((p) => new N.LatLng(p.lat, p.lng)), strokeColor: SIDE_ALT.color, strokeWeight: SIDE_ALT.weight,
@@ -895,7 +913,7 @@
     },
     drawAlts(list) {
       const N = naver.maps;
-      (this.alts || []).forEach((l) => l.setMap(null));
+      (this.alts || []).forEach(nvDrop);
       this.alts = (list || []).map((pts) => new N.Polyline({
         map: this.map, path: pts.map((p) => new N.LatLng(p.lat, p.lng)),
         strokeColor: ALT_LINE.color, strokeWeight: ALT_LINE.weight, strokeOpacity: ALT_LINE.opacity,
@@ -1109,7 +1127,7 @@
     // 지금 배율에서 화면 1px 이 몇 미터인지 (지도 가운데 위도 기준)
     mpp() { return 156543.03392 * Math.cos(toRad(this.map.getCenter().lat())) / Math.pow(2, this.map.getZoom()); },
     clearRoute() {
-      if (this.route) this.route.forEach((pc) => pc.line.setMap(null));
+      if (this.route) this.route.forEach((pc) => nvDrop(pc.line));   // v211: 숨긴 뒤 뗀다
       this.route = null; this.routePath = null; this.disp = null;
     },
     fit(pts) {
@@ -1151,13 +1169,15 @@
       this.restMk = (list || []).map((x) => new N.Marker({ position: new N.LatLng(x.lat, x.lng), map: this.map, clickable: false, zIndex: 88,
         icon: { content: restEl(), anchor: new N.Point(12, 12) } }));
     },
-    setTurnArrow(pts, ti, color) { this._arrow = pts; this._arrowTi = ti; this._arrowColor = color; this.drawArrow(); },
+    // v211: joined — 마지막 회전 화살표가 건물까지 이어 그려지면(한 화살표) 따로 그리던 건물 화살표는 숨긴다
+    setTurnArrow(pts, ti, color, joined) { this._arrow = pts; this._arrowTi = ti; this._arrowColor = color; this._arrowJoined = !!(pts && joined); this.drawArrow(); this.drawLeg(); },
     drawLeg() {   // v209 경로 끝 → 건물 화살표
-      (this._legObjs || []).forEach((o) => o.setMap(null));
+      (this._legObjs || []).forEach(nvDrop);
       this._legObjs = [];
       const z = this.map && this.map.getZoom();
       if (!this._leg || !this.map || z < ARROW_MIN_ZOOM) return;
-      const N = naver.maps, g = arrowGeom(this._leg, z, 1), P = (q) => new N.LatLng(q.lat, q.lng), H = g.H;
+      if (this._arrowJoined && (this._arrowObjs || []).length) return;
+      const N = naver.maps, g = arrowGeom(this._leg, z, 1, this.pxZoom(z)), P = (q) => new N.LatLng(q.lat, q.lng), H = g.H;
       const line = (w, c, zi) => new N.Polyline({ map: this.map, path: g.shaft.map(P), strokeColor: c, strokeWeight: w, strokeOpacity: 1, strokeLineCap: 'round', strokeLineJoin: 'round', zIndex: zi, clickable: false });
       const head = (tri, c, zi) => new N.Polygon({ map: this.map, paths: [tri.map(P)], fillColor: c, fillOpacity: 1, strokeColor: c, strokeOpacity: 1, strokeWeight: 1, zIndex: zi, clickable: false });
       if (g.shaft.length >= 2) this._legObjs.push(line(H.shaft, ROUTE_CASING, 68));
@@ -1165,6 +1185,7 @@
       if (g.shaft.length >= 2) this._legObjs.push(line(H.inner, '#ffffff', 69));
       this._legObjs.push(head(g.headIn, '#ffffff', 69));
     },
+    pxZoom(z) { return this.gl ? z + 1 : z; },   // v211: GL 지도는 같은 배율에서 래스터의 두 배 크기로 그린다 (화살촉 크기 계산용)
     // v208: 배율이 바뀌면 경로선 굵기를 맞춘다 (0.1px 넘게 달라진 조각만)
     routeZoom() {
       if (!this.route || !this.map) return;
@@ -1172,11 +1193,11 @@
       this.route.forEach((pc) => { const w = routeWeight(pc.kind, z); if (Math.abs((pc.w || 0) - w) > 0.1) { pc.w = w; pc.line.setOptions({ strokeWeight: w }); } });
     },
     drawArrow() {
-      (this._arrowObjs || []).forEach((o) => o.setMap(null));
+      (this._arrowObjs || []).forEach(nvDrop);
       this._arrowObjs = []; this._arrowShown = null;
       const pts = this._arrow, z = this.map && this.map.getZoom();
       if (!pts || pts.length < 2 || !this.map || z < ARROW_MIN_ZOOM) return;
-      const N = naver.maps, g = arrowGeom(pts, z, this._arrowTi), P = (q) => new N.LatLng(q.lat, q.lng);
+      const N = naver.maps, g = arrowGeom(pts, z, this._arrowTi, this.pxZoom(z)), P = (q) => new N.LatLng(q.lat, q.lng);
       this._arrowShown = g.pts; this._arrowSpan = g.span;
       const line = (w, c, z) => new N.Polyline({ map: this.map, path: g.shaft.map(P), strokeColor: c, strokeWeight: w, strokeOpacity: 1,
         strokeLineCap: 'round', strokeLineJoin: 'round', zIndex: z, clickable: false });
@@ -1241,7 +1262,8 @@
       this.parks = new Map();
       (this.destMk || []).forEach((m) => m.setMap(null)); this.destMk = [];
       (this.restMk || []).forEach((m) => m.setMap(null)); this.restMk = [];
-      (this._arrowObjs || []).forEach((o) => o.setMap(null)); this._arrowObjs = []; this._arrow = null;
+      (this._arrowObjs || []).forEach(nvDrop); this._arrowObjs = []; this._arrow = null;
+      (this._legObjs || []).forEach(nvDrop); this._legObjs = []; this._leg = null;   // v211
       if (this._tip) this._tip.setMap(null);
       this._tip = null; this._tipKey = '';
       if (this._pick) this._pick.setMap(null);
@@ -1380,12 +1402,13 @@
         interactive: false, keyboard: false,
       }).addTo(this.map));
     },
-    setTurnArrow(pts, ti, color) { this._arrow = pts; this._arrowTi = ti; this._arrowColor = color; this.drawArrow(); },
+    setTurnArrow(pts, ti, color, joined) { this._arrow = pts; this._arrowTi = ti; this._arrowColor = color; this._arrowJoined = !!(pts && joined); this.drawArrow(); this.drawLeg(); },   // v211
     drawLeg() {   // v209 경로 끝 → 건물 화살표
       (this._legObjs || []).forEach((o) => o.remove());
       this._legObjs = [];
       const z = this.map && this.map.getZoom();
       if (!this._leg || !this.map || z < ARROW_MIN_ZOOM) return;
+      if (this._arrowJoined && (this._arrowObjs || []).length) return;   // v211
       const g = arrowGeom(this._leg, z, 1), P = (q) => [q.lat, q.lng], H = g.H;
       const line = (w, c) => L.polyline(g.shaft.map(P), { color: c, weight: w, opacity: 1, lineCap: 'round', lineJoin: 'round', interactive: false }).addTo(this.map);
       const head = (tri, c) => L.polygon(tri.map(P), { color: c, weight: 1, fillColor: c, fillOpacity: 1, interactive: false }).addTo(this.map);
@@ -5414,9 +5437,14 @@
       if (Math.abs(at - c) < 0.05) ti = pts.length;
       pts.push({ lat: q.lat, lng: q.lng, rel: at - c });   // rel: 회전 지점에서 앞(+)/뒤(-) 거리 — 지도 쪽이 배율에 맞춰 자른다
     }
+    // v211: 마지막 회전 뒤 25m 안에서 경로가 끝나고 건물 화살표(nav.leg)가 있으면 한 화살표로 — 회전 → 경로 끝 → 건물.
+    // 두 화살표가 겹쳐 그려지면 회전 화살촉이 경로 끝에 걸리고 건물 화살표 몸통과 얽혀 이상한 모양이 됐다 (2026-11-24 강동 더샵 센트럴시티)
+    // 건물 점은 rel 없이 넣는다: 지도 쪽이 배율에 맞춰 자르지 않는다
+    const joined = !!(pts.length >= 2 && nav.leg > 0 && nav.dest && nav.total - c <= 25);
+    if (joined) pts.push({ lat: nav.dest.lat, lng: nav.dest.lng });
     // 테두리는 회전 지점 경로 색(교통색 또는 바탕 파랑): 경로선이 흰 화살표로 이어지는 느낌
     const run = trafficRuns(nav.route && nav.route.sections, nav.pts.length).find((x) => x.a <= g.i && g.i <= x.b);
-    mapA.setTurnArrow(pts.length >= 2 ? pts : null, ti, run ? run.color : ROUTE_BASE);
+    mapA.setTurnArrow(pts.length >= 2 ? pts : null, ti, run ? run.color : ROUTE_BASE, joined);
   }
 
   // 남은 경로만 다시 그린다: 지금 위치(경로 위로 붙인 점)부터 목적지까지, 교통 색 구간도 번호를 맞춰 옮긴다
