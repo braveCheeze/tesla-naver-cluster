@@ -2914,6 +2914,7 @@
     { id: 'S151', name: "S151 junction picture and signs (v227): an arterial into a loop entry gets a top-down picture of the real route (no highway scene), a straight highway entry keeps the scene, and sign names are never cut — very long names stay whole inside the picture, and a narrow split-picture sign drops the other sign and shrinks before cutting", fn: s151 },
     { id: 'S152', name: "S152 arrival pin on the building (v228): a destination that is a building's entrance puts the 도착 pin on that building (its N동, else the complex), the route still ends at the parking entrance or the chosen entrance, the dotted walk and the arrival arrow go to the building, and plain places or far namesakes are left alone", fn: s152 },
     { id: 'S153', name: "S153 trip end and continuation (v229): an 11-minute stop while navigating stays one trip, a reload keeps the trip while navigating (ends without), arrival ends it after a minute stopped even without further GPS, and closing the page after arrival sends the end with keepalive while a mid-drive reload does not end it", fn: s153 },
+    { id: 'S154', name: "S154 dark from the first frame (v230): index.html decides night before any CSS or script (setting, or sun height at the last rough position), the page background is dark at once, the font CSS does not block painting, a night GL map hides its day style until the dark style is ready, and /event carries the anonymous device id", fn: s154 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -7641,6 +7642,7 @@
     };
     const entrance = { name: '테스트아파트101동입구', addr: '', lat: D.lat, lng: D.lng, category: '도로시설>방면정보' };
     try {
+      await waitFor(() => t.getMap(), 10000, 100);   // 핀은 지도가 있어야 그려진다 (이 시험이 맨 먼저 돌 때)
       softReset();
       // (a)
       const g1 = await go(entrance);
@@ -7761,6 +7763,82 @@
     const ok = a.rid && a.same && !a.ended && a.navTo && b.kept && b.endedNoNav &&
       c.arrived && c.arrivedMark && c.at30 && c.ended && d.arrived && d.at30 && d.ended &&
       e.arrived && e.ended && e.keepalive && e.keepOff && e.outEmpty && e.once && e.movingKept;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S154: 밤이면 처음 그리는 화면부터 어둡게 (v230, 2026-11-24 운전자 '업데이트하고 브라우저 다시 켜질 때 다크모드 유지하고 있을 때
+  //   켜지면 다크모드에서 켜져야 해. 갑자기 너무 밝아') + 이벤트의 익명 기기 번호.
+  //   (a) index.html: 밤 판단 스크립트와 어두운 바탕 style 이 모든 바깥 CSS·스크립트보다 앞, 글꼴 CSS 는 그리기를 막지 않음(media print → all),
+  //       밤 GL 지도는 다크 스타일 전까지 그림을 숨기는 규칙
+  //   (b) 그 스크립트만 따로 돌려 보면: 늘 어둡게 → 밤, 늘 밝게 → 낮, 자동은 지난번 대략 위치의 해 높이 (서울 22시 밤·12시 낮·18시 밤, 부산 위치도)
+  //   (c) 늘 어둡게로 저장된 채 index.html 을 열면 앱이 돌기 전 <html> 이 boot-night, 바탕이 어둡다 (늘 밝게면 표시 없음)
+  //   (d) 낮이 되면 앱이 표시와 지도 숨김을 걷는다  (e) /event 에 익명 기기 번호(dev = devId)
+  async function s154() {
+    const t = T(), r = {}, keepMode = localStorage.getItem('tnc.nightMode'), keepPos = localStorage.getItem('tnc.sunPos');
+    const html = await (await realFetch(rootDir + 'index.html', { cache: 'no-store' })).text();
+    const at = (re) => { const m = html.search(re); return m < 0 ? Infinity : m; };
+    const iBoot = at(/<script>\s*\(function \(\) \{\s*var night = false;/), iStyle = at(/<style>html \{ background: #0b0d10; \}/);
+    const iLink = at(/<link rel="stylesheet"/), iScript = at(/<script src=/);
+    r.a = { bootFirst: iBoot < iLink && iBoot < iScript, styleFirst: iStyle < iLink && iStyle < iScript,
+      fontAsync: /pretendard[^>]+media="print" onload="this\.media='all'"/.test(html), waitRule: /#map\.night-wait \.mapcanvas canvas \{ visibility: hidden; \}/.test(html) };
+    // (b) 스크립트만 따로
+    const code = (html.match(/<script>\s*(\(function \(\) \{\s*var night = false;[\s\S]*?\}\)\(\);)\s*<\/script>/) || [])[1] || '';
+    const run = (mode, pos, ms) => {
+      const store = { 'tnc.nightMode': mode, 'tnc.sunPos': pos }, de = { className: '', style: {} };
+      const D = { now: () => ms };
+      try { new Function('localStorage', 'document', 'Date', code)({ getItem: (k) => (k in store ? store[k] : null) }, { documentElement: de }, D); } catch (e) { return 'ERR ' + e.message; }
+      return /boot-night/.test(de.className) ? 'night' + (de.style.colorScheme === 'dark' ? '+dark' : '') : 'day';
+    };
+    const kst = (h) => Date.UTC(2026, 10, 24, h - 9, 0, 0);
+    r.b = { on: run('on', null, kst(12)), off: run('off', null, kst(22)), s22: run(null, null, kst(22)), s12: run(null, null, kst(12)), s18: run(null, null, kst(18)),
+      busan12: run(null, '35.1,129.0', kst(12)), busan22: run(null, '35.1,129.0', kst(22)), junk: run(null, 'x,y', kst(22)), len: code.length };
+    // (c) 저장된 설정으로 index.html 열기 (?catalog: 지도·GPS 는 켜지 않는다)
+    const open = (mode) => new Promise((res) => {
+      if (mode) localStorage.setItem('tnc.nightMode', mode); else localStorage.removeItem('tnc.nightMode');
+      const f = document.createElement('iframe');
+      f.style.cssText = 'position:fixed;left:-2000px;top:0;width:804px;height:638px;border:0';
+      f.src = '../index.html?catalog&r=' + Date.now();
+      let done = false;
+      const finish = () => {
+        if (done) return; done = true;
+        let out = {};
+        try {
+          const de = f.contentDocument.documentElement, bg = f.contentWindow.getComputedStyle(de).backgroundColor;
+          const m = bg.match(/\d+(\.\d+)?/g) || ['255', '255', '255'], lum = (0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]) / 255;
+          out = { boot: de.classList.contains('boot-night'), lum: Math.round(lum * 100) / 100 };
+        } catch (e) { out = { err: e.message }; }
+        f.remove();
+        res(out);
+      };
+      // 앱 스크립트를 기다리지 않고: 문서가 읽히자마자(DOMContentLoaded 전에도) 본다
+      f.addEventListener('load', finish);
+      const poll = setInterval(() => { try { if (f.contentDocument && f.contentDocument.documentElement && f.contentDocument.head && f.contentDocument.head.querySelector('style')) { clearInterval(poll); finish(); } } catch (e) { /* 아직 */ } }, 5);
+      setTimeout(() => { clearInterval(poll); finish(); }, 8000);
+      document.body.appendChild(f);
+    });
+    try {
+      r.c = { on: await open('on'), off: await open('off') };
+      // (d) 낮이 되면 걷는다
+      const map = document.getElementById('map');
+      map.classList.add('night-wait');
+      t.setNightMode('off');
+      r.d = { boot: document.documentElement.classList.contains('boot-night'), wait: map.classList.contains('night-wait'), cs: document.documentElement.style.colorScheme };
+      t.setNightMode('on');
+      r.d.bootOn = document.documentElement.classList.contains('boot-night');
+      // (e) 익명 기기 번호
+      const ev = t.eventBody('info', { msg: 'x' });
+      r.e = { dev: ev.dev, same: !!ev.dev && ev.dev === t.devId, keys: Object.keys(ev).filter((k) => /name|account|email/i.test(k)).length };
+    } finally {
+      if (keepMode) localStorage.setItem('tnc.nightMode', keepMode); else localStorage.removeItem('tnc.nightMode');
+      if (keepPos) localStorage.setItem('tnc.sunPos', keepPos); else localStorage.removeItem('tnc.sunPos');
+      t.setNightMode(keepMode || 'auto');
+    }
+    const a = r.a, b = r.b, c = r.c || {}, d = r.d || {}, e = r.e || {};
+    const ok = a.bootFirst && a.styleFirst && a.fontAsync && a.waitRule &&
+      b.on === 'night+dark' && b.off === 'day' && b.s22 === 'night+dark' && b.s12 === 'day' && b.s18 === 'night+dark' && b.busan12 === 'day' && b.busan22 === 'night+dark' && b.junk === 'night+dark' &&
+      c.on && c.on.boot && c.on.lum < 0.1 && c.off && !c.off.boot && c.off.lum < 0.1 &&
+      !d.boot && !d.wait && d.cs === '' && d.bootOn &&
+      e.same && e.keys === 0;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

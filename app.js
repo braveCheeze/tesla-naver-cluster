@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-229'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-230'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -104,8 +104,12 @@
   function eventBody(type, data) {
     let ctx = {};
     try { ctx = tele.ctx ? tele.ctx() : {}; } catch (e) { /* 초기화 전 오류 */ }
+    // v230 (운전자 '이용자별 누적 데이터'): /fix·/check 와 같은 익명 무작위 기기 번호(devId)를 붙인다 — 이름·계정 없음.
+    // devId 는 아래에서 만들어지므로 그 전(아주 이른 오류 보고)에는 저장된 값으로
+    let dev = null;
+    try { dev = devId; } catch (e) { dev = store.get('devId') || null; }
     return Object.assign({
-      type, sid: tele.sid, v: APP_VERSION, at: Date.now(), page: location.host + location.pathname + location.search.slice(0, 40),
+      type, sid: tele.sid, dev, v: APP_VERSION, at: Date.now(), page: location.host + location.pathname + location.search.slice(0, 40),
       ua: navigator.userAgent.slice(0, 180),
     }, ctx, data || {});
   }
@@ -960,6 +964,12 @@
       // 배율이 바뀌면 회전 화살표의 화살촉 크기를 다시 맞춘다
       N.Event.addListener(this.map, 'zoom_changed', () => { clearTimeout(this._arrowT); this._arrowT = setTimeout(() => { this.routeZoom(); this.drawArrow(); this.drawLeg(); }, 120); });
       this.setTraffic(prefs.traffic);
+      // v230: 밤에 GL 지도를 만들면 다크 스타일이 준비될 때까지 지도 그림을 숨긴다(낮 스타일이 먼저 번쩍이지 않게, 최대 12초)
+      if (this.gl && state.night && !state.tnFilter) {
+        this.dark = true;
+        $('#map').classList.add('night-wait');
+        clearTimeout(this._nwT); this._nwT = setTimeout(() => $('#map').classList.remove('night-wait'), 12000);
+      }
       if (this.gl) { this.initDark(this.map); this.watchGl(el, this.map); }
     },
     // 차 브라우저에서 WebGL 이 끊기면(context lost) 지도가 하얗게 남는다: 바로 그림(래스터) 지도로 다시 만든다
@@ -1021,6 +1031,7 @@
         report('warn', { msg: 'gl dark style: ' + String(e.message || e).slice(0, 120) });
       }
       if (this.map === map) this.setDark(state.night && !state.tnFilter, true);
+      clearTimeout(this._nwT); $('#map').classList.remove('night-wait');   // v230: 다크 스타일로 바꿨거나(못 받으면 어둡게 누른 그림) 이제 보인다
     },
     setDark(on, force) {
       if (!this.gl || !this.map || (!force && on === this.dark)) return;
@@ -4492,9 +4503,11 @@
     if (b.length < 3) return null;
     const dong = (String(dest.name).match(/([0-9]+|[A-Za-z])동/) || [])[1] || '';
     const tries = (dong ? [[base + ' ' + dong + '동', [b + dong + '동']]] : []).concat([[base, [b, b + '아파트', b + '오피스텔']]]);
-    for (const [query, names] of tries) {
-      let res;
-      try { res = await api('/search', { query }, null, 2500); } catch (e) { continue; }
+    // v230: 두 검색을 함께 보내고 4초까지 (차 LTE 에서 2.5초씩 차례로 기다리다 놓쳤다). 'N동' 답이 있으면 그것 먼저
+    const answers = await Promise.all(tries.map(([query]) => api('/search', { query }, null, 4000).catch(() => null)));
+    for (let ti = 0; ti < tries.length; ti++) {
+      const names = tries[ti][1], res = answers[ti];
+      if (!res) continue;
       const hit = ((res && res.items) || []).filter((it) => {
         const n = squash(it.name);
         return isFinite(it.lat) && isFinite(it.lng) && !SUB_PLACE.test(n) && names.includes(n) && haversine(dest, it) <= 400;
@@ -9761,10 +9774,16 @@
   function isNightAt(date) {
     const m = nightMode();
     if (m !== 'auto') return m === 'on';
-    const p = state.fix || DEFAULT_CENTER;
+    const p = state.fix || sunPosStored() || DEFAULT_CENTER;   // v230: 첫 위치 전에는 지난번 대략 위치 (<head> 의 첫 판단과 같게)
     return sunElevation(date || new Date(), p.lat, p.lng) < -2;
   }
+  // v230: 해 높이에 쓸 대략 위치(0.1°) — 다음에 열 때 <head> 가 CSS·앱보다 먼저 밤인지 정하는 데 쓴다
+  function sunPosStored() {
+    const p = String(store.get('sunPos') || '').split(','), lat = +p[0], lng = +p[1];
+    return lat > -90 && lat < 90 && lng > -180 && lng <= 180 ? { lat, lng } : null;
+  }
   function applyNight() {
+    if (state.fix) { const sp = state.fix.lat.toFixed(1) + ',' + state.fix.lng.toFixed(1); if (store.get('sunPos') !== sp) store.set('sunPos', sp); }
     const base = isNightAt(new Date()), tunnel = !base && nightMode() === 'auto' && tnDark.on;   // v172: 터널 안이면 어둡게
     state.night = base || tunnel;
     // v193 (운전자 'GL 모드에서 터널에 들어가 다크 모드로 바뀔 때 너무 느리게 탁 탁 탁 하고 맵이 깔리는데 한번에 딱 바뀌었으면'):
@@ -9774,6 +9793,9 @@
     const m = nightMode(), b = $('#nightBtn');
     $('#map').classList.toggle('night', state.night);
     $('#map').classList.toggle('tndark', state.tnFilter);
+    document.documentElement.classList.toggle('boot-night', !!state.night);   // v230: 다음 새로고침 전까지 <html> 표시도 맞춘다
+    document.documentElement.style.colorScheme = state.night ? 'dark' : '';
+    if (!state.night) $('#map').classList.remove('night-wait');
     if (mapA && mapA.setDark) mapA.setDark(mapNight());
     // 교통 색이 낮/밤 팔레트로 바뀌었으면 경로선을 다시 칠한다 (지나온 부분은 다시 잘라 낸다). 뒤집은 터널 지도는 낮 팔레트 그대로
     if (applyNight.was !== mapNight()) {
@@ -10249,7 +10271,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams, findBuilding, routeArrived, routeIdleCheck, routeStartup, routeHide, tripEndGap, routeHeading, startsReversed, ROUTE_AHEAD, fitSigns, nvSceneFits, planScene, routeTurnSum, renderJunction, juncState,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams, findBuilding, sunPosStored, eventBody, routeArrived, routeIdleCheck, routeStartup, routeHide, tripEndGap, routeHeading, startsReversed, ROUTE_AHEAD, fitSigns, nvSceneFits, planScene, routeTurnSum, renderJunction, juncState,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,
