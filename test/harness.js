@@ -2902,6 +2902,7 @@
     { id: 'S139', name: "S139 Naver-checked driver spots look like normal cameras (v208, driver: '운전자 신고 신호 과속 단속 이라고 파란 글씨로 나오는데 … 네이버 지도는 신호 과속 이라고만 표기 하는데'); route line and turn arrow thicker with zoom and a black outline (v208, '여기도 네이버지도처럼 약간 두껍게', '검정색 테두리로 통일하자'): rows with flag 2 read '신호·과속단속' / '이동식단속' with the red (or real-mobile blue) card, sign and voice of normal cameras, flag 4 makes a child zone, /check finds count as checked, unchecked rows keep '운전자 신고 …' in blue; in the data all 20 rows are checked (v210); the route width grows with zoom (9 → 14 → 17 px at 15/17/18) under a black casing 4 px wider, and the arrow's rim is black", fn: s139 },
     { id: 'S140', name: "S140 arrival like Naver (v209, driver '네이버 지도 보면은 도착지점 거의 도착할 때 화살표로 알려 주잖아', '도착 건물에만 나오면 될 거 같아 화살표로 들어가는 것까지 표기 해 주면 좋을 것 같다'): the last turn before the goal stays its own row (row 2 shows ↰ with its distance, then the goal pin); from where the route ends a thick white arrow with a black outline goes into the building instead of the dotted line, and the goal distance counts to the building; with no turn left, the row says which side the building is on ('목적지 · 왼쪽/오른쪽' with an arrow-and-pin icon); a walk from a parking entrance keeps the dots", fn: s140 },
     { id: 'S141', name: "S141 arrow size has a limit (v211, driver '저 확대한다고해서 저화살표가 계속 커지는게 아니고 어느정도 한계가 있다고봐야 해 크기가 너무 커져도 이상해져버리니까'): route line and arrows stop growing at zoom 18 (16px); on the GL map the arrow head is sized for the GL scale (it was drawn twice as big as meant); an arrow that was removed stays hidden even if the map puts it back; a last turn just before the route end joins the building arrow into one arrow (all arrows go away on arrival); a short stretch after the last turn still points the head the way you turn", fn: s141 },
+    { id: 'S142', name: "S142 wider trip card and a gap above the speed (v212, driver '너무 붙어있는 느낌이라 조금 와이드하게 UI 개선해주고 속도도 조금 갭을 줘'): the bottom-left glass card is wider with even cells and a thin line under the compass row; on a wide screen the big speed sits the card's height plus 18 px above it (it used to touch the card), and only the speed hides when the drawer or report button reaches it", fn: s142 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -7066,6 +7067,49 @@
       d.arrow === 4 && d.leg === 0 && d.joined && d.tipToBld >= 0 && d.tipToBld < 4 &&
       da.arrow === 0 && da.leg === 0 && !da.joined && !da.active &&
       e.arrow === 4 && e.leg === 0 && !e.joined && e.legM === 0 && Math.abs(e.dir) <= 30;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S142: 왼쪽 아래 카드 넓게 + 속도와 간격 (v212, 운전자 '너무 붙어있는 느낌이라 조금 와이드하게 UI 개선해주고 속도도 조금 갭을 줘').
+  //   (a) 카드: 칸 사이 36px, 칸 최소 84px(카드 폭 220px 넘게), 나침반 줄 밑 얇은 줄. 앱이 카드 높이를 --trip-h 로 잰다
+  //   (b) 넓은 화면(1000px 넘게, 시험은 1280×800)의 큰 속도: 숫자 칸 밑과 카드 위 사이 18px (예전엔 바닥에서 172px 고정이라 카드에 붙었다)
+  //   (c) 다른 칸이 속도 숫자까지만 내려오면 숫자만 숨기고(speed-covered) 카드는 그대로, 카드까지 오면 카드도(trip-covered)
+  //   (d) 804×638 에서는 속도 숫자가 없다(차 계기판에 있음) — 이 시험 창 폭에서는 넓은 화면만 본다
+  async function s142() {
+    const t = T(), r = {}, app = document.getElementById('app');
+    const trip = document.querySelector('.trip'), head = trip && trip.querySelector('.heading'), sb = document.querySelector('.speedbox');
+    const sign = document.getElementById('signCard'), keep = sign ? { hidden: sign.hidden, style: sign.getAttribute('style') } : null;
+    try {
+      feed({ lat: NAV_ORIGIN.lat, lng: NAV_ORIGIN.lng }, 12, 0);
+      t.checkTripCover();
+      await new Promise((ok) => setTimeout(ok, 80));
+      const cs = getComputedStyle(trip), tr = trip.getBoundingClientRect();
+      r.a = { colGap: cs.columnGap, w: Math.round(tr.width), line: getComputedStyle(head).borderBottomStyle, tripH: app.style.getPropertyValue('--trip-h'), h: Math.round(trip.offsetHeight) };
+      r.wide = innerWidth >= 1000;
+      if (r.wide) {
+        const sr = sb.getBoundingClientRect();
+        r.b = { gap: Math.round(tr.top - sr.bottom), shown: getComputedStyle(sb).display !== 'none' };
+        // (c) 주의 표지 칸을 속도 숫자 높이에만 걸치게
+        // 제자리에서 보이게 한 뒤 위아래로만 옮긴다 (fixed 로 띄우면 offsetParent 가 없어 검사에서 빠진다)
+        sign.hidden = false;
+        const moveTo = (bottom) => { sign.style.transform = ''; const r0 = sign.getBoundingClientRect(); sign.style.transform = 'translateY(' + Math.round(bottom - r0.bottom) + 'px)'; };
+        moveTo(sr.top + 10);
+        t.checkTripCover();
+        r.signOn = sign.offsetParent !== null;
+        r.c1 = { speed: app.classList.contains('speed-covered'), trip: app.classList.contains('trip-covered') };
+        moveTo(tr.top + 20);
+        t.checkTripCover();
+        r.c2 = { speed: app.classList.contains('speed-covered'), trip: app.classList.contains('trip-covered'), op: getComputedStyle(sb).opacity };
+      }
+    } finally {
+      if (sign && keep) { sign.hidden = keep.hidden; if (keep.style == null) sign.removeAttribute('style'); else sign.setAttribute('style', keep.style); }
+      t.checkTripCover();
+    }
+    r.after = { speed: app.classList.contains('speed-covered'), trip: app.classList.contains('trip-covered') };
+    const a = r.a || {}, b = r.b || {}, c1 = r.c1 || {}, c2 = r.c2 || {};
+    const ok = a.colGap === '36px' && a.w >= 220 && a.line === 'solid' && a.tripH === a.h + 'px' &&
+      (!r.wide || (b.shown && b.gap >= 16 && b.gap <= 20 && c1.speed && !c1.trip && c2.speed && c2.trip)) &&
+      !r.after.speed && !r.after.trip;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

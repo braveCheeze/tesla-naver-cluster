@@ -1798,6 +1798,18 @@
   .turnicon svg.goal-side, .nexticon svg.goal-side, #app.tesla .turnicon svg.goal-side, #app.tesla .nexticon svg.goal-side { stroke: none; }
   /* 분기점 확대 그림도: 다른 갈래 표지는 흐리게(읽히게), 우리 갈래 표지가 진하다 */
   .junccard.nv .jc-label.jc-other { opacity: .74; filter: saturate(.45); box-shadow: none; }
+  /* ================= v212 왼쪽 아래 카드 넓게 + 속도와 간격 (2026-11-24 운전자 '너무 붙어있는 느낌이라 조금 와이드하게 UI 개선해주고 속도도 조금 갭을 줘') =================
+     - 카드: 안쪽 여백·칸 사이를 넓히고 칸 폭을 고르게(최소 84px), 나침반 줄과 주행 기록 사이에 얇은 줄
+     - 넓은 화면(1000px 넘게)의 큰 속도: 카드 높이(--trip-h, 앱이 잰다)만큼 위 + 18px 띄운다. 예전엔 바닥에서 172px 고정이라
+       v206 에서 카드가 높아진 뒤 숫자가 카드 위에 붙었다
+     - 서랍·신고 버튼이 속도 숫자까지 내려오면 숫자만 숨긴다(speed-covered), 카드까지 오면 지금처럼 카드도(trip-covered) */
+  /* 높이는 조금만 늘린다(152 → 약 162px): 넓은 화면(1307×747) 길안내 중 '잘못된 정보 신고' 버튼 밑과 속도 숫자 사이가 10px 넘게 남도록 */
+  #app.tesla .trip { padding: 10px 18px 10px 14px; gap: 7px 36px; grid-template-columns: repeat(2, minmax(84px, max-content)); }
+  #app.tesla .trip > .heading { padding-bottom: 6px; border-bottom: 1px solid var(--nv-line); }
+  @media (min-width: 1000px) {
+    #app.tesla .speedbox { bottom: calc(24px + var(--trip-h, 162px) + 18px); transition: opacity .25s ease; }
+    #app.tesla.speed-covered .speedbox, #app.tesla.trip-covered .speedbox { opacity: 0; }
+  }
 </style>
 </head>
 <body>
@@ -2160,8 +2172,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-211"></script>
-<script src="img/ai/picks.js?v=2026.11.16-211"></script>
-<script src="app.js?v=2026.11.16-211"></script>
+<script src="icons.js?v=2026.11.16-212"></script>
+<script src="img/ai/picks.js?v=2026.11.16-212"></script>
+<script src="app.js?v=2026.11.16-212"></script>
 </body>
 </html>
