@@ -7582,6 +7582,10 @@
         // v242: 문형 띠 없이 그림 전체 높이 — 길 그림이 그림 높이의 60% 넘게 차지한다
         tall: sv ? Math.round(sv.querySelector('.plan-road').getBBox().height / 240 * 100) : 0,
         mineShown: !document.getElementById('juncLabel').classList.contains('sg-off'),
+        // 표지판(우리 것·다른 갈래)은 모서리에 있어도 그림 칸 안에 다 들어간다 (위·아래·좌·우 2px 넘게 나가지 않는다)
+        inCard: (() => { const cb = el.getBoundingClientRect(); return [document.getElementById('juncLabel'), document.getElementById('juncLabel2')].every((lab) => {
+          if (!lab.innerHTML || lab.classList.contains('sg-off') || !lab.getClientRects().length) return true;
+          const b = lab.getBoundingClientRect(); return b.left >= cb.left + 2 && b.right <= cb.right - 2 && b.top >= cb.top + 2 && b.bottom <= cb.bottom - 2; }); })(),
         labelSide: document.getElementById('juncLabel').classList.contains('sr') ? 'r' : document.getElementById('juncLabel').classList.contains('sl') ? 'l' : '',
         other: text('#juncLabel2'), otherSide: document.getElementById('juncLabel2').classList.contains('sr') ? 'r' : '',
         cover: (() => {
@@ -7633,7 +7637,7 @@
     }
     const a = r.a || {}, b = r.b || {}, c = r.c || {};
     const ok = a.shown && a.plan && !a.nv && a.turn >= 200 && a.go && a.place === '성남IC' && a.sign.text === '일산|판교' && !a.sign.cut && a.sign.inside &&
-      a.p3 && a.arrow && a.tall >= 60 && a.mineShown && a.labelSide === 'l' && a.other === '경충대로' && a.cover === 0 &&
+      a.p3 && a.arrow && a.tall >= 60 && a.mineShown && a.inCard && a.labelSide === 'l' && a.other === '경충대로' && a.cover === 0 &&
       b.shown && b.nv && b.sign.text === '인천국제공항|영종대교기념관' && !b.sign.cut && b.sign.inside && b.sign.fs >= 10.5 &&
       c.fitted && c.inside && !c.cut && c.names === '인천국제공항|영종대교기념관' && c.otherOff;
     return { pass: !!ok, detail: JSON.stringify(r) };
