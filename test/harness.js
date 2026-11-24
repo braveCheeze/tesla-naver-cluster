@@ -2904,6 +2904,7 @@
     { id: 'S141', name: "S141 arrow size has a limit (v211, driver '저 확대한다고해서 저화살표가 계속 커지는게 아니고 어느정도 한계가 있다고봐야 해 크기가 너무 커져도 이상해져버리니까'): route line and arrows stop growing at zoom 18 (16px); on the GL map the arrow head is sized for the GL scale (it was drawn twice as big as meant); an arrow that was removed stays hidden even if the map puts it back; a last turn just before the route end joins the building arrow into one arrow (all arrows go away on arrival); a short stretch after the last turn still points the head the way you turn", fn: s141 },
     { id: 'S142', name: "S142 wider trip card and a gap above the speed (v212, driver '너무 붙어있는 느낌이라 조금 와이드하게 UI 개선해주고 속도도 조금 갭을 줘'): the bottom-left glass card is wider with even cells and a thin line under the compass row; on a wide screen the big speed sits the card's height plus 18 px above it (it used to touch the card), and only the speed hides when the drawer or report button reaches it", fn: s142 },
     { id: 'S143', name: "S143 old driver reports checked on Naver both ways (v213): 용구대로 60 (row 21232) moves to Naver's northbound point and faces north, without the old '보정역→구성역' place text; 남북대로 80 (row 19618) is a rear camera like Naver; a missing 신호·과속 50 on 비룡로 (남양주 화도) is added as a checked spot; 신갈JC has one 이동식 110 spot, moved 210 m north to Naver's point in v214", fn: s143 },
+    { id: 'S144', name: "S144 report's nearby cameras say where each came from (v215, keys 2026-11-24: an 울산 report listed the driver's own 놓침 spot, limit 0 and no direction, and the admin page showed it as a real camera '과속 제한 모름'): src 'cam' for police fixed cameras, 'mobile' for box and mobile points, 'spot' for spots the app adds, with who ('mine' this car, 'driver' driver or shared spot, 'crowd') and nv for Naver-checked", fn: s144 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -6835,6 +6836,9 @@
       const g55 = cum[55];
       for (let m = 50; m <= g55 - 990; m += 30) go(m);
       go(g55 - 990);
+      // v215: 해가 진 뒤에는 지도가 이미 밤이라 낮 색과 밤 색을 견줄 수 없었다 — 낮으로 놓고 잰다
+      document.getElementById('map').classList.remove('night');
+      t.renderNav();
       r.a = snap();
       document.getElementById('map').classList.add('night');
       t.renderNav();
@@ -6849,6 +6853,7 @@
       t.endNav();
     } finally {
       document.getElementById('map').classList.remove('night');
+      t.applyNight();   // v215: 지금 시각의 낮·밤으로 되돌린다
       softReset();
     }
     const a = r.a || {}, b = r.b || {}, c = r.c || {};
@@ -7139,6 +7144,45 @@
       B.rear && B.eb === 197 && /후면/.test(B.label) &&
       C.n === 1 && C.lim === 50 && C.kind === 3 && C.eb === 61 && C.nv && !C.unchecked && !/운전자/.test(C.label) &&
       r.d === 1 && JSON.stringify(r.dAt) === '[37.29103,127.10356,180,8]';
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S144: 신고 기록의 주변 카메라 출처 (v215). 광명로 23339 고정 카메라 자리에서 이 차의 '놓침' 지점을 하나 두고 신고하면
+  //   주변 목록에 23339 는 src 'cam', 놓침 지점은 src 'spot'·who 'mine'. 박스형·이동식 줄은 'mobile', 운전자 확인 지점은 'spot'·'driver'·nv 1
+  async function s144() {
+    const t = T(), r = {}, ob = t.outbox, keepPost = ob.post, keepBox = t.store.get('outbox'), keepShare = t.prefs.share;
+    const keepSpots = t.mySpots.slice(), keepSpotRaw = t.store.get('mySpots');
+    const CAM = { lat: 37.44165, lng: 126.8467 };
+    const bodies = [];
+    try {
+      await waitFor(() => t.cams.loaded, 10000, 100);
+      ob.inTest = true; t.store.set('outbox', null);
+      ob.post = async (b) => { bodies.push(b); return { ok: true }; };
+      t.prefs.share = true;
+      await resetApp();
+      t.mySpots.length = 0;
+      t.mySpots.push({ lat: CAM.lat + 0.0003, lng: CAM.lng, h: null, kmh: 50, lim: 0, t: Date.now(), days: [], rn: '' });
+      t.applyUserSpots();
+      feed({ lat: CAM.lat + 0.0003, lng: CAM.lng }, 0, null);
+      await t.userReport('miss');
+      const b = bodies[bodies.length - 1] || {}, near = b.near || [];
+      const base = near.find((x) => x.i === 23339), mine = near.find((x) => x.src === 'spot' && x.who === 'mine');
+      r.base = base ? base.src : null; r.mine = mine ? { who: mine.who, lim: mine.lim, eb: mine.eb, nv: mine.nv } : null;
+      r.allHaveSrc = near.length > 0 && near.every((x) => ['cam', 'mobile', 'spot'].includes(x.src));
+      r.noWhoOnCams = near.filter((x) => x.src !== 'spot').every((x) => !('who' in x));
+      // 박스형·이동식, 운전자 확인 지점
+      const ub = t.cams.userBase, fx = t.cams.fixed;
+      r.mobile = t.cams.mobile ? t.camSrc(fx, t.cams.rows[fx]) + '/' + t.camSrc(fx - 1, t.cams.rows[fx - 1]) : 'none';
+      r.firstCam = t.camSrc(0, t.cams.rows[0]);
+      const dv = t.cams.rows.slice(ub).find((c) => c.who === 'driver' && c.nv);
+      r.driver = dv ? t.camSrc(t.cams.rows.indexOf(dv), dv) : 'none';
+    } finally {
+      ob.post = keepPost; ob.inTest = false; t.store.set('outbox', keepBox); t.prefs.share = keepShare;
+      t.mySpots.length = 0; keepSpots.forEach((x) => t.mySpots.push(x)); t.store.set('mySpots', keepSpotRaw); t.applyUserSpots();
+      softReset();
+    }
+    const ok = r.base === 'cam' && r.mine && r.mine.who === 'mine' && r.mine.eb === -1 && !r.mine.nv && r.allHaveSrc && r.noWhoOnCams &&
+      r.mobile === 'mobile/cam' && r.firstCam === 'cam' && r.driver === 'spot';
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
@@ -7654,7 +7698,7 @@
     const drive = (y0, y1, x) => { for (let y = y0; y <= y1; y += 20) feed(dest(north(y), 90, x || 0), 16.7, 0); };
     try {
       t.store.set('nightMode', null); t.applyNight();
-      const sunNight = t.isNightAt(new Date());   // 지금 실제로 밤이면 지도는 원래 어둡다 (터널 표시 tnDark 로 본다)
+      let sunNight = t.isNightAt(new Date());   // 지금 실제로 밤이면 지도는 원래 어둡다 (터널 표시 tnDark 로 본다)
       r.sunNight = sunNight;
       t.setTunnelData({ v: 1, scale: 1e5, names: ['테스트터널', ''], w: [
         enc([north(1000), north(1300), north(1600)], 0, true),
@@ -7663,6 +7707,8 @@
       // (a) 자유 주행: 터널 앞 → 안 → 밖
       await resetApp(); t.tnDark.on = false; t.tnDark.outAt = 0; t.applyNight();
       drive(600, 940);
+      // v215: 밤인지는 이 시험 자리(앞 시험 자리에서 60km 동쪽)에서 다시 본다 — 해 질 무렵(2026-11-24 17:19)에는 앞 자리는 낮, 여기는 밤이라 실패했다
+      sunNight = t.isNightAt(new Date()); r.sunNight = sunNight;
       r.before = darkNow();
       drive(960, 1200);
       r.inside = darkNow();

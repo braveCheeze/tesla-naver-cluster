@@ -61,7 +61,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-214'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-215'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -2547,6 +2547,7 @@
       try { const d = rd && rd.ok ? await rd.json() : null; if (d && Array.isArray(d.rows)) driverSpots.rows = d.rows; } catch (e) { /* 없이 */ }
       if (!r.ok) throw new Error('cameras ' + r.status);
       const j = await r.json();
+      const fixedN = j.rows.length;   // v215: 고정 카메라(cameras.json) 줄 수 — 그 뒤는 박스형·이동식, 그 뒤는 신고 지점
       // 박스형(단속 부스)·이동식 과속 단속 (v112, tools/build_mobile.py): 행 모양이 같아 그대로 붙인다. 도로 이름은 모름(-1)
       try {
         const m = rm && rm.ok ? await rm.json() : null;
@@ -2589,7 +2590,7 @@
       // 한 방향 카메라의 설치장소 방향 'A→B' (arrows = [행, A 번호, B 번호, ...], 지명은 arrowNames)
       const ar = new Map(), an = j.arrowNames || [], al = j.arrows || [];
       for (let k = 0; k + 2 < al.length; k += 3) if (j.rows[al[k]]) ar.set(j.rows[al[k]], [an[al[k + 1]], an[al[k + 2]]]);
-      cams.rows = j.rows; cams.grid = g; cams.date = j.date; cams.roads = j.roads || []; cams.arrows = ar; cams.loaded = true;
+      cams.rows = j.rows; cams.grid = g; cams.date = j.date; cams.roads = j.roads || []; cams.arrows = ar; cams.loaded = true; cams.fixed = fixedN;
       cams.userBase = null; applyUserSpots();   // v169: 신고한 단속 지점을 카메라 표 끝에 붙인다
       applyCamFixes();                           // v171: '놓침' 진단으로 고친 카메라
       applySchoolTimes(true);                    // v204: 시간제 스쿨존 (지금 시각의 제한)
@@ -3604,11 +3605,22 @@
     store.set('camNoUnflag', u.id);
     return n;
   }
+  // v215: 카메라 줄이 어디서 왔는지 — 'cam' 고정 카메라(경찰청 자료), 'mobile' 박스형·이동식(경찰청 목록), 'spot' 앱이 붙인 신고 지점
+  //   (2026-11-24: 울산 신고의 주변 목록에 내 '놓침' 지점(제한 0·방향 모름)이 섞여, 관리 화면에 진짜 카메라 '과속 제한 모름'으로 보였다)
+  function camSrc(i, c) {
+    if (isUserSpot(c)) return 'spot';
+    return cams.fixed != null && i >= cams.fixed ? 'mobile' : 'cam';
+  }
   function userReport(kind, extra) {
     if (!prefs.share) return null;   // v172: 설정에서 '신고 위치 보내기'를 껐다 (이 차 안의 고침·표시는 그대로)
     const f = state.fix, t0 = f ? f.t : Date.now(), tg = camState.target;
+    // v215: src(cam·mobile·spot), 신고 지점이면 who(driver 운전자 지점·공유 지점, crowd 여러 운전자 자동 반영, mine 이 차 신고)와 nv(네이버 확인 1)
     const near = f ? camsNear(f.lat, f.lng, 400).sort((x, y) => x.d - y.d).slice(0, 12)
-      .map((it) => ({ i: it.i, lat: it.c[0], lng: it.c[1], lim: it.c[2], kind: it.c[3], eb: it.c.eb, d: Math.round(it.d) })) : [];
+      .map((it) => {
+        const o = { i: it.i, lat: it.c[0], lng: it.c[1], lim: it.c[2], kind: it.c[3], eb: it.c.eb, d: Math.round(it.d), src: camSrc(it.i, it.c) };
+        if (o.src === 'spot') { o.who = it.c.who || ''; if (it.c.nv) o.nv = 1; }
+        return o;
+      }) : [];
     return reportSure('warn', Object.assign({
       msg: 'user ' + kind + (tg ? ' camera ' + tg.i : '') + ' @' + Math.round(t0 / 1000), user: kind,
       cam: tg ? tg.i : null, camEb: tg ? tg.c.eb : null, camLabel: tg ? camLabel(tg.c) : null, near, navOn: !!nav.active,
@@ -9719,7 +9731,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,

@@ -111,6 +111,46 @@ function offsetPt(p, h, m) {
 }
 async function checkState(env, id) { try { return JSON.parse((await env.LOGS.get('chks:' + id)) || 'null'); } catch (e) { return null; } }
 const putCheckState = (env, id, st) => env.LOGS.put('chks:' + id, JSON.stringify(st), { expirationTtl: CHECK_STATE_TTL });
+// v215 자동 확인 후보 거르기 (2026-11-24 keys: 울진 앞바다 36.918,129.700 은 길찾기가 502, 강릉 후보는 길에서 150~590m 떨어져 확인할 수 없었다).
+//   운전자 확인 지점(앱 data/driver_spots.json) 100m 안이면 넣는다. 아니면 네이버 길찾기로 그 점에서 100m 안에 길이 있는지 본다:
+//   그 점에서 찍는 방향(모르면 북)으로 300m 앞까지 길을 찾아, 경로 첫 점(네이버가 길 위로 붙인 출발점)이 100m 안이면 길 위.
+//   네이버가 길이 없다고 하면(길 주변이 아님 등 4xx·code≠0) 길 밖. 길 밖 키는 30일 동안 다시 보지 않는다(chkx:).
+//   네이버가 답하지 않으면(5xx·네트워크) 이번에는 넘기기만 하고 표시하지 않는다.
+//   (고정 카메라 자료 cameras.json 은 2.7MB 라 여기서 읽지 않는다 — 고정 카메라는 길 위에 있어 길 검사로 남는다)
+const AUTO_NEAR_M = 100, AUTO_SKIP_TTL = 30 * 86400, AUTO_ROUTE_M = 300;
+const APP_DATA = 'https://bravecheeze.github.io/tesla-naver-cluster/data/';
+let spotCache = { at: 0, rows: [] };
+async function driverSpotRows() {
+  if (Date.now() - spotCache.at < 3600e3) return spotCache.rows;
+  let rows = [];
+  try {
+    const r = await fetch(APP_DATA + 'driver_spots.json');
+    const j = r.ok ? await r.json() : null;
+    rows = j && Array.isArray(j.rows) ? j.rows.filter((x) => Array.isArray(x) && Number.isFinite(+x[0]) && Number.isFinite(+x[1])) : [];
+  } catch (e) { rows = []; }
+  spotCache = { at: Date.now(), rows };
+  return rows;
+}
+// 그 점에서 가장 가까운 길까지의 거리(m). 길이 없다고 하면 Infinity, 모르면 null
+async function roadGapM(env, at, h) {
+  const hdr = { 'x-ncp-apigw-api-key-id': env.NCP_KEY_ID || '', 'x-ncp-apigw-api-key': env.NCP_KEY || '' };
+  const goal = offsetPt(at, h == null ? 0 : h, AUTO_ROUTE_M);
+  const qs = new URLSearchParams({ start: at.lng + ',' + at.lat, goal: goal.lng + ',' + goal.lat, option: 'trafast' });
+  let r;
+  try { r = await upstream(NCP + '/map-direction/v1/driving?' + qs, hdr); } catch (e) { return null; }
+  if (!r.ok) return r.status >= 500 ? null : Infinity;
+  const d = r.data || {};
+  if (d.code === 1) return 0;   // 출발·도착이 같은 길 점으로 붙음 = 길 위
+  const p0 = d.code === 0 && d.route && d.route.trafast && d.route.trafast[0] && d.route.trafast[0].path && d.route.trafast[0].path[0];
+  return p0 ? distM(at, { lat: +p0[1], lng: +p0[0] }) : Infinity;
+}
+// 자동 확인에 넣을 만한 점인지: true 넣음, false 길 밖(30일 표시), null 모름(이번엔 넘김)
+async function autoCheckable(env, at, h) {
+  const spots = await driverSpotRows();
+  if (spots.some((x) => distM(at, { lat: +x[0], lng: +x[1] }) <= AUTO_NEAR_M)) return true;
+  const gap = await roadGapM(env, at, h);
+  return gap == null ? null : gap <= AUTO_NEAR_M;
+}
 // 자동 확인 후보: v196 통과 통계(cam_day)에서 최근 30일 경고 없이 지난 것(missed)이 서로 다른 날 2번 넘게, 또는 통과 3번 이상 중 30% 넘게
 async function autoCheckJob(env) {
   if (!env.STATS) return null;
@@ -122,12 +162,18 @@ async function autoCheckJob(env) {
       'FROM cam_day WHERE day >= ? GROUP BY cam HAVING md > 2 OR (n >= 3 AND m * 10 > n * 3) ORDER BY md DESC, m DESC LIMIT 30').bind(since).all();
     rows = (q && q.results) || [];
   } catch (e) { return null; }
+  let probes = 0;
   for (const r of rows) {
     const m = PASS_KEY.exec(String(r.cam || ''));
     if (!m) continue;
     if (await env.LOGS.get('chka:' + r.cam)) continue;   // 7일에 한 번
-    await env.LOGS.put('chka:' + r.cam, '1', { expirationTtl: CHECK_AUTO_TTL });
+    if (await env.LOGS.get('chkx:' + r.cam)) continue;   // v215: 길 밖으로 본 키 (30일)
+    if (++probes > 5) break;   // 한 번 부를 때 길 검사는 5번까지 (나머지는 다음에: 응답을 빨리, 바깥 호출 수 제한 안에서)
     const at = { lat: +m[1], lng: +m[2] }, h = m[3] === 'x' ? null : +m[3] * 45;
+    const usable = await autoCheckable(env, at, h);
+    if (usable === false) { await env.LOGS.put('chkx:' + r.cam, '1', { expirationTtl: AUTO_SKIP_TTL }); continue; }
+    if (usable === null) continue;
+    await env.LOGS.put('chka:' + r.cam, '1', { expirationTtl: CHECK_AUTO_TTL });
     const id = 'a' + crypto.randomUUID().replace(/-/g, '').slice(0, 15);
     const job = { id, kind: 'auto', lat: at.lat, lng: at.lng, heading: h, cam: r.cam, limit: r.lim || null, camKind: r.kind || null,
       passes: r.n, missed: r.m, missDays: r.md, trail: h == null ? [] : [[offsetPt(at, (h + 180) % 360, 450).lat, offsetPt(at, (h + 180) % 360, 450).lng], [at.lat, at.lng]], at: Date.now() };

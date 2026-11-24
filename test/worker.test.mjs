@@ -30,13 +30,24 @@ const TOKEN = 'T'.repeat(40);
 const env = { LOGS, ADMIN_TOKEN: TOKEN, NCP_KEY_ID: 'id', NCP_KEY: 'k' };
 const ROUTE1 = { summary: { distance: 1200, duration: 90000, tollFare: 0, fuelPrice: 100 }, path: [[127.1, 37.5], [127.2, 37.6]],
   guide: [{ pointIndex: 1, type: 88, instructions: '목적지', distance: 1200, duration: 90000 }], section: [{ pointIndex: 0, pointCount: 2, name: '테스트로', speed: 40, congestion: 1 }] };
+const routeCalls = [];
 globalThis.fetch = async (u) => {
   u = String(u);
   if (u.includes('map-direction')) {
-    const opt = new URL(u).searchParams.get('option') || 'trafast', route = {};
-    opt.split(':').forEach((o) => { route[o] = [ROUTE1]; });
+    const q = new URL(u).searchParams, opt = q.get('option') || 'trafast', route = {};
+    const [sx, sy] = (q.get('start') || '').split(',').map(Number);
+    routeCalls.push(q.get('start'));
+    // v215 자동 확인 길 검사: 바다(경도 129.6 넘게)는 네이버가 오류, 길 밖 시험 점(37.757,128.92)은 300m 떨어진 길로 붙임, 그 밖은 그 자리
+    if (sx > 129.6) return new Response(JSON.stringify({ error: { errorCode: '400', message: 'bad start' } }), { status: 400 });
+    let r1 = ROUTE1;
+    if (q.get('start') !== '127.1,37.5') {
+      const snap = Math.abs(sy - 37.757) < 0.001 && Math.abs(sx - 128.92) < 0.001 ? [sx, sy + 0.0027] : [sx, sy];
+      r1 = Object.assign({}, ROUTE1, { path: [snap, [sx + 0.001, sy + 0.002]] });
+    }
+    opt.split(':').forEach((o) => { route[o] = [r1]; });
     return new Response(JSON.stringify({ code: 0, route }), { status: 200 });
   }
+  if (u.includes('driver_spots.json')) return new Response(JSON.stringify({ v: 1, rows: [[37.9, 127.9, 90, 60, 60, 3, 2]] }), { status: 200 });
   if (u.includes('reversegeocode') && u.includes('coords=127.3')) {
     return new Response(JSON.stringify({ results: [{ name: 'roadaddr', land: { name: '테스트로' }, region: { area1: { name: '서울특별시' }, area2: { name: '강동구' }, area3: { name: '둔촌동' } } }] }), { status: 200 });
   }
@@ -387,6 +398,25 @@ if (!sqlite) {
     ok((await call('GET', '/check/next', { token: TOKEN, origin: '', e: envA })).s === 204, 'the same camera is not auto-checked again within 7 days');
     await call('POST', '/check/result', { token: TOKEN, origin: '', e: envA, body: { id: a1.j.job.id, status: 'none' } });
     ok((await call('GET', '/check/unmatched', { token: TOKEN, e: envA })).j.items.length === 1, "an auto check's 'none' is not added to the unmatched list");
+    // v215: 바다(울진 앞바다)·길 밖(300m) 후보는 넣지 않고 30일 표시, 운전자 확인 지점 100m 안은 길 검사 없이, 길 위 후보는 넣는다
+    for (const d of [1, 2, 3]) {
+      for (const cam of ['36.918,129.7|x', '37.757,128.92|4', '37.9004,127.9|2', '37.31,127.05|0']) {
+        db2.prepare('INSERT INTO cam_day (day, cam, lim, kind, n, missed) VALUES (?, ?, 60, 1, 1, 1)').run(kday(d), cam);
+      }
+    }
+    routeCalls.length = 0;
+    const got = [];
+    for (let k = 0; k < 4; k++) {
+      const a = await call('GET', '/check/next', { token: TOKEN, origin: '', e: envA });
+      if (a.s === 200) got.push(a.j.job.cam);
+    }
+    ok(got.length === 2 && got.includes('37.9004,127.9|2') && got.includes('37.31,127.05|0'),
+      'auto check: the point at sea and the point 300 m off the road are not queued; near a driver spot and on a road are (' + got.join(' ') + ')');
+    ok(kv.has('chkx:36.918,129.7|x') && kv.has('chkx:37.757,128.92|4') && !kv.has('chka:36.918,129.7|x') && !kv.has('chkx:37.31,127.05|0'),
+      'off-road keys are marked for 30 days (chkx), not as checked');
+    ok(!routeCalls.includes('127.9,37.9004'), 'a key within 100 m of a driver spot needs no route call');
+    const before = routeCalls.length;
+    ok((await call('GET', '/check/next', { token: TOKEN, origin: '', e: envA })).s === 204 && routeCalls.length === before, 'skipped keys are not probed again');
   }
 }
 
