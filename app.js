@@ -61,7 +61,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-207'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-208'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -248,7 +248,29 @@
   // 2026-11-14 요청: 검은 테두리를 없애고, 네이버 지도처럼 선 안에 흰 점(점점점), 빛나는 레이저 같은 입체감. 색은 그대로.
   //   빛 번짐(같은 색, 넓고 옅게) → 본선(바탕 파랑 / 교통색) → 가운데 빛(흰색 옅게) → 흰 점
   //   [굵기 px, 불투명도, 겹침 순서]
-  const ROUTE_STYLE = { glow: [20, 0.28, 47], base: [9, 1, 50], traffic: [9, 1, 51], shine: [3.4, 0.3, 52], dots: [3.4, 0.95, 53] };
+  const ROUTE_STYLE = { glow: [13, 0.92, 47], base: [9, 1, 50], traffic: [9, 1, 51], shine: [3.4, 0.3, 52], dots: [3.4, 0.95, 53] };
+  // v208 (2026-11-24 운전자 '여기도 네이버지도처럼 약간 두껍게 가능? 확대 축소에 따라 조금씩 조정되긴 해', '그리고 검정색 테두리로 통일하자'):
+  // 경로선 굵기는 배율 따라(배율 사이는 고르게 이어서) — 17 에서 14px(예전 9px), 확대하면 더 굵게, 축소하면 가늘게.
+  // 바깥 빛 번짐(glow, 색별 28%) 대신 검정 테두리(양쪽 2px). 회전 화살표도 같은 굵기의 흰 몸통 + 검정 테두리.
+  // 흰 점은 굵기·간격을 그대로 둔다 (점이 땅에 붙어 있게 자르는 간격 DOT_PERIOD_PX 가 점 굵기에 묶여 있다)
+  const ROUTE_CASING = '#141414';
+  const ROUTE_W = [[12, 5], [14, 7], [15, 9], [16, 11], [17, 14], [18, 17], [19, 20], [20, 23]];
+  function routeW(z) {
+    const zz = Number.isFinite(z) ? z : 17;
+    if (zz <= ROUTE_W[0][0]) return ROUTE_W[0][1];
+    for (let k = 1; k < ROUTE_W.length; k++) {
+      const [z1, w1] = ROUTE_W[k];
+      if (zz <= z1) { const [z0, w0] = ROUTE_W[k - 1]; return w0 + (w1 - w0) * (zz - z0) / (z1 - z0); }
+    }
+    return ROUTE_W[ROUTE_W.length - 1][1];
+  }
+  function routeWeight(kind, z) {
+    const W = routeW(z);
+    if (kind === 'glow') return Math.round((W + 4) * 10) / 10;   // 검정 테두리
+    if (kind === 'shine') return Math.round(Math.max(2, W * 0.36) * 10) / 10;
+    if (kind === 'dots') return ROUTE_STYLE.dots[0];
+    return Math.round(W * 10) / 10;
+  }
   // 흰 점 무늬 한 칸(굵기 3.4px 의 'dot' = 5배). 차가 움직일 때 점이 차를 따라 흔들리지 않게 이 간격(미터)에 맞춰 자른다
   const DOT_PERIOD_PX = 17;
   // 2026-11-14 요청(네이버·다른 내비처럼 빨강을 여러 단계로): 네이버 길찾기 구간의 혼잡도에 그 구간 평균 속도를 더해 다섯 단계로.
@@ -296,14 +318,8 @@
     const out = [];
     const split = (a, b, kind, color) => { for (let x = a; x < b; x += ROUTE_CHUNK) out.push({ a: x, b: Math.min(b, x + ROUTE_CHUNK), kind, color }); };
     const runs = trafficRuns(sections, n);
-    // 빛 번짐은 색끼리 겹쳐 탁해지지 않게 경로를 색별로 나눠서(교통색 구간 + 그 사이 바탕색) 깐다
-    let x = 0;
-    runs.forEach((r) => {
-      if (r.a > x) split(x, r.a, 'glow', ROUTE_BASE);
-      if (r.b > Math.max(x, r.a)) split(Math.max(x, r.a), r.b, 'glow', r.color);
-      x = Math.max(x, r.b);
-    });
-    if (x < n - 1) split(x, n - 1, 'glow', ROUTE_BASE);
+    // v208: 맨 밑은 검정 테두리 한 줄 (예전 색별 빛 번짐)
+    split(0, n - 1, 'glow', ROUTE_CASING);
     split(0, n - 1, 'base', ROUTE_BASE);
     runs.forEach((r) => split(r.a, r.b, 'traffic', r.color));
     split(0, n - 1, 'shine', '#ffffff');
@@ -740,7 +756,12 @@
   // 2026-11-14 두 번째 피드백: '위에 올린(스티커) 느낌보다 경로를 이어 가는 느낌, 조금 더 작게' → 검은 테두리를 없애고
   // 몸통은 경로선과 같은 굵기(9px)·같은 색에 가운데만 흰 줄(5px), 화살촉은 흰색에 그 자리 경로 색 테두리. 경로선이 흰 화살표로 이어진다
   const ARROW_PX = { shaft: 9, inner: 5, len: 16, half: 9.5, rim: 1.6 }, ARROW_STEP = 2.5, ARROW_MIN_ZOOM = 14;
-  const arrowScale = (z) => (z >= 17 ? 1 : Math.max(0.6, 1 - (17 - z) * 0.16));
+  // v208: 화살표 크기는 그 배율의 경로선 굵기 W 로 — 흰 몸통 = W, 검정 테두리 = W + 4 (경로선 테두리와 같음), 화살촉도 W 에 맞춰.
+  // 네이버처럼 굵은 흰 화살표에 어두운 테두리 (운전자 '검정색 테두리로 통일하자')
+  function arrowPx(z) {
+    const W = routeW(z);
+    return { shaft: W + 4, inner: W, len: W * 1.3 + 6, half: W * 0.75 + 4, rim: 2 };
+  }
   function arrowSpan(lat, zoom) {
     const mpp = 156543.03392 * Math.cos(toRad(lat)) / Math.pow(2, zoom);
     return { before: Math.min(150, Math.max(35, 40 * mpp)), after: Math.min(100, Math.max(25, 26 * mpp)) };
@@ -751,7 +772,7 @@
     if (pts0.some((q) => q.rel != null)) pts = pts0.filter((q) => q.rel == null || (q.rel >= -sp.before - 0.01 && q.rel <= sp.after + 0.01));
     else if (ti != null) pts = pts0.slice(Math.max(0, ti - Math.round(sp.before / ARROW_STEP)), Math.min(pts0.length, ti + Math.round(sp.after / ARROW_STEP) + 1));
     if (pts.length < 2) pts = pts0;
-    const sc = arrowScale(zoom || 17);
+    const sc = 1;   // v208: 크기는 arrowPx(배율) 가 정한다 (예전 arrowScale)
     const E = pts[pts.length - 1], kx = Math.cos(toRad(E.lat)) * 111320, ky = 110540;
     const loc = (q) => ({ x: (q.lng - E.lng) * kx, y: (q.lat - E.lat) * ky });
     const back = (m) => ({ lat: E.lat + m.y / ky, lng: E.lng + m.x / kx });
@@ -763,7 +784,7 @@
     const mpp = 156543.03392 * Math.cos(toRad(E.lat)) / Math.pow(2, zoom || 17);
     const px = (v) => v * sc * mpp;
     const at = (o, along, side) => ({ x: o.x + d.x * along + nn.x * side, y: o.y + d.y * along + nn.y * side });
-    const O = { x: 0, y: 0 }, H = ARROW_PX;
+    const O = { x: 0, y: 0 }, H = arrowPx(zoom || 17);
     // 바깥(테두리) 화살촉: 끝점보다 4px 앞이 뾰족한 끝. 안쪽 흰 화살촉은 빗변에서 rim 만큼 안쪽
     const T = at(O, px(4), 0), Bo = at(T, -px(H.len), 0);
     const sinA = H.half / Math.hypot(H.half, H.len), tanA = H.half / H.len;
@@ -776,7 +797,7 @@
     // 화살표 곡선 밖으로 각지게 튀어나와 '이어지는' 느낌이 깨진다. 같은 점·같은 이음으로 그리면 흰 줄과 경로 테두리가 한 모서리를 공유한다
     const sh = pts.slice(0, -1).filter((q) => haversine(q, E) > cut).map(loc);
     sh.push(at(O, -cut, 0));
-    return { shaft: sh.map(back), headOut: tri(T, Bo, px(H.half)), headIn: tri(Ti, Bi, px(lenIn * tanA)), sc, pts, span: sp };
+    return { shaft: sh.map(back), headOut: tri(T, Bo, px(H.half)), headIn: tri(Ti, Bi, px(lenIn * tanA)), sc, pts, span: sp, H };
   }
   // 목적지 핀 (사용자가 그린 '도착' 핀이 있으면 그것)
   function destPinEl() {
@@ -901,7 +922,7 @@
       });
       N.Event.addListener(this.map, 'dragstart', onUserPan);
       // 배율이 바뀌면 회전 화살표의 화살촉 크기를 다시 맞춘다
-      N.Event.addListener(this.map, 'zoom_changed', () => { clearTimeout(this._arrowT); this._arrowT = setTimeout(() => this.drawArrow(), 120); });
+      N.Event.addListener(this.map, 'zoom_changed', () => { clearTimeout(this._arrowT); this._arrowT = setTimeout(() => { this.routeZoom(); this.drawArrow(); }, 120); });
       this.setTraffic(prefs.traffic);
       if (this.gl) { this.initDark(this.map); this.watchGl(el, this.map); }
     },
@@ -1061,8 +1082,9 @@
       this.routePath = path; this.disp = disp;
       this.route = routePieces(pts.length, sections).map((pc) => {
         const st = ROUTE_STYLE[pc.kind];
+        pc.w = routeWeight(pc.kind, this.map.getZoom());
         pc.line = new N.Polyline({
-          map: this.map, path: path.slice(disp.first[pc.a], disp.last[pc.b] + 1), strokeColor: pc.color, strokeWeight: st[0], strokeOpacity: st[1],
+          map: this.map, path: path.slice(disp.first[pc.a], disp.last[pc.b] + 1), strokeColor: pc.color, strokeWeight: pc.w, strokeOpacity: st[1],
           strokeStyle: pc.kind === 'dots' ? 'dot' : 'solid', strokeLineCap: 'round', strokeLineJoin: 'round', zIndex: st[2], clickable: false,
         });
         pc.st = 'full';
@@ -1124,6 +1146,12 @@
         icon: { content: restEl(), anchor: new N.Point(12, 12) } }));
     },
     setTurnArrow(pts, ti, color) { this._arrow = pts; this._arrowTi = ti; this._arrowColor = color; this.drawArrow(); },
+    // v208: 배율이 바뀌면 경로선 굵기를 맞춘다 (0.1px 넘게 달라진 조각만)
+    routeZoom() {
+      if (!this.route || !this.map) return;
+      const z = this.map.getZoom();
+      this.route.forEach((pc) => { const w = routeWeight(pc.kind, z); if (Math.abs((pc.w || 0) - w) > 0.1) { pc.w = w; pc.line.setOptions({ strokeWeight: w }); } });
+    },
     drawArrow() {
       (this._arrowObjs || []).forEach((o) => o.setMap(null));
       this._arrowObjs = []; this._arrowShown = null;
@@ -1135,8 +1163,8 @@
         strokeLineCap: 'round', strokeLineJoin: 'round', zIndex: z, clickable: false });
       const head = (tri, c, z) => new N.Polygon({ map: this.map, paths: [tri.map(P)], fillColor: c, fillOpacity: 1, strokeColor: c, strokeOpacity: 1,
         strokeWeight: 1, zIndex: z, clickable: false });
-      const H = ARROW_PX, RIM = this._arrowColor || ROUTE_BASE;
-      this._arrowObjs.push(line(H.shaft * g.sc, RIM, 70), head(g.headOut, RIM, 70), line(H.inner * g.sc, '#ffffff', 71), head(g.headIn, '#ffffff', 71));
+      const H = g.H, RIM = ROUTE_CASING;   // v208: 검정 테두리 (예전엔 그 자리 경로 색)
+      this._arrowObjs.push(line(H.shaft, RIM, 70), head(g.headOut, RIM, 70), line(H.inner, '#ffffff', 71), head(g.headIn, '#ffffff', 71));
     },
     setDest(d, end) {
       const N = naver.maps;
@@ -1228,7 +1256,7 @@
       }).addTo(this.map);
       this.marker = null;
       this.map.on('dragstart', onUserPan);
-      this.map.on('zoomend', () => this.drawArrow());
+      this.map.on('zoomend', () => { this.routeZoom(); this.drawArrow(); });
     },
     setMe(lat, lng) {
       if (this.marker) { this.marker.setLatLng([lat, lng]); return; }
@@ -1269,8 +1297,9 @@
       // Leaflet 은 나중에 더한 선이 위에 그려지므로 빛 번짐 → 본선 → 교통색 → 가운데 빛 → 흰 점 순서(routePieces 순서)를 지킨다
       this.route = routePieces(pts.length, sections).map((pc) => {
         const st = ROUTE_STYLE[pc.kind];
+        pc.w = routeWeight(pc.kind, this.map.getZoom());
         pc.line = L.polyline(path.slice(disp.first[pc.a], disp.last[pc.b] + 1), {
-          color: pc.color, weight: st[0], opacity: st[1], lineCap: 'round', lineJoin: 'round', interactive: false,
+          color: pc.color, weight: pc.w, opacity: st[1], lineCap: 'round', lineJoin: 'round', interactive: false,
           dashArray: pc.kind === 'dots' ? '0 ' + DOT_PERIOD_PX : null,
         }).addTo(this.map);
         pc.st = 'full';
@@ -1330,6 +1359,11 @@
       }).addTo(this.map));
     },
     setTurnArrow(pts, ti, color) { this._arrow = pts; this._arrowTi = ti; this._arrowColor = color; this.drawArrow(); },
+    routeZoom() {   // v208
+      if (!this.route || !this.map) return;
+      const z = this.map.getZoom();
+      this.route.forEach((pc) => { const w = routeWeight(pc.kind, z); if (Math.abs((pc.w || 0) - w) > 0.1) { pc.w = w; pc.line.setStyle({ weight: w }); } });
+    },
     drawArrow() {
       (this._arrowObjs || []).forEach((o) => o.remove());
       this._arrowObjs = []; this._arrowShown = null;
@@ -1339,8 +1373,8 @@
       this._arrowShown = g.pts; this._arrowSpan = g.span;
       const line = (w, c) => L.polyline(g.shaft.map(P), { color: c, weight: w, opacity: 1, lineCap: 'round', lineJoin: 'round', interactive: false }).addTo(this.map);
       const head = (tri, c) => L.polygon(tri.map(P), { color: c, weight: 1, fillColor: c, fillOpacity: 1, interactive: false }).addTo(this.map);
-      const H = ARROW_PX, RIM = this._arrowColor || ROUTE_BASE;
-      this._arrowObjs.push(line(H.shaft * g.sc, RIM), head(g.headOut, RIM), line(H.inner * g.sc, '#ffffff'), head(g.headIn, '#ffffff'));
+      const H = g.H, RIM = ROUTE_CASING;   // v208: 검정 테두리
+      this._arrowObjs.push(line(H.shaft, RIM), head(g.headOut, RIM), line(H.inner, '#ffffff'), head(g.headIn, '#ffffff'));
     },
     setDest(d, end) {
       (this.destMk || []).forEach((m) => m.remove());
@@ -2530,6 +2564,10 @@
   // 카메라 표 끝에 같은 모양의 행(flags 4)으로 붙여서 경고·지남·지도는 다른 카메라와 똑같이 처리한다
   const USER_FLAG = 4;
   const isUserSpot = (c) => ((c[10] | 0) & USER_FLAG) === USER_FLAG;
+  // v208 (2026-11-24 운전자 '운전자 신고 신호 과속 단속 이라고 파란 글씨로 나오는데 … 네이버 지도는 신호 과속 이라고만 표기 하는데'):
+  // 네이버 길안내로 확인한 신고 지점(운전자 지점 표시 2, /check 로 찾은 지점)은 보통 카메라와 똑같이 보인다 — 이름·색·표지·음성.
+  // 확인 전 지점(내가 신고한·사용자 제보·확인 전 운전자 지점)만 '…신고' 이름과 파란 표지로 따로 보인다
+  const spotUnchecked = (c) => isUserSpot(c) && !c.nv;
   const driverSpots = { rows: [] };
   const mySpots = [];
   try {
@@ -2558,9 +2596,12 @@
     return named && isExpwyName(rn) ? 100 : 0;
   }
   // v194: 운전자 지점은 종류(1 과속 · 3 신호·과속)와 후면단속(flags 1)도 가질 수 있다 (네이버 길안내 확인, data/driver_spots.json 6·7째 값)
+  // v208: flags 2 = 네이버 길안내로 확인(보통 카메라처럼 보임), 4 = 어린이보호구역
   function userSpotRow(lat, lng, h, kmh, who, lim, kind, flags) {
-    const r = [lat, lng, lim > 0 ? lim : 0, kind === 3 || kind === 8 ? kind : 1, 0, 0, 0, -1, kmh >= 70 ? 1 : 4, 1, USER_FLAG | ((flags | 0) & 1)];   // v204: 8 이동식 (네이버 '이동식')
+    const f = flags | 0;
+    const r = [lat, lng, lim > 0 ? lim : 0, kind === 3 || kind === 8 ? kind : 1, 0, 0, f & 4 ? 2 : 0, -1, kmh >= 70 ? 1 : 4, 1, USER_FLAG | (f & 1)];   // v204: 8 이동식 (네이버 '이동식')
     r.eb = h == null ? -1 : h; r.e2 = 0; r.lv = 0; r.sl = lat; r.sg = lng; r.on = ''; r.who = who;
+    if (f & 2) r.nv = true;
     return r;
   }
   const sameSpot = (a, b) => haversine(a, b) < 60 && (a.h == null || b.h == null || angleDiff(a.h, b.h) <= 45);
@@ -2591,7 +2632,7 @@
     const add = [];
     for (const d of driverSpots.rows) add.push({ lat: d[0], lng: d[1], h: d[2], kmh: d[3] || 0, who: 'driver', lim: d[4] || 0, kind: d[5] || 1, flags: d[6] || 0 });
     // v171 모든 사용자 신고 지점. v175: 운영자가 확인하기 전 자동 반영(src 'auto', 서로 다른 운전자 3명 넘게)은 '사용자 제보'로 따로 보인다
-    for (const d of sharedSpots) if (!add.some((x) => sameSpot(x, d))) add.push({ lat: d.lat, lng: d.lng, h: d.h, kmh: 0, who: d.src === 'auto' ? 'crowd' : 'driver', lim: d.lim || 0, kind: d.ck === 3 || d.ck === 8 ? d.ck : 1, flags: d.fl ? 1 : 0 });   // v202: 네이버 확인 지점의 종류·후면
+    for (const d of sharedSpots) if (!add.some((x) => sameSpot(x, d))) add.push({ lat: d.lat, lng: d.lng, h: d.h, kmh: 0, who: d.src === 'auto' ? 'crowd' : 'driver', lim: d.lim || 0, kind: d.ck === 3 || d.ck === 8 ? d.ck : 1, flags: (d.fl ? 1 : 0) | (d.ck ? 2 : 0) });   // v202: 네이버 확인 지점의 종류·후면 (v208: 확인됨)
     for (const m of mySpots) if (!add.some((x) => (x.who === 'mine' ? sameSpot(x, m) : sameSpotAhead(m, x)))) add.push({ lat: m.lat, lng: m.lng, h: m.h, kmh: m.kmh, who: 'mine', lim: m.lim || 0, rn: m.rn, m });
     let filled = false;
     for (const x of add) {
@@ -2865,7 +2906,7 @@
   // 음성으로 읽는 이름: '과속'이라는 말은 빼고 '단속 카메라'로 (v122, 2026-11-15 밤 '속도 초과라는 말 없애줘 놀란다 자꾸').
   // 화면 글자(camLabel)는 그대로
   function camSpoken(c) {
-    if (isUserSpot(c)) return '신고된 단속 지점';
+    if (spotUnchecked(c)) return '신고된 단속 지점';
     if (c[4] === 1) return '구간단속 시작';
     if (c[4] === 2) return '구간단속 끝';
     const zone = c[6] === 2 ? '어린이보호구역 ' : c[6] === 1 ? '노인보호구역 ' : '';
@@ -2873,7 +2914,7 @@
     return zone + (isRear(c) ? '후면 ' : '') + what;
   }
   function camLabel(c) {
-    if (isUserSpot(c)) {
+    if (spotUnchecked(c)) {
       const who = c.who === 'mine' ? '내가 신고한' : c.who === 'crowd' ? '사용자 제보' : '운전자 신고';   // v169: 제한속도 모름 · v175 확인 전 자동 반영
       // v194: 네이버로 확인한 운전자 지점은 종류까지 ('운전자 신고 신호·과속단속', '운전자 신고 후면단속')
       if (isRear(c)) return who + ' ' + (c[3] === 3 ? '신호·과속 ' : '') + '후면단속';
@@ -2891,7 +2932,7 @@
   // v191 (2026-11-23 운전자 '아이콘이나 UI … 네이버지도가 가장 정확해'): 경고 카드 종류 띠의 짧은 이름과 색 (네이버 길안내 배지처럼).
   // 노란 띠: 과속단속·신호과속·신호단속·구간단속·박스형. 흰 띠: 이동식·신고 지점. 보호구역은 따로 뜨는 주의 표지가 알린다
   function camShort(c) {
-    if (isUserSpot(c)) return c.who === 'mine' ? '내 신고 지점' : c.who === 'crowd' ? '제보 지점' : '신고 지점';
+    if (spotUnchecked(c)) return c.who === 'mine' ? '내 신고 지점' : c.who === 'crowd' ? '제보 지점' : '신고 지점';
     if (c[4] === 1) return '구간단속 시작';
     if (c[4] === 2) return '구간단속 끝';
     if (isBox(c)) return '박스형';
@@ -2901,11 +2942,11 @@
     if (c[3] === 2) return rear ? '신호 후면' : '신호단속';
     return rear ? '후면단속' : '과속단속';
   }
-  const camBand = (c) => (isUserSpot(c) || c[3] === 8 ? 'white' : 'yellow');
+  const camBand = (c) => (spotUnchecked(c) || c[3] === 8 ? 'white' : 'yellow');
   // v192 (운전자 '이런거는 ai 아틀라스로 만들고'): 단속 표지 그림 칸 — 신호(·과속)는 신호등, 이동식·박스형·신고 지점은 파란 테, 나머지는 카메라
   function camSignSlot(c) {
     if (c[3] === 2 || c[3] === 3) return 'cam_signal';
-    if (c[3] === 8 || isBox(c) || isUserSpot(c)) return 'cam_mobile';
+    if (c[3] === 8 || isBox(c) || spotUnchecked(c)) return 'cam_mobile';
     return 'cam_speed';
   }
   // 고른 AI 표지 그림: 숫자까지 그린 칸(cam_speed_110 …, 운전자 'AI로 만들어봐 그리고 110을 저기 규격에 잘 맞춰주고')이 있으면 그것(num),
@@ -3813,7 +3854,7 @@
       $('#camBar').style.width = tg.after ? '100%' : Math.max(0, Math.min(100, (1 - sd / span) * 100)) + '%';
       card.classList.toggle('over', speedCam && !doubt && tg.c[2] > 0 && state.speedKmh > tg.c[2] + 1 && sd < 600);
       card.classList.toggle('signal', !speedCam);
-      card.classList.toggle('mobile', tg.c[3] === 8 || isBox(tg.c) || isUserSpot(tg.c)); // 이동식·박스형·신고 지점은 파란색 (v114, v169)
+      card.classList.toggle('mobile', tg.c[3] === 8 || isBox(tg.c) || spotUnchecked(tg.c)); // 이동식·박스형·확인 전 신고 지점은 파란색 (v114, v169, v208)
       card.classList.toggle('box', isBox(tg.c));
       card.classList.toggle('sigspeed', tg.c[3] === 3); // 신호·과속: 표지 위에 작은 신호등
       // 어린이·노인 보호구역: 도로 주의 표지 모양 타일 (삼각 표지 + 빨간 띠에 남은 거리 + '어린이보호' 와 제한속도)
@@ -9564,12 +9605,12 @@
       planRoute, doSearch, setFollowing, canvasPoint, gesture, glView, glOn, evalCameras, navUpdate, loadCameras, getMap: () => mapA,
       view, layoutView, zoomCtl, autoZoom, motion, alertLog, checkForUpdate, version: APP_VERSION,
       sunElevation, isNightAt, setNightMode, mapNight, openSearch, favs, setFav, idleUpdate, upd, openTray, closeTray, endCompare, selectAlt, pickDest, updateUrl, resumeFrom, renderCam, renderUpdBtn, bumps, bumpState, bumpsNear, evalBumps, arrowSays,
-      saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassKey, hipassNums, hipassLayout, laneNums, laneStripHtml, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, icoBase, pickImg, iconPicks: ICON_PICKS, tollParts, arrowSpan, routeStyle: ROUTE_STYLE, trafficPal, roundRoute, setCarIcon, carIcons: CAR_ICONS, parking, parkState, setParkingData, loadParking, evalParking, rest, setRestData, loadRest, ensureRouteRest, renderRest, placeBase, findParking, renderTurnArrow,
+      saveTripNow, restoreTripNow, trafficColor, highwaySpans, turnKind, tollState, hipass, setHipassData, loadHipass, hipassKey, hipassNums, hipassLayout, laneNums, laneStripHtml, tunnels, setTunnelData, loadTunnels, ensureRouteTunnels, tunnelAhead, renderTunnel, juncInfo, juncSvg, renderJunction, ico, icoBase, pickImg, iconPicks: ICON_PICKS, tollParts, arrowSpan, routeStyle: ROUTE_STYLE, routeW, routeWeight, arrowPx, ROUTE_CASING, trafficPal, roundRoute, setCarIcon, carIcons: CAR_ICONS, parking, parkState, setParkingData, loadParking, evalParking, rest, setRestData, loadRest, ensureRouteRest, renderRest, placeBase, findParking, renderTurnArrow,
       lanesData, laneState, setLaneData, loadLanes, laneGuide, laneArrowSvg, laneOk, laneTipFor, laneCell,
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, checkTripCover, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, spotUnchecked, camSpoken, checkTripCover, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,

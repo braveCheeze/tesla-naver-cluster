@@ -2899,6 +2899,7 @@
     { id: 'S136', name: "S136 camera card sign alignment (v205, driver '가운데로 정렬 해서 보여줘야 되는 거 아니야 110 너무 밑에 있는 느낌이다'): in the Tesla drawer the round sign's top meets the label's top and its bottom meets the distance's bottom (the bar sits below), for section-end, fixed, mobile and child-zone cards alike", fn: s136 },
     { id: 'S137', name: "S137 voice feedback reachable and readable (v206, driver '피드백 음성 버튼이 일단 무슨 버튼인지 잘 모를 거 같고 눌러도 반응이 없어'): during guidance with a camera card, the mic sits in the glass card's compass row, a real tap lands on it and never on the '잘못된 정보 신고' pill (if the pill reaches the card, the card hides and the mic takes no taps); the card is opaque enough over map labels; every failure is shown and logged by stage: start() throwing, a 'network' error, and no onstart within 4 s; a good start logs tap, start, onstart, onaudiostart", fn: s137 },
     { id: 'S138', name: "S138 colour guide line as a split picture, first (v207, driver '이럴 때는 분홍색을 첫 번째 있는 걸로 보여 주고 … 그림을 알려 주는 게 훨씬 더 좋아', '굳이 그림이 표기돼 있으면은 분홍색 화살표로 안 바꿔도 돼', '우리가 가지 않는 방향이라고 해도 그림에서 표지판에 표기를 해 주는 게 좋아'): on the real 서울TG → 판교분기점 route, 990 m before the split the guide card starts with a small split picture: 경부 goes straight with a dim '① 경부' sign, our branch goes right with the pink line and a strong '[100] 일산 · 구리' sign; no pink arrow, the turn row keeps its green arrow and the distance; at 600 m the close-up takes over with pink lanes and both signs; at night the roads turn dark", fn: s138 },
+    { id: 'S139', name: "S139 Naver-checked driver spots look like normal cameras (v208, driver: '운전자 신고 신호 과속 단속 이라고 파란 글씨로 나오는데 … 네이버 지도는 신호 과속 이라고만 표기 하는데'); route line and turn arrow thicker with zoom and a black outline (v208, '여기도 네이버지도처럼 약간 두껍게', '검정색 테두리로 통일하자'): rows with flag 2 read '신호·과속단속' / '이동식단속' with the red (or real-mobile blue) card, sign and voice of normal cameras, flag 4 makes a child zone, /check finds count as checked, unchecked rows keep '운전자 신고 …' in blue; in the data 18 of 21 rows are checked; the route width grows with zoom (9 → 14 → 17 px at 15/17/18) under a black casing 4 px wider, and the arrow's rim is black", fn: s139 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -5354,7 +5355,7 @@
         let seen = '';
         const lim = D[4] > 0 ? D[4] : t.spotLimit({ lat: D[0], lng: D[1], h: D[2] }, '');
         await driveThrough({ lat: D[0], lng: D[1] }, D[2], 800, 40, 50, 10, () => { const tg = t.camState.target; if (tg && t.isUserSpot(tg.c) && !seen) seen = text('#camType'); });
-        r.e = { rows: t.driverSpots.rows.length, seen, lim };
+        r.e = { rows: t.driverSpots.rows.length, seen, lim, nv: !!((D[6] | 0) & 2) };
       } else r.e = 'no driver spots';
     } finally {
       if (fakeI >= 0) {
@@ -5374,7 +5375,7 @@
       r.a.lim0 === 0 && r.a.lim1 === 70 &&
       r.b.first !== null && r.b.first <= 520 && /내가 신고한 단속 지점/.test(r.b.label) && r.b.limit === '70' && !r.c.opp &&
       r.d.box && /이 차에서만 알림/.test(r.d.text) && !r.d.afterDelete && r.d.left === 0 &&
-      r.e.rows >= 5 && (r.e.lim > 0 ? /운전자 신고 (단속 지점|신호·과속단속)/.test(r.e.seen) : !r.e.seen);
+      r.e.rows >= 5 && (r.e.lim > 0 ? (r.e.nv ? r.e.seen === '신호·과속단속' : /운전자 신고 (단속 지점|신호·과속단속)/.test(r.e.seen)) : !r.e.seen);   // v208: 네이버 확인 지점은 보통 이름
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
@@ -6686,7 +6687,7 @@
     }
     const ok = r.night === 50 && r.farNight === 30 && r.card === '50' && r.day === 30 && r.sunday === 50 && r.monday === 30 &&
       r.n23 === 50 && r.n06 === 50 && r.n12 === 30 && r.cleared === 30 && !r.timed &&
-      r.spots.jukjeon === '110/8 운전자 신고 이동식 단속' && r.spots.pangyo === '110/8 운전자 신고 이동식 단속' && !r.spots.old;
+      r.spots.jukjeon === '110/8 이동식단속' && r.spots.pangyo === '110/8 이동식단속' && !r.spots.old;   // v208: 네이버 확인 → 보통 이동식 이름
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
@@ -6848,6 +6849,55 @@
       a.ours === '100일산 · 구리' && a.oursNo && a.other === '1경부' && a.otherDim < 0.9 && /^1\.0km$|^990m$/.test(a.turnDist) && a.turnGreen &&
       b.junc && !b.row && b.cl && b.sign1 === '100일산구리' && b.sign2 === '1경부' && b.dim2 < 0.9 &&
       c.road && c.road !== a.road;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S139: 네이버로 확인한 운전자 지점은 보통 카메라처럼 (v208, 운전자 '운전자 신고 신호 과속 단속 이라고 파란 글씨로 나오는데 그냥 신호 단속 구간인데
+  //       네이버 지도는 신호 과속 이라고만 표기 하는데 … 다 그렇게 표기 하는 게 맞아?') + 경로선·회전 화살표 굵게·검정 테두리
+  //       ('여기도 네이버지도처럼 약간 두껍게 가능?확대 축소에 따라 조금씩 조정되긴 해', '그리고 검정색 테두리로 통일하자').
+  //   (a) 표시 2(네이버 확인) 신호·과속 50: '신호·과속단속', 파란 카드 아님, 신호등 표지, 짧은 이름 '신호과속', 노란 띠, 음성 '신호 단속 카메라'
+  //   (b) 표시 2 이동식 110: '이동식단속', 파란 카드(진짜 이동식)  (c) 표시 6(확인 + 어린이보호구역) 30: '어린이보호구역 신호·과속단속'
+  //   (d) 표시 없는 운전자 지점: 예전처럼 '운전자 신고 신호·과속단속', 파란 카드  (e) /check 로 찾은 공유 지점(ck): 확인됨
+  //   (f) 실제 자료: 21줄 중 18줄이 확인됨, 그중 3줄이 보호구역
+  //   (g) 경로선 굵기: 배율 15·17·18 에서 9·14·17px, 검정 테두리 = 굵기 + 4, 화살표 테두리는 검정
+  async function s139() {
+    const t = T(), r = {};
+    const keep = { drv: t.driverSpots.rows.slice(), shared: t.sharedSpots.slice(), mine: t.mySpots.slice() };
+    const card = document.getElementById('camCard');
+    const show = (c, i) => {
+      t.camState.target = { i, c, d: 400, r: 400, minD: 400, after: false, t0: Date.now() };
+      t.renderCam();
+      return { label: text('#camType'), blue: card.classList.contains('mobile'), slot: t.camSignSlot(c), short: t.camShort(c), band: t.camBand(c), voice: t.camSpoken(c), zone: c[6] };
+    };
+    try {
+      await waitFor(() => t.cams.loaded, 10000, 100);
+      r.f = { rows: keep.drv.length, checked: keep.drv.filter((x) => (x[6] | 0) & 2).length, zone: keep.drv.filter((x) => (x[6] | 0) & 4).length };
+      t.mySpots.length = 0; t.sharedSpots.length = 0; t.driverSpots.rows.length = 0;
+      t.driverSpots.rows.push([37.51, 127.11, 300, 50, 50, 3, 2], [37.52, 127.12, 0, 110, 110, 8, 2], [37.53, 127.13, 199, 30, 30, 3, 6], [37.54, 127.14, 15, 50, 50, 3]);
+      t.sharedSpots.push({ lat: 37.55, lng: 127.15, h: 90, lim: 60, ck: 1, src: 'check' });
+      t.applyUserSpots();
+      const b = t.cams.userBase, u = t.cams.rows.slice(b);
+      r.a = show(u[0], b); r.b = show(u[1], b + 1); r.c = show(u[2], b + 2); r.d = show(u[3], b + 3); r.e = show(u[4], b + 4);
+      // (g) 경로선 굵기·테두리
+      r.g = { w15: t.routeWeight('base', 15), w17: t.routeWeight('base', 17), w18: t.routeWeight('base', 18), w165: t.routeWeight('base', 16.5),
+        casing17: t.routeWeight('glow', 17), dots: t.routeWeight('dots', 18), casingColor: t.ROUTE_CASING, arrow17: t.arrowPx(17) };
+    } finally {
+      t.camState.target = null; t.renderCam();
+      t.driverSpots.rows.length = 0; keep.drv.forEach((x) => t.driverSpots.rows.push(x));
+      t.sharedSpots.length = 0; keep.shared.forEach((x) => t.sharedSpots.push(x));
+      t.mySpots.length = 0; keep.mine.forEach((x) => t.mySpots.push(x));
+      t.applyUserSpots();
+      softReset();
+    }
+    const a = r.a || {}, b = r.b || {}, c = r.c || {}, d = r.d || {}, e = r.e || {}, f = r.f || {}, g = r.g || {};
+    const ok = a.label === '신호·과속단속' && !a.blue && a.slot === 'cam_signal' && a.short === '신호과속' && a.band === 'yellow' && a.voice === '신호 단속 카메라' &&
+      b.label === '이동식단속' && b.blue && b.slot === 'cam_mobile' &&
+      c.label === '어린이보호구역 신호·과속단속' && c.zone === 2 && !c.blue &&
+      d.label === '운전자 신고 신호·과속단속' && d.blue && d.short === '신고 지점' && d.voice === '신고된 단속 지점' &&
+      e.label === '과속단속' && !e.blue &&
+      f.rows === 21 && f.checked === 18 && f.zone === 3 &&
+      g.w15 === 9 && g.w17 === 14 && g.w18 === 17 && g.w165 === 12.5 && g.casing17 === 18 && g.dots === 3.4 && g.casingColor === '#141414' &&
+      g.arrow17 && g.arrow17.inner === 14 && g.arrow17.shaft === 18;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
