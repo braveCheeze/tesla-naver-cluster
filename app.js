@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-227'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-228'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -4481,6 +4481,28 @@
     const c = cands[0];
     return c ? { name: c.name, lat: c.lat, lng: c.lng, d: c.d, gate: true } : null;
   }
+  // v228 (2026-11-24 도착 사진: '기흥역엘리시아트원101동입구'로 안내했더니 도착 핀이 블록 서쪽 길 위(입구 검색 좌표)에 찍혔다 —
+  //   운전자 '도착을 이 표시 엘리아 있는 거에다가 찍어 줘야 돼'): 고른 곳이 건물의 입구·주차장 입출구면 그 건물(같은 이름의 'N동',
+  //   없으면 단지) 자리를 찾는다. 도착 핀·걸어가는 점선·도착 화살표(v209/v211)는 건물로, 경로는 그대로 입구(주차장 입구)로 간다
+  const SUB_PLACE = /입구|출입구|입출구|정문|후문|주차|진입|출구|상가|관리사무소|경비|놀이터|어린이집|편의점|커뮤니티/;
+  async function findBuilding(dest) {
+    const nm = squash(dest && dest.name);
+    if (!nm || !(/(입구|출입구|입출구|정문|후문|진입로)$/.test(nm) || /방면정보/.test(dest.category || ''))) return null;
+    const base = placeBase(String(dest.name).replace(/\s*(지하)?주차장.*$/, '')), b = squash(base);
+    if (b.length < 3) return null;
+    const dong = (String(dest.name).match(/([0-9]+|[A-Za-z])동/) || [])[1] || '';
+    const tries = (dong ? [[base + ' ' + dong + '동', [b + dong + '동']]] : []).concat([[base, [b, b + '아파트', b + '오피스텔']]]);
+    for (const [query, names] of tries) {
+      let res;
+      try { res = await api('/search', { query }, null, 2500); } catch (e) { continue; }
+      const hit = ((res && res.items) || []).filter((it) => {
+        const n = squash(it.name);
+        return isFinite(it.lat) && isFinite(it.lng) && !SUB_PLACE.test(n) && names.includes(n) && haversine(dest, it) <= 400;
+      }).sort((x, y) => haversine(dest, x) - haversine(dest, y))[0];
+      if (hit) return { name: hit.name, lat: hit.lat, lng: hit.lng, d: Math.round(haversine(dest, hit)) };
+    }
+    return null;
+  }
   // 경로의 도착점: 주차장 입구를 찾았으면 그곳 (정문으로 바꾸면 원래 자리)
   const goalOf = (d) => parkGoalOf(d) || d;
   // v145 도착 700m 안에서 안내 칸에 'P 101동 주차장 입출구 250m' 한 줄 (운전자 '입구중에 주차장인곳을 알려줘야 해')
@@ -4519,9 +4541,15 @@
     const shortAddr = (x) => String(x || '').replace(/^(\S+(?:특별시|광역시|특별자치시|특별자치도|도)\s+)?(\S+(?:시|군)\s+)?(\S+구\s+)?/, '') || x;
     const seq = ++pickSeq, dest = { name: it.category ? it.name : shortAddr(it.name), addr: it.addr || it.name || '', lat: it.lat, lng: it.lng, category: it.category || '' };
     toast('경로를 찾는 중…', '', 3000);
-    const park = await findParking(dest);
+    const [park, bld] = await Promise.all([findParking(dest), findBuilding(dest)]);
     if (seq !== pickSeq) return; // 그사이 다른 목적지를 골랐다
     if (park) dest.park = park;
+    // v228: 입구를 골랐고 그 건물을 찾았으면 핀은 건물에. 주차장 입구가 없으면 고른 입구 그대로를 경로 끝으로 (v148 '입구로 안내')
+    if (bld && bld.d >= 12) {
+      dest.entry = { name: dest.name, lat: dest.lat, lng: dest.lng };
+      if (!park) dest.park = { name: dest.name, lat: dest.lat, lng: dest.lng, d: bld.d, gate: true };
+      dest.lat = bld.lat; dest.lng = bld.lng; dest.bld = bld.name;
+    }
     planRoute(dest, false);
   }
 
@@ -10158,7 +10186,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams, routeHeading, startsReversed, ROUTE_AHEAD, fitSigns, nvSceneFits, planScene, routeTurnSum, renderJunction, juncState,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams, findBuilding, routeHeading, startsReversed, ROUTE_AHEAD, fitSigns, nvSceneFits, planScene, routeTurnSum, renderJunction, juncState,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,

@@ -2912,6 +2912,7 @@
     { id: 'S149', name: "S149 feedback button panel (v225): when speech recognition fails like on the Tesla (network), the panel opens with a record button and five picture buttons, later taps open it directly, one tap sends with the cards from the moment 의견 was tapped, a recording is queued until the server takes it, and a denied microphone leaves the picture buttons", fn: s149 },
     { id: 'S150', name: "S150 heading-aware routing (v227): stopped at a light heading north with the destination behind, every route request starts ahead of the car; a route that starts by reversing is asked again further ahead (first route and reroute), a reversing traffic update is dropped, and a car parked over 3 minutes is not given a heading", fn: s150 },
     { id: 'S151', name: "S151 junction picture and signs (v227): an arterial into a loop entry gets a top-down picture of the real route (no highway scene), a straight highway entry keeps the scene, and sign names are never cut — very long names stay whole inside the picture, and a narrow split-picture sign drops the other sign and shrinks before cutting", fn: s151 },
+    { id: 'S152', name: "S152 arrival pin on the building (v228): a destination that is a building's entrance puts the 도착 pin on that building (its N동, else the complex), the route still ends at the parking entrance or the chosen entrance, the dotted walk and the arrival arrow go to the building, and plain places or far namesakes are left alone", fn: s152 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -3717,7 +3718,7 @@
       await withTimeout(t.pickDest({ name: '테스트오피스텔101동입구', addr: '', lat: gNear.lat, lng: gNear.lng, category: '도로시설>방면정보' }), 5000, 'pickDest');
       await waitFor(() => stub.count('/route', c2) >= 1 && !t.nav.busy, 3000);
       const q3 = stub.since(c2, '/route')[0];
-      r.entranceKept = !!q3 && q3.query.goal === pt(gNear) && qs.length === 1;
+      r.entranceKept = !!q3 && q3.query.goal === pt(gNear) && !qs.some((x) => / 입구$/.test(x));   // v228: 건물 찾기 검색은 있어도 입구를 또 찾지는 않는다
     } finally {
       t.endNav(); softReset();
       stub.canned['/search'] = { items: [] };
@@ -7588,6 +7589,95 @@
     const ok = a.shown && a.plan && !a.nv && a.turn >= 200 && a.go && a.place === '성남IC' && a.sign.text === '일산|판교' && !a.sign.cut && a.sign.inside &&
       b.shown && b.nv && b.sign.text === '인천국제공항|영종대교기념관' && !b.sign.cut && b.sign.inside && b.sign.fs >= 10.5 &&
       c.fitted && c.inside && !c.cut && c.names === '인천국제공항|영종대교기념관' && c.otherOff;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S152: 도착 핀은 건물에 (v228, 2026-11-24 '기흥역엘리시아트원101동입구' 도착: 핀이 블록 서쪽 길 위(입구 검색 좌표)에 —
+  //   운전자 '도착을 이 표시 엘리아 있는 거에다가 찍어 줘야 돼').
+  //   (a) 고른 곳이 '…101동입구'고 주차장 입출구가 있으면: 경로는 주차장 입구로, 도착 핀은 '테스트아파트 101동' 건물 자리, 점선은 P → 건물
+  //   (b) 주차장 입구가 없으면: 경로 끝은 고른 입구, 핀은 건물, 도착 화살표(v209)가 건물까지
+  //   (c) 'N동'이 없으면 단지 자리  (d) 입구가 아닌 곳(가게)은 건물을 찾지 않는다  (e) 400m 넘게 먼 같은 이름은 쓰지 않는다
+  async function s152() {
+    const t = T(), r = {};
+    const raw = [];
+    for (let k = 0; k <= 29; k++) raw.push(dest(NAV_ORIGIN, 0, 10 * k));
+    raw.push(dest(raw[29], 270, 8));
+    const path = raw.map((p) => [round6(p.lng), round6(p.lat)]);
+    const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const total = cum[cum.length - 1];
+    const route = { distance: r0(total), duration: r0(total / 8 * 1000), tollFare: 0, fuelPrice: 0, path,
+      guide: [{ i: 29, t: 3, s: '우회전', d: r0(cum[29]), ms: 30000 }, { i: 30, t: 88, s: '목적지', d: r0(cum[30] - cum[29]), ms: 1000 }],
+      sections: [{ i: 0, n: 31, name: '테스트로', speed: 30, cong: 1 }] };
+    const E = P[30], D = dest(E, 300, 70), B = dest(E, 290, 32), C = dest(E, 250, 45), FAR = dest(E, 0, 900);
+    const pt = (q) => q.lng.toFixed(6) + ',' + q.lat.toFixed(6);
+    const near = (a, b, m) => !!a && !!b && hav(a, b) <= (m || 2);
+    let parks = true, dongItems = true, complexFar = false;
+    const qs = [];
+    stub.canned['/search'] = (q) => {
+      const s = q.query || ''; qs.push(s);
+      if (/주차장입구/.test(s)) return { items: parks ? [{ name: '테스트아파트101동주차장입출구', category: '도로시설>방면정보', addr: '', lat: E.lat, lng: E.lng }] : [] };
+      if (/ 101동$/.test(s)) return { items: dongItems ? [{ name: '테스트아파트101동입구', category: '도로시설>방면정보', addr: '', lat: D.lat, lng: D.lng },
+        { name: '테스트아파트 101동', category: '부동산>아파트', addr: '', lat: B.lat, lng: B.lng }] : [] };
+      if (s === '테스트아파트') return { items: [{ name: '테스트아파트', category: '부동산>아파트', addr: '', lat: (complexFar ? FAR : C).lat, lng: (complexFar ? FAR : C).lng }] };
+      return { items: [] };
+    };
+    stub.canned['/route'] = route;
+    const markers = () => { const m = t.getMap(); return (m && m.destMk) || []; };
+    const htmlOf = (mk) => { try { const ic = mk.getIcon ? mk.getIcon() : mk.options.icon; return ic.content ? ic.content.outerHTML : (ic.options && ic.options.html) || ''; } catch (e) { return ''; } };
+    const posOf = (mk) => { const ll = mk.getLatLng ? mk.getLatLng() : mk.getPosition(); return { lat: typeof ll.lat === 'function' ? ll.lat() : ll.lat, lng: typeof ll.lng === 'function' ? ll.lng() : ll.lng }; };
+    const pin = () => { const mk = markers().find((x) => /destpin/.test(htmlOf(x))); return mk ? posOf(mk) : null; };
+    const dots = () => markers().filter((x) => /destdot/.test(htmlOf(x))).map(posOf);
+    const go = async (item) => {
+      feed(P[0], 0, null);
+      const c0 = stub.calls.length;
+      await withTimeout(t.pickDest(item), 5000, 'pickDest');
+      await waitFor(() => stub.count('/route', c0) >= 1 && !t.nav.busy, 3000);
+      const q = stub.since(c0, '/route')[0];
+      if (!t.nav.active) t.startNav();
+      return q ? q.query.goal : 'none';
+    };
+    const entrance = { name: '테스트아파트101동입구', addr: '', lat: D.lat, lng: D.lng, category: '도로시설>방면정보' };
+    try {
+      softReset();
+      // (a)
+      const g1 = await go(entrance);
+      const d1 = t.nav.dest || {}, ds = dots();
+      r.a = { goal: g1 === pt(E) ? 'park' : g1 === pt(D) ? 'entrance' : g1, dest: near(d1, B) ? 'building' : near(d1, D) ? 'entrance' : 'other', entry: near(d1.entry, D), bld: d1.bld,
+        pin: near(pin(), B) ? 'building' : near(pin(), D) ? 'entrance' : String(!!pin()), dots: ds.length, dotsLine: ds.length > 0 && ds.every((q) => hav(q, E) < hav(E, B) && hav(q, B) < hav(E, B)), name: d1.name };
+      t.endNav(); softReset();
+      // (b) 주차장 입구 없음
+      parks = false;
+      const g2 = await go(entrance);
+      const d2 = t.nav.dest || {}, m2 = t.getMap();
+      r.b = { goal: g2 === pt(D) ? 'entrance' : g2 === pt(E) ? 'park' : g2, dest: near(d2, B) ? 'building' : 'other', gate: !!(d2.park && d2.park.gate),
+        leg: !!(m2 && m2._leg && near(m2._leg[1], B)), pin: near(pin(), B) };
+      t.endNav(); softReset();
+      // (c) 'N동' 없음 → 단지
+      parks = true; dongItems = false;
+      await go(entrance);
+      r.c = { dest: near(t.nav.dest, C) ? 'complex' : near(t.nav.dest, D) ? 'entrance' : 'other' };
+      t.endNav(); softReset();
+      // (e) 단지가 900m 밖
+      complexFar = true;
+      await go(entrance);
+      r.e = { dest: near(t.nav.dest, D) ? 'entrance' : 'other', entry: !!(t.nav.dest && t.nav.dest.entry) };
+      t.endNav(); softReset();
+      // (d) 입구가 아닌 가게
+      qs.length = 0;
+      const shop = dest(E, 270, 40);
+      await go({ name: '테스트카페', addr: '', lat: shop.lat, lng: shop.lng, category: '음식점>카페' });
+      r.d = { dest: near(t.nav.dest, shop) ? 'shop' : 'other', bldQueries: qs.filter((x) => / 101동$/.test(x) || x === '테스트카페').length };
+      t.endNav(); softReset();
+    } finally {
+      t.endNav(); softReset();
+      stub.canned['/search'] = { items: [] };
+    }
+    const a = r.a || {}, b = r.b || {}, c = r.c || {}, d = r.d || {}, e = r.e || {};
+    const ok = a.goal === 'park' && a.dest === 'building' && a.entry && a.bld === '테스트아파트 101동' && a.pin === 'building' && a.dots > 0 && a.dotsLine && a.name === '테스트아파트101동입구' &&
+      b.goal === 'entrance' && b.dest === 'building' && b.gate && b.leg && b.pin &&
+      c.dest === 'complex' && e.dest === 'entrance' && !e.entry && d.dest === 'shop' && d.bldQueries === 0;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
