@@ -7142,11 +7142,14 @@
     r.d = d110.length; r.dAt = d110[0] ? [d110[0][0], d110[0][1], d110[0][2], d110[0][5]] : null;
     // (e) v217: keys 가 네이버 '남은 거리' 칸으로 다시 잰 운전자 지점 22곳 중 30m 넘게 다른 것은 6번 줄 하나 — 43m 앞(37.229751,127.182203)으로
     r.e = t.driverSpots.rows[6] ? t.driverSpots.rows[6].slice(0, 5) : null;
+    // (f) v218: 8번 줄(80, 208°)은 길을 따라 놓은 경로로 다시 달려 네이버 자리 34m 뒤(37.149254,127.203004)로. 2번 줄(경부 죽전 110 이동식)은 28m 라 그대로
+    r.f = [t.driverSpots.rows[8] ? t.driverSpots.rows[8].slice(0, 5) : null, t.driverSpots.rows[2] ? t.driverSpots.rows[2].slice(0, 2) : null];
     const A = r.a, B = r.b, C = r.c;
     const ok = A.lat === 37.305554 && A.lng === 127.105888 && A.eb === 2 && A.sl === A.lat && A.sg === A.lng && !A.arrow && A.lim === 60 &&
       B.rear && B.eb === 197 && /후면/.test(B.label) &&
       C.n === 1 && C.lim === 50 && C.kind === 3 && C.eb === 61 && C.nv && !C.unchecked && !/운전자/.test(C.label) &&
-      r.d === 1 && JSON.stringify(r.dAt) === '[37.29103,127.10356,180,8]' && JSON.stringify(r.e) === '[37.229751,127.182203,122,84,80]';
+      r.d === 1 && JSON.stringify(r.dAt) === '[37.29103,127.10356,180,8]' && JSON.stringify(r.e) === '[37.229751,127.182203,122,84,80]' &&
+      JSON.stringify(r.f) === '[[37.149254,127.203004,208,84,80],[37.334139,127.103549]]';
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
