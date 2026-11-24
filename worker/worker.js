@@ -209,7 +209,8 @@ const inKorea = (lat, lng) => lat > 33 && lat < 39 && lng > 124 && lng < 132;
 const intIn = (v, lo, hi) => { const n = Math.round(Number(v)); return Number.isFinite(n) && n >= lo && n <= hi ? n : null; };
 const appVer = (v) => (typeof v === 'string' && /^[0-9][0-9.\-]{0,23}$/.test(v) ? v : '');
 // 통과 한 건의 판정: 경고함 · 같은 자리 다른 행을 경고 · 제한 모름(일부러 안 알림) · 놓침. '틀림' 표시는 따로(flag)
-const passRes = (a, g, hid) => (a > 0 ? 'alert' : g ? 'cover' : hid === 1 ? 'hidden' : 'miss');
+// v236: o — 그 카메라의 접근로를 달리지 않고 지남(1 꺾어 들어옴 turned · 2 나란한 다른 길 other). '경고 없음(miss)'으로 세지 않는다
+const passRes = (a, g, hid, o) => (a > 0 ? 'alert' : g ? 'cover' : hid === 1 ? 'hidden' : o === 1 ? 'turned' : o === 2 ? 'other' : 'miss');
 let passReady = null, passCleaned = '';
 async function passDb(env) {
   if (!env.STATS) return null;
@@ -246,6 +247,9 @@ async function passDb(env) {
       // v235: 통과 한 건의 시각 (30일 뒤 지운다)
       const haveP = new Set(((await S.prepare('PRAGMA table_info(pass_rec)').all()).results || []).map((c) => c.name));
       if (!haveP.has('at')) add.push(S.prepare('ALTER TABLE pass_rec ADD COLUMN at INTEGER'));
+      // v236: 접근로를 달리지 않은 통과 수 (경고 없음에서 뺀 것)
+      const haveC = new Set(((await S.prepare('PRAGMA table_info(cam_day)').all()).results || []).map((c) => c.name));
+      if (!haveC.has('other')) add.push(S.prepare('ALTER TABLE cam_day ADD COLUMN other INTEGER NOT NULL DEFAULT 0'));
       if (add.length) await S.batch(add);
       return true;
     }).then(() => true, (e) => { passReady = null; throw e; });
@@ -254,13 +258,13 @@ async function passDb(env) {
   return env.STATS;
 }
 // 통과 기록 → 카메라 날짜별 합계(cam_day)·통과 기록(pass_rec) 문장. D1 무료는 요청마다 쿼리 50번까지라 표마다 한 문장(json_each)으로 넣는다
-const CAM_UP = 'INSERT INTO cam_day (day, cam, lim, kind, n, alerted, covered, missed, hidden, flagged, navn, over, adist) ' +
+const CAM_UP = 'INSERT INTO cam_day (day, cam, lim, kind, n, alerted, covered, missed, hidden, flagged, navn, over, adist, other) ' +
   "SELECT json_extract(value, '$.day'), json_extract(value, '$.cam'), json_extract(value, '$.lim'), json_extract(value, '$.kind'), json_extract(value, '$.n'), " +
   "json_extract(value, '$.alerted'), json_extract(value, '$.covered'), json_extract(value, '$.missed'), json_extract(value, '$.hidden'), json_extract(value, '$.flagged'), " +
-  "json_extract(value, '$.navn'), json_extract(value, '$.over'), json_extract(value, '$.adist') FROM json_each(?) WHERE true " +
+  "json_extract(value, '$.navn'), json_extract(value, '$.over'), json_extract(value, '$.adist'), json_extract(value, '$.other') FROM json_each(?) WHERE true " +
   'ON CONFLICT(day, cam) DO UPDATE SET lim = excluded.lim, kind = excluded.kind, n = n + excluded.n, alerted = alerted + excluded.alerted, ' +
   'covered = covered + excluded.covered, missed = missed + excluded.missed, hidden = hidden + excluded.hidden, flagged = flagged + excluded.flagged, ' +
-  'navn = navn + excluded.navn, over = over + excluded.over, adist = adist + excluded.adist';
+  'navn = navn + excluded.navn, over = over + excluded.over, adist = adist + excluded.adist, other = other + excluded.other';
 const REC_INS = 'INSERT INTO pass_rec (day, cam, v, lim, kind, a, g, hid, kmh, nav, res, flag, at) ' +
   "SELECT json_extract(value, '$.day'), json_extract(value, '$.cam'), json_extract(value, '$.v'), json_extract(value, '$.lim'), json_extract(value, '$.kind'), " +
   "json_extract(value, '$.a'), json_extract(value, '$.g'), json_extract(value, '$.hid'), json_extract(value, '$.kmh'), json_extract(value, '$.nav'), " +
@@ -275,16 +279,17 @@ function passStmts(db, items, dayOf, v, stmts) {
     const d = dayOf(it.d), lim = intIn(it.lim, 0, 130) || 0, a = intIn(it.a, 0, 5000) || 0;
     if (d === null) continue;   // v219: 오늘보다 뒤 날짜
     const hid = intIn(it.hid, 0, 3) || 0, kmh = intIn(it.kmh, 0, 250), g = it.g ? 1 : 0, nav = it.nav ? 1 : 0;
-    const kind = PASS_KINDS.has(+it.kind) ? +it.kind : 0, res = passRes(a, g, hid);
+    const kind = PASS_KINDS.has(+it.kind) ? +it.kind : 0, o = intIn(it.o, 0, 2) || 0, res = passRes(a, g, hid, o);
     let e = agg.get(d + '#' + k);
     if (!e) {
-      e = { day: d, cam: k, lim, kind, n: 0, alerted: 0, covered: 0, missed: 0, hidden: 0, flagged: 0, navn: 0, over: 0, adist: 0 };
+      e = { day: d, cam: k, lim, kind, n: 0, alerted: 0, covered: 0, missed: 0, hidden: 0, flagged: 0, navn: 0, over: 0, adist: 0, other: 0 };
       agg.set(d + '#' + k, e);
     }
     e.n++;
     if (res === 'alert') { e.alerted++; e.adist += a; }   // 이 카메라 경고 카드를 띄움 (거리 합은 평균 경고 거리용)
     else if (res === 'cover') e.covered++;               // 같은 자리 다른 행(같은 기둥 다른 제한 등)을 경고하고 함께 지남
     else if (res === 'hidden') e.hidden++;               // 제한속도를 몰라 일부러 안 알림 (v179)
+    else if (res === 'turned' || res === 'other') e.other++;   // v236: 그 카메라의 접근로를 달리지 않음 (꺾어 들어옴·옆 길)
     else e.missed++;
     if (hid >= 2) e.flagged++;                           // 이 차에서 '틀림'으로 표시한 카메라
     if (nav) e.navn++;
@@ -748,7 +753,7 @@ export default {
           const s = JSON.stringify(r);
           if (s.length > 8000) continue;
           const at = Number.isFinite(+r.t) && +r.t > 0 ? Math.round(+r.t) : Date.now();
-          opRows.push({ at, day: passDay(r.d, today), cam: String(r.k), missed: !(r.a > 0) && !r.g && !r.hid ? 1 : 0, rec: s });
+          opRows.push({ at, day: passDay(r.d, today), cam: String(r.k), missed: !(r.a > 0) && !r.g && !r.hid && !r.o ? 1 : 0, rec: s });
         }
         if (opRows.length) {
           stmts.push(db.prepare('INSERT INTO op_pass (at, day, cam, missed, rec) ' +
@@ -776,17 +781,17 @@ export default {
         const candDays = intIn(p.get('candDays'), 1, 30) || 2, candN = intIn(p.get('candN'), 1, 1000) || 3;
         const [r1, r2, r3] = await Promise.all([
           db.prepare('SELECT cam, MAX(lim) AS lim, MAX(kind) AS kind, SUM(n) AS n, SUM(alerted) AS alerted, SUM(covered) AS covered, SUM(missed) AS missed, ' +
-            'SUM(hidden) AS hidden, SUM(flagged) AS flagged, SUM(navn) AS navn, SUM(over) AS over, SUM(adist) AS adist, COUNT(*) AS days, MAX(day) AS last ' +
+            'SUM(hidden) AS hidden, SUM(flagged) AS flagged, SUM(navn) AS navn, SUM(over) AS over, SUM(adist) AS adist, SUM(other) AS other, COUNT(*) AS days, MAX(day) AS last ' +
             'FROM cam_day WHERE day >= ? GROUP BY cam ORDER BY SUM(missed) DESC, SUM(n) DESC LIMIT 3000').bind(from).all(),
           db.prepare('SELECT cell, dir, SUM(n) AS n, SUM(dsum) AS dsum, COUNT(DISTINCT day) AS days, MAX(day) AS last FROM cand_day WHERE day >= ? ' +
             'GROUP BY cell, dir HAVING COUNT(DISTINCT day) >= ? AND SUM(n) >= ? ORDER BY SUM(n) DESC LIMIT 500').bind(from, candDays, candN).all(),
-          db.prepare('SELECT day, SUM(n) AS n, SUM(alerted) AS alerted, SUM(covered) AS covered, SUM(missed) AS missed, SUM(hidden) AS hidden ' +
+          db.prepare('SELECT day, SUM(n) AS n, SUM(alerted) AS alerted, SUM(covered) AS covered, SUM(missed) AS missed, SUM(hidden) AS hidden, SUM(other) AS other ' +
             'FROM cam_day WHERE day >= ? GROUP BY day ORDER BY day').bind(from).all(),
         ]);
         const cams = (r1.results || []).map((r) => {
           const m = PASS_KEY.exec(r.cam) || [];
           return { k: r.cam, lat: +m[1], lng: +m[2], dir: m[3] && m[3] !== 'x' ? +m[3] * 45 : null, lim: r.lim, kind: r.kind, n: r.n,
-            alerted: r.alerted, covered: r.covered, missed: r.missed, hidden: r.hidden, flagged: r.flagged, nav: r.navn, over: r.over,
+            alerted: r.alerted, covered: r.covered, missed: r.missed, hidden: r.hidden, other: r.other || 0, flagged: r.flagged, nav: r.navn, over: r.over,
             missRate: r.n ? Math.round(r.missed / r.n * 1000) / 1000 : 0, overRate: r.n ? Math.round(r.over / r.n * 1000) / 1000 : 0,
             avgAlert: r.alerted ? Math.round(r.adist / r.alerted) : null, days: r.days, last: r.last };
         });
@@ -841,10 +846,10 @@ export default {
         for (const c of (Array.isArray(b.cams) ? b.cams.slice(0, 400) : [])) {
           if (!c || typeof c !== 'object' || !PASS_KEY.test(String(c.k || ''))) continue;
           cams.push({ s: intIn(c.s, 0, 172800) || 0, k: String(c.k), lim: intIn(c.lim, 0, 130) || 0, kind: PASS_KINDS.has(+c.kind) ? +c.kind : 0, a: intIn(c.a, 0, 5000) || 0,
-            g: c.g ? 1 : 0, hid: intIn(c.hid, 0, 3) || 0, kmh: intIn(c.kmh, 0, 250) || 0, nav: c.nav ? 1 : 0, minD: intIn(c.minD, 0, 100) });
+            g: c.g ? 1 : 0, hid: intIn(c.hid, 0, 3) || 0, kmh: intIn(c.kmh, 0, 250) || 0, nav: c.nav ? 1 : 0, minD: intIn(c.minD, 0, 100), o: intIn(c.o, 0, 2) || 0 });
         }
         if (!pts.length && !cams.length) return json({ ok: true, stored: 0 }, 200, cors);
-        const misses = cams.filter((c) => passRes(c.a, c.g, c.hid) === 'miss').length;
+        const misses = cams.filter((c) => passRes(c.a, c.g, c.hid, c.o) === 'miss').length;
         // v231: 접속 번호(sid)·조각 첫 점 시각(t0). 모양이 다르거나 시각이 지금에서 사흘 넘게 멀면 비운다
         const sid = /^[a-z0-9]{1,16}$/.test(String(b.sid || '')) ? String(b.sid) : null;
         const t0n = Number(b.t0), t0 = Number.isFinite(t0n) && Math.abs(Date.now() - t0n) <= 3 * 86400000 ? Math.round(t0n) : null;

@@ -350,6 +350,14 @@ if (!sqlite) {
     !pc.passes.some((x) => 'sid' in x || 'dev' in x || 'lat' in x || 'rid' in x), "/passes?cam= gives that camera's passes newest first: time, result, alert distance, speed, nav, version — no session, device, trip or position");
   for (let i = 0; i < 60; i++) await call('POST', '/pass', { body: { items: [it(K3, { a: 100, t: tNow - i * 1000 })] }, e: envS, ip: '10.1.' + i + '.1' });
   ok((await call('GET', '/passes?cam=' + encodeURIComponent(K3), { token: TOKEN, e: envS })).j.passes.length === 50, '/passes?cam= gives at most 50');
+  // v236: 그 카메라의 접근로를 달리지 않은 통과 (o 1 꺾어 들어옴 · 2 나란한 다른 길) 는 '경고 없음'이 아니다
+  const K4 = '37.4101,127.1202|6';
+  await call('POST', '/pass', { body: { items: [it(K4, { a: 0, o: 1 }), it(K4, { a: 0, o: 2 }), it(K4, { a: 0 }), it(K4, { a: 0, o: 9 })] }, e: envS });
+  const r4 = rows('SELECT res FROM pass_rec WHERE cam = ? ORDER BY id', K4).map((x) => x.res).join();
+  const cd4 = rows('SELECT SUM(n) AS n, SUM(missed) AS missed, SUM(other) AS other FROM cam_day WHERE cam = ?', K4)[0];
+  ok(r4 === 'turned,other,miss,miss' && cd4.n === 4 && cd4.missed === 2 && cd4.other === 2, "a pass that turned in or ran on another road is 'turned' / 'other', counted apart from misses (a bad o is a plain miss)");
+  const pl4 = (await call('GET', '/passes?days=7', { token: TOKEN, e: envS })).j.cams.find((x) => x.k === K4);
+  ok(pl4 && pl4.missed === 2 && pl4.other === 2, '/passes gives other next to missed');
   // (8) v198 테스터 주행 경로: 무작위 주행 번호, 출발부터 도착까지 그대로, 조각으로
   const RID = 'abc123def456ghi7';
   const P = Array.from({ length: 30 }, (_, i) => [i * 5, 3727000 + i * 10, 12710576, 60, 180]);
@@ -493,6 +501,10 @@ if (sqlite) {
     'op INTEGER NOT NULL, v TEXT, n INTEGER NOT NULL, km REAL NOT NULL, ncam INTEGER NOT NULL, misses INTEGER NOT NULL, pts TEXT NOT NULL, cams TEXT NOT NULL)');
   const kd = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
   db3.prepare("INSERT INTO trips (day, rid, part, endf, op, v, n, km, ncam, misses, pts, cams) VALUES (?, 'oldtrip000001', 0, 1, 0, 'v', 1, 0.1, 0, 0, '[]', '[]')").run(kd);
+  // v236: 예전 cam_day (other 없음)
+  db3.exec('CREATE TABLE cam_day (day TEXT NOT NULL, cam TEXT NOT NULL, lim INTEGER, kind INTEGER, n INTEGER NOT NULL DEFAULT 0, alerted INTEGER NOT NULL DEFAULT 0, ' +
+    'covered INTEGER NOT NULL DEFAULT 0, missed INTEGER NOT NULL DEFAULT 0, hidden INTEGER NOT NULL DEFAULT 0, flagged INTEGER NOT NULL DEFAULT 0, navn INTEGER NOT NULL DEFAULT 0, ' +
+    'over INTEGER NOT NULL DEFAULT 0, adist INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, cam))');
   // v235: 예전 pass_rec (at 없음)
   db3.exec('CREATE TABLE pass_rec (id INTEGER PRIMARY KEY AUTOINCREMENT, day TEXT NOT NULL, cam TEXT NOT NULL, v TEXT, lim INTEGER, kind INTEGER, ' +
     'a INTEGER NOT NULL, g INTEGER NOT NULL, hid INTEGER NOT NULL, kmh INTEGER, nav INTEGER NOT NULL, res TEXT NOT NULL, flag INTEGER NOT NULL DEFAULT 0)');
@@ -507,6 +519,7 @@ if (sqlite) {
   ok(r3.status === 200 && c3.endsWith(',sid,t0') && old3 && old3.sid === null && new3 && new3.sid === 'sess0003',
     'an old trips table gets the sid and t0 columns on the first request, old rows kept (empty), new rows filled');
   ok(db3.prepare('PRAGMA table_info(pass_rec)').all().map((c) => c.name).join(',').endsWith(',flag,at'), 'an old pass_rec table gets the at column');
+  ok(db3.prepare('PRAGMA table_info(cam_day)').all().map((c) => c.name).join(',').endsWith(',adist,other'), 'an old cam_day table gets the other column');
 }
 
 Date.now = realNow;
