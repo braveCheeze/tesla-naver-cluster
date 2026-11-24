@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-241'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-242'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -335,7 +335,10 @@
   function routePieces(n, sections) {
     const out = [];
     const split = (a, b, kind, color) => { for (let x = a; x < b; x += ROUTE_CHUNK) out.push({ a: x, b: Math.min(b, x + ROUTE_CHUNK), kind, color }); };
-    const runs = trafficRuns(sections, n);
+    // v242 (부모 세션 검토: 성남IC 고리 96m·13m 화면에서 경로선이 지도 교통 선(초록·주황)에 묻혀 흰 회전 화살표만 보였다): 지도 위 경로선은
+    // 원활 구간을 교통 초록으로 칠하면 지도의 초록 교통 선과 같은 색이 된다. 네이버처럼 원활은 바탕 파랑 그대로, 서행·지체·정체만 색을 입힌다
+    // (오른쪽 진행 막대·남은 길 띠는 네이버처럼 원활도 초록 그대로)
+    const runs = trafficRuns(sections, n).filter((r) => r.color !== trafficPal()[1]);
     // v208: 맨 밑은 검정 테두리 한 줄 (예전 색별 빛 번짐)
     split(0, n - 1, 'glow', ROUTE_CASING);
     split(0, n - 1, 'base', ROUTE_BASE);
@@ -5686,7 +5689,7 @@
     if (joined) pts.push({ lat: nav.dest.lat, lng: nav.dest.lng });
     // 테두리는 회전 지점 경로 색(교통색 또는 바탕 파랑): 경로선이 흰 화살표로 이어지는 느낌
     const run = trafficRuns(nav.route && nav.route.sections, nav.pts.length).find((x) => x.a <= g.i && g.i <= x.b);
-    mapA.setTurnArrow(pts.length >= 2 ? pts : null, ti, run ? run.color : ROUTE_BASE, joined);
+    mapA.setTurnArrow(pts.length >= 2 ? pts : null, ti, run && run.color !== trafficPal()[1] ? run.color : ROUTE_BASE, joined);   // v242: 원활은 경로선처럼 파랑
   }
 
   // 남은 경로만 다시 그린다: 지금 위치(경로 위로 붙인 점)부터 목적지까지, 교통 색 구간도 번호를 맞춰 옮긴다
@@ -6269,7 +6272,7 @@
     syncDrawer();
     if (el.dataset.fit !== juncState.key && fitSigns(el, $('#juncLabel'), [$('#juncLabel2')])) {   // v227 표지 글자 다 보이게
       el.dataset.fit = juncState.key;
-      if (el.classList.contains('plan')) planSignBand(el);
+      if (el.classList.contains('plan')) planSignPlace(el);
     }
   }
   // ---------- v227 표지판 글자는 자르지 않는다 (2026-11-24 21:30 운전자 판교IC 그림 표지 '대.. 신갈분...' —
@@ -6277,20 +6280,50 @@
   // 그림 안에 다 들어갈 때까지 차례로: ① 다른 갈래 표지(꾸밈)를 빼고 ② 우리 표지를 그림 폭까지 넓히고 ③ 글자를 줄이고(최소 약 11px)
   // ④ 노선 방패를 빼고 ⑤ 이름 안에서 줄을 바꾼다. 이름은 끝까지 다 보인다. 그림이 보이지 않으면(폭 0) 잴 수 없어 false (다음에 다시)
   const SIGN_K = [0.92, 0.84, 0.76];
-  // v240: 비스듬한 갈림 그림(planScene)은 위쪽 문형 띠(P3.TOP) 아래에만 길을 그린다 — 표지판이 그 띠를 넘어 길·화살표를 덮으면
-  // 다른 갈래 표지를 빼고, 글자를 줄이고, 방패를 뺀다 (그래도 넘으면 그대로: 이름은 다 보인다)
-  function planSignBand(box) {
+  // v242 (부모 세션 검토: v240 의 위쪽 문형 띠 때문에 성남IC 고리가 그림 아래쪽에 작게 눌려 한눈에 안 읽혔다 — '글보다 그림'):
+  // 비스듬한 갈림 그림은 그림 전체 높이를 길에 쓰고, 표지판은 네 모서리 중 길·칠·화살표가 없는 곳에 둔다. 우리 표지는 갈 쪽 위부터,
+  // 다른 갈래 표지는 남은 모서리에서. 모서리마다 표지판 칸 안을 점으로 찍어 그림의 길(isPointInFill)에 닿는지 본다.
+  // 다 닿으면 글자를 줄여 다시 보고, 그래도 닿으면 다른 갈래 표지는 빼고 우리 표지는 가장 덜 닿는 모서리에 둔다
+  const PLAN_CORNERS = ['tl', 'tr', 'bl', 'br'];
+  function planSignPlace(box) {
     const sv = box.querySelector('#juncSvg svg'), lab = $('#juncLabel'), oth = $('#juncLabel2');
     if (!sv || !lab || !lab.innerHTML) return true;
-    const r = sv.getBoundingClientRect();
-    if (!r.height) return false;
-    const band = r.top + r.height * (P3.TOP + 10) / PLAN.H;
-    const over = () => [lab, oth].some((o) => o && o.innerHTML && !o.classList.contains('sg-off') && o.getClientRects().length && o.getBoundingClientRect().bottom > band + 1);
-    if (!over()) return true;
-    if (oth) oth.classList.add('sg-off');
-    for (const k of SIGN_K) { if (!over()) return true; lab.style.setProperty('--sgk', k); }
-    if (over()) lab.classList.add('sg-noshield');
-    return !over();
+    if (!sv.getBoundingClientRect().height || !sv.getScreenCTM()) return false;
+    const parts = [...sv.querySelectorAll('.plan-road,.plan-go,.plan-ar')], inv = sv.getScreenCTM().inverse();
+    const hits = (el) => {
+      const b = el.getBoundingClientRect();
+      let n = 0;
+      for (let i = 0; i <= 8; i++) for (let k = 0; k <= 4; k++) {
+        const q = new DOMPoint(b.left - 3 + (b.width + 6) * i / 8, b.top - 3 + (b.height + 6) * k / 4).matrixTransform(inv);
+        if (parts.some((p) => p.isPointInFill(q))) n++;
+      }
+      return n;
+    };
+    const put = (el, c) => { PLAN_CORNERS.forEach((x) => el.classList.remove('c-' + x)); el.classList.add('c-' + c); };
+    const side = lab.classList.contains('sl') ? 'l' : 'r', other = side === 'l' ? 'r' : 'l';
+    const order = ['t' + side, 't' + other, 'b' + side, 'b' + other];
+    const place = (el, cands) => {
+      let best = null;
+      for (const c of cands) { put(el, c); const h = hits(el); if (!h) return c; if (!best || h < best.h) best = { c, h }; }
+      return best ? -1 : null;
+    };
+    let mine = place(lab, order);
+    for (const k of SIGN_K) { if (mine !== -1) break; lab.style.setProperty('--sgk', k); mine = place(lab, order); }
+    if (mine === -1) {   // 어디든 조금은 닿는다: 가장 덜 닿는 모서리
+      let best = null;
+      for (const c of order) { put(lab, c); const h = hits(lab); if (!best || h < best.h) best = { c, h }; }
+      put(lab, best.c); mine = best.c;
+    }
+    if (oth && oth.innerHTML) {
+      const rest = order.filter((c) => c !== mine && c[1] !== mine[1]).concat(order.filter((c) => c !== mine && c[1] === mine[1]));
+      const lb = lab.getBoundingClientRect();
+      const clash = () => { const q = oth.getBoundingClientRect(); return !(q.right + 4 <= lb.left || lb.right + 4 <= q.left || q.bottom + 2 <= lb.top || lb.bottom + 2 <= q.top); };
+      oth.classList.remove('sg-off');
+      let ok = false;
+      for (const c of rest) { put(oth, c); if (!clash() && hits(oth) <= 1) { ok = true; break; } }   // 다른 갈래 표지(꾸밈)는 가장자리 한 점까지
+      if (!ok) oth.classList.add('sg-off');
+    }
+    return true;
   }
   function fitSigns(box, main, others) {
     const bw = box.getBoundingClientRect();
@@ -6401,7 +6434,7 @@
     const pp = all.map((q) => pr(q[0], q[1]));
     const px0 = Math.min(...pp.map((q) => q[0])), px1 = Math.max(...pp.map((q) => q[0]));
     const py0 = Math.min(...pp.map((q) => q[1])), py1 = Math.max(...pp.map((q) => q[1]));
-    const W = PLAN.W, H = PLAN.H, y0 = P3.TOP + 12, y1 = H - 10;
+    const W = PLAN.W, H = PLAN.H, y0 = 10, y1 = H - 10;   // v242: 그림 전체 높이 (표지판은 길이 없는 모서리에 — planSignPlace)
     const k = Math.min((W - 2 * P3.PAD) / Math.max(1e-6, px1 - px0), (y1 - y0) / Math.max(1e-6, py1 - py0));
     const P = (x, z) => { const q = pr(x, z); return [W / 2 + (q[0] - (px0 + px1) / 2) * k, (y0 + y1) / 2 + (q[1] - (py0 + py1) / 2) * k]; };
     // 그림 px 폭 → 땅 m 폭 (안내 지점 자리에서 잰 1m 의 px). 먼 쪽은 원근으로 가늘어진다
@@ -6459,8 +6492,7 @@
       '<path class="plan-road nv-asph" fill="url(#' + id + 'a)" d="' + asph + '"/>' +
       '<path class="plan-go nv-go" d="' + fill + '"/>' +
       '<path class="nv-ln" d="' + lines + '"/>' +
-      '<path class="plan-ar" d="' + arrow + '"/>' +
-      '<g class="nv-gan"><path d="M18 4h7v' + (P3.TOP + 6) + 'h-7zM615 4h7v' + (P3.TOP + 6) + 'h-7z"/><rect class="nv-beam" x="14" y="5" width="612" height="8" rx="1.5"/></g></svg>';
+      '<path class="plan-ar" d="' + arrow + '"/></svg>';
   }
   const tollState = { g: null, numsKey: '', nums: [], code: '', items: 0 };
   // 하이패스 차로 번호 (2026-11-14 요청: '몇 번으로 가야 하이패스'). 한국도로공사 '영업소별 하이패스차로 운영현황'(data.go.kr 15043760,
@@ -10527,7 +10559,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams, passWhy, pruneTurnCams, camDirOk, routeNet, routeUpstream, laneGuideM, planSignBand, findBuilding, sunPosStored, eventBody, routeArrived, routeIdleCheck, routeStartup, routeHide, tripEndGap, routeHeading, startsReversed, ROUTE_AHEAD, fitSigns, nvSceneFits, planScene, routeTurnSum, renderJunction, juncState,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams, passWhy, pruneTurnCams, camDirOk, routeNet, routeUpstream, laneGuideM, planSignPlace, findBuilding, sunPosStored, eventBody, routeArrived, routeIdleCheck, routeStartup, routeHide, tripEndGap, routeHeading, startsReversed, ROUTE_AHEAD, fitSigns, nvSceneFits, planScene, routeTurnSum, renderJunction, juncState,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,

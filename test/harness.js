@@ -2124,6 +2124,7 @@
     const P = t.trafficPal();
     const hwOk = hw(2, 60) === P[2] && hw(2, 45) === P.lag && hw(3, 30) === P[3] && hw(3, 12) === P.stop &&
       new Set([P[1], P[2], P.lag, P[3], P.stop]).size === 5;
+    await waitFor(() => t.getMap(), 10000, 100);   // 지도가 뜬 뒤 (따로 돌릴 때)
     softReset();
     await planAndStart(R);
     feed(pointAt(R, 15).p, 15, 0);
@@ -2131,8 +2132,9 @@
     const m = t.getMap(), got = new Set();
     (m.route || []).forEach((pc) => { if (pc.kind === 'traffic') got.add(String(pc.color).toLowerCase()); });
     t.endNav(); softReset();
-    const want = [P[1], P[2], P.lag, P[3], P.stop];
-    const ok = hwOk && want.every((c) => got.has(c));
+    // v242: 원활(초록)은 지도의 교통 선과 같은 색이라 경로선은 바탕 파랑 그대로 — 서행·지체·정체·심한 정체 네 색만 칠한다
+    const want = [P[2], P.lag, P[3], P.stop];
+    const ok = hwOk && want.every((c) => got.has(c)) && !got.has(P[1]) && t.trafficColor({ name: '테스트로', cong: 1, speed: 45 }) === P[1];   // (진행 막대는 원활도 초록)
     return { pass: ok, detail: 'line colors ' + [...got].join(' ') + ' | highway thresholds ' + (hwOk ? '✓' : '✗') + (ok ? '✓' : '✗') };
   }
 
@@ -2614,7 +2616,7 @@
     // 색은 네이버 GL 지도의 교통 선 색 (지금 낮/밤 팔레트)
     const P = t.trafficPal(), rgb = (h) => 'rgb(' + [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).join(', ') + ')';
     const inBar = (h) => bar.includes(rgb(h)) || bar.includes(h);
-    const blueBase = has('base', '#2f7dff'), green = has('traffic', P[1]), red = has('traffic', P[3]);
+    const blueBase = has('base', '#2f7dff'), green = !has('traffic', P[1]), red = has('traffic', P[3]);   // v242: 원활 구간은 경로선 바탕 파랑 그대로 (지도 교통 초록과 겹치지 않게)
     // 막대: 원활(초록)·정체(빨강) 구간이 그려진다. 이 경로는 정보 없는 구간이 없으므로 파랑은 없어도 된다
     const barOk = inBar(P[1]) && inBar(P[3]);
     // 정보 없는 경로: 구간 정보를 빼면 막대가 파랑
@@ -2627,7 +2629,7 @@
     const blueBar = /rgb\(47, 125, 255\)|#2f7dff/.test(bar2) && !bar2.includes(rgb(P[1]));
     return {
       pass: blueBase && green && red && barOk && blueBar,
-      detail: 'line: base blue ' + (blueBase ? '✓' : '✗') + ', free-flow green ' + (green ? '✓' : '✗') + ', jam red ' + (red ? '✓' : '✗') +
+      detail: 'line: base blue ' + (blueBase ? '✓' : '✗') + ', free-flow stays blue ' + (green ? '✓' : '✗') + ', jam red ' + (red ? '✓' : '✗') +
         '; strip: green+red ' + (barOk ? '✓' : '✗') + ', no-data route all blue ' + (blueBar ? '✓' : '✗'),
     };
   }
@@ -2785,7 +2787,7 @@
     { id: 'S19', name: 'S19 latest version from plain link', fn: s19 },
     { id: 'S20', name: 'S20 curved road camera (no nav)', fn: s20 },
     { id: 'S21', name: 'S21 route-number road names', fn: s21 },
-    { id: 'S22', name: 'S22 route colours (blue = no traffic data)', fn: s22 },
+    { id: 'S22', name: 'S22 route colours (blue = no traffic data; v242: free-flow keeps the line blue, the side strip stays green)', fn: s22 },
     { id: 'S23', name: 'S23 off-route reroute: same goal, 추천', fn: s23 },
     { id: 'S24', name: 'S24 Tesla mode placement', fn: s24 },
     { id: 'S25', name: 'S25 toll gate (하이패스) card + voice', fn: s25 },
@@ -2813,7 +2815,7 @@
     { id: 'S47', name: "S47 one-way camera direction from its 'A→B' place text vs the route's guide text (하남 창우로)", fn: s47 },
     { id: 'S48', name: 'S48 junction picture: highway ramp / fork drawn from the guide type, in the drawer 800m ahead', fn: s48 },
     { id: 'S49', name: 'S49 trip distance/time/max speed survive an update reload', fn: s49 },
-    { id: 'S50', name: 'S50 traffic colors in five steps (green, yellow, orange, red, dark red) from section speed', fn: s50 },
+    { id: 'S50', name: 'S50 traffic colors in five steps (green, yellow, orange, red, dark red) from section speed; v242: free-flow sections keep the route blue (green would match the map traffic lines), only slow/jam get colour', fn: s50 },
     { id: 'S51', name: "S51 section cameras found from '구간 시점/종점' place text", fn: s51 },
     { id: 'S52', name: 'S52 on the expressway (entry→exit guides) street cameras below stay quiet even without a section name', fn: s52 },
     { id: 'S53', name: 'S53 hi-pass lane strip from data/hipass.json (all lanes, hi-pass blue): entry/exit, 상행/하행 toward Seoul, common lanes when unsure; mainline tollgates (서울TG) by direction; ring road counter-clockwise = 상행 (성남TG 1 2 3 – 8 9 – 11 –)', fn: s53 },
@@ -2911,7 +2913,7 @@
     { id: 'S148', name: "S148 Naver verdicts on the 18 single cameras (v224): wrong directions turned to Naver's, two-way cameras lose their one-way place text, records Naver does not show (and 30 duplicates of 40 or signal cameras) are switched off, 예술공원로 is a rear camera 35 m on", fn: s148 },
     { id: 'S149', name: "S149 feedback button panel (v225): when speech recognition fails like on the Tesla (network), the panel opens with a record button and five picture buttons, later taps open it directly, one tap sends with the cards from the moment 의견 was tapped, a recording is queued until the server takes it, and a denied microphone leaves the picture buttons", fn: s149 },
     { id: 'S150', name: "S150 heading-aware routing (v227): stopped at a light heading north with the destination behind, every route request starts ahead of the car; a route that starts by reversing is asked again further ahead (first route and reroute), a reversing traffic update is dropped, and a car parked over 3 minutes is not given a heading", fn: s150 },
-    { id: 'S151', name: "S151 junction picture and signs (v227): an arterial into a loop entry gets a top-down picture of the real route (no highway scene), a straight highway entry keeps the scene, and sign names are never cut — very long names stay whole inside the picture, and a narrow split-picture sign drops the other sign and shrinks before cutting; v238: that picture is now seen obliquely from above like Naver's 3D map (true route shape, a white arrow along the turn, the sign on the side away from where the route leaves); v240: signs on a gantry band above the road (ours on the turn side, the road we leave on the other side), never covering the road, fill or arrow", fn: s151 },
+    { id: 'S151', name: "S151 junction picture and signs (v227): an arterial into a loop entry gets a top-down picture of the real route (no highway scene), a straight highway entry keeps the scene, and sign names are never cut — very long names stay whole inside the picture, and a narrow split-picture sign drops the other sign and shrinks before cutting; v238: that picture is now seen obliquely from above like Naver's 3D map (true route shape, a white arrow along the turn, the sign on the side away from where the route leaves); v240: signs on a gantry band above the road (ours on the turn side, the road we leave on the other side), never covering the road, fill or arrow; v242: no gantry band — the drawing uses the full height (>= 60%) and the signs go to free corners", fn: s151 },
     { id: 'S152', name: "S152 arrival pin on the building (v228): a destination that is a building's entrance puts the 도착 pin on that building (its N동, else the complex), the route still ends at the parking entrance or the chosen entrance, the dotted walk and the arrival arrow go to the building, and plain places or far namesakes are left alone", fn: s152 },
     { id: 'S153', name: "S153 trip end and continuation (v229): an 11-minute stop while navigating stays one trip, a reload keeps the trip while navigating (ends without), arrival ends it after a minute stopped even without further GPS, and closing the page after arrival sends the end with keepalive while a mid-drive reload does not end it", fn: s153 },
     { id: 'S154', name: "S154 dark from the first frame (v230): index.html decides night before any CSS or script (setting, or sun height at the last rough position), the page background is dark at once, the font CSS does not block painting, a night GL map hides its day style until the dark style is ready, and /event carries the anonymous device id", fn: s154 },
@@ -7577,7 +7579,9 @@
         // v238: 비스듬히 내려다본 그림 — 흰 화살표. v240: 문형 틀(nv-gan)에 표지판 — 우리 표지는 갈 쪽(왼쪽 진입 → 왼쪽),
         //   지금 길(경충대로)이 다른 길로 이어지니 반대쪽에 그 길 표지, 표지판 어디에도 길·칠·화살표가 없다(가리지 않는다)
         p3: !!(sv && sv.classList.contains('plan3')), arrow: !!(sv && sv.querySelector('.plan-ar') && sv.querySelector('.plan-ar').getAttribute('d').length > 50),
-        gantry: !!(sv && sv.querySelector('.nv-gan')),
+        // v242: 문형 띠 없이 그림 전체 높이 — 길 그림이 그림 높이의 60% 넘게 차지한다
+        tall: sv ? Math.round(sv.querySelector('.plan-road').getBBox().height / 240 * 100) : 0,
+        mineShown: !document.getElementById('juncLabel').classList.contains('sg-off'),
         labelSide: document.getElementById('juncLabel').classList.contains('sr') ? 'r' : document.getElementById('juncLabel').classList.contains('sl') ? 'l' : '',
         other: text('#juncLabel2'), otherSide: document.getElementById('juncLabel2').classList.contains('sr') ? 'r' : '',
         cover: (() => {
@@ -7629,7 +7633,7 @@
     }
     const a = r.a || {}, b = r.b || {}, c = r.c || {};
     const ok = a.shown && a.plan && !a.nv && a.turn >= 200 && a.go && a.place === '성남IC' && a.sign.text === '일산|판교' && !a.sign.cut && a.sign.inside &&
-      a.p3 && a.arrow && a.gantry && a.labelSide === 'l' && a.other === '경충대로' && a.otherSide === 'r' && a.cover === 0 &&
+      a.p3 && a.arrow && a.tall >= 60 && a.mineShown && a.labelSide === 'l' && a.other === '경충대로' && a.cover === 0 &&
       b.shown && b.nv && b.sign.text === '인천국제공항|영종대교기념관' && !b.sign.cut && b.sign.inside && b.sign.fs >= 10.5 &&
       c.fitted && c.inside && !c.cut && c.names === '인천국제공항|영종대교기념관' && c.otherOff;
     return { pass: !!ok, detail: JSON.stringify(r) };

@@ -1544,6 +1544,11 @@
   .junccard.plan .jc-label.sr { right: 9px; left: auto; }
   .junccard.plan .jc-label.jc-other { opacity: .74; filter: saturate(.45); box-shadow: none; }
   .junccard.plan .jc-label.jc-other .sg-arrow svg { transform: none; }
+  /* v242: 문형 띠 없이 그림 전체 높이 — 표지판은 길이 없는 모서리에 (app.js planSignPlace) */
+  .junccard.plan .jc-label.c-tl { top: 5px; bottom: auto; left: 9px; right: auto; }
+  .junccard.plan .jc-label.c-tr { top: 5px; bottom: auto; right: 9px; left: auto; }
+  .junccard.plan .jc-label.c-bl { bottom: 5px; top: auto; left: 9px; right: auto; }
+  .junccard.plan .jc-label.c-br { bottom: 5px; top: auto; right: 9px; left: auto; }
   .junccard.plan .jc-head { display: none; }   /* 지점 이름은 위 안내 줄에 있다 */
   .jc-head span { font-size: 15px; font-weight: 800; color: #1565c0; }
   .jc-head b:empty { display: none; }
@@ -2256,8 +2261,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-241"></script>
-<script src="img/ai/picks.js?v=2026.11.16-241"></script>
-<script src="app.js?v=2026.11.16-241"></script>
+<script src="icons.js?v=2026.11.16-242"></script>
+<script src="img/ai/picks.js?v=2026.11.16-242"></script>
+<script src="app.js?v=2026.11.16-242"></script>
 </body>
 </html>
