@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-228'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-229'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -5716,6 +5716,7 @@
     nav.remain = Math.max(0, nav.total - nav.along);
     if (nav.remain < 30 || (nav.remain < 300 && haversine(f, nav.dest) < 35)) {
       const name = nav.dest.name;
+      routeArrived(f.t);   // v229: 주행 기록 — 도착 뒤 1분 서 있으면 끝
       say('목적지에 도착했습니다. 안내를 종료합니다.', 2, true);
       endNav();
       toast(name + '에 도착했습니다.', '', 5000);
@@ -7891,9 +7892,18 @@
   // 처음 한 번, 멈춰 있을 때(길안내·주행 중이 아닐 때) 안내 한 줄을 띄운 뒤부터 기록한다. 설정 '테스터 주행 경로 보내기'(기본 켬)로 끈다.
   const ROUTE_CHUNK_MS = 600000, ROUTE_CHUNK_PTS = 120, ROUTE_OUT_MAX = 4000;
   const routeRec = {
-    cur: null, out: [], busy: false, inTest: false, savedAt: 0, retryAt: 0,
-    post: (body) => fetch(proxyUrl() + '/trip', { method: 'POST', body: JSON.stringify(body), headers: authHeaders({ 'Content-Type': 'application/json' }) }),
+    cur: null, out: [], busy: false, inTest: false, savedAt: 0, retryAt: 0, keep: false,
+    // keep: 화면을 닫는 중(pagehide) — 브라우저가 닫혀도 끝까지 가게 keepalive (64KB 아래만)
+    post: (body) => { const s = JSON.stringify(body); return fetch(proxyUrl() + '/trip', { method: 'POST', body: s, keepalive: routeRec.keep && s.length < 60000, headers: authHeaders({ 'Content-Type': 'application/json' }) }); },
   };
+  // v229 (2026-11-24 운전자 주행이 D1 에서 둘로 갈리고 — 강동→성남(끝남)·성남→기흥(21:46 도착·주차 뒤 21:52 에도 안 끝남)):
+  //   예전엔 GPS 가 다시 올 때 5분 넘게 서 있었으면 끝(지하 주차장·차를 끄면 위치가 안 와서 안 끝났다), 페이지를 다시 열 때 5분 넘게 섰으면 끝
+  //   (주행 기록 카드는 10분이라 신호·잠깐 멈춤 뒤 '새 버전'이 서버 주행만 갈랐다). 이제:
+  //   - 끝으로 볼 멈춤: 도착했으면 1분, 길안내로 목적지에 가는 중이면 30분(한 주행이 둘로 갈리지 않게), 그 밖 5분 (tripEndGap)
+  //   - 위치가 더 오지 않아도 30초마다 시계로 재어 끝낸다(routeIdleCheck) — 단 마지막 속도가 빨랐으면(긴 터널) 15분까지 기다린다
+  //   - 도착한 뒤 화면을 닫으면(pagehide) 바로 끝내고 keepalive 로 보낸다. 달리는 중·길안내 중 새로고침·새 버전은 같은 번호로 이어 간다
+  const ROUTE_NAV_GAP = 30 * 60000, ROUTE_ARRIVE_GAP = 60000;
+  const tripEndGap = (c) => (c.arrivedAt ? ROUTE_ARRIVE_GAP : c.navTo ? ROUTE_NAV_GAP : TRIP_GAP);
   const routeRid = () => {
     const a = new Uint8Array(12);
     try { crypto.getRandomValues(a); } catch (e) { for (let i = 0; i < a.length; i++) a[i] = Math.floor(Math.random() * 256); }
@@ -7924,10 +7934,12 @@
     if (!routeNoted()) { routeNote(f); return; }
     const now = f.t, moving = state.speedKmh >= 8;
     let c = routeRec.cur;
-    if (c && (now - c.lastMove > TRIP_GAP || now < c.lastMove - 60000)) { routeEnd(now); c = null; }
+    if (c && (now - c.lastMove > tripEndGap(c) || now < c.lastMove - 60000)) { routeEnd(now); c = null; }
     if (!c && moving) c = routeRec.cur = Object.assign({ rid: routeRid(), d: kstDayOf(now), t0: now, part: 0, pts: [], cams: [], lastMove: now, cutAt: now }, testPage ? { x: 1 } : {});
     if (!c) return;
     if (moving) c.lastMove = now;
+    if (nav.active && nav.dest) { c.navTo = 1; c.arrivedAt = 0; }   // v229: 목적지로 가는 중 (새 안내를 시작하면 도착 표시는 지운다)
+    else if (c.arrivedAt && moving && c.arrivePt && haversine(f, c.arrivePt) > 300) c.arrivedAt = 0;   // 도착한 뒤 300m 넘게 다시 달리면 보통 주행
     const s = Math.round((now - c.t0) / 1000), lp = c.pts[c.pts.length - 1];
     if (moving && (!lp || s - lp[0] >= 5 || (s - lp[0] >= 2 && haversine({ lat: lp[1] / 1e5, lng: lp[2] / 1e5 }, f) >= 30))) {
       c.pts.push([s, Math.round(f.lat * 1e5), Math.round(f.lng * 1e5), Math.round(state.speedKmh), state.heading == null ? -1 : Math.round(state.heading)]);
@@ -7964,9 +7976,59 @@
     routeRec.cur = null;
     routeSave(now);
   }
+  // v229: 목적지에 도착 — 1분 서 있으면(또는 화면을 닫으면) 주행 끝
+  function routeArrived(now) {
+    const c = routeRec.cur;
+    if (!c) return;
+    c.arrivedAt = now; c.navTo = 0;
+    if (state.fix) c.arrivePt = { lat: state.fix.lat, lng: state.fix.lng };
+    routeSave(now);
+  }
+  // 위치가 더 오지 않아도(지하 주차장·차를 끄는 중) 멈춘 시간이 차면 끝낸다. 시각은 마지막 위치 시각 + 그 뒤 흐른 시계
+  function routeIdleCheck(wallNow) {
+    const c = routeRec.cur;
+    if (!c || !state.fix) return false;
+    const now = state.fix.t + Math.max(0, (wallNow || Date.now()) - lastFixWall);
+    // 달리다 끊겼으면(긴 터널) 넉넉히 — 도착한 뒤면(지하 주차장으로 들어가며 끊김) 그대로 1분
+    const gap = !c.arrivedAt && state.speedKmh >= 8 ? Math.max(tripEndGap(c), 15 * 60000) : tripEndGap(c);
+    if (now - c.lastMove <= gap) return false;
+    routeEnd(now);
+    return true;
+  }
+  // 페이지를 다시 열 때: 같은 규칙으로 이어 쓰거나 끝낸다 (길안내 중 '새 버전'으로 바뀌어도 30분 안이면 같은 주행)
+  function routeStartup(wallNow) {
+    const c = routeRec.cur;
+    if (c && (wallNow || Date.now()) - c.lastMove > tripEndGap(c)) routeEnd(c.lastMove + tripEndGap(c));
+  }
+  // 화면을 닫을 때: 도착한 뒤면 주행 끝을 바로 보낸다. 그 밖(달리는 중·신호 대기 중 새로고침)은 저장만.
+  // 닫히는 화면에서는 await 뒤 보내기가 돌지 않으므로, 끝 조각을 만들 때 보통 보내기는 멈추고(hiding) 함의 조각을 지금 한꺼번에
+  // keepalive 로 보내고(합 60KB 안) 함에서 뺀다 — 서버는 같은 조각을 두 번 받으면 두 줄로 남기므로 다시 보내지 않는다
+  function routeHide() {
+    if (routeRec.cur && routeRec.cur.arrivedAt) {
+      routeRec.hiding = true;
+      try { routeEnd(state.fix ? state.fix.t : Date.now()); } finally { routeRec.hiding = false; }
+      routeBeacon();
+    }
+    routeSave();
+  }
+  function routeBeacon() {
+    if (sendOff(routeRec.inTest) || !prefs.routeShare || !routeRec.out.length) return;
+    let budget = 60000, i = routeRec.busy ? 1 : 0;   // 보내는 중인 첫 조각은 그쪽에 맡긴다
+    routeRec.keep = true;
+    try {
+      while (i < routeRec.out.length) {
+        const ch = Object.assign({ v: APP_VERSION }, routeRec.out[i]), n = JSON.stringify(ch).length;
+        if (n > budget) break;
+        budget -= n;
+        try { routeRec.post(ch); } catch (e) { break; }
+        routeRec.out.splice(i, 1);
+      }
+    } finally { routeRec.keep = false; }
+    routeSave();
+  }
   // 돌려주는 값: true 다 보냄 · false 못 보냄(함에 남김, 10분 뒤 다시) · null 보낼 때가 아님
   async function routeFlush(force) {
-    if (routeRec.busy || sendOff(routeRec.inTest) || !prefs.routeShare || !routeRec.out.length) return null;
+    if (routeRec.busy || routeRec.hiding || sendOff(routeRec.inTest) || !prefs.routeShare || !routeRec.out.length) return null;
     if (!force && Date.now() < routeRec.retryAt) return null;
     routeRec.busy = true;
     let ok = true;
@@ -7989,13 +8051,14 @@
     return ok;
   }
   if (!testPage) {
-    if (routeRec.cur && Date.now() - routeRec.cur.lastMove > TRIP_GAP) routeEnd();   // 지난번에 끝나지 않은 주행
+    routeStartup();   // 지난번에 끝나지 않은 주행
     setTimeout(() => { routeFlush(true); }, 20000);
+    setInterval(() => { routeIdleCheck(); }, 30000);
   }
   setInterval(() => { routeFlush(false); }, 60000);
   window.addEventListener('online', () => { routeFlush(true); });
-  window.addEventListener('pagehide', () => { routeSave(); });
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') routeSave(); });
+  window.addEventListener('pagehide', () => { routeHide(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') routeHide(); });
   const hdgFix = { n: 0, bad: 0, sum: 0 };
   function onFix(f) {
     const t0 = performance.now();
@@ -10186,7 +10249,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams, findBuilding, routeHeading, startsReversed, ROUTE_AHEAD, fitSigns, nvSceneFits, planScene, routeTurnSum, renderJunction, juncState,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams, findBuilding, routeArrived, routeIdleCheck, routeStartup, routeHide, tripEndGap, routeHeading, startsReversed, ROUTE_AHEAD, fitSigns, nvSceneFits, planScene, routeTurnSum, renderJunction, juncState,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,

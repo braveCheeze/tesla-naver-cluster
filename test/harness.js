@@ -2913,6 +2913,7 @@
     { id: 'S150', name: "S150 heading-aware routing (v227): stopped at a light heading north with the destination behind, every route request starts ahead of the car; a route that starts by reversing is asked again further ahead (first route and reroute), a reversing traffic update is dropped, and a car parked over 3 minutes is not given a heading", fn: s150 },
     { id: 'S151', name: "S151 junction picture and signs (v227): an arterial into a loop entry gets a top-down picture of the real route (no highway scene), a straight highway entry keeps the scene, and sign names are never cut — very long names stay whole inside the picture, and a narrow split-picture sign drops the other sign and shrinks before cutting", fn: s151 },
     { id: 'S152', name: "S152 arrival pin on the building (v228): a destination that is a building's entrance puts the 도착 pin on that building (its N동, else the complex), the route still ends at the parking entrance or the chosen entrance, the dotted walk and the arrival arrow go to the building, and plain places or far namesakes are left alone", fn: s152 },
+    { id: 'S153', name: "S153 trip end and continuation (v229): an 11-minute stop while navigating stays one trip, a reload keeps the trip while navigating (ends without), arrival ends it after a minute stopped even without further GPS, and closing the page after arrival sends the end with keepalive while a mid-drive reload does not end it", fn: s153 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -7678,6 +7679,88 @@
     const ok = a.goal === 'park' && a.dest === 'building' && a.entry && a.bld === '테스트아파트 101동' && a.pin === 'building' && a.dots > 0 && a.dotsLine && a.name === '테스트아파트101동입구' &&
       b.goal === 'entrance' && b.dest === 'building' && b.gate && b.leg && b.pin &&
       c.dest === 'complex' && e.dest === 'entrance' && !e.entry && d.dest === 'shop' && d.bldQueries === 0;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S153: 주행 기록 끝·이어 가기 (v229, 2026-11-24 D1 에 운전자 한 주행이 둘로 — 강동→성남(끝남)·성남→기흥(21:46 도착·주차 뒤 21:52 에도 안 끝남)).
+  //   (a) 길안내 중 11분 서 있다가 다시 달려도 같은 주행 번호 (예전엔 5분이면 끝)
+  //   (b) 길안내 중 7분 멈춘 뒤 페이지를 다시 열면('새 버전') 같은 주행, 길안내 없이 7분이면 끝
+  //   (c) 목적지에 도착해 1분 서 있으면 끝(end 1)
+  //   (d) 도착 뒤 위치가 더 오지 않아도(지하 주차장) 시계로 1분이 지나면 끝
+  //   (e) 도착 뒤 화면을 닫으면 바로 끝을 keepalive 로 보낸다. 달리는 중 화면을 닫으면(새로고침) 끝내지 않는다
+  async function s153() {
+    const t = T(), r = {}, rr = t.routeRec;
+    const keep = { post: rr.post, pref: t.prefs.routeShare, note: t.store.get('routeNote') };
+    const bodies = [];
+    const R = buildNavRoute();
+    const ends = (rid) => bodies.some((b) => b.end === 1 && (!rid || b.rid === rid));
+    const arrive = async () => {
+      await planAndStart(R);
+      for (let s = 15; s <= R.total; s += 15) { const a = pointAt(R, s); feed(a.p, 12, a.h); if (!t.nav.active) break; }
+      return !t.nav.active;
+    };
+    try {
+      rr.inTest = true;
+      rr.post = async (b) => { bodies.push(Object.assign(JSON.parse(JSON.stringify(b)), { keepalive: !!rr.keep })); return { ok: true, status: 200 }; };
+      t.prefs.routeShare = true; t.routeClear(); t.store.set('routeNote', '1');
+      softReset();
+      // (a)
+      await planAndStart(R);
+      for (let s = 15; s <= 300; s += 15) { const a = pointAt(R, s); feed(a.p, 12, a.h); }
+      const rid0 = rr.cur && rr.cur.rid, stopAt = pointAt(R, 300).p;
+      for (let k = 0; k < 11; k++) feed(stopAt, 0, 0, { dt: 60000 });
+      for (let s = 315; s <= 420; s += 15) { const a = pointAt(R, s); feed(a.p, 12, a.h); }
+      r.a = { rid: !!rid0, same: !!rr.cur && rr.cur.rid === rid0, ended: ends(rid0), navTo: !!(rr.cur && rr.cur.navTo) };
+      // (b) 다시 열기
+      const c = rr.cur;
+      t.routeStartup(c.lastMove + 7 * 60000);
+      r.b = { kept: rr.cur === c && !ends(rid0) };
+      rr.cur.navTo = 0;
+      t.routeStartup(rr.cur.lastMove + 7 * 60000);
+      r.b.endedNoNav = !rr.cur && ends(rid0);
+      t.endNav(); softReset();
+      // (c) 도착 → 1분
+      bodies.length = 0;
+      r.c = { arrived: await arrive() };
+      const rid1 = rr.cur && rr.cur.rid;
+      r.c.arrivedMark = !!(rr.cur && rr.cur.arrivedAt);
+      const endP = pointAt(R, R.total).p;
+      feed(endP, 0, 0, { dt: 30000 });
+      r.c.at30 = !ends(rid1);
+      feed(endP, 0, 0, { dt: 40000 });
+      r.c.ended = !rr.cur && ends(rid1);
+      softReset();
+      // (d) 도착 뒤 위치가 오지 않음 — 시계로 1분
+      bodies.length = 0;
+      r.d = { arrived: await arrive() };
+      const rid2 = rr.cur && rr.cur.rid;
+      r.d.at30 = !t.routeIdleCheck(Date.now() + 30000) && !!rr.cur;
+      r.d.ended = t.routeIdleCheck(Date.now() + 75000) && !rr.cur && ends(rid2);
+      softReset();
+      // (e) 도착 뒤 화면 닫기 / 달리는 중 화면 닫기
+      bodies.length = 0;
+      r.e = { arrived: await arrive() };
+      const rid3 = rr.cur && rr.cur.rid;
+      t.routeHide();
+      const eb = bodies.find((b) => b.end === 1 && b.rid === rid3);
+      r.e.ended = !rr.cur && !!eb; r.e.keepalive = !!(eb && eb.keepalive); r.e.keepOff = !rr.keep; r.e.outEmpty = rr.out.length === 0; r.e.once = bodies.filter((b) => b.rid === rid3 && b.end === 1).length === 1;
+      softReset();
+      await planAndStart(R);
+      for (let s = 15; s <= 300; s += 15) { const a = pointAt(R, s); feed(a.p, 12, a.h); }
+      const c4 = rr.cur;
+      bodies.length = 0;
+      t.routeHide();
+      r.e.movingKept = !!c4 && rr.cur === c4 && !ends();
+      t.endNav();
+    } finally {
+      rr.post = keep.post; rr.inTest = false; rr.keep = false; t.prefs.routeShare = keep.pref;
+      t.routeClear(); t.store.set('routeNote', keep.note);
+      softReset();
+    }
+    const a = r.a || {}, b = r.b || {}, c = r.c || {}, d = r.d || {}, e = r.e || {};
+    const ok = a.rid && a.same && !a.ended && a.navTo && b.kept && b.endedNoNav &&
+      c.arrived && c.arrivedMark && c.at30 && c.ended && d.arrived && d.at30 && d.ended &&
+      e.arrived && e.ended && e.keepalive && e.keepOff && e.outEmpty && e.once && e.movingKept;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
