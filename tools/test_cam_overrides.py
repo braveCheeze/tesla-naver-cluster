@@ -55,7 +55,8 @@ def revert(d, spec):
         if 'kind' in n:
             r[3] = w['kind']
         if 'zone' in n:
-            r[6] = w['zone']
+            # v224: was 에 zone 이 없으면 원본 보호구역이 빌드마다 다르다 — 다른 값으로 되돌려도 찾아서 고쳐야 한다
+            r[6] = w['zone'] if 'zone' in w else (2 if n['zone'] != 2 else 0)
         if len(r) > 10 and r[10] & 8:   # 다시 만든 자료에는 꺼짐(8)이 없다 (v223: 다시 켠 줄도)
             r[10] &= ~8
             if r[10] == 0:
@@ -67,6 +68,8 @@ def revert(d, spec):
         if dirs is not None and dirs[i]:
             if 'eb' in w:
                 dirs[i][0] = w['eb']
+            if 'e2' in w:   # v224: 양방향 표시
+                dirs[i][1] = w['e2']
             if 'snap' in w:
                 dirs[i][2], dirs[i][3] = w['snap']
         if w.get('arrow'):
@@ -115,6 +118,8 @@ def main():
             ok &= [r[0], r[1]] == [n['lat'], n['lng']]
         if 'eb' in n:
             ok &= e[0] == n['eb']
+        if 'e2' in n:
+            ok &= e[1] == n['e2']
         if 'snap' in n:
             ok &= [e[2], e[3]] == n['snap']
         if 'flags' in n:

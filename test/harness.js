@@ -2908,6 +2908,7 @@
     { id: 'S145', name: "S145 single-pole camera pairs follow their place text (v216): in 184 pairs the two records swap directions so each direction matches its own 'A→B' text (lane point moves with the direction); 6 pairs stay as before (5 where the two records differ in school or elder zone, until Naver shows which way the zone is, and 6741/6742)", fn: s145 },
     { id: 'S146', name: "S146 test runs never reach the real server (v219: synthetic passes reached production when a non-test page on the same origin — the S67 catalog frame or a hand-opened index.html — read the harness's saved queue): on the test page the send queues are stored under their own '@test' names, records made here carry x: 1, and pass records dated after today (a fake clock) are dropped before sending", fn: s146 },
     { id: 'S147', name: "S147 Naver verdicts on zone pairs and duplicate poles (v220-v223): labels, limits and rear flags follow Naver's badges, and duplicate records Naver does not show are switched off (kept in the data, left out of lookups) — 평인일주로 138° is a school-zone speed camera, 신재로 is school zone both ways, 해안로 is a school-zone signal-and-speed camera both ways, 적중로 is 50 (253° rear), 17755 moves to Naver's point without its place text", fn: s147 },
+    { id: 'S148', name: "S148 Naver verdicts on the 18 single cameras (v224): wrong directions turned to Naver's, two-way cameras lose their one-way place text, records Naver does not show (and 30 duplicates of 40 or signal cameras) are switched off, 예술공원로 is a rear camera 35 m on", fn: s148 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -7273,6 +7274,30 @@
       r.off.length === 0 && r.kept.length === 0 &&
       r.r17755.at.join() === '36.978956,127.257243' && r.r17755.eb === 254 && !r.r17755.text &&
       r.r7623.at.join() === '35.628158,128.32214' && r.r7623.eb === 296 && r.r7623.lane.join() === '35.628158,128.32214' && r.r7623.label === '어린이보호구역 과속단속';
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S148: keys 네이버 판정 — 단독 18 (v224)
+  async function s148() {
+    const t = T(), r = {};
+    await waitFor(() => t.cams.loaded, 10000, 100);
+    const rows = t.cams.rows;
+    const inGrid = (i) => { const c = rows[i]; return t.camsNear(c[0], c[1], 5).some((x) => x.i === i); };
+    const g = (i) => { const c = rows[i]; return [c.eb, c.e2, t.cams.arrows.has(c) ? 'T' : '-'].join(); };
+    r.off = [1756, 1553, 25831, 16084, 16086, 21331, 18062].filter((i) => inGrid(i));
+    r.kept = [743, 17901, 21632, 23035, 23272, 27681, 812, 1143, 2075, 29494, 16085, 22693, 21328, 21329, 18060, 18063].filter((i) => !inGrid(i));
+    r.dir = { r743: g(743), r17901: g(17901), r21632: g(21632), r23272: g(23272), r27681: g(27681), r812: g(812), r1143: g(1143), r2075: g(2075), r29494: g(29494), r16085: g(16085), r22693: g(22693) };
+    const c = rows[23035];
+    r.r23035 = { at: [c[0], c[1]], eb: c.eb, lane: [c.sl, c.sg], label: t.camLabel(c), text: t.cams.arrows.has(c) };
+    r.lane17901 = [rows[17901].sl, rows[17901].sg].join() === [rows[17901][0], rows[17901][1]].join();
+    r.lim40 = [rows[21328][2], rows[21329][2]];
+    const D = r.dir;
+    const ok = r.off.length === 0 && r.kept.length === 0 &&
+      D.r743 === '108,0,-' && D.r17901 === '186,0,-' && D.r21632 === '115,0,-' && D.r23272 === '321,0,T' && D.r27681 === '117,0,-' &&
+      D.r812 === '27,1,-' && D.r1143 === '290,1,-' && D.r2075 === '98,1,-' && D.r29494 === '139,1,-' && D.r16085 === '9,0,T' && D.r22693 === '337,0,-' &&
+      r.r23035.at.join() === '37.417135,126.917851' && r.r23035.eb === 10 && r.r23035.lane.join() === '37.417135,126.917851' &&
+      /후면/.test(r.r23035.label) && !/보호구역/.test(r.r23035.label) && !r.r23035.text &&
+      r.lane17901 && r.lim40.join() === '40,40';
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
