@@ -112,6 +112,11 @@ def apply(d, spec=None):
                 r[10] = f
             else:
                 r.append(f)
+        elif len(r) > 10 and r[10] & OFF:
+            # v223: 판정이 바뀌어 다시 켠 줄 — 꺼짐(8)은 이 파일만 정한다(경찰 원본·OSM 단계에는 없다)
+            r[10] &= ~OFF
+            if not r[10]:
+                r.pop()
         if 'flags' in n:
             f = (r[10] if len(r) > 10 else 0) | n['flags']
             if len(r) > 10:

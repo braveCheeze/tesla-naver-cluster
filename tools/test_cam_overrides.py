@@ -56,7 +56,7 @@ def revert(d, spec):
             r[3] = w['kind']
         if 'zone' in n:
             r[6] = w['zone']
-        if n.get('off') and len(r) > 10:
+        if len(r) > 10 and r[10] & 8:   # 다시 만든 자료에는 꺼짐(8)이 없다 (v223: 다시 켠 줄도)
             r[10] &= ~8
             if r[10] == 0:
                 r.pop()
@@ -124,6 +124,8 @@ def main():
                 ok &= r[col] == n[k]
         if n.get('off'):
             ok &= len(r) > 10 and (r[10] & 8) == 8
+        else:
+            ok &= not (len(r) > 10 and r[10] & 8)   # v223: off 가 없는 고침은 켜져 있어야 한다
         if 'arrow' in n and n['arrow'] is None:
             ok &= i not in arrow_rows
         check('%s %s %s has the Naver values' % (o['ver'], o['row'], o['place']), ok)
