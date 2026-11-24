@@ -20,6 +20,8 @@ pairs: [행, 행, ...] 한 기둥에서 서로 반대 방향을 찍는 두 카�
 다시 만들기 (v164): 다시 만들기 전 data/cameras.json·mobile.json 을 다른 폴더(OLD)에 복사해 두고
   build_cams.py → build_mobile.py → osm_cams.py → osm_arrows.py → osm_stopline.py → cam_fill.py --old OLD
   (OSM 단계는 D:/osm/south-korea-latest.osm.pbf, 다 합쳐 약 6분. 같은 원본이면 몇 번을 돌려도 결과가 같다)
+  v214: 네이버로 확인한 고침(tools/cam_overrides.json)은 다섯 단계가 cameras.json 을 쓰기 직전에 다시 붙인다(tools/cam_overrides.py).
+  새로 네이버로 고칠 때는 cameras.json 을 손으로 고치지 말고 cam_overrides.json 에 넣는다. 시험: py -I tools/test_cam_overrides.py
 v164 (2026-11-19 자료 점검):
   - 같은 자리 기록이 서로 반대 방향(상행·하행, 'A→B'·'B→A', 'A↔B', 경기북부 '양방향')이면 합치지 않고 두 행(짝)으로
     (차로만 다른 기록 '1,2차로'·'3,4차로' 와 같은 곳에서 오거나 가는 글은 한 방향으로 본다)
@@ -36,6 +38,7 @@ import math
 import re
 import sys
 from collections import Counter
+import runpy
 
 src, out = sys.argv[1], sys.argv[2]
 rows = list(csv.reader(io.StringIO(open(src, 'rb').read().decode('cp949'))))[1:]
@@ -582,11 +585,14 @@ for i, c in enumerate(data):
                     continue
                 pairs80 += list(p)
 print('registered up/down pairs within 80 m:', len(pairs80) // 2)
+# v214: 네이버로 확인한 고침(tools/cam_overrides.json)은 cameras.json 을 쓰기 직전에 다시 붙인다 (다시 만들어도 남게)
+cams_out = {'v': 2, 'date': latest, 'count': len(data),
+            'fields': ['lat', 'lng', 'limit', 'kind', 'sec', 'len', 'zone', 'road', 'rtype', 'dir', 'flags'],
+            'roads': roads, 'rows': data, 'arrowNames': arrow_names, 'arrows': arrows, 'pairs': pairs, 'pairs80': pairs80}
+print('naver overrides (tools/cam_overrides.json):',
+      runpy.run_path(__file__.rsplit('build_cams.py', 1)[0] + 'cam_overrides.py')['apply'](cams_out))
 with open(out, 'w', encoding='utf-8') as f:
-    json.dump({'v': 2, 'date': latest, 'count': len(data),
-               'fields': ['lat', 'lng', 'limit', 'kind', 'sec', 'len', 'zone', 'road', 'rtype', 'dir', 'flags'],
-               'roads': roads, 'rows': data, 'arrowNames': arrow_names, 'arrows': arrows, 'pairs': pairs, 'pairs80': pairs80},
-              f, ensure_ascii=False, separators=(',', ':'))
+    json.dump(cams_out, f, ensure_ascii=False, separators=(',', ':'))
 
 print('kept', len(data), 'roads', len(roads), 'skipped', dict(skipped))
 print('kinds', Counter(d[3] for d in data))

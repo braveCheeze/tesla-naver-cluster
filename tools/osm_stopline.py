@@ -20,6 +20,7 @@ import json
 import math
 import sys
 from collections import Counter, defaultdict
+import runpy
 
 sys.path.insert(0, r'D:\pylib')
 import osmium  # noqa: E402
@@ -372,6 +373,8 @@ if moves:
 print(dict(stats))
 if far:
     print('not moved (stop line over %d m from the pole):' % MAX_FROM_RAW, len(far), far[:20])
+# v214: 네이버로 확인한 고침(tools/cam_overrides.json)은 cameras.json 을 쓰기 직전에 다시 붙인다 (다시 만들어도 남게)
+print('naver overrides (tools/cam_overrides.json):', runpy.run_path(ROOT + 'tools/cam_overrides.py')['apply'](data))
 with open(FILE, 'w', encoding='utf-8') as fh:
     json.dump(data, fh, ensure_ascii=False, separators=(',', ':'))
 for i in (25009, 25014):

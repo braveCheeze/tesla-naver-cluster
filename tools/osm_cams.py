@@ -23,6 +23,7 @@ import math
 import re
 import sys
 from collections import Counter, defaultdict
+import runpy
 
 sys.path.insert(0, r'D:\pylib')
 import osmium  # noqa: E402
@@ -432,6 +433,8 @@ for di, d in enumerate(datasets):
     d['dirsHw'] = hwcls[di]
     d.pop('headings', None)
     d.pop('pairs80', None)
+    if di == 0:   # v214: 네이버로 확인한 고침(tools/cam_overrides.json)은 cameras.json 을 쓰기 직전에 다시 붙인다 (다시 만들어도 남게)
+        print('naver overrides (tools/cam_overrides.json):', runpy.run_path(ROOT + 'tools/cam_overrides.py')['apply'](d))
     with open(FILES[di], 'w', encoding='utf-8') as fh:
         json.dump(d, fh, ensure_ascii=False, separators=(',', ':'))
 print(dict(stats))
