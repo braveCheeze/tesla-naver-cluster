@@ -1308,6 +1308,10 @@
   #app.tesla .cd-in .cam-hint, #app.tesla .cd-in .seccard.over .sec-remain { color: var(--nv-red); }
   #app.tesla .cd-in .cam-bar { background: var(--nv-line); }
   #app.tesla .cd-in .camcard.mobile .cam-type { color: #2f7dff; }
+  /* v205 (운전자 '가운데로 정렬 해서 보여줘야 되는 거 아니야 110 너무 밑에 있는 느낌이다'): 표지를 글 덩어리 전체(종류 + 거리 + 띠)의
+     가운데에 두면, 위의 작은 종류 글씨 왼쪽이 비고 눈은 큰 거리 숫자와 띠 쪽을 보므로 표지가 내려앉아 보인다(운전석에서 비스듬히 보면 더).
+     표지 위 끝은 종류 글씨 위 끝, 아래 끝은 거리 숫자 아래 끝에 맞춘다 (띠·구간 안내 줄은 그 밑). 단속·이동식·보호구역·구간단속 카드 모두 같다 */
+  #app.tesla .cd-in .camcard { align-items: flex-start; }
   /* 그다음 칸 (2026-11-14 요청): 네이버 지도처럼 그다음 회전 아이콘 + 거리만 '↰ 1.2km'. 아이콘은 위 회전 안내와 같은 초록 */
   .nextturn:not(.goal):not(.via) .nexticon, .nextturn:not(.goal):not(.via) .nexticon svg { width: 26px; height: 26px; }
   .nextturn:not(.goal):not(.via) .nexticon svg { stroke-width: 4.4; }
@@ -2092,8 +2096,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-204"></script>
-<script src="img/ai/picks.js?v=2026.11.16-204"></script>
-<script src="app.js?v=2026.11.16-204"></script>
+<script src="icons.js?v=2026.11.16-205"></script>
+<script src="img/ai/picks.js?v=2026.11.16-205"></script>
+<script src="app.js?v=2026.11.16-205"></script>
 </body>
 </html>

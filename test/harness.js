@@ -2896,6 +2896,7 @@
     { id: 'S133', name: "S133 one '잘못된 정보 신고' button and the live check (v202, driver '틀림 놓침에서 틀림 없애고 놓침을 잘못 된 정보 신고로', '신고 반영 완료 … 3초', '확인완료 … 신고 접수 완료'): one button, the old one hidden, no '놓침'/'틀림' on screen; pressed while a warning card has been up for a second it reports that camera (dimmed 14 days, no check request); pressed with no card it says '신고 접수 완료' and sends /check (spot, heading, speed, device; no trail off the operator car) keeping the id; a found result reads '신고 반영 완료 · 60 신호·과속단속 추가' and reloads shared fixes, a none result reads '확인 완료'", fn: s133 },
     { id: 'S134', name: "S134 voice feedback above the compass (v203, driver '그 나침반 위에 피드백 버튼 … 음성으로 텍스트 형태로 … 다시 음성을 누르거나 다른 곳을 누르면 취소', 'Ai 대화모드처럼'): with a fake speech recogniser — a 52 px round button right above the compass; a tap starts Korean listening with the green spinning ring and '듣는 중…'; 1.5 s after the words stop the text is sent at once (with place, heading, speed, guidance and the cards on screen) and '보냈어요' shows; a tap elsewhere or a second tap cancels without sending; a browser without speech recognition says so", fn: s134 },
     { id: 'S135', name: "S135 time-limited school zones (v204, driver '이것도 중요하긴 해'; Naver shows 50 at night after '표지판 확인') and the 경부 northbound mobile 110s: around the real child-zone camera 25719, a test school with 30 from 08–20 and 50 otherwise makes it 50 at 22:00 (the warning card too) and 30 at 10:00, cameras outside the radius stay; weekday-only rows give 50 on a Sunday; windows across midnight work; clearing the data restores 30; the 죽전 mobile 110 moved 71 m north to Naver's point and a 판교 northbound mobile 110 was added, both '운전자 신고 이동식 단속'", fn: s135 },
+    { id: 'S136', name: "S136 camera card sign alignment (v205, driver '가운데로 정렬 해서 보여줘야 되는 거 아니야 110 너무 밑에 있는 느낌이다'): in the Tesla drawer the round sign's top meets the label's top and its bottom meets the distance's bottom (the bar sits below), for section-end, fixed, mobile and child-zone cards alike", fn: s136 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -6678,6 +6679,32 @@
     const ok = r.night === 50 && r.farNight === 30 && r.card === '50' && r.day === 30 && r.sunday === 50 && r.monday === 30 &&
       r.n23 === 50 && r.n06 === 50 && r.n12 === 30 && r.cleared === 30 && !r.timed &&
       r.spots.jukjeon === '110/8 운전자 신고 이동식 단속' && r.spots.pangyo === '110/8 운전자 신고 이동식 단속' && !r.spots.old;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S136: 단속 카드 표지 정렬 (v205, 운전자 '가운데로 정렬 해서 보여줘야 되는 거 아니야 110 너무 밑에 있는 느낌이다').
+  //   테슬라 서랍 안 카드에서 동그란 표지 위 끝 = 종류 글씨 위 끝, 아래 끝 = 거리 숫자 아래 끝 (띠는 그 밑).
+  //   구간단속 끝·고정식·이동식·보호구역 카드가 모두 같다
+  async function s136() {
+    const t = T(), r = {};
+    const pick = { sec: (x) => x[4] === 2 && x[2] === 110, fixed: (x) => !x[4] && x[3] === 1 && x[6] !== 2, mobile: (x) => !x[4] && x[3] === 8, zone: (x) => !x[4] && x[6] === 2 && x[2] === 30 };
+    const card = document.getElementById('camCard');
+    const B = (el) => el.getBoundingClientRect();
+    try {
+      await waitFor(() => t.cams.loaded, 10000, 100);
+      for (const k of Object.keys(pick)) {
+        const i = t.cams.rows.findIndex((x, j) => j < t.cams.userBase && pick[k](x));
+        if (i < 0) { r[k] = 'none'; continue; }
+        const c = t.cams.rows[i];
+        t.camState.target = { i, c, d: 2000, r: 2000, minD: 2000, after: false, t0: Date.now(), first: 2600 };
+        t.renderCam();
+        const sg = B(card.querySelector('.cam-sign')), lb = B(document.getElementById('camType')), ds = B(document.getElementById('camDist')), bar = B(card.querySelector('.cam-bar'));
+        r[k] = { inDrawer: !!card.closest('#camDrawer .cd-in'), top: Math.round(sg.top - lb.top), bottom: Math.round(sg.bottom - ds.bottom), barBelow: bar.top >= ds.bottom - 1, h: Math.round(sg.height) };
+      }
+    } finally {
+      t.camState.target = null; t.renderCam();
+    }
+    const ok = Object.values(r).every((x) => x && x.inDrawer && Math.abs(x.top) <= 1 && Math.abs(x.bottom) <= 2 && x.barBelow && x.h >= 50);
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
