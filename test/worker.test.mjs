@@ -341,17 +341,24 @@ if (!sqlite) {
   ok((await call('POST', '/trip', { body: { rid: 'BAD!', pts: P }, e: envS })).s === 400, '/trip with a bad trip id → 400');
   const camT = (o) => Object.assign({ s: 50, k: K1, lim: 60, kind: 3, a: 0, g: 0, hid: 0, kmh: 60, nav: 0, minD: 3 }, o);
   const nRec0 = rows('SELECT COUNT(*) AS n FROM pass_rec')[0].n;
-  const t1 = await call('POST', '/trip', { body: { rid: RID, part: 0, d: today(), v: '2026.11.16-198', ps: 1, pts: P.concat([[150, 100, 100, 0, 0]]), cams: [camT({})], sid: 'leak02', ua: 'X11 leak' }, e: envS });
+  const T0 = Date.now() - 600000;   // v231: 조각 첫 점 시각
+  const t1 = await call('POST', '/trip', { body: { rid: RID, part: 0, d: today(), v: '2026.11.16-198', ps: 1, pts: P.concat([[150, 100, 100, 0, 0]]), cams: [camT({})], sid: 'sess0002', t0: T0, ua: 'X11 leak', dev: 'devleak1' }, e: envS });
   ok(t1.s === 200 && t1.j.ok && t1.j.stored === 30 && rows('SELECT COUNT(*) AS n FROM pass_rec')[0].n === nRec0, '/trip stores a part (bad points dropped); passes already sent by /pass are not counted twice');
-  await call('POST', '/trip', { body: { rid: RID, part: 1, d: today(), end: 1, ps: 0, pts: P.map((q) => [q[0] + 200, q[1] + 400, q[2], q[3], q[4]]), cams: [camT({ s: 230, a: 300 })] }, e: envS });
+  await call('POST', '/trip', { body: { rid: RID, part: 1, d: today(), end: 1, ps: 0, pts: P.map((q) => [q[0] + 200, q[1] + 400, q[2], q[3], q[4]]), cams: [camT({ s: 230, a: 300 })], sid: 'BAD SID!', t0: Date.now() - 9 * 86400000 }, e: envS });
   ok(rows('SELECT COUNT(*) AS n FROM pass_rec')[0].n === nRec0 + 1, 'a car with pass statistics off: its route passes go to pass_rec at once');
-  ok(cols('trips') === 'id,day,rid,part,endf,op,v,n,km,ncam,misses,pts,cams' && !/leak02|leak/.test(JSON.stringify(rows('SELECT * FROM trips'))), 'trips keep no session, browser or IP');
+  // v231 (운전자 '접속만 잇기 (A)'): 접속 번호(sid)와 조각 첫 점 시각(t0)은 남긴다. 기기 번호·브라우저·IP 는 여전히 없다
+  ok(cols('trips') === 'id,day,rid,part,endf,op,v,n,km,ncam,misses,pts,cams,sid,t0' && !/leak|devleak1/.test(JSON.stringify(rows('SELECT * FROM trips'))),
+    'trips keep the session id and start time, but no device id, browser or IP');
+  const tp = rows('SELECT part, sid, t0 FROM trips WHERE rid = ? ORDER BY part', RID);
+  ok(tp[0].sid === 'sess0002' && tp[0].t0 === T0 && tp[1].sid === null && tp[1].t0 === null, 'a malformed session id or a start time days away is stored empty');
   ok((await call('GET', '/trips')).s === 401, '/trips without token → 401');
   const tl = (await call('GET', '/trips?days=7', { token: TOKEN, e: envS })).j;
   const tr = tl.trips.find((x) => x.rid === RID);
   ok(tl.keepDays === 30 && tr && tr.parts === 2 && tr.n === 60 && tr.misses === 1 && tr.km > 0.2 && tr.ended === 1, '/trips lists a trip with parts, points, km and misses');
+  ok(tr.sids === 'sess0002' && tr.t0 === T0 && !('dev' in tr), '/trips gives the session ids (sids) and the earliest start time (t0), no device id');
   const td = (await call('GET', '/trips?rid=' + RID, { token: TOKEN, e: envS })).j;
   ok(td.parts.length === 2 && td.parts[0].pts[0][1] === 3727000 && td.parts[0].pts.length === 30 && td.parts[1].cams[0].a === 300, '/trips?rid gives the whole route from its start, with camera marks');
+  ok(td.parts[0].sid === 'sess0002' && td.parts[0].t0 === T0 && td.parts[1].sid === null, '/trips?rid gives each part its session id and start time');
   // (9) 넘긴 내역: 운영자만, 근거가 있어야
   ok((await call('POST', '/handoff', { body: { items: [{ kind: 'fix', lat: 37.3, lng: 127.1, basis: 'x' }] } })).s === 401, '/handoff without token → 401');
   const ho = await call('POST', '/handoff', { body: { items: [{ kind: 'fix', lat: 37.3066, lng: 127.10576, h: 180, cam: K1, ref: 'trip ' + RID, basis: '경로에서 경고 없이 지남 2번, 60km/h' },
@@ -453,6 +460,29 @@ if (!sqlite) {
     const before = routeCalls.length;
     ok((await call('GET', '/check/next', { token: TOKEN, origin: '', e: envA })).s === 204 && routeCalls.length === before, 'skipped keys are not probed again');
   }
+}
+
+// ---------------- v231 예전 trips 표(sid·t0 없음)에 칸을 더한다 ----------------
+if (sqlite) {
+  const tmp3 = path.join(os.tmpdir(), 'tnc-worker-mig-' + process.pid + '.mjs');
+  fs.writeFileSync(tmp3, fs.readFileSync(src, 'utf8'));
+  const W3 = (await import(pathToFileURL(tmp3).href)).default;   // 새 모듈 = 표를 아직 안 만든 Worker
+  fs.unlinkSync(tmp3);
+  const db3 = new sqlite.DatabaseSync(':memory:');
+  db3.exec('CREATE TABLE trips (id INTEGER PRIMARY KEY AUTOINCREMENT, day TEXT NOT NULL, rid TEXT NOT NULL, part INTEGER NOT NULL, endf INTEGER NOT NULL, ' +
+    'op INTEGER NOT NULL, v TEXT, n INTEGER NOT NULL, km REAL NOT NULL, ncam INTEGER NOT NULL, misses INTEGER NOT NULL, pts TEXT NOT NULL, cams TEXT NOT NULL)');
+  const kd = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+  db3.prepare("INSERT INTO trips (day, rid, part, endf, op, v, n, km, ncam, misses, pts, cams) VALUES (?, 'oldtrip000001', 0, 1, 0, 'v', 1, 0.1, 0, 0, '[]', '[]')").run(kd);
+  const st3 = (sql, args) => ({ bind: (...a) => st3(sql, a), run: async () => { db3.prepare(sql).run(...(args || [])); return { success: true }; },
+    all: async () => ({ results: db3.prepare(sql).all(...(args || [])) }), first: async () => db3.prepare(sql).get(...(args || [])) || null,
+    _sync: () => (/^\s*(select|pragma)/i.test(sql) ? db3.prepare(sql).all(...(args || [])) : db3.prepare(sql).run(...(args || []))) });
+  const S3 = { prepare: (sql) => st3(sql), batch: async (list) => { db3.exec('BEGIN'); try { const r = list.map((x) => x._sync()); db3.exec('COMMIT'); return r; } catch (e) { db3.exec('ROLLBACK'); throw e; } } };
+  const r3 = await W3.fetch(new Request('https://w.example/trip', { method: 'POST', headers: { Origin: O, 'CF-Connecting-IP': '10.9.9.9' },
+    body: JSON.stringify({ rid: 'newtrip000001', part: 0, d: kd, sid: 'sess0003', t0: Date.now(), pts: [[0, 3727000, 12710576, 60, 180], [5, 3727010, 12710576, 60, 180]] }) }), { ...env, STATS: S3 });
+  const c3 = db3.prepare('PRAGMA table_info(trips)').all().map((c) => c.name).join(',');
+  const old3 = db3.prepare("SELECT sid, t0 FROM trips WHERE rid = 'oldtrip000001'").get(), new3 = db3.prepare("SELECT sid FROM trips WHERE rid = 'newtrip000001'").get();
+  ok(r3.status === 200 && c3.endsWith(',sid,t0') && old3 && old3.sid === null && new3 && new3.sid === 'sess0003',
+    'an old trips table gets the sid and t0 columns on the first request, old rows kept (empty), new rows filled');
 }
 
 Date.now = realNow;

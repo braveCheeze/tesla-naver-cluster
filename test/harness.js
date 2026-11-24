@@ -7903,7 +7903,7 @@
     }
     const ok = r.a.whileDriving == null && !r.a.cur && r.a.parked === '1' && r.a.toast &&
       r.b.parts >= 1 && r.b.end === 1 && /^[a-z0-9]{12}$/.test(r.b.rid || '') && r.b.ps === 1 && r.b.startM <= 40 && r.b.endM <= 40 && r.b.s0 >= 0 &&
-      r.b.gapMin >= 2 && r.b.gapMax <= 5 && r.b.keys === 'cams,d,end,part,ps,pts,rid,v,x' && r.b.cam !== 'none' && r.b.cam.a >= 100 && r.b.cam.lim === 60 &&
+      r.b.gapMin >= 2 && r.b.gapMax <= 5 && r.b.keys === 'cams,d,end,part,ps,pts,rid,sid,t0,v,x' /* v231: 접속 번호·첫 점 시각 (기기 번호 없음) */ && r.b.cam !== 'none' && r.b.cam.a >= 100 && r.b.cam.lim === 60 &&
       /^[a-z0-9]{12}$/.test(r.c.rid || '') && r.c.rid !== r.b.rid && r.c.ps === 0 &&
       r.d.pref === false && r.d.stored === '0' && !r.d.cur && r.d.saved == null && !r.d.after && r.d.sent === 0 && /주행 경로/.test(r.d.label) && r.d.back;
     return { pass: !!ok, detail: JSON.stringify(r) };

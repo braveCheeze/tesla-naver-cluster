@@ -234,7 +234,16 @@ async function passDb(env) {
       // v198: 원본에서 찾아 고침 후보·신고 지점으로 넘긴 내역 (어디, 어느 방향, 근거) — 지우지 않는다
       S.prepare('CREATE TABLE IF NOT EXISTS handoff (id INTEGER PRIMARY KEY AUTOINCREMENT, day TEXT NOT NULL, kind TEXT NOT NULL, lat REAL NOT NULL, lng REAL NOT NULL, ' +
         'h INTEGER, cam TEXT, ref TEXT, basis TEXT NOT NULL)'),
-    ]).then(() => true, (e) => { passReady = null; throw e; });
+    ]).then(async () => {
+      // v231 (운전자 '접속만 잇기 (A)'): 주행 조각에 접속 번호(sid, 페이지를 열 때마다 새 무작위 값)와 조각 첫 점 시각(t0, 밀리초) —
+      // 관리 화면의 접속 창에서 그 주행 경로·거리를 그린다. 기기 번호(dev)는 넣지 않는다. 예전 표에 없으면 칸을 더한다
+      const have = new Set(((await S.prepare('PRAGMA table_info(trips)').all()).results || []).map((c) => c.name));
+      const add = [];
+      if (!have.has('sid')) add.push(S.prepare('ALTER TABLE trips ADD COLUMN sid TEXT'));
+      if (!have.has('t0')) add.push(S.prepare('ALTER TABLE trips ADD COLUMN t0 INTEGER'));
+      if (add.length) await S.batch(add);
+      return true;
+    }).then(() => true, (e) => { passReady = null; throw e; });
   }
   await passReady;
   return env.STATS;
@@ -819,9 +828,12 @@ export default {
         }
         if (!pts.length && !cams.length) return json({ ok: true, stored: 0 }, 200, cors);
         const misses = cams.filter((c) => passRes(c.a, c.g, c.hid) === 'miss').length;
-        const stmts = [db.prepare('INSERT INTO trips (day, rid, part, endf, op, v, n, km, ncam, misses, pts, cams) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        // v231: 접속 번호(sid)·조각 첫 점 시각(t0). 모양이 다르거나 시각이 지금에서 사흘 넘게 멀면 비운다
+        const sid = /^[a-z0-9]{1,16}$/.test(String(b.sid || '')) ? String(b.sid) : null;
+        const t0n = Number(b.t0), t0 = Number.isFinite(t0n) && Math.abs(Date.now() - t0n) <= 3 * 86400000 ? Math.round(t0n) : null;
+        const stmts = [db.prepare('INSERT INTO trips (day, rid, part, endf, op, v, n, km, ncam, misses, pts, cams, sid, t0) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
           .bind(d, rid, intIn(b.part, 0, 100000) || 0, b.end ? 1 : 0, isAdmin ? 1 : 0, appVer(b.v), pts.length, Math.round(km * 100) / 100, cams.length, misses,
-            JSON.stringify(pts), JSON.stringify(cams))];
+            JSON.stringify(pts), JSON.stringify(cams), sid, t0)];
         if (b.ps === 0) passStmts(db, cams, () => d, appVer(b.v), stmts);   // 통과 통계를 끈 차: 경로 조각에서 바로 통과 기록을 남긴다
         passCleanup(db, today, stmts);
         await db.batch(stmts);
@@ -834,15 +846,17 @@ export default {
         const rid = String(p.get('rid') || '');
         if (rid) {
           if (!/^[a-z0-9]{8,24}$/.test(rid)) return json({ error: 'bad rid' }, 400, cors);
-          const r = await db.prepare('SELECT day, part, endf, op, v, pts, cams FROM trips WHERE rid = ? AND day >= ? ORDER BY part').bind(rid, from).all();
-          const parts = (r.results || []).map((x) => ({ day: x.day, part: x.part, end: x.endf, op: x.op, v: x.v, pts: JSON.parse(x.pts || '[]'), cams: JSON.parse(x.cams || '[]') }));
+          const r = await db.prepare('SELECT day, part, endf, op, v, sid, t0, pts, cams FROM trips WHERE rid = ? AND day >= ? ORDER BY part').bind(rid, from).all();
+          const parts = (r.results || []).map((x) => ({ day: x.day, part: x.part, end: x.endf, op: x.op, v: x.v, sid: x.sid || null, t0: x.t0 == null ? null : x.t0,
+            pts: JSON.parse(x.pts || '[]'), cams: JSON.parse(x.cams || '[]') }));
           return json({ v: 1, rid, parts }, 200, cors);
         }
         const one = /^\d{4}-\d{2}-\d{2}$/.test(p.get('day') || '') ? p.get('day') : null;
         const days = intIn(p.get('days'), 1, TRIP_DAYS) || 7;
         const lo = one || dayBefore(today, days - 1), hi = one || today;
+        // v231: sids = 그 주행 조각들의 접속 번호(새로고침하면 여럿, 쉼표로), t0 = 가장 이른 조각 첫 점 시각
         const r = await db.prepare('SELECT rid, MIN(day) AS day, COUNT(*) AS parts, SUM(n) AS n, SUM(km) AS km, SUM(ncam) AS ncam, SUM(misses) AS misses, ' +
-          'MAX(op) AS op, MAX(v) AS v, MAX(endf) AS ended FROM trips WHERE day >= ? AND day >= ? AND day <= ? GROUP BY rid ORDER BY MIN(id) DESC LIMIT 300')
+          'MAX(op) AS op, MAX(v) AS v, MAX(endf) AS ended, GROUP_CONCAT(DISTINCT sid) AS sids, MIN(t0) AS t0 FROM trips WHERE day >= ? AND day >= ? AND day <= ? GROUP BY rid ORDER BY MIN(id) DESC LIMIT 300')
           .bind(from, lo, hi).all();
         return json({ v: 1, stats: true, keepDays: TRIP_DAYS, trips: (r.results || []).map((x) => Object.assign(x, { km: Math.round(x.km * 10) / 10 })) }, 200, cors);
       }

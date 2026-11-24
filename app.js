@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-230'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-231'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -7974,7 +7974,10 @@
     const tiny = c.part === 0 && end && c.pts.length < 5;   // 주차장 안에서 조금 움직인 것은 버린다
     if (!tiny && (c.pts.length || c.cams.length)) {
       // ps: 통과 통계(/pass)를 켰는지 — 끈 차의 카메라 통과는 서버가 이 조각에서 바로 통과 기록으로 남긴다
-      routeRec.out.push(Object.assign({ rid: c.rid, part: c.part, d: c.d, end: end ? 1 : 0, ps: prefs.passStats ? 1 : 0, pts: c.pts, cams: c.cams }, c.x ? { x: 1 } : {}));
+      // v231 (운전자 '접속만 잇기 (A)'): 이 조각을 보낸 접속 번호(sid, 페이지를 열 때마다 새 무작위 값)와 조각 첫 점 시각(t0, 밀리초).
+      // 관리 화면의 접속 창이 그 주행 경로·거리를 그린다. 기기 번호(dev)는 주행에 넣지 않는다
+      const t0 = c.t0 + (c.pts.length ? c.pts[0][0] * 1000 : 0);
+      routeRec.out.push(Object.assign({ rid: c.rid, part: c.part, d: c.d, end: end ? 1 : 0, ps: prefs.passStats ? 1 : 0, sid: tele.sid, t0, pts: c.pts, cams: c.cams }, c.x ? { x: 1 } : {}));
       c.part++;
     }
     c.pts = []; c.cams = []; c.cutAt = now || Date.now();
