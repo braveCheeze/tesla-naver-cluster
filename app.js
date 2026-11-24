@@ -61,7 +61,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-205'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-206'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -6761,7 +6761,7 @@
     if (!app.classList.contains('tesla')) { app.classList.remove('trip-covered'); return; }
     const dr = $('#camDrawer'), tops = [$('.trip'), $('.heading')].filter(Boolean).map((e) => e.getBoundingClientRect().top).filter((v) => v > 0);
     // 서랍 밑에 붙는 다음 단속·과속방지턱·주의 표지 칸도 본다 (2026-11-14: 하이패스 차로 줄로 서랍이 길어지자 '100 14km'가 나침반에 겹침)
-    const lows = [dr.classList.contains('open') ? dr : null, $('#camNext'), $('#bumpCard'), $('#signCard'), $('#parkCard')]
+    const lows = [dr.classList.contains('open') ? dr : null, $('#camNext'), $('#bumpCard'), $('#signCard'), $('#parkCard'), $('#camMissBtn')]
       .filter((e) => e && !e.hidden && e.offsetParent !== null).map((e) => e.getBoundingClientRect().bottom);
     const covered = tops.length > 0 && lows.length > 0 && Math.max(...lows) > Math.min(...tops) - 6;
     app.classList.toggle('trip-covered', covered);
@@ -8831,7 +8831,27 @@
   // 보내는 것(/event type 'feedback'): 글자·시각·앱 버전·길안내 여부·그 순간 위치·방향·속도·떠 있던 카드 (테스터는 위치 기록에 동의)
   const speechRec = () => window.SpeechRecognition || window.webkitSpeechRecognition || null;   // 누를 때 찾는다 (시험이 가짜를 끼울 수 있게)
   const FB_SILENCE_MS = 1500, FB_MAX_MS = 20000;
-  const fb = { on: false, rec: null, text: '', interim: '', t0: 0, lastAt: 0, heard: false, paused: false, tick: null, sendT: null, inTest: false, last: null };
+  const fb = { on: false, rec: null, text: '', interim: '', t0: 0, lastAt: 0, heard: false, paused: false, tick: null, sendT: null, inTest: false, last: null,
+    started: false, steps: [] };
+  // v206 (운전자 '눌러도 반응이 없어'): 어디서 멈추는지 보이게 — 단계마다 /event info (위치 없이, 단계 이름·누른 뒤 ms·기능 지원 여부만).
+  // 누름 → start() → onstart → onaudiostart → (오류 이름) → onend. 같은 단계는 접속마다 한 번만 (report 가 같은 글은 한 번만 보낸다)
+  const FB_ERR_TEXT = {
+    'not-allowed': '마이크 권한이 꺼져 있어요', 'service-not-allowed': '이 브라우저는 음성 인식을 막아 두었어요', 'audio-capture': '마이크를 찾지 못했어요',
+    network: '음성 인식 서버에 연결하지 못했어요', 'language-not-supported': '한국어 음성 인식을 쓸 수 없어요', 'bad-grammar': '음성 인식을 쓸 수 없어요',
+  };
+  const FB_START_MS = 4000;   // start() 뒤 이만큼 onstart 가 없으면 음성 인식이 응답하지 않는 것
+  function fbStep(name, extra) {
+    const ms = fb.t0 ? Date.now() - fb.t0 : 0;
+    fb.steps.push(name);
+    if (fb.steps.length > 30) fb.steps.shift();
+    if (fb.inTest) return;
+    report('info', Object.assign({ msg: 'feedback step ' + name, ms, support: fbSupport() }, extra || {}));
+  }
+  function fbFail(name, text) {
+    fbStep('fail ' + name);
+    fbCancel(true);
+    toast(text || '음성 인식을 쓸 수 없어요', 'warn', 3500);
+  }
   const fbSupport = () => ({ sr: !!speechRec(), gum: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia), mr: typeof window.MediaRecorder === 'function' });
   function fbUi(st) {
     const b = $('#fbBtn');
@@ -8859,33 +8879,49 @@
       if (b) { b.classList.add('talk'); clearTimeout(fb.talkT); fb.talkT = setTimeout(() => b.classList.remove('talk'), 260); }
     };
     r.onspeechstart = () => { fb.lastAt = Date.now(); const b = $('#fbBtn'); if (b) b.classList.add('talk'); };
+    r.onstart = () => { if (fb.rec === r) { fb.started = true; fbStep('onstart'); } };
+    r.onaudiostart = () => { if (fb.rec === r) fbStep('onaudiostart'); };
     r.onerror = (e) => {
       const name = String((e && e.error) || 'error');
-      if (name === 'not-allowed' || name === 'service-not-allowed' || name === 'audio-capture') {
-        report('info', { msg: 'feedback mic ' + name, support: fbSupport() });   // 기능 지원 여부만 (위치 없음)
-        fbCancel(true);
-        toast('마이크를 쓸 수 없어요', '', 2500);
-      }
+      if (fb.rec !== r || !fb.on) return;
+      fbStep('error ' + name);
+      // no-speech: 조용해서 스스로 끝남 → tick 이 다시 건다. aborted: 안내 음성 동안 멈추느라 우리가 끊은 것
+      if (name === 'no-speech' || name === 'aborted') return;
+      fbFail(name, FB_ERR_TEXT[name]);   // 그 밖(권한·네트워크·언어 등)은 다시 걸어도 같다 → 바로 닫고 알린다
     };
-    r.onend = () => { if (fb.on && fb.rec === r && !fb.paused) { fb.rec = null; } };   // 크롬은 조용하면 스스로 끝낸다 → tick 이 다시 걸거나 보낸다
+    r.onend = () => {
+      if (fb.rec !== r) return;
+      fbStep('onend');
+      if (fb.on && !fb.paused) fb.rec = null;   // 크롬은 조용하면 스스로 끝낸다 → tick 이 다시 걸거나 보낸다
+    };
     return r;
   }
   function fbStart() {
     if (fb.on) return;
+    fb.t0 = Date.now();
+    fbStep('tap');
     if (!speechRec()) {
-      report('info', { msg: 'feedback unsupported', support: fbSupport() });
-      toast('이 브라우저는 음성 인식을 지원하지 않아요', '', 3000);
+      fbStep('fail unsupported');
+      toast('이 브라우저는 음성 인식을 지원하지 않아요', 'warn', 3500);
       return;
     }
-    Object.assign(fb, { on: true, text: '', interim: '', t0: Date.now(), lastAt: Date.now(), heard: false, paused: false });
+    Object.assign(fb, { on: true, text: '', interim: '', t0: Date.now(), lastAt: Date.now(), heard: false, paused: false, started: false });
     fbUi('listen');
     fbListen();
+    if (!fb.on) return;   // 시작부터 실패 (알림은 fbFail 이 띄움)
     clearInterval(fb.tick);
     fb.tick = setInterval(fbTick, 200);
   }
   function fbListen() {
     if (!fb.on || fb.rec) return;
-    try { fb.rec = fbNewRec(); fb.rec.start(); } catch (e) { fb.rec = null; }
+    try {
+      fb.rec = fbNewRec();
+      fb.rec.start();
+      if (!fb.started) fbStep('start');
+    } catch (e) {
+      fb.rec = null;
+      fbFail('start ' + String((e && e.name) || 'error').slice(0, 30), '음성 인식을 시작하지 못했어요');
+    }
   }
   // 안내 음성이 나오는 동안은 멈추고(안내를 끊지 않고, 안내 소리를 받아 적지 않게), 끝나면 잇는다. 1.5초 조용하면 보낸다
   function fbTick() {
@@ -8898,9 +8934,10 @@
       fb.paused = false; fb.lastAt = now;
     }
     const said = (fb.text + ' ' + fb.interim).trim();
+    if (!fb.started && now - fb.t0 >= FB_START_MS) { fbFail('nostart', '음성 인식이 응답하지 않아요'); return; }
     if (now - fb.t0 >= FB_MAX_MS) { if (said) fbSend(); else fbCancel(false, '말씀이 없어 닫았어요'); return; }
     if (said && now - fb.lastAt >= FB_SILENCE_MS) { fbSend(); return; }
-    if (!said && fb.heard === false && now - fb.t0 >= 8000) { fbCancel(false, '말씀이 없어 닫았어요'); return; }
+    if (!said && fb.heard === false && now - fb.t0 >= 8000) { fbStep('nospeech'); fbCancel(false, '말씀이 없어 닫았어요'); return; }
     if (!fb.rec) fbListen();   // 스스로 끝났으면 다시
   }
   function fbStop() {
@@ -8931,6 +8968,7 @@
   }
   function fbSend() {
     const text = (fb.text + ' ' + fb.interim).trim();
+    fbStep('send');
     fbStop();
     if (!text) { fbUi(''); return; }
     fbUi('send');
@@ -9460,7 +9498,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, checkTripCover, fbStep, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,

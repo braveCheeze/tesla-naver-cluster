@@ -1338,7 +1338,7 @@
         compassBottomLeft: head.left < app.left + 40 && head.bottom > app.bottom - 140, // 나침반은 맨 아래 주행 기록 바로 위
         // 주행 기록은 맨 아래지만 화면 테두리에서 띄워서(아래 24px 이상, 왼쪽 20px 이상), 나침반은 그 위
         tripAtBottom: (() => { const tr = document.querySelector('.trip').getBoundingClientRect();
-          return tr.bottom <= app.bottom - 24 && tr.bottom > app.bottom - 60 && tr.left >= app.left + 20 && head.bottom <= tr.top + 6; })(),
+          return tr.bottom <= app.bottom - 24 && tr.bottom > app.bottom - 60 && tr.left >= app.left + 20 && head.top >= tr.top - 1 && head.bottom <= tr.top + 64; })(),   // v206: 나침반 줄은 카드 맨 위
         // 오른쪽 끝의 가는 막대 (2026-11-14 요청으로 6 → 10px: 그래도 12px 이하)
         stripRight: strip.left > app.right - 80 && bar.width <= 12,
         // 경로 막대는 세로 가운데
@@ -2897,6 +2897,7 @@
     { id: 'S134', name: "S134 voice feedback above the compass (v203, driver '그 나침반 위에 피드백 버튼 … 음성으로 텍스트 형태로 … 다시 음성을 누르거나 다른 곳을 누르면 취소', 'Ai 대화모드처럼'): with a fake speech recogniser — a 52 px round button right above the compass; a tap starts Korean listening with the green spinning ring and '듣는 중…'; 1.5 s after the words stop the text is sent at once (with place, heading, speed, guidance and the cards on screen) and '보냈어요' shows; a tap elsewhere or a second tap cancels without sending; a browser without speech recognition says so", fn: s134 },
     { id: 'S135', name: "S135 time-limited school zones (v204, driver '이것도 중요하긴 해'; Naver shows 50 at night after '표지판 확인') and the 경부 northbound mobile 110s: around the real child-zone camera 25719, a test school with 30 from 08–20 and 50 otherwise makes it 50 at 22:00 (the warning card too) and 30 at 10:00, cameras outside the radius stay; weekday-only rows give 50 on a Sunday; windows across midnight work; clearing the data restores 30; the 죽전 mobile 110 moved 71 m north to Naver's point and a 판교 northbound mobile 110 was added, both '운전자 신고 이동식 단속'", fn: s135 },
     { id: 'S136', name: "S136 camera card sign alignment (v205, driver '가운데로 정렬 해서 보여줘야 되는 거 아니야 110 너무 밑에 있는 느낌이다'): in the Tesla drawer the round sign's top meets the label's top and its bottom meets the distance's bottom (the bar sits below), for section-end, fixed, mobile and child-zone cards alike", fn: s136 },
+    { id: 'S137', name: "S137 voice feedback reachable and readable (v206, driver '피드백 음성 버튼이 일단 무슨 버튼인지 잘 모를 거 같고 눌러도 반응이 없어'): during guidance with a camera card, the mic sits in the glass card's compass row, a real tap lands on it and never on the '잘못된 정보 신고' pill (if the pill reaches the card, the card hides and the mic takes no taps); the card is opaque enough over map labels; every failure is shown and logged by stage: start() throwing, a 'network' error, and no onstart within 4 s; a good start logs tap, start, onstart, onaudiostart", fn: s137 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -6581,7 +6582,7 @@
     const recs = [];
     class FakeSR {
       constructor() { this.started = false; this.aborted = false; recs.push(this); }
-      start() { this.started = true; }
+      start() { this.started = true; Promise.resolve().then(() => { if (this.onstart) this.onstart(); }); }
       stop() { this.stopped = true; if (this.onend) this.onend(); }
       abort() { this.aborted = true; if (this.onend) this.onend(); }
       say(text) { const res = [{ transcript: text }]; res.isFinal = true; this.onresult({ resultIndex: 0, results: [res] }); }
@@ -6594,9 +6595,15 @@
       softReset();
       await planAndStart(R);
       for (let s = 15; s <= 300; s += 15) { const a = pointAt(R, s); feed(a.p, 15, a.h); }
-      const hb = document.querySelector('#app .heading').getBoundingClientRect(), fbR = btn.getBoundingClientRect();
+      const fbR = btn.getBoundingClientRect(), ht = document.getElementById('headingText').getBoundingClientRect();
       const cp = document.querySelector('#app .heading .compass').getBoundingClientRect();
-      r.a = { w: Math.round(fbR.width), h: Math.round(fbR.height), above: fbR.bottom <= cp.top - 4, left: Math.abs(fbR.left - cp.left) <= 4, shown: getComputedStyle(btn.parentElement).display !== 'none' };
+      const hp = document.getElementById('harnessPanel'), hpd = hp ? hp.style.display : '';
+      if (hp) hp.style.display = 'none';   // 좁은 화면에서는 시험 결과 칸이 앱을 덮는다
+      const hit = document.elementFromPoint((fbR.left + fbR.right) / 2, (fbR.top + fbR.bottom) / 2);
+      if (hp) hp.style.display = hpd;
+      // v206: 주행 기록 카드 안 나침반 줄 오른쪽 끝 (46px, 말풍선 속 마이크 + '의견'), 진짜 누름이 버튼에 닿는다
+      r.a = { w: Math.round(fbR.width), h: Math.round(fbR.height), right: fbR.left >= ht.right + 4, row: Math.abs((fbR.top + fbR.bottom) / 2 - (cp.top + cp.bottom) / 2) <= 4,
+        inCard: !!btn.closest('.trip'), cap: text('.fb-cap'), hit: !!(hit && hit.closest && hit.closest('#fbBtn')), shown: getComputedStyle(btn.parentElement).display !== 'none' };
       // (b)·(c)
       btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       const rec = recs[recs.length - 1];
@@ -6631,7 +6638,7 @@
       softReset();
     }
     const a = r.a || {}, b = r.b || {}, c = r.c || {}, d = r.d || {}, e = r.e || {}, f = r.f || {};
-    const ok = a.w === 52 && a.h === 52 && a.above && a.left && a.shown &&
+    const ok = a.w === 46 && a.h === 46 && a.right && a.row && a.inCard && a.cap === '의견' && a.hit && a.shown &&
       b.listening && b.label === '듣는 중…' && b.started && b.lang === 'ko-KR' && b.ring === 'fbspin' &&
       c.text === '이 카메라 위치가 틀려요' && c.waited >= 1400 && c.navOn === true && c.hasPos && c.cards && c.toast === '보냈어요' && c.label && c.aborted &&
       !d.listening && d.aborted && d.toast === '취소했어요' && !d.sent &&
@@ -6705,6 +6712,86 @@
       t.camState.target = null; t.renderCam();
     }
     const ok = Object.values(r).every((x) => x && x.inDrawer && Math.abs(x.top) <= 1 && Math.abs(x.bottom) <= 2 && x.barBelow && x.h >= 50);
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S137: 의견 버튼이 눌리고 읽히는지 (v206, 운전자 '피드백 음성 버튼이 일단 무슨 버튼인지 잘 모를 거 같고 눌러도 반응이 없어').
+  //   예전: 버튼이 '터치는 지도로' 칸 안에 있어 누름이 지도로 갔고, 길안내 중엔 '잘못된 정보 신고'가 그 위를 덮었다.
+  //   (a) 길안내 + 단속 카드: 버튼은 유리 카드 나침반 줄, 진짜 누름(elementFromPoint)이 버튼에 닿고 신고 버튼과 겹치지 않는다. 카드 바탕은 불투명(알파 ≥ .7)
+  //   (b) 신고 버튼이 카드까지 내려오면 카드를 숨기고(trip-covered) 버튼은 누름을 받지 않는다
+  //   (c) 실패는 늘 알린다: start() 예외 → '음성 인식을 시작하지 못했어요', 'network' → '음성 인식 서버에 연결하지 못했어요', 4초 안에 onstart 없음 → '응답하지 않아요'
+  //   (d) 잘 되면 단계 기록: tap → start → onstart → onaudiostart
+  async function s137() {
+    const t = T(), r = {}, keepSR = window.SpeechRecognition, keepW = window.webkitSpeechRecognition;
+    const btn = document.getElementById('fbBtn'), pill = document.getElementById('camMissBtn'), trip = document.querySelector('.trip');
+    const R = buildNavRoute();
+    const alpha = (c) => { const m = String(c).match(/rgba?\(([^)]+)\)/); if (!m) return 0; const p = m[1].split(',').map(Number); return p.length > 3 ? p[3] : 1; };
+    // 시험 결과 칸(#harnessPanel)이 좁은 화면에서는 앱 위를 덮으므로 잴 때만 잠깐 치운다
+    const tapAt = () => { const hp = document.getElementById('harnessPanel'), d = hp ? hp.style.display : ''; if (hp) hp.style.display = 'none';
+      const bb = btn.getBoundingClientRect(), el = document.elementFromPoint((bb.left + bb.right) / 2, (bb.top + bb.bottom) / 2); if (hp) hp.style.display = d; return el; };
+    try {
+      t.fb.inTest = true;
+      softReset();
+      await planAndStart(R);
+      for (let s = 15; s <= 150; s += 15) { const a = pointAt(R, s); feed(a.p, 15, a.h); }
+      const i = t.cams.rows.findIndex((x, j) => j < t.cams.userBase && x[4] === 1 && x[2] === 100);
+      t.camState.target = { i, c: t.cams.rows[i], d: 2200, r: 2200, minD: 2200, after: false, t0: Date.now(), first: 2600 };
+      t.renderCam(); t.renderNav();
+      try { document.getAnimations().forEach((a) => { try { a.finish(); } catch (e) { /* 무한 */ } }); } catch (e) { /* 미지원 */ }
+      await sleep(60); t.renderNav();
+      const app = document.getElementById('app'), b = btn.getBoundingClientRect(), p = pill.getBoundingClientRect(), hit = tapAt();
+      const covered = app.classList.contains('trip-covered');
+      r.a = { pill: !pill.hidden, covered, hit: !!(hit && hit.closest && hit.closest('#fbBtn')), onPill: !!(hit && hit.closest && hit.closest('#camMissBtn')),
+        overlap: !pill.hidden && !(p.bottom <= b.top || p.top >= b.bottom || p.right <= b.left || p.left >= b.right), alpha: alpha(getComputedStyle(trip).backgroundColor) };
+      // (b) 신고 버튼이 카드까지 내려온 경우
+      const tr = trip.getBoundingClientRect();
+      pill.style.marginTop = Math.max(0, Math.round(tr.top - p.bottom + 20)) + 'px';
+      t.checkTripCover();
+      const hit2 = tapAt();
+      r.b = { covered: app.classList.contains('trip-covered'), takes: !!(hit2 && hit2.closest && hit2.closest('#fbBtn')), pe: getComputedStyle(btn).pointerEvents };
+      pill.style.marginTop = ''; t.checkTripCover();
+      // (c) 실패는 늘 보인다
+      const steps = () => t.fb.steps.slice();
+      t.fb.steps.length = 0;
+      window.webkitSpeechRecognition = undefined;
+      window.SpeechRecognition = class { start() { throw new DOMException('busy', 'InvalidStateError'); } abort() {} };
+      t.fbStart();
+      r.c1 = { on: t.fb.on, toast: text('#toast'), steps: steps(), listening: btn.classList.contains('listening') };
+      t.fb.steps.length = 0;
+      window.SpeechRecognition = class { start() { setTimeout(() => { if (this.onstart) this.onstart(); if (this.onerror) this.onerror({ error: 'network' }); if (this.onend) this.onend(); }, 5); } abort() {} };
+      t.fbStart();
+      await waitFor(() => !t.fb.on, 1000, 10);
+      r.c2 = { on: t.fb.on, toast: text('#toast'), steps: steps() };
+      t.fb.steps.length = 0;
+      window.SpeechRecognition = class { start() {} abort() {} };
+      t.fbStart();
+      t.fb.t0 -= 4500; t.fbTick();
+      r.c3 = { on: t.fb.on, toast: text('#toast'), steps: steps() };
+      // (d) 잘 되는 경우 (진짜 누름 자리에서 click)
+      t.fb.steps.length = 0;
+      window.SpeechRecognition = class { start() { setTimeout(() => { if (this.onstart) this.onstart(); if (this.onaudiostart) this.onaudiostart(); }, 5); } abort() {} };
+      const h = tapAt();
+      if (h) h.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await waitFor(() => t.fb.steps.includes('onaudiostart'), 1000, 10);
+      r.d = { on: t.fb.on, steps: steps() };
+      t.fbCancel(true);
+      t.endNav();
+    } finally {
+      t.fbCancel(true);
+      pill.style.marginTop = '';
+      t.camState.target = null; t.renderCam();
+      t.fb.inTest = false; t.fb.last = null;
+      window.SpeechRecognition = keepSR; window.webkitSpeechRecognition = keepW;
+      softReset();
+    }
+    const a = r.a || {}, b = r.b || {}, c1 = r.c1 || {}, c2 = r.c2 || {}, c3 = r.c3 || {}, d = r.d || {};
+    const has = (arr, v) => Array.isArray(arr) && arr.includes(v);
+    const ok = a.pill && !a.onPill && !a.overlap && (a.covered ? !a.hit : a.hit) && a.alpha >= 0.7 &&
+      b.covered && !b.takes && b.pe === 'none' &&
+      !c1.on && c1.toast === '음성 인식을 시작하지 못했어요' && has(c1.steps, 'tap') && has(c1.steps, 'fail start InvalidStateError') && !c1.listening &&
+      !c2.on && c2.toast === '음성 인식 서버에 연결하지 못했어요' && has(c2.steps, 'onstart') && has(c2.steps, 'error network') && has(c2.steps, 'fail network') &&
+      !c3.on && c3.toast === '음성 인식이 응답하지 않아요' && has(c3.steps, 'fail nostart') &&
+      d.on && ['tap', 'start', 'onstart', 'onaudiostart'].every((x) => has(d.steps, x));
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

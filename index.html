@@ -745,7 +745,6 @@
   @keyframes fbspin { to { transform: rotate(360deg); } }
   .fb-label { font-size: 13px; font-weight: 700; color: #fff; background: rgba(20, 24, 30, .62); padding: 4px 9px; border-radius: 10px; white-space: nowrap; }
   .fb-label[hidden] { display: none; }
-  body:has(#app.tesla):not(:has(#map.night)) .fbbtn:not(.listening):not(.sending) { background: rgba(255, 255, 255, .9); color: #1f2937; box-shadow: 0 2px 8px rgba(0, 0, 0, .18), inset 0 0 0 1px rgba(0, 0, 0, .08); }
   body:has(#app.tesla):not(:has(#map.night)) .fb-label { background: rgba(255, 255, 255, .92); color: #1f2937; }
   #app.tesla .compass { width: 30px; height: 30px; background: rgba(0, 0, 0, .35); border-color: rgba(255, 255, 255, .28); }
   #app.tesla .compass svg { width: 16px; height: 16px; }
@@ -1148,11 +1147,7 @@
   }
   /* ================= 주행 기록 글자만 검정 (2026-11-14 요청) =================
      주행 거리·주행 시간·평균 속도·최고 속도만 검정 글자에 얇은 흰 테두리. 밤(어두운 지도)에는 검정이 안 보이므로 흰 글자 그대로 */
-  #app.tesla:not(:has(#map.night)) .trip {
-    color: #1d2126; text-shadow: 0 0 1px rgba(255, 255, 255, .95), 0 0 2px rgba(255, 255, 255, .85), 0 1px 4px rgba(255, 255, 255, .5);
-  }
-  #app.tesla:not(:has(#map.night)) .trip .stat .v { color: #1d2126; }
-  #app.tesla:not(:has(#map.night)) .trip .stat .k, #app.tesla:not(:has(#map.night)) .trip .stat small { color: #3a4048; }
+  /* v206: 주행 기록은 유리 카드 안 (아래 v206 묶음) — 글자 테두리 대신 카드 색 */
   /* ================= 길안내 패널 맨 위 목적지 (2026-11-14 요청) =================
      왼쪽에 초록 목적지 아이콘, 목적지 이름, 밑에 왼쪽에서 오른쪽으로 옅어지는 초록 밑줄. 그 밑에 몇 km 뒤 어디로 도는지 */
   .navdest { position: relative; display: flex; align-items: center; gap: 8px; padding: 10px 14px 10px 12px; }
@@ -1736,6 +1731,37 @@
   .mini-sign.ai .msn { font-size: 13.4px; letter-spacing: -.06em; }
   #app.tesla .camnext .mini-sign.ai .msn { font-size: 15px; }
   #app.tesla .camcard.ainum #camLimit, .cammk.ainum b, .mini-sign.ainum .msn { opacity: 0; }
+
+  /* ================= v206 왼쪽 아래 카드 (2026-11-24 운전자 '피드백 음성 버튼이 일단 무슨 버튼인지 잘 모를 거 같고 눌러도 반응이 없어') =================
+     - 나침반 줄 + 주행 기록을 유리 카드 하나로 (낮 흰 유리·밤 어두운 유리): 지도 이름(가게·건물)이 글자 밑으로 비쳐 읽기 어려웠다
+     - 의견 버튼은 나침반 줄 오른쪽 끝, 말풍선 속 마이크 + '의견'. 예전엔 나침반 위에 떠 있어서 길안내 중에는 '잘못된 정보 신고'가 그 위를 덮었고,
+       부모 칸의 '터치는 지도로'(pointer-events: none)를 물려받아 눌러도 아무 일이 없었다 → 버튼만 터치를 받는다
+     - 서랍·신고 버튼이 카드까지 내려오면 지금처럼 카드째 숨기고(trip-covered) 그동안은 버튼도 누를 수 없다 */
+  #app.tesla .trip {
+    left: 20px; bottom: 24px; padding: 8px 12px 10px 10px; gap: 6px 26px; border-radius: 16px;
+    background: var(--nv-glass); -webkit-backdrop-filter: var(--nv-blur); backdrop-filter: var(--nv-blur);
+    box-shadow: inset 0 1px 0 var(--nv-glass-hi), var(--nv-shadow); text-shadow: none; color: var(--nv-fg);
+  }
+  #app.tesla .trip > .heading { position: static; grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; margin: 0; color: var(--nv-fg); text-shadow: none; }
+  #app.tesla .trip .compass { width: 28px; height: 28px; background: var(--nv-soft); border: 0; color: var(--nv-green); }
+  #app.tesla .trip .stat .k, #app.tesla .trip .stat small { color: var(--nv-sub); }
+  #app.tesla .trip .stat .v { color: var(--nv-fg); }
+  #app.tesla .trip .fbwrap { position: relative; left: auto; bottom: auto; margin-left: auto; display: block; }
+  #app.tesla .trip .fbbtn {
+    width: 46px; height: 46px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    pointer-events: auto; background: var(--nv-soft); color: var(--nv-green-ink); box-shadow: inset 0 0 0 1.5px rgba(3, 199, 90, .5);
+  }
+  #app.tesla.trip-covered .trip .fbbtn { pointer-events: none; }
+  #app.tesla .trip .fbbtn svg { width: 22px; height: 22px; }
+  .fbbtn .fb-bub { fill: currentColor; }
+  .fbbtn .fb-mic { fill: #fff; }
+  .fbbtn .fb-mic-s { fill: none; stroke: #fff; stroke-width: 1.6; stroke-linecap: round; }
+  .fbbtn .fb-cap { position: relative; z-index: 1; font-size: 10px; font-weight: 800; line-height: 1; letter-spacing: -.02em; margin-top: 1px; }
+  #app.tesla .trip .fbbtn.listening, #app.tesla .trip .fbbtn.sending { background: #0b7a43; color: #fff; box-shadow: 0 0 0 5px rgba(3, 199, 90, .2); }
+  .fbbtn.listening .fb-mic, .fbbtn.sending .fb-mic { fill: #0b7a43; }
+  .fbbtn.listening .fb-mic-s, .fbbtn.sending .fb-mic-s { stroke: #0b7a43; }
+  #app.tesla .trip .fbbtn .fb-ring { -webkit-mask: radial-gradient(circle, transparent 24px, #000 25px); mask: radial-gradient(circle, transparent 24px, #000 25px); }
+  #app.tesla .trip .fb-label { position: absolute; right: 0; bottom: calc(100% + 10px); box-shadow: var(--nv-shadow); }
 </style>
 </head>
 <body>
@@ -1753,14 +1779,6 @@
       </div>
     </div>
     <div id="roadName" class="road"></div>
-    <div class="heading">
-      <!-- v203 음성 피드백: 나침반 위 둥근 버튼 (누르면 듣기 → 1.5초 조용하면 글자로 보냄, 다시 누르거나 다른 곳을 누르면 취소) -->
-      <div class="fbwrap"><button id="fbBtn" class="fbbtn" type="button" aria-label="음성 피드백 보내기" aria-pressed="false"><i class="fb-ring" aria-hidden="true"></i>
-      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8.6" y="3" width="6.8" height="11.6" rx="3.4" fill="currentColor"/><path d="M5.6 11.2a6.4 6.4 0 0 0 12.8 0M12 17.6V21M8.8 21h6.4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-      </button><span id="fbLabel" class="fb-label" hidden></span></div>
-      <div class="compass"><svg id="compassArrow" viewBox="0 0 24 24"><path d="M12 2.5 L18.5 20.5 L12 16.2 L5.5 20.5 Z" fill="currentColor"/></svg></div>
-      <span id="headingText">방향 -</span>
-    </div>
     <!-- 경고 묶음: 일반 화면에서는 그대로 풀어 놓고(display: contents), 테슬라 모드에서는 길안내 패널 바로 밑에 세로로 쌓는다 -->
     <div class="alerts">
     <!-- 단속 서랍: 테슬라 모드에서는 길안내 패널 밑에서 스르륵 내려온다 (일반 화면에서는 그대로 풀어 놓음) -->
@@ -1825,6 +1843,16 @@
     </div>
     <div id="weather" class="weather" hidden></div>
     <div class="trip">
+      <!-- v206: 나침반 줄은 주행 기록 카드 맨 위. 오른쪽 끝에 음성 의견 버튼 (말풍선 속 마이크 + '의견') -->
+      <div class="heading">
+        <div class="compass"><svg id="compassArrow" viewBox="0 0 24 24"><path d="M12 2.5 L18.5 20.5 L12 16.2 L5.5 20.5 Z" fill="currentColor"/></svg></div>
+        <span id="headingText">방향 -</span>
+        <!-- v203 음성 피드백: 누르면 듣기 → 1.5초 조용하면 글자로 보냄, 다시 누르거나 다른 곳을 누르면 취소 -->
+        <div class="fbwrap"><button id="fbBtn" class="fbbtn" type="button" aria-label="음성으로 의견 보내기" aria-pressed="false"><i class="fb-ring" aria-hidden="true"></i>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path class="fb-bub" d="M5 3.2h14a2.6 2.6 0 0 1 2.6 2.6v8.6A2.6 2.6 0 0 1 19 17h-8.2l-4.6 3.7V17H5a2.6 2.6 0 0 1-2.6-2.6V5.8A2.6 2.6 0 0 1 5 3.2z"/><rect class="fb-mic" x="10.2" y="5.6" width="3.6" height="6.2" rx="1.8"/><path class="fb-mic-s" d="M8.3 10.2a3.7 3.7 0 0 0 7.4 0M12 13.9v1.3"/></svg>
+        <b class="fb-cap" aria-hidden="true">의견</b>
+        </button><span id="fbLabel" class="fb-label" hidden></span></div>
+      </div>
       <div class="stat"><div class="k">주행 거리</div><div class="v"><span id="tripKm">0.0</span><small>km</small></div></div>
       <div class="stat"><div class="k">주행 시간</div><div class="v" id="tripTime">0:00</div></div>
       <div class="stat"><div class="k">평균 속도</div><div class="v"><span id="tripAvg">0</span><small> km/h</small></div></div>
@@ -2096,8 +2124,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-205"></script>
-<script src="img/ai/picks.js?v=2026.11.16-205"></script>
-<script src="app.js?v=2026.11.16-205"></script>
+<script src="icons.js?v=2026.11.16-206"></script>
+<script src="img/ai/picks.js?v=2026.11.16-206"></script>
+<script src="app.js?v=2026.11.16-206"></script>
 </body>
 </html>
