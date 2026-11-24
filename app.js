@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-237'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-238'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -6181,7 +6181,8 @@
       }
       // 방면 표지판 (v115). 방면이 없으면 비운다(빈 칸은 CSS 로 숨김). '오른쪽'을 지어 넣지 않는다
       $('#juncLabel').innerHTML = j.names.length || goNo ? juncSignHtml(j.names, goStraight, goNo) : '';
-      $('#juncLabel').className = 'jc-label' + (useNv ? ' ' + (goSide === 'l' ? 'sl' : 'sr') + (goAl ? ' al' : '') : '');
+      const planSign = usePlan ? ($('#juncSvg svg') || { dataset: {} }).dataset.sign : '';
+      $('#juncLabel').className = 'jc-label' + (useNv ? ' ' + (goSide === 'l' ? 'sl' : 'sr') + (goAl ? ' al' : '') : planSign ? ' s' + planSign : '');
       $('#juncLabel').dataset.names = j.label;
       $('#juncLabel').setAttribute('aria-label', j.label ? j.label + ' 방면' : '');
       $('#juncPlace').textContent = j.place;
@@ -6257,42 +6258,89 @@
     const fast = onHighwayAt(Math.max(0, at - 30)) || isFastRoad(curRoad) || expwayNo(curRoad) > 0;
     return fast && routeTurnSum(at - 15, at + 250) <= 100;
   }
+  // v238 (운전자 '네이버지도 좌회전 우회전 분기점 어떤 길로 빠지고 들어가는지 그림표기도 모두 참고해줘'): 위에서 곧장 내려다본 납작한
+  //   선 그림을 네이버 3D 지도처럼 비스듬히(52°) 내려다본 그림으로 바꾼다. 길 모양은 지어내지 않고 경로점 그대로(고리면 고리), 들어오는
+  //   방향이 위로. 지금 길은 안내 지점에서 곧게 이어지는 넓은 길, 우리가 갈 길은 그보다 좁은 연결로로 그리고 갈라지는 곳부터 갈 차로
+  //   색으로 칠한다. 굵은 흰 화살표(검은 테두리, 지도 위 회전 화살표와 같은 모양)가 갈림을 지나 갈 길을 따라간다. 차로 수는 모르니
+  //   차선은 그리지 않는다. (눈높이 원근도 그려 봤지만, 옆으로 휘는 연결로가 얇은 띠로 눌려 읽히지 않았다)
+  const P3 = { PITCH: 52, PAD: 16, BACK: 55, STRAIGHT: 100, ROAD: 44, RAMP: 32, PAINT: 22, ARW: 15, HEAD: 40 };   // 폭은 안내 지점 자리의 그림 px (640×240)
   function planScene(g) {
     const last = nav.cum.length - 1, at = nav.cum[Math.min(g.i, last)];
-    const a0 = Math.max(0, at - PLAN.BACK);
+    const a0 = Math.max(0, at - P3.BACK);
     // 고리처럼 아직 휘는 중이면 휨이 끝날 때까지(최대 420m) 늘이고, 빠져나가는 방향이 보이게 곧은 끝 60m 를 더 그린다
     let a1 = at + PLAN.AHEAD;
     while (a1 < at + 420 && a1 < nav.total && routeTurnSum(a1 - 60, a1) > 25) a1 += 30;
     a1 = Math.min(nav.total, a1 + 60);
     const O = routePointAt(at);
     const inB = routeBearingAt(Math.max(0, at - 60), at) ?? routeBearingAt(a0, Math.min(nav.total, at + 5)) ?? 0;
-    const kx = Math.cos(toRad(O.lat)) * 111320, ky = 110540, c = Math.cos(toRad(inB)), sn = Math.sin(toRad(inB));
-    // 지도(동·북 m) → 그림(오른쪽·아래): 들어오는 방향이 위로
-    const loc = (p) => { const x = (p.lng - O.lng) * kx, y = (p.lat - O.lat) * ky; return [x * c - y * sn, -(x * sn + y * c)]; };
-    const R = [];
-    for (let s = a0; s < a1; s += 5) R.push(loc(routePointAt(s)));
-    R.push(loc(routePointAt(a1)));
-    const C = [[0, 0], [0, -150]];   // 지금 길이 곧게 이어지는 쪽
-    const all = R.concat(C);
-    const xs = all.map((q) => q[0]), ys = all.map((q) => q[1]);
-    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
-    const k = Math.min((PLAN.W - 2 * PLAN.PAD) / Math.max(1, x1 - x0), (PLAN.H - 2 * PLAN.PAD) / Math.max(1, y1 - y0), 2.2);
-    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-    const S = (q) => [PLAN.W / 2 + (q[0] - cx) * k, PLAN.H / 2 + (q[1] - cy) * k];
-    const d = (L) => 'M' + L.map((q) => S(q).map((v) => v.toFixed(1)).join(' ')).join('L');
-    // 화살촉: 경로 끝 방향
-    const e = S(R[R.length - 1]), e0 = S(R[Math.max(0, R.length - 4)]);
-    const ang = Math.atan2(e[1] - e0[1], e[0] - e0[0]), hl = 22, hw = 13;
-    const tip = [e[0] + Math.cos(ang) * 8, e[1] + Math.sin(ang) * 8];
-    const head = [tip, [tip[0] - Math.cos(ang) * hl - Math.sin(ang) * hw, tip[1] - Math.sin(ang) * hl + Math.cos(ang) * hw],
-      [tip[0] - Math.cos(ang) * hl + Math.sin(ang) * hw, tip[1] - Math.sin(ang) * hl - Math.cos(ang) * hw]];
+    const kx = Math.cos(toRad(O.lat)) * 111320, ky = 110540, cs = Math.cos(toRad(inB)), sn = Math.sin(toRad(inB));
+    // 땅 좌표 (안내 지점 기준): x 오른쪽, z 앞 (m)
+    const gp = (p) => { const e = (p.lng - O.lng) * kx, n = (p.lat - O.lat) * ky; return [e * cs - n * sn, e * sn + n * cs]; };
+    const R = [], S = [];
+    for (let s = a0; s < a1; s += 4) { R.push(gp(routePointAt(s))); S.push(s); }
+    R.push(gp(routePointAt(a1))); S.push(a1);
+    const iO = Math.max(0, S.findIndex((s) => s >= at));
+    // 지금 길: 안내 지점까지는 경로 그대로, 거기서 들어오던 방향으로 곧게 100m
+    const bO = routeBearingAt(Math.max(0, at - 30), at);
+    const dO = toRad(((bO == null ? inB : bO) - inB + 540) % 360 - 180);
+    const road = R.slice(0, iO + 1);
+    for (let t = 8; t <= P3.STRAIGHT; t += 8) road.push([Math.sin(dO) * t, Math.cos(dO) * t]);
+    // 갈라지는 곳: 지금 길에서 5m 넘게 비켜나는 첫 점. 칠하기는 그 16m 앞부터
+    const offRoad = (q) => Math.abs(q[0] * Math.cos(dO) - q[1] * Math.sin(dO));
+    let iS = R.findIndex((q, i) => i > iO && offRoad(q) > 5);
+    if (iS < 0) iS = Math.min(R.length - 1, iO + 3);
+    const iP = Math.max(0, iS - 4);
+    // 흰 화살표: 안내 지점 40m 앞에서 갈림을 지나 갈 길로 (돈 만큼 길게, 안내 지점 90~220m 뒤까지)
     const turn = Math.round(routeTurnSum(at - 15, at + 250));
-    return '<svg viewBox="0 0 ' + PLAN.W + ' ' + PLAN.H + '" class="plan" data-turn="' + turn + '" aria-hidden="true">' +
-      '<rect class="plan-bg" width="' + PLAN.W + '" height="' + PLAN.H + '"/>' +
-      '<path class="plan-edge" d="' + d(C) + '"/><path class="plan-edge" d="' + d(R) + '"/>' +
-      '<path class="plan-road" d="' + d(C) + '"/><path class="plan-road" d="' + d(R) + '"/>' +
-      '<path class="plan-go" d="' + d(R) + '"/>' +
-      '<path class="plan-ar" d="M' + head.map((q) => q.map((v) => v.toFixed(1)).join(' ')).join('L') + 'Z"/></svg>';
+    const sEnd = Math.min(S[S.length - 1] - 4, at + Math.max(90, Math.min(220, 70 + turn * 0.6)));
+    // 비스듬히 내려다보는 눈: 그림 가운데를 향해 PITCH° 아래로. 먼저 크기 1 로 투영해 그림 칸에 맞춘다
+    const all = R.concat(road);
+    const xs = all.map((q) => q[0]), zs = all.map((q) => q[1]);
+    const Cx = (Math.min(...xs) + Math.max(...xs)) / 2, Cz = (Math.min(...zs) + Math.max(...zs)) / 2;
+    const ext = Math.max(60, Math.max(...xs) - Math.min(...xs), Math.max(...zs) - Math.min(...zs));
+    const th = toRad(P3.PITCH), B = ext * 1.15, h = B * Math.tan(th);
+    const pr = (x, z) => { const D = (z - Cz + B) * Math.cos(th) + h * Math.sin(th); return [(x - Cx) / D, -((z - Cz + B) * Math.sin(th) - h * Math.cos(th)) / D]; };
+    const pp = all.map((q) => pr(q[0], q[1]));
+    const px0 = Math.min(...pp.map((q) => q[0])), px1 = Math.max(...pp.map((q) => q[0]));
+    const py0 = Math.min(...pp.map((q) => q[1])), py1 = Math.max(...pp.map((q) => q[1]));
+    const W = PLAN.W, H = PLAN.H;
+    const k = Math.min((W - 2 * P3.PAD) / Math.max(1e-6, px1 - px0), (H - 2 * P3.PAD) / Math.max(1e-6, py1 - py0));
+    const P = (x, z) => { const q = pr(x, z); return [W / 2 + (q[0] - (px0 + px1) / 2) * k, H / 2 + (q[1] - (py0 + py1) / 2) * k]; };
+    // 그림 px 폭 → 땅 m 폭 (안내 지점 자리에서 잰 1m 의 px). 먼 쪽은 원근으로 가늘어진다
+    const ppm = Math.max(0.05, Math.hypot(P(1, 0)[0] - P(0, 0)[0], P(1, 0)[1] - P(0, 0)[1]));
+    const m = (px) => px / ppm;
+    const f1 = (q) => q[0].toFixed(1) + ' ' + q[1].toFixed(1);
+    const rib = (c, w, off) => {
+      if (c.length < 2) return '';
+      const A = [], Bq = [], o = off || 0;
+      for (let i = 0; i < c.length; i++) {
+        const p = c[Math.max(0, i - 1)], q = c[Math.min(c.length - 1, i + 1)];
+        let dx = q[0] - p[0], dz = q[1] - p[1];
+        const n = Math.hypot(dx, dz) || 1; dx /= n; dz /= n;
+        const hw = (typeof w === 'function' ? w(i, c.length) : w) / 2;
+        A.push(P(c[i][0] + dz * (o - hw), c[i][1] - dx * (o - hw)));
+        Bq.push(P(c[i][0] + dz * (o + hw), c[i][1] - dx * (o + hw)));
+      }
+      return 'M' + A.map(f1).join('L') + 'L' + Bq.reverse().map(f1).join('L') + 'Z';
+    };
+    const ramp = R.slice(Math.max(0, iS - 2)), paint = R.slice(iP);
+    const edge = rib(road, m(P3.ROAD + 4)) + rib(ramp, m(P3.RAMP + 4));
+    const asph = rib(road, m(P3.ROAD)) + rib(ramp, m(P3.RAMP));
+    const aC = R.filter((q, i) => S[i] >= at - 40 && S[i] <= sEnd);
+    let arrow = '';
+    if (aC.length >= 3) {
+      let L = 0;
+      for (let i = 1; i < aC.length; i++) L += Math.hypot(aC[i][0] - aC[i - 1][0], aC[i][1] - aC[i - 1][1]);
+      const head = Math.min(m(P3.HEAD) * 0.95, L * 0.35);
+      arrow = rib(jvSlice(aC, 0, L - head + 1), m(P3.ARW)) + rib(jvSlice(aC, L - head, L), (i, n) => m(P3.HEAD) * (1 - i / Math.max(1, n - 1)) + 0.05);
+    }
+    // 표지판은 갈 길 끝의 반대쪽 위에 (끝을 가리지 않게)
+    const endX = P(R[R.length - 1][0], R[R.length - 1][1])[0];
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" class="plan plan3" data-turn="' + turn + '" data-sign="' + (endX > W / 2 ? 'l' : 'r') + '" aria-hidden="true">' +
+      '<rect class="plan-bg" width="' + W + '" height="' + H + '"/>' +
+      '<path class="plan-edge" d="' + edge + '"/><path class="plan-road" d="' + asph + '"/>' +
+      '<path class="plan-go" d="' + rib(paint, m(P3.PAINT)) + '"/>' +
+      '<path class="plan-ar" d="' + arrow + '"/></svg>';
   }
   const tollState = { g: null, numsKey: '', nums: [], code: '', items: 0 };
   // 하이패스 차로 번호 (2026-11-14 요청: '몇 번으로 가야 하이패스'). 한국도로공사 '영업소별 하이패스차로 운영현황'(data.go.kr 15043760,

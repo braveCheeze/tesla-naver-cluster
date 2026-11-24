@@ -1526,16 +1526,21 @@
   }
   .jc-head b { font-size: 14px; font-weight: 800; }
   /* v227 위에서 내려다본 갈림 그림 (일반도로에서 들어가거나 크게 휘는 갈림): 바탕·길·우리 경로(파랑)·화살촉. 낮·밤 */
-  .jc-svg svg.plan .plan-bg { fill: #e8ecf0; }
-  .jc-svg svg.plan .plan-edge { fill: none; stroke: #b4bcc6; stroke-width: 30; stroke-linecap: round; stroke-linejoin: round; }
-  .jc-svg svg.plan .plan-road { fill: none; stroke: #ffffff; stroke-width: 25; stroke-linecap: round; stroke-linejoin: round; }
-  .jc-svg svg.plan .plan-go { fill: none; stroke: #1d8cff; stroke-width: 11; stroke-linecap: round; stroke-linejoin: round; }
-  .jc-svg svg.plan .plan-ar { fill: #1d8cff; stroke: #1d8cff; stroke-width: 3; stroke-linejoin: round; }
-  body:has(#map.night) .jc-svg svg.plan .plan-bg { fill: #22262c; }
-  body:has(#map.night) .jc-svg svg.plan .plan-edge { stroke: #4b525c; }
-  body:has(#map.night) .jc-svg svg.plan .plan-road { stroke: #353a42; }
-  body:has(#map.night) .jc-svg svg.plan .plan-go, body:has(#map.night) .jc-svg svg.plan .plan-ar { stroke: #3b9dff; }
-  body:has(#map.night) .jc-svg svg.plan .plan-ar { fill: #3b9dff; }
+  /* v238: 네이버 3D 지도처럼 비스듬히 내려다본 갈림 그림 (app.js planScene). 지도 같은 바탕, 지금 길·연결로는 흰(밤 어두운) 길 + 테두리,
+     갈 길은 고속도로 장면(.nv-go)과 같은 하늘색, 흰 화살표는 지도 위 회전 화살표처럼 검은 테두리 */
+  .jc-svg svg.plan .plan-bg { fill: #e6eaef; }
+  .jc-svg svg.plan .plan-edge { fill: #b9c1cb; }
+  .jc-svg svg.plan .plan-road { fill: #ffffff; }
+  .jc-svg svg.plan .plan-go { fill: #22bff2; }
+  .jc-svg svg.plan .plan-ar { fill: #ffffff; stroke: #1c2530; stroke-width: 2.2; stroke-linejoin: round; }
+  body:has(#map.night) .jc-svg svg.plan .plan-bg { fill: #1c2027; }
+  body:has(#map.night) .jc-svg svg.plan .plan-edge { fill: #4c5561; }
+  body:has(#map.night) .jc-svg svg.plan .plan-road { fill: #363d48; }
+  body:has(#map.night) .jc-svg svg.plan .plan-go { fill: #18aee6; }
+  body:has(#map.night) .jc-svg svg.plan .plan-ar { fill: #f2f6fb; stroke: #05080d; }
+  .junccard.plan .jc-label { top: 6px; }
+  .junccard.plan .jc-label.sl { left: 8px; right: auto; }   /* 갈 길 끝의 반대쪽 (app.js planScene data-sign) */
+  .junccard.plan .jc-label.sr { right: 8px; left: auto; }
   .jc-head span { font-size: 15px; font-weight: 800; color: #1565c0; }
   .jc-head b:empty { display: none; }
   .jc-head:has(b:empty), .jc-label:empty { display: none; }
@@ -2247,8 +2252,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-237"></script>
-<script src="img/ai/picks.js?v=2026.11.16-237"></script>
-<script src="app.js?v=2026.11.16-237"></script>
+<script src="icons.js?v=2026.11.16-238"></script>
+<script src="img/ai/picks.js?v=2026.11.16-238"></script>
+<script src="app.js?v=2026.11.16-238"></script>
 </body>
 </html>
