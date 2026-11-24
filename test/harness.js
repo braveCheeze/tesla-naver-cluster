@@ -6925,7 +6925,7 @@
       c.label === '어린이보호구역 신호·과속단속' && c.zone === 2 && !c.blue &&
       d.label === '운전자 신고 신호·과속단속' && d.blue && d.short === '신고 지점' && d.voice === '신고된 단속 지점' &&
       e.label === '과속단속' && !e.blue &&
-      f.rows === 21 && f.checked === 21 && f.zone === 3 &&   // v210: keys 네이버 확인 — 구갈·삼가 남동 확인(네이버 자리로), 판교JC 하행 합류는 없음(뺌). v213: 비룡로 신호·과속 50 더함
+      f.rows === 22 && f.checked === 22 && f.zone === 3 &&   // v210: keys 네이버 확인 — 구갈·삼가 남동 확인(네이버 자리로), 판교JC 하행 합류는 없음(뺌). v213: 비룡로 신호·과속 50 더함. v233: 동해대로 80 174° 더함
       g.w15 === 9 && g.w17 === 14 && g.w18 === 16 && g.w165 === 12.5 && g.casing17 === 18 && g.dots === 3.4 && g.casingColor === '#141414' &&
       g.arrow17 && g.arrow17.inner === 14 && g.arrow17.shaft === 18;
     return { pass: !!ok, detail: JSON.stringify(r) };
@@ -7307,6 +7307,10 @@
     // v232: 7번국도 동해대로 80 과속 — 네이버 자리 112° 한 방향 (경찰 자료는 201m 아래·292° 로 거꾸로였다)
     const c18 = rows[18495];
     r.r18495 = { at: [c18[0], c18[1]], eb: c18.eb, lane: [c18.sl, c18.sg], lim: c18[2], text: t.cams.arrows.has(c18) };
+    // v233: 그 1.7km 남쪽 174° 80 과속 — 우리 자료에 없어 네이버 확인 지점으로 (18364·18370 은 확인 전 그대로)
+    const ds = t.cams.rows.slice(t.cams.userBase).find((x) => hav({ lat: x[0], lng: x[1] }, { lat: 37.056037, lng: 129.405295 }) < 3);
+    r.spot174 = ds ? { eb: ds.eb, lim: ds[2], kind: ds[3] } : null;
+    r.kept18364 = [rows[18364].eb, rows[18364][2], rows[18370].eb, rows[18370][2]].join();
     const D = r.dir;
     const ok = r.off.length === 0 && r.kept.length === 0 &&
       D.r743 === '108,0,-' && D.r17901 === '186,0,-' && D.r21632 === '115,0,-' && D.r23272 === '321,0,T' && D.r27681 === '117,0,-' &&
@@ -7314,7 +7318,8 @@
       r.r23035.at.join() === '37.417022,126.917881' && r.r23035.eb === 6 && r.r23035.lane.join() === '37.417022,126.917881' &&   // v226: keys 재확인 — 어린이 표시, 네이버 자리
       /후면/.test(r.r23035.label) && /어린이보호구역/.test(r.r23035.label) && !r.r23035.text &&
       r.lane17901 && r.lim40.join() === '40,40' &&
-      r.r18495.at.join() === '37.068206,129.391278' && r.r18495.eb === 112 && r.r18495.lane.join() === '37.068206,129.391278' && r.r18495.lim === 80 && r.r18495.text;
+      r.r18495.at.join() === '37.068206,129.391278' && r.r18495.eb === 112 && r.r18495.lane.join() === '37.068206,129.391278' && r.r18495.lim === 80 && r.r18495.text &&
+      !!r.spot174 && r.spot174.eb === 174 && r.spot174.lim === 80 && r.spot174.kind === 1 && r.kept18364 === '175,80,355,80';
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
