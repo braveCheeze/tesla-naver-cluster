@@ -1481,9 +1481,15 @@
   .sg-names { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
   .sg-names.one { flex-direction: row; gap: 7px; }
   .junccard.left .sg-names { align-items: flex-end; }
-  .sg-row { display: flex; align-items: center; gap: 4px; min-width: 0; font-size: 14.5px; font-weight: 800; line-height: 1.15; white-space: nowrap; letter-spacing: -.2px; }
-  .sg-names.one .sg-row { font-size: 16px; }
-  .sg-row b { overflow: hidden; text-overflow: ellipsis; font-weight: 800; }
+  .sg-row { display: flex; align-items: center; gap: 4px; min-width: 0; font-size: calc(14.5px * var(--sgk, 1)); font-weight: 800; line-height: 1.15; white-space: nowrap; letter-spacing: -.2px; }
+  .sg-names.one .sg-row { font-size: calc(16px * var(--sgk, 1)); }
+  .sg-row b { font-weight: 800; }   /* v227: 자르지 않는다 (… 없음) — 들어가지 않으면 fitSigns 가 넓히고·줄이고·방패를 빼고·줄을 바꾼다 */
+  .sg-off { display: none !important; }
+  .sg-noshield .sg-shield { display: none; }
+  .sg-wrap .sg-row, .sp-sign.sg-wrap { white-space: normal; }
+  .sg-wrap .sg-row b, .sp-sign.sg-wrap b { word-break: keep-all; overflow-wrap: anywhere; }
+  .junccard.sg-wide .jc-label { max-width: calc(100% - 16px); }
+  .junccard.nv.sg-wide .jc-label { max-width: calc(100% - 18px); }
   .sg-shield svg { display: block; width: 17px; height: 18px; }
   .sg-arrow { flex: none; }
   .sg-arrow svg { display: block; width: 17px; height: 22px; }
@@ -1493,7 +1499,18 @@
     padding: 3px 8px; border-radius: 7px; background: rgba(255, 255, 255, .88); color: #111; text-shadow: none;
     font-variant-numeric: tabular-nums; white-space: nowrap;
   }
-  .jc-head b { font-size: 14px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; }
+  .jc-head b { font-size: 14px; font-weight: 800; }
+  /* v227 위에서 내려다본 갈림 그림 (일반도로에서 들어가거나 크게 휘는 갈림): 바탕·길·우리 경로(파랑)·화살촉. 낮·밤 */
+  .jc-svg svg.plan .plan-bg { fill: #e8ecf0; }
+  .jc-svg svg.plan .plan-edge { fill: none; stroke: #b4bcc6; stroke-width: 30; stroke-linecap: round; stroke-linejoin: round; }
+  .jc-svg svg.plan .plan-road { fill: none; stroke: #ffffff; stroke-width: 25; stroke-linecap: round; stroke-linejoin: round; }
+  .jc-svg svg.plan .plan-go { fill: none; stroke: #1d8cff; stroke-width: 11; stroke-linecap: round; stroke-linejoin: round; }
+  .jc-svg svg.plan .plan-ar { fill: #1d8cff; stroke: #1d8cff; stroke-width: 3; stroke-linejoin: round; }
+  body:has(#map.night) .jc-svg svg.plan .plan-bg { fill: #22262c; }
+  body:has(#map.night) .jc-svg svg.plan .plan-edge { stroke: #4b525c; }
+  body:has(#map.night) .jc-svg svg.plan .plan-road { stroke: #353a42; }
+  body:has(#map.night) .jc-svg svg.plan .plan-go, body:has(#map.night) .jc-svg svg.plan .plan-ar { stroke: #3b9dff; }
+  body:has(#map.night) .jc-svg svg.plan .plan-ar { fill: #3b9dff; }
   .jc-head span { font-size: 15px; font-weight: 800; color: #1565c0; }
   .jc-head b:empty { display: none; }
   .jc-head:has(b:empty), .jc-label:empty { display: none; }
@@ -1808,8 +1825,10 @@
   body:has(#map.night) .sp-pic .sp-oth { stroke: #3d434b; }
   body:has(#map.night) .sp-pic .sp-dash { stroke: #c9cfd6; }
   .sp-sign { position: absolute; top: 1px; display: inline-flex; align-items: center; gap: 3px; max-width: 47%; padding: 3px 7px; border-radius: 4px;
-    font-size: 13px; line-height: 1.15; color: #fff; white-space: nowrap; overflow: hidden; box-shadow: 0 1px 3px rgba(0, 0, 0, .22); }
-  .sp-sign b { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 800; }
+    font-size: calc(13px * var(--sgk, 1)); line-height: 1.15; color: #fff; white-space: nowrap; box-shadow: 0 1px 3px rgba(0, 0, 0, .22); }
+  .sp-sign b { font-weight: 800; }   /* v227: 자르지 않는다 */
+  .sp-names { display: flex; flex-direction: column; gap: 1px; }
+  .sg-wide .sp-sign.sp-ours { max-width: calc(100% - 4px); }
   .sp-sign .sg-shield { flex: none; display: block; }
   .sp-sign .sg-shield svg { display: block; width: 16px; height: 17px; }
   .sp-ours { background: #0b7a43; padding-left: 10px; box-shadow: inset 4px 0 0 var(--cl, #ff4fa3), 0 1px 3px rgba(0, 0, 0, .22); }
@@ -2201,8 +2220,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-226"></script>
-<script src="img/ai/picks.js?v=2026.11.16-226"></script>
-<script src="app.js?v=2026.11.16-226"></script>
+<script src="icons.js?v=2026.11.16-227"></script>
+<script src="img/ai/picks.js?v=2026.11.16-227"></script>
+<script src="app.js?v=2026.11.16-227"></script>
 </body>
 </html>

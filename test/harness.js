@@ -2910,6 +2910,8 @@
     { id: 'S147', name: "S147 Naver verdicts on zone pairs and duplicate poles (v220-v223): labels, limits and rear flags follow Naver's badges, and duplicate records Naver does not show are switched off (kept in the data, left out of lookups) — 평인일주로 138° is a school-zone speed camera, 신재로 is school zone both ways, 해안로 is a school-zone signal-and-speed camera both ways, 적중로 is 50 (253° rear), 17755 moves to Naver's point without its place text", fn: s147 },
     { id: 'S148', name: "S148 Naver verdicts on the 18 single cameras (v224): wrong directions turned to Naver's, two-way cameras lose their one-way place text, records Naver does not show (and 30 duplicates of 40 or signal cameras) are switched off, 예술공원로 is a rear camera 35 m on", fn: s148 },
     { id: 'S149', name: "S149 feedback button panel (v225): when speech recognition fails like on the Tesla (network), the panel opens with a record button and five picture buttons, later taps open it directly, one tap sends with the cards from the moment 의견 was tapped, a recording is queued until the server takes it, and a denied microphone leaves the picture buttons", fn: s149 },
+    { id: 'S150', name: "S150 heading-aware routing (v227): stopped at a light heading north with the destination behind, every route request starts ahead of the car; a route that starts by reversing is asked again further ahead (first route and reroute), a reversing traffic update is dropped, and a car parked over 3 minutes is not given a heading", fn: s150 },
+    { id: 'S151', name: "S151 junction picture and signs (v227): an arterial into a loop entry gets a top-down picture of the real route (no highway scene), a straight highway entry keeps the scene, and sign names are never cut — very long names stay whole inside the picture, and a narrow split-picture sign drops the other sign and shrinks before cutting", fn: s151 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -7431,6 +7433,161 @@
       q.ev && /^\(녹음 [\d.]+초\)$/.test(q.ev.text || '') && q.ev.how === 'audio' && q.ev.qid && q.ev.navOn === true && q.ev.pos &&
       fl.r === true && fl.left === 0 && fl.audio === 'A2' && fl.qid && fl.msg === 'feedback audio' && fl.via === 'fb' && !fl.pos &&
       g.toast === '마이크 권한이 꺼져 있어요 · 버튼으로 보내 주세요' && g.recHidden && g.presets === 5 && g.open;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S150: 진행 방향대로 길찾기 (v227, 2026-11-24 21:22 운전자 성남대로 북행 신호 대기 중 '여기서 바로 유턴안돼',
+  //   '내가 가는 진행방향 기준으로 길을 알려줘야지' — 새 경로가 차 자리에서 바로 남쪽(뒤)으로 돌았다. 네이버는 175m 앞 사거리 유턴).
+  //   나란한 두 차로(북행·남행)인 길을 북쪽으로 달리다 신호에 멈춤, 목적지는 차 뒤(남쪽). 가짜 길찾기 서버: 25m 앞 출발은 반대편 차로에 붙어
+  //   뒤로 도는 경로, 60m 넘게 앞이면 175m 앞 교차로에서 유턴하는 경로.
+  //   (a) 멈춰 있어도 진행 방향을 안다  (b) 처음 길찾기: 출발점은 차 앞(북쪽) 25m → 뒤로 도는 답이면 70m 앞에서 다시 → 고른 경로는 북쪽으로 출발
+  //   (c) 교통 갱신 답이 뒤로 돌면 버리고 지금 경로 그대로  (d) 경로 이탈 재탐색(느린 속도)도 앞에서 출발해 북쪽으로
+  //   (e) 3분 넘게 세워 둔 차는 진행 방향을 쓰지 않는다(앞뒤로 움직여 나갈 수 있다) — 출발점 = 차 자리
+  async function s150() {
+    const t = T(), r = {}, keepRoute = stub.canned['/route'];
+    const A = dest(NAV_ORIGIN, 180, 3000), C = dest(A, 0, 300), D = dest(A, 180, 900), U = dest(C, 0, 175);
+    const mk = (pts) => {
+      const path = pts.map((p) => [round6(p.lng), round6(p.lat)]);
+      const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
+      let tot = 0; for (let i = 1; i < P.length; i++) tot += hav(P[i - 1], P[i]);
+      return { distance: r0(tot), duration: r0(tot / 12 * 1000), tollFare: 0, fuelPrice: 0, path,
+        guide: [{ i: P.length - 1, t: 88, s: '목적지', d: r0(tot), ms: r0(tot / 12 * 1000) }], sections: [{ i: 0, n: P.length - 1, name: '시험대로', speed: 40, cong: 1 }] };
+    };
+    const reversed = (s) => mk([s, dest(s, 180, 120), D]);
+    const forward = (s) => { const u2 = dest(U, 90, 15); return mk([s, dest(s, 0, 20), U, u2, dest(C, 90, 15), D]); };
+    let mode = 'snap', asks = [];
+    const aheadOf = (q) => { const [lng, lat] = q.start.split(',').map(Number), s = { lat, lng }; const d = hav(C, s); return { s, d: d < 1 ? 0 : (Math.cos(brg(C, s) * Math.PI / 180) >= 0 ? d : -d) }; };
+    stub.canned['/route'] = (q) => { const a = aheadOf(q); asks.push(Math.round(a.d)); return mode === 'rev' || a.d < 60 ? reversed(a.s) : forward(a.s); };
+    const first = (route) => { const p = route && route.path; return p ? r0(brg({ lat: p[0][1], lng: p[0][0] }, { lat: p[1][1], lng: p[1][0] })) : null; };
+    const goal = { name: '시험 목적지', addr: '', lat: D.lat, lng: D.lng };
+    try {
+      softReset();
+      for (let s = 0; s <= 300; s += 15) feed(dest(A, 0, s), 12, 0);
+      for (let k = 0; k < 4; k++) feed(C, 0, 0, { dt: 3000 });   // 신호 대기
+      r.a = { heading: t.routeHeading(), kmh: t.state.speedKmh };
+      // (b) 처음 길찾기
+      asks = [];
+      await withTimeout(t.planRoute(goal, false), 5000, 'planRoute');
+      const alt = t.nav.alts && t.nav.alts[t.nav.altIdx];
+      r.b = { asks: asks.slice(), first: first(alt), preview: !!t.nav.preview };
+      t.startNav();
+      // (c) 교통 갱신 답이 뒤로 돈다
+      const before = t.nav.route;
+      mode = 'rev'; asks = [];
+      await withTimeout(t.planRoute(goal, 'traffic'), 5000, 'traffic');
+      r.c = { asks: asks.slice(), kept: t.nav.route === before };
+      // (d) 경로 이탈 재탐색 (멈춘 채)
+      mode = 'snap'; asks = [];
+      await waitFor(() => !t.nav.busy, 2000, 20);
+      await withTimeout(t.planRoute(goal, true), 5000, 'reroute');
+      r.d = { asks: asks.slice(), first: first(t.nav.route), active: t.nav.active };
+      t.endNav();
+      // (e) 3분 넘게 세워 둠
+      feed(C, 0, 0, { dt: 200000 });
+      asks = [];
+      await withTimeout(t.planRoute(goal, false), 5000, 'parked');
+      r.e = { heading: t.routeHeading(), asks: asks.slice() };
+      // 판정 함수: 첫 12m 가 진행 방향과 110° 넘게 다르면 뒤로 도는 것, 출발점에서 60m 넘게 떨어져 시작하면 따지지 않는다
+      const P = (pts) => pts.map((p) => [p.lng, p.lat]);
+      r.f = { rev: t.startsReversed(P([C, dest(C, 180, 30)]), C, 0), fwd: t.startsReversed(P([C, dest(C, 0, 30)]), C, 0),
+        side: t.startsReversed(P([C, dest(C, 270, 30)]), C, 0), far: t.startsReversed(P([dest(C, 180, 200), dest(C, 180, 260)]), C, 0) };
+    } finally {
+      stub.canned['/route'] = keepRoute;
+      await waitFor(() => !t.nav.busy, 2000, 20);
+      softReset();
+    }
+    const a = r.a || {}, b = r.b || {}, c = r.c || {}, d = r.d || {}, e = r.e || {}, f = r.f || {};
+    const ok = a.heading === 0 && a.kmh === 0 &&
+      b.asks.join() === '25,70' && b.first === 0 && b.preview &&
+      c.asks.join() === '25' && c.kept &&
+      d.asks.join() === '25,70' && d.first === 0 && d.active &&
+      e.heading === null && e.asks.join() === '0' &&
+      f.rev && !f.fwd && !f.side && !f.far;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S151: 갈림 그림은 실제 길 모양, 표지 글자는 자르지 않는다 (v227, 2026-11-24 운전자 성남IC '그림은 너무 이상하게 표기',
+  //   판교IC '대.. 신갈분...' — '내용이 길더라도 그거를 보여 주는 방법은 없으니까').
+  //   (a) 일반도로(경충대로)에서 고리 연결로로 들어가는 진입(57 왼쪽 진입): 하늘·고속도로 장면이 아니라 위에서 본 경로 그림(고리 그대로, 270° 넘게 휨),
+  //       표지 '일산 · 판교' 다 보임
+  //   (b) 고속도로 위 곧은 진입은 그대로 원근 장면, 아주 긴 방면 이름도 글자마다 다 보이고 그림 칸 안
+  //   (c) 유도선 갈림 그림 표지(fitSigns): 좁은 칸에서 다른 갈래 표지를 빼고 넓히고 줄여서라도 이름을 다 보인다
+  async function s151() {
+    const t = T(), box = TESLA_ONLY, prev = t.prefs.tesla, r = {};
+    const set = (on) => { box.checked = on; box.dispatchEvent(new Event('change')); };
+    const build = (raw, guide, sections, name) => {
+      const path = raw.map((p) => [round6(p.lng), round6(p.lat)]);
+      const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0];
+      for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+      const total = cum[cum.length - 1];
+      guide.forEach((g) => { g.d = r0(cum[g.i]); g.ms = 30000; });
+      return { route: { distance: r0(total), duration: r0(total / 15 * 1000), tollFare: 0, fuelPrice: 300, path, guide, sections },
+        P, cum, total, dest: { name, addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    };
+    const signOk = () => {
+      const card = document.getElementById('juncCard'), lab = document.getElementById('juncLabel');
+      const cb = card.getBoundingClientRect(), lb = lab.getBoundingClientRect();
+      const names = [...lab.querySelectorAll('.sg-row b')];
+      return { text: names.map((b) => b.textContent).join('|'), cut: names.some((b) => b.scrollWidth > b.clientWidth + 1) || lab.scrollWidth > lab.clientWidth + 1 || /…|\.\./.test(lab.textContent),
+        inside: lb.left >= cb.left - 1 && lb.right <= cb.right + 1, fs: Math.round(parseFloat(getComputedStyle(names[0] || lab).fontSize) * 10) / 10 };
+    };
+    const drive = async (R, upto) => { for (let s = 20; s <= upto; s += 20) { const a = pointAt(R, s); feed(a.p, 15, a.h); t.renderNav(); } await sleep(30); t.renderNav(); };
+    try {
+      set(true);
+      // (a) 경충대로 북행 600m → 성남IC: 오른쪽으로 빠져 시계 방향 270° 고리 → 서쪽 고속도로
+      const raw = [];
+      for (let k = 0; k <= 12; k++) raw.push(dest(NAV_ORIGIN, 0, 50 * k));
+      const iG = raw.length - 1;
+      let q = dest(raw[iG], 0, 40), h = 0;
+      raw.push(q);
+      while (h < 270) { h += 10; q = dest(q, h, 7); raw.push(q); }
+      for (let k = 1; k <= 6; k++) raw.push(dest(q, 270, 50 * k));
+      const R1 = build(raw, [{ i: iG, t: 57, s: "성남IC에서 '일산, 판교' 방면으로 왼쪽 진입" }, { i: raw.length - 1, t: 88, s: '목적지' }],
+        [{ i: 0, n: iG + 1, name: '경충대로', speed: 40, cong: 1 }, { i: iG, n: raw.length - iG, name: '수도권제1순환고속도로', speed: 70, cong: 1 }], '고리 시험');
+      softReset();
+      await planAndStart(R1);
+      await drive(R1, 300);
+      const el = document.getElementById('juncCard'), sv = el.querySelector('#juncSvg svg');
+      r.a = { shown: visible('#juncCard'), plan: !!(sv && sv.classList.contains('plan')), nv: el.classList.contains('nv'), turn: sv ? Number(sv.dataset.turn) : 0,
+        go: !!(sv && sv.querySelector('.plan-go') && sv.querySelector('.plan-go').getAttribute('d').length > 50), place: text('#juncPlace'), sign: signOk() };
+      if (/[?&]hold=1/.test(location.search)) await sleep(9000);   // 눈으로 볼 때만
+      t.endNav();
+      // (b) 고속도로 위 곧은 진입, 아주 긴 방면 이름
+      const raw2 = [];
+      for (let k = 0; k <= 30; k++) raw2.push(dest(NAV_ORIGIN, 0, 100 * k));
+      const long = "'인천국제공항, 영종대교기념관'";   // 방면은 두 이름까지, 5자 넘는 이름만 있을 때 가장 길다 (dirNames)
+      const R2 = build(raw2, [{ i: 12, t: 66, s: '판교IC에서 ' + long + ' 방면으로 오른쪽 고속도로 진입' }, { i: 30, t: 88, s: '목적지' }],
+        [{ i: 0, n: 31, name: '경부고속도로', speed: 80, cong: 1 }], '긴 이름 시험');
+      softReset();
+      await planAndStart(R2);
+      await drive(R2, 600);
+      const sv2 = document.querySelector('#juncCard #juncSvg svg');
+      r.b = { shown: visible('#juncCard'), nv: !!(sv2 && sv2.classList.contains('nv')), sign: signOk() };
+      if (/[?&]hold=1/.test(location.search)) await sleep(9000);   // 눈으로 볼 때만
+      t.endNav();
+      // (c) 유도선 갈림 그림 표지 — 좁은 칸
+      const host = document.getElementById('colorRow').cloneNode(false);
+      host.id = 'fitTest'; host.className = 'colorrow split'; host.hidden = false;
+      host.style.cssText = 'position:fixed;left:10px;top:10px;width:260px;z-index:5000;display:block';
+      host.innerHTML = '<div class="cl-sw" style="width:250px;height:70px">' +
+        '<span class="sp-sign sp-ours sp-far"><i class="sg-shield">' + '</i><span class="sp-names"><b>인천국제공항</b><b>영종대교기념관</b></span></span>' +
+        '<span class="sp-sign sp-other sp-mid"><b>서울외곽순환고속도로</b></span></div>';
+      document.body.appendChild(host);
+      const sw = host.querySelector('.cl-sw'), ours = sw.querySelector('.sp-ours'), oth = sw.querySelector('.sp-other');
+      const fitted = t.fitSigns(sw, ours, [oth]);
+      const sb = sw.getBoundingClientRect(), ob = ours.getBoundingClientRect();
+      r.c = { fitted, inside: ob.left >= sb.left - 1 && ob.right <= sb.right + 1, cut: [...ours.querySelectorAll('b')].some((b) => b.scrollWidth > b.clientWidth + 1) || ours.scrollWidth > ours.clientWidth + 1,
+        names: [...ours.querySelectorAll('b')].map((b) => b.textContent).join('|'), otherOff: oth.classList.contains('sg-off') || !oth.getClientRects().length || (() => { const q = oth.getBoundingClientRect(); return ob.right + 4 <= q.left || q.right + 4 <= ob.left; })() };
+      host.remove();
+    } finally {
+      set(prev);
+      softReset();
+    }
+    const a = r.a || {}, b = r.b || {}, c = r.c || {};
+    const ok = a.shown && a.plan && !a.nv && a.turn >= 200 && a.go && a.place === '성남IC' && a.sign.text === '일산|판교' && !a.sign.cut && a.sign.inside &&
+      b.shown && b.nv && b.sign.text === '인천국제공항|영종대교기념관' && !b.sign.cut && b.sign.inside && b.sign.fs >= 10.5 &&
+      c.fitted && c.inside && !c.cut && c.names === '인천국제공항|영종대교기념관' && c.otherOff;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

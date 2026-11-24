@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-226'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-227'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -4696,7 +4696,27 @@
       // 교통 갱신은 지금 안내 중인 옵션으로, 경로 이탈 재탐색은 같은 목적지를 '추천' 경로로 다시 묻는다
       // 달리는 중 다시 찾을 때(경로 이탈·재추천)는 답을 기다리는 동안 갈 거리만큼 앞에서 출발하는 경로를 묻는다
       const ahead = reroute === true || reroute === 'manual';
-      const startOf = () => { const s0 = ahead ? rerouteStart() : state.fix; return s0.lng.toFixed(6) + ',' + s0.lat.toFixed(6); };
+      // v227 (2026-11-24 21:22 운전자, 성남대로 북행 신호 대기 중: 새 경로가 차 자리에서 바로 남쪽(뒤)으로 돌아 정충대로로 갔다 — 네이버는 175m 앞
+      //   중원구청 사거리 유턴. '여기서 바로 유턴안돼', '내가 가는 진행방향 기준으로 길을 알려줘야지'). 네이버 길찾기에는 진행 방향 값이 없다.
+      //   그래서 진행 방향을 아는 동안(달리는 중, 멈춘 지 3분 안)은 모든 길찾기(처음·재탐색·교통 갱신·비교·경유)를 차보다 앞에서 출발시킨다:
+      //   길안내 경로 위면 그 길을 따라, 아니면 진행 방향으로 곧게 25m(재탐색은 답을 기다리는 동안 갈 거리가 더 길면 그만큼).
+      //   받은 경로가 출발하자마자 뒤로 돌면(startsReversed) 더 앞(70m → 140m)에서 다시 묻는다 — 아래 묻기 고리
+      const hd = routeHeading();
+      let step = 0, sPt = state.fix;
+      const startPt = () => {
+        const base = ahead ? rerouteStart() : state.fix;
+        if (hd === null) return base;
+        const want = ROUTE_AHEAD[step];
+        if (step === 0 && haversine(state.fix, base) >= want) return base;
+        // 길안내 경로 위면 그 길을 따라 앞 — 단 그 길과 그 점이 진행 방향 쪽일 때만 (유턴해 돌아오는 경로는 멈춘 차를 돌아오는 쪽 차로에
+        // 붙일 수 있다: S150 에서 '앞 25m'가 차 뒤 29m 였다)
+        if (nav.active && nav.onRoute && nav.pts && nav.cum) {
+          const p = routePointAt(nav.along + want), rb = routeBearingAt(nav.along, nav.along + want);
+          if (p && rb != null && angleDiff(rb, hd) <= 60 && angleDiff(bearing(state.fix, p), hd) <= 60) return p;
+        }
+        return aheadPt(state.fix, hd, want);
+      };
+      const startOf = () => { sPt = startPt(); return sPt.lng.toFixed(6) + ',' + sPt.lat.toFixed(6); };
       const q = {
         start: startOf(),
         goal: goalOf(dest).lng.toFixed(6) + ',' + goalOf(dest).lat.toFixed(6),
@@ -4725,25 +4745,45 @@
         routeReqs.push(routeNow());
       }
       let res;
-      try { res = await api('/route', q, null, waitMs); } catch (e1) {
-        if (e1.name !== 'AbortError' && !/abort/i.test(e1.message)) throw e1;
-        if (gen !== nav.gen) return;
-        if (ahead) q.start = startOf();
-        if (q.option || reroute === 'traffic') { if (routeBudget() <= 0) throw e1; routeReqs.push(routeNow()); }
-        res = await api('/route', q, null, waitMs);
-      }
-      nav.retry429 = false;   // v175: 서버가 받았으면 다음 429 때 다시 한 번 기다려 본다
-      const took = Date.now() - t0; // 다음 재탐색 출발점을 얼마나 앞에 둘지 정하는 데 쓴다
-      nav.routeMs = nav.routeMs ? Math.round(nav.routeMs * 0.6 + took * 0.4) : took;
-      if (gen !== nav.gen || (reroute && !nav.active)) return;
-      // 응답에 경로가 비어 있으면 지금 안내를 그대로 두고 실패로 처리한다
       const okRoute = (x) => x && Array.isArray(x.path) && x.path.length >= 2;
-      if (!(okRoute(res) || (res && Array.isArray(res.alternatives) && res.alternatives.some(okRoute)))) {
-        const err = new Error('empty route');
-        err.detail = { message: '경로 응답이 비어 있습니다', keys: Object.keys(res || {}).join(',') };
-        throw err;
+      for (;;) {
+        try { res = await api('/route', q, null, waitMs); } catch (e1) {
+          if (e1.name !== 'AbortError' && !/abort/i.test(e1.message)) throw e1;
+          if (gen !== nav.gen) return;
+          if (ahead) q.start = startOf();
+          if (q.option || reroute === 'traffic') { if (routeBudget() <= 0) throw e1; routeReqs.push(routeNow()); }
+          res = await api('/route', q, null, waitMs);
+        }
+        nav.retry429 = false;   // v175: 서버가 받았으면 다음 429 때 다시 한 번 기다려 본다
+        const took = Date.now() - t0; // 다음 재탐색 출발점을 얼마나 앞에 둘지 정하는 데 쓴다
+        nav.routeMs = nav.routeMs ? Math.round(nav.routeMs * 0.6 + took * 0.4) : took;
+        if (gen !== nav.gen || (reroute && !nav.active)) return;
+        // 응답에 경로가 비어 있으면 지금 안내를 그대로 두고 실패로 처리한다
+        if (!(okRoute(res) || (res && Array.isArray(res.alternatives) && res.alternatives.some(okRoute)))) {
+          const err = new Error('empty route');
+          err.detail = { message: '경로 응답이 비어 있습니다', keys: Object.keys(res || {}).join(',') };
+          throw err;
+        }
+        if (res.alternatives) res.alternatives = res.alternatives.filter(okRoute);
+        // v227: 출발하자마자 뒤로 도는(진행 방향을 거스르는) 경로는 쓰지 않는다
+        if (hd === null) break;
+        const list = res.alternatives && res.alternatives.length ? res.alternatives : [res];
+        const fwd = list.filter((x) => !startsReversed(x.path, sPt, hd));
+        if (fwd.length === list.length) break;
+        if (reroute === 'traffic') {   // 교통 갱신: 지금 옵션 경로가 뒤로 돌면 버리고 지금 경로로 계속, 아니면 뒤로 도는 다른 경로만 뺀다
+          const o = nav.option || prefs.routeOpt, mine = list.find((a) => (a.option || '') === o) || list[0];
+          report('info', { msg: 'route reversed at start', step, reroute: 'traffic', kmh: Math.round(state.speedKmh) });
+          if (fwd.indexOf(mine) < 0) return;
+          if (res.alternatives) res.alternatives = fwd;
+          break;
+        }
+        if (fwd.length && res.alternatives) { res.alternatives = fwd; break; }   // 여럿 중 뒤로 도는 것만 뺀다
+        report('info', { msg: 'route reversed at start', step, reroute: String(reroute || ''), kmh: Math.round(state.speedKmh) });
+        if (step >= ROUTE_AHEAD.length - 1) break;   // 140m 앞에서도 뒤로 돌면(막다른 길 등) 그 답을 쓴다
+        if (q.option) { if (routeBudget() <= 0) break; routeReqs.push(routeNow()); }
+        step++;
+        q.start = startOf();
       }
-      if (res.alternatives) res.alternatives = res.alternatives.filter(okRoute);
       if (reroute === 'compare') { // 길안내는 그대로 두고 경로 카드에 '지금 경로'와 다른 경로들을 띄운다
         nav.compareBase = { route: nav.route, option: nav.option };
         nav.alts = dedupAlts(res.alternatives || [res]);
@@ -4946,6 +4986,24 @@
     const segB = bearing(a, b);
     if (angleDiff(segB, bearing(f, a)) > 30) return false;
     return !(state.heading !== null && state.speedKmh > 5 && angleDiff(segB, state.heading) > 45);
+  }
+  // v227: 길찾기 출발점을 차보다 얼마나 앞에 둘지 (처음, 경로가 뒤로 돌면 두 번째, 세 번째)
+  const ROUTE_AHEAD = [25, 70, 140];
+  // 길찾기에 쓸 진행 방향: 달리는 중이거나 멈춘 지 3분 안 (오래 세워 둔 차는 앞뒤로 움직여 나갈 수 있어 쓰지 않는다)
+  function routeHeading() {
+    if (state.heading === null || !state.fix) return null;
+    if (state.speedKmh >= 3) return state.heading;
+    return (state.fix.t || Date.now()) - (state.headAt || 0) <= 180000 ? state.heading : null;
+  }
+  // 경로(path: [경도, 위도]...)가 출발하자마자 진행 방향 h 를 거슬러 뒤로 가는지: 첫 12m 의 방향이 h 와 110° 넘게 다르면.
+  // 경로가 우리가 준 출발점 s 에서 60m 넘게 떨어져 시작하면(다른 곳에서 시작한 답) 따지지 않는다
+  function startsReversed(path, s, h) {
+    if (!Array.isArray(path) || path.length < 2 || h == null) return false;
+    const pt = (x) => ({ lat: x[1], lng: x[0] }), p0 = pt(path[0]);
+    if (s && haversine(p0, s) > 60) return false;
+    let k = 1;
+    while (k < path.length - 1 && haversine(p0, pt(path[k])) < 12) k++;
+    return angleDiff(bearing(p0, pt(path[k])), h) > 110;
   }
   function rerouteStart() {
     const f = state.fix;
@@ -5842,7 +5900,7 @@
   const SIGN_ARROW_S = '<svg viewBox="0 0 24 30" aria-hidden="true"><path d="M12 28V10" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round"/>' +
     '<path d="M12 2.5 19 12H5z" fill="#fff" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/></svg>';
   function juncSignHtml(names, straight, no) {
-    const one = names.join('').length <= 7;   // 짧으면 한 줄('서울 대전'), 길면 두 줄로 쌓는다 (그림을 덜 가리게)
+    const one = names.join('').length <= 5;   // 짧으면 한 줄('서울 대전'), 길면 한 줄에 하나씩 쌓는다 (v227: 7자 '대전 신갈분기점'이 한 줄에서 잘렸다)
     const rows = names.map((n) => { const no = expwayNo(n); return '<span class="sg-row">' + (no ? '<i class="sg-shield">' + shieldSvg(no) + '</i>' : '') + '<b>' + esc(n) + '</b></span>'; });
     // v197: 방면 글자에 노선 방패가 없으면 그 길(경로가 들어가는 도로)의 노선 번호 방패를 앞에 (네이버 '[50] 원주 인천')
     const lead = no && !names.some((n) => expwayNo(n)) ? '<i class="sg-shield sg-lead">' + shieldSvg(no) + '</i>' : '';
@@ -5977,11 +6035,12 @@
     cancelDrawerClose();
     el._d = nav.dg;   // 서랍 칸 순서 (v158): 안내 지점까지
     // v197: 고속도로·도시고속도로 갈림은 네이버식 장면 (분기 차로 단면·이 갈림의 색깔 유도선이 바뀌면 다시 그린다)
-    const useNv = NV_KINDS.has(j.kind);
+    const useNv = NV_KINDS.has(j.kind) && nvSceneFits(g);
+    const usePlan = NV_KINDS.has(j.kind) && !useNv;   // v227: 일반도로에서 들어가거나 크게 휘는 갈림은 위에서 본 경로 그림
     const fl = useNv ? forkLane() : null;
     const cla = useNv ? colorLineAhead() : null;
     const clHere = !!cla && clSameTurn(cla);   // renderColorLine 의 '같은 갈림'과 같은 기준
-    const key = g.i + ':' + g.t + ':' + g.s + (useNv ? '|' + (fl ? fl.k + ':' + fl.ok.join(',') : '') + '|' + (clHere ? cla.k + cla.c : '') : '');
+    const key = g.i + ':' + g.t + ':' + g.s + (usePlan ? '|plan' : '') + (useNv ? '|' + (fl ? fl.k + ':' + fl.ok.join(',') : '') + '|' + (clHere ? cla.k + cla.c : '') : '');
     if (juncState.key !== key) {
       juncState.key = key;
       juncState.fork = null; juncState.cl = null;
@@ -6015,6 +6074,11 @@
         sg2.innerHTML = other;
         sg2.className = 'jc-label jc-other ' + (goSide === 'l' ? 'sr' : 'sl') + (og && og.s < 0 ? ' al' : '');
         sg2.setAttribute('aria-label', other ? (curRoad + (og && og.s === 0 ? ' 본선' : ' 방면')) : '');
+      } else if (usePlan) {
+        $('#juncSvg').innerHTML = planScene(g);
+        $('#juncSvg').classList.remove('nv-has-bg');
+        sg2.innerHTML = ''; sg2.className = 'jc-label jc-other';
+        goStraight = false;
       } else {
         $('#juncSvg').innerHTML = jd && jn ? jimg(jd, 'jv-day') + jimg(jn, 'jv-night') : juncSvg(j.kind === 'entry' ? Object.assign({}, j, { kind: 'ramp' }) : j);
         $('#juncSvg').classList.remove('nv-has-bg');
@@ -6027,6 +6091,8 @@
       $('#juncLabel').setAttribute('aria-label', j.label ? j.label + ' 방면' : '');
       $('#juncPlace').textContent = j.place;
       el.classList.toggle('nv', useNv);
+      el.classList.toggle('plan', usePlan);
+      el.dataset.fit = '';
       el.classList.toggle('left', j.left);
       el.classList.toggle('main', j.kind === 'main');
       el.classList.toggle('hwy', j.hwy);
@@ -6034,6 +6100,104 @@
     // 남은 거리는 위 길안내 패널에 크게 나오므로 그림에는 지점 이름만 (2026-11-14: 같은 거리를 또 보여 줄 필요 없음)
     el.hidden = false;
     syncDrawer();
+    if (el.dataset.fit !== juncState.key && fitSigns(el, $('#juncLabel'), [$('#juncLabel2')])) el.dataset.fit = juncState.key;   // v227 표지 글자 다 보이게
+  }
+  // ---------- v227 표지판 글자는 자르지 않는다 (2026-11-24 21:30 운전자 판교IC 그림 표지 '대.. 신갈분...' —
+  //   '알아 보시게 나올 수 없다 내용이 길더라도 그거를 보여 주는 방법은 없으니까') ----------
+  // 그림 안에 다 들어갈 때까지 차례로: ① 다른 갈래 표지(꾸밈)를 빼고 ② 우리 표지를 그림 폭까지 넓히고 ③ 글자를 줄이고(최소 약 11px)
+  // ④ 노선 방패를 빼고 ⑤ 이름 안에서 줄을 바꾼다. 이름은 끝까지 다 보인다. 그림이 보이지 않으면(폭 0) 잴 수 없어 false (다음에 다시)
+  const SIGN_K = [0.92, 0.84, 0.76];
+  function fitSigns(box, main, others) {
+    const bw = box.getBoundingClientRect();
+    if (!bw.width) return false;
+    box.classList.remove('sg-wide');
+    others.forEach((o) => o && o.classList.remove('sg-off'));
+    if (!main || !main.innerHTML) return true;
+    main.classList.remove('sg-noshield', 'sg-wrap');
+    main.style.removeProperty('--sgk');
+    const shown = (o) => !!o && !!o.innerHTML && !o.classList.contains('sg-off') && o.getClientRects().length > 0;
+    const fits = () => {
+      if (main.scrollWidth > main.clientWidth + 1) return false;
+      if ([...main.querySelectorAll('b')].some((b) => b.scrollWidth > b.clientWidth + 1)) return false;
+      const r = main.getBoundingClientRect();
+      if (r.left < bw.left - 1 || r.right > bw.right + 1) return false;
+      return !others.some((o) => {
+        if (!shown(o)) return false;
+        const q = o.getBoundingClientRect();
+        return !(r.right + 4 <= q.left || q.right + 4 <= r.left || r.bottom <= q.top || q.bottom <= r.top);
+      });
+    };
+    if (fits()) return true;
+    others.forEach((o) => o && o.classList.add('sg-off'));
+    if (fits()) return true;
+    box.classList.add('sg-wide');
+    if (fits()) return true;
+    for (const k of SIGN_K) { main.style.setProperty('--sgk', k); if (fits()) return true; }
+    main.classList.add('sg-noshield');
+    if (fits()) return true;
+    main.classList.add('sg-wrap');
+    return true;
+  }
+  // ---------- v227 위에서 내려다본 갈림 그림 (2026-11-24 21:25 운전자 경충대로 북행 성남IC '왼쪽 진입' —
+  //   '여기 도로가 이렇게 생겼는데 그림은 너무 이상하게 표기 해주는 거 같아': 2차로 일반도로가 고가 밑을 지나 고리 연결로로 들어가는 곳에
+  //   하늘·4차로 고속도로·왼쪽으로 빠지는 파란 연결로 장면이 떴다) ----------
+  // 원근 고속도로 장면(nvScene)은 고속도로·도시고속도로 위에서 부드럽게 갈라질 때만 쓴다(nvSceneFits). 일반도로에서 들어가거나
+  // 길이 크게 휘면(고리 연결로 등) 경로 모양 그대로 위에서 내려다본 그림: 들어오는 길이 아래에서 위로, 우리 경로(파란 줄 + 화살촉)는
+  // 실제 경로점대로(고리면 고리), 지금 길은 안내 지점에서 곧게 이어지는 회색 길. 차로 수는 모르니 그리지 않는다(지어내지 않는다)
+  const PLAN = { W: 640, H: 240, PAD: 26, BACK: 90, AHEAD: 230 };
+  function routeTurnSum(a, b) {   // 경로 a..b(m) 에서 방향이 바뀐 양의 합(°)
+    let sum = 0, prev = null;
+    for (let s = Math.max(0, a); s + 15 <= Math.min(nav.total, b); s += 15) {
+      const br = routeBearingAt(s, s + 15);
+      if (br == null) continue;
+      if (prev != null) sum += angleDiff(prev, br);
+      prev = br;
+    }
+    return sum;
+  }
+  function nvSceneFits(g) {
+    if (!nav.cum || !nav.pts) return true;
+    const last = nav.cum.length - 1, at = nav.cum[Math.min(g.i, last)];
+    const curRoad = routeRoadAt(Math.max(g.i - 2, 0));
+    const fast = onHighwayAt(Math.max(0, at - 30)) || isFastRoad(curRoad) || expwayNo(curRoad) > 0;
+    return fast && routeTurnSum(at - 15, at + 250) <= 100;
+  }
+  function planScene(g) {
+    const last = nav.cum.length - 1, at = nav.cum[Math.min(g.i, last)];
+    const a0 = Math.max(0, at - PLAN.BACK);
+    // 고리처럼 아직 휘는 중이면 휨이 끝날 때까지(최대 420m) 늘이고, 빠져나가는 방향이 보이게 곧은 끝 60m 를 더 그린다
+    let a1 = at + PLAN.AHEAD;
+    while (a1 < at + 420 && a1 < nav.total && routeTurnSum(a1 - 60, a1) > 25) a1 += 30;
+    a1 = Math.min(nav.total, a1 + 60);
+    const O = routePointAt(at);
+    const inB = routeBearingAt(Math.max(0, at - 60), at) ?? routeBearingAt(a0, Math.min(nav.total, at + 5)) ?? 0;
+    const kx = Math.cos(toRad(O.lat)) * 111320, ky = 110540, c = Math.cos(toRad(inB)), sn = Math.sin(toRad(inB));
+    // 지도(동·북 m) → 그림(오른쪽·아래): 들어오는 방향이 위로
+    const loc = (p) => { const x = (p.lng - O.lng) * kx, y = (p.lat - O.lat) * ky; return [x * c - y * sn, -(x * sn + y * c)]; };
+    const R = [];
+    for (let s = a0; s < a1; s += 5) R.push(loc(routePointAt(s)));
+    R.push(loc(routePointAt(a1)));
+    const C = [[0, 0], [0, -150]];   // 지금 길이 곧게 이어지는 쪽
+    const all = R.concat(C);
+    const xs = all.map((q) => q[0]), ys = all.map((q) => q[1]);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const k = Math.min((PLAN.W - 2 * PLAN.PAD) / Math.max(1, x1 - x0), (PLAN.H - 2 * PLAN.PAD) / Math.max(1, y1 - y0), 2.2);
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    const S = (q) => [PLAN.W / 2 + (q[0] - cx) * k, PLAN.H / 2 + (q[1] - cy) * k];
+    const d = (L) => 'M' + L.map((q) => S(q).map((v) => v.toFixed(1)).join(' ')).join('L');
+    // 화살촉: 경로 끝 방향
+    const e = S(R[R.length - 1]), e0 = S(R[Math.max(0, R.length - 4)]);
+    const ang = Math.atan2(e[1] - e0[1], e[0] - e0[0]), hl = 22, hw = 13;
+    const tip = [e[0] + Math.cos(ang) * 8, e[1] + Math.sin(ang) * 8];
+    const head = [tip, [tip[0] - Math.cos(ang) * hl - Math.sin(ang) * hw, tip[1] - Math.sin(ang) * hl + Math.cos(ang) * hw],
+      [tip[0] - Math.cos(ang) * hl + Math.sin(ang) * hw, tip[1] - Math.sin(ang) * hl - Math.cos(ang) * hw]];
+    const turn = Math.round(routeTurnSum(at - 15, at + 250));
+    return '<svg viewBox="0 0 ' + PLAN.W + ' ' + PLAN.H + '" class="plan" data-turn="' + turn + '" aria-hidden="true">' +
+      '<rect class="plan-bg" width="' + PLAN.W + '" height="' + PLAN.H + '"/>' +
+      '<path class="plan-edge" d="' + d(C) + '"/><path class="plan-edge" d="' + d(R) + '"/>' +
+      '<path class="plan-road" d="' + d(C) + '"/><path class="plan-road" d="' + d(R) + '"/>' +
+      '<path class="plan-go" d="' + d(R) + '"/>' +
+      '<path class="plan-ar" d="M' + head.map((q) => q.map((v) => v.toFixed(1)).join(' ')).join('L') + 'Z"/></svg>';
   }
   const tollState = { g: null, numsKey: '', nums: [], code: '', items: 0 };
   // 하이패스 차로 번호 (2026-11-14 요청: '몇 번으로 가야 하이패스'). 한국도로공사 '영업소별 하이패스차로 운영현황'(data.go.kr 15043760,
@@ -6580,8 +6744,10 @@
   }
   function splitSign(names, no, cls) {
     if (!names.length && !no) return '';
+    // v227: 이름이 길면 한 줄에 하나씩 쌓는다 (자르지 않는다 — fitSigns)
+    const stack = names.length > 1 && names.join('').length > 5;
     return '<span class="sp-sign ' + cls + '">' + (no ? '<i class="sg-shield">' + shieldSvg(no) + '</i>' : '') +
-      (names.length ? '<b>' + esc(names.join(' · ')) + '</b>' : '') + '</span>';
+      (names.length ? (stack ? '<span class="sp-names">' + names.map((n) => '<b>' + esc(n) + '</b>').join('') + '</span>' : '<b>' + esc(names.join(' · ')) + '</b>') : '') + '</span>';
   }
   // 그림에 넣을 것: 갈래 모양·방향·표지 (같은 갈림이면 안내에서, 아니면 색 선 자료에서)
   function splitInfo(a, same) {
@@ -6627,6 +6793,10 @@
       el.querySelector('.cl-sw').innerHTML = splitPic(sp.kind) +
         splitSign(sp.ours, sp.goNo, 'sp-ours ' + oursPos) + splitSign(sp.other, sp.otherNo, 'sp-other ' + otherPos);
       $('#colorText').textContent = '';
+    }
+    if (!el.hidden && el.dataset.fit !== key) {   // v227 표지 글자 다 보이게 (그림이 보일 때 잰다)
+      const sw = el.querySelector('.cl-sw');
+      if (fitSigns(sw, sw.querySelector('.sp-ours'), [...sw.querySelectorAll('.sp-other')])) el.dataset.fit = key;
     }
     el.dataset.name = a.name;
     // 같은 갈림이면 거리는 바로 밑 안내 줄에 있다 (숫자 둘 — v201) → 그림에는 안 쓴다
@@ -7838,7 +8008,7 @@
       }
     }
     if (state.speedKmh > (state.maxKmh || 0) && state.speedKmh < 250) state.maxKmh = state.speedKmh; // 튀는 값 제외
-    if (h !== null && state.speedKmh >= 3) state.heading = h; // 정지 중 GPS 방향은 믿지 않음
+    if (h !== null && state.speedKmh >= 3) { state.heading = h; state.headAt = f.t || Date.now(); } // 정지 중 GPS 방향은 믿지 않음 (v227: 마지막으로 달린 때)
     state.fix = f;
     logFix(f, devH);
     updateCurvature();
@@ -9988,7 +10158,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams, routeHeading, startsReversed, ROUTE_AHEAD, fitSigns, nvSceneFits, planScene, routeTurnSum, renderJunction, juncState,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,
