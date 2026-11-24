@@ -2903,6 +2903,7 @@
     { id: 'S140', name: "S140 arrival like Naver (v209, driver '네이버 지도 보면은 도착지점 거의 도착할 때 화살표로 알려 주잖아', '도착 건물에만 나오면 될 거 같아 화살표로 들어가는 것까지 표기 해 주면 좋을 것 같다'): the last turn before the goal stays its own row (row 2 shows ↰ with its distance, then the goal pin); from where the route ends a thick white arrow with a black outline goes into the building instead of the dotted line, and the goal distance counts to the building; with no turn left, the row says which side the building is on ('목적지 · 왼쪽/오른쪽' with an arrow-and-pin icon); a walk from a parking entrance keeps the dots", fn: s140 },
     { id: 'S141', name: "S141 arrow size has a limit (v211, driver '저 확대한다고해서 저화살표가 계속 커지는게 아니고 어느정도 한계가 있다고봐야 해 크기가 너무 커져도 이상해져버리니까'): route line and arrows stop growing at zoom 18 (16px); on the GL map the arrow head is sized for the GL scale (it was drawn twice as big as meant); an arrow that was removed stays hidden even if the map puts it back; a last turn just before the route end joins the building arrow into one arrow (all arrows go away on arrival); a short stretch after the last turn still points the head the way you turn", fn: s141 },
     { id: 'S142', name: "S142 wider trip card and a gap above the speed (v212, driver '너무 붙어있는 느낌이라 조금 와이드하게 UI 개선해주고 속도도 조금 갭을 줘'): the bottom-left glass card is wider with even cells and a thin line under the compass row; on a wide screen the big speed sits the card's height plus 18 px above it (it used to touch the card), and only the speed hides when the drawer or report button reaches it", fn: s142 },
+    { id: 'S143', name: "S143 old driver reports checked on Naver both ways (v213): 용구대로 60 (row 21232) moves to Naver's northbound point and faces north, without the old '보정역→구성역' place text; 남북대로 80 (row 19618) is a rear camera like Naver; a missing 신호·과속 50 on 비룡로 (남양주 화도) is added as a checked spot; nothing new at 신갈JC, where the 이동식 110 spot already is", fn: s143 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -3098,8 +3099,8 @@
   async function s68() {
     const t = T();
     await resetApp();
-    const CAM = { lat: 37.3066, lng: 127.10576 };   // 용구대로 보정 60km 신호·과속 (data/cameras.json)
-    const A0 = dest(CAM, 0, 600), r = {};   // v123: 이 카메라는 원본 '(보정역→구성역)' 남행이라 북쪽에서 남쪽으로 달린다
+    const CAM = { lat: 37.44165, lng: 126.8467 };   // 광명로 60 신호·과속 (data/cameras.json 23339). v213: 예전 용구대로 보정 21232 는 네이버대로 북행으로 바뀌어 이 카메라로
+    const A0 = dest(CAM, 0, 600), r = {};   // 이 카메라는 원본 '광명스피돔→광명ic입구' 남행(196°)이라 북쪽에서 남쪽으로 달린다
     let hit = null;
     for (let s = 0; s <= 720; s += 17) {
       const p = dest(A0, 180, s);
@@ -3136,12 +3137,12 @@
   async function s69() {
     const t = T(), r = {};
     await resetApp();
-    const CAM = { lat: 37.3066, lng: 127.10576 };   // 용구대로 보정 신호·과속 60
+    const CAM = { lat: 37.44165, lng: 126.8467 };   // 광명로 신호·과속 60 (23339, v213 전에는 용구대로 보정 21232)
     const mark = t.alertLog[t.alertLog.length - 1];
     let shown = false, clearedAt = null;
     for (let s = 0; s <= 700; s += 5) {
       const past = s - 600;
-      feed(dest(CAM, 0, 600 - s), 75 / 3.6, 180, { dt: 250 });   // v123: 이 카메라는 원본 '(보정역→구성역)' 남행이라 북쪽에서 남쪽으로 달린다
+      feed(dest(CAM, 0, 600 - s), 75 / 3.6, 180, { dt: 250 });   // 이 카메라는 원본 '광명스피돔→광명ic입구' 남행(196°)이라 북쪽에서 남쪽으로 달린다
       const tg = t.camState.target, mine = !!tg && sameCam(tg.c, CAM);
       if (mine) shown = true;
       if (past > 0 && shown && !mine && clearedAt === null) clearedAt = past;
@@ -3377,8 +3378,8 @@
     const t = T(), r = {};
     await resetApp();
     const mark = t.alertLog[t.alertLog.length - 1];
-    const CAM = { lat: 37.3066, lng: 127.10576 };   // 용구대로 보정 신호·과속 60
-    for (let a = 600; a >= -80; a -= 20) feed(dest(CAM, 0, a), 80 / 3.6, 180);   // v123: 이 카메라는 원본 '(보정역→구성역)' 남행이라 북쪽에서 남쪽으로 달린다
+    const CAM = { lat: 37.44165, lng: 126.8467 };   // 광명로 신호·과속 60 (23339, v213 전에는 용구대로 보정 21232)
+    for (let a = 600; a >= -80; a -= 20) feed(dest(CAM, 0, a), 80 / 3.6, 180);   // 이 카메라는 원본 '광명스피돔→광명ic입구' 남행(196°)이라 북쪽에서 남쪽으로 달린다
     r.overCard = null;
     await resetApp();
     for (let a = 800; a >= -80; a -= 20) {
@@ -3400,7 +3401,7 @@
   //      새 위치를 기다리지 않고 지나갈 시각에 꺼지며, (c) 길안내 중에도 경로 거리로 같다 (2026-11-15 요청 '오차 25 미터를 줄여')
   async function s71() {
     const t = T(), r = {};
-    const CAM = { lat: 37.3066, lng: 127.10576 };   // 용구대로 보정 신호·과속 60
+    const CAM = { lat: 37.44165, lng: 126.8467 };   // 광명로 신호·과속 60 (23339, v213 전에는 용구대로 보정 21232)
     const V = 60 / 3.6, STEP = V;                    // 1초에 16.7m
     const mine = () => !!t.camState.target && sameCam(t.camState.target.c, CAM);
     const F = camFrame(CAM, 180);   // v123: 카메라 차로 위 점·찍는 방향 기준으로 지난 거리를 잰다
@@ -3410,7 +3411,7 @@
       for (let k = 0; ; k++) {
         const a = a0 - STEP * k;
         if (-a > upto) break;
-        feed(at ? at(a) : F.pt(a), V, F.h);   // v123: 이 카메라는 원본 '(보정역→구성역)' 남행이라 북쪽에서 남쪽으로 달린다
+        feed(at ? at(a) : F.pt(a), V, F.h);   // 이 카메라는 원본 '광명스피돔→광명ic입구' 남행(196°)이라 북쪽에서 남쪽으로 달린다
         if (mine()) shown = true;
         if (a < 0 && shown && !mine() && cleared === null) cleared = Math.round(-a * 10) / 10;
       }
@@ -6155,7 +6156,7 @@
   //       자료에 없는 감속 후보(격자·방위·감속 폭), 운영자 차는 궤적, 설정에서 끄면 기록 없음
   async function s126() {
     const t = T(), r = {}, ps = t.passStats;
-    const CAM = { lat: 37.3066, lng: 127.10576 };   // 용구대로 보정 60 신호·과속 남행 (S68)
+    const CAM = { lat: 37.44165, lng: 126.8467 };   // 광명로 60 신호·과속 남행 (S68, 23339)
     const keep = { post: ps.post, pref: t.prefs.passStats, tok: t.store.get('adminToken'), q: t.store.get('passQ'), road: t.road.name };
     const bodies = [];
     const pick = (k) => ps.q.filter((x) => x.k === k).map((x) => ({ a: x.a, g: x.g, hid: x.hid, kmh: x.kmh, lim: x.lim }));
@@ -6864,7 +6865,7 @@
   //   (a) 표시 2(네이버 확인) 신호·과속 50: '신호·과속단속', 파란 카드 아님, 신호등 표지, 짧은 이름 '신호과속', 노란 띠, 음성 '신호 단속 카메라'
   //   (b) 표시 2 이동식 110: '이동식단속', 파란 카드(진짜 이동식)  (c) 표시 6(확인 + 어린이보호구역) 30: '어린이보호구역 신호·과속단속'
   //   (d) 표시 없는 운전자 지점: 예전처럼 '운전자 신고 신호·과속단속', 파란 카드  (e) /check 로 찾은 공유 지점(ck): 확인됨
-  //   (f) 실제 자료: 20줄 모두 확인됨(v210), 그중 3줄이 보호구역
+  //   (f) 실제 자료: 21줄 모두 확인됨(v210 20줄, v213 비룡로 1줄), 그중 3줄이 보호구역
   //   (g) 경로선 굵기: 배율 15·17·18 에서 9·14·16px (v211: 18 에서 16px 이 끝), 검정 테두리 = 굵기 + 4, 화살표 테두리는 검정
   async function s139() {
     const t = T(), r = {};
@@ -6901,7 +6902,7 @@
       c.label === '어린이보호구역 신호·과속단속' && c.zone === 2 && !c.blue &&
       d.label === '운전자 신고 신호·과속단속' && d.blue && d.short === '신고 지점' && d.voice === '신고된 단속 지점' &&
       e.label === '과속단속' && !e.blue &&
-      f.rows === 20 && f.checked === 20 && f.zone === 3 &&   // v210: keys 네이버 확인 — 구갈·삼가 남동 확인(네이버 자리로), 판교JC 하행 합류는 없음(뺌)
+      f.rows === 21 && f.checked === 21 && f.zone === 3 &&   // v210: keys 네이버 확인 — 구갈·삼가 남동 확인(네이버 자리로), 판교JC 하행 합류는 없음(뺌). v213: 비룡로 신호·과속 50 더함
       g.w15 === 9 && g.w17 === 14 && g.w18 === 16 && g.w165 === 12.5 && g.casing17 === 18 && g.dots === 3.4 && g.casingColor === '#141414' &&
       g.arrow17 && g.arrow17.inner === 14 && g.arrow17.shaft === 18;
     return { pass: !!ok, detail: JSON.stringify(r) };
@@ -7113,12 +7114,38 @@
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
+  // S143: 예전 '놓침·틀림' 신고 25건을 keys 가 네이버 길안내로 양방향 확인 (v213). 실제 자료로 본다
+  //   (a) 21232 용구대로 60 신호·과속: 네이버는 북행만(37.305554,127.105888, 116m 남쪽). 그 자리로, 찍는 방향 2°, 차로 위 점 옮김 없음,
+  //       경찰 자료의 '보정역→구성역'(남행) 글은 뺀다 — 남아 있으면 글이 기하보다 먼저라 남행에 뜨고 북행에서 빠진다
+  //   (b) 19618 남북대로 80: 네이버 '후면단속'(197°) → 후면 표시, 이름 '후면 과속단속'
+  //   (c) 남양주 화도 비룡로 신호·과속 50 (37.687098,127.311909, 61°): 공공자료에 없던 것, 네이버 확인 지점으로 더함 (보통 카메라처럼)
+  //   (d) 신갈JC 하행 이동식 110: 새로 넣지 않는다 — 이미 있는 확인 지점(37.289158)과 200m 거리라 같은 카메라로 두 번 뜰 수 있다
+  async function s143() {
+    const t = T(), r = {};
+    await waitFor(() => t.cams.loaded, 10000, 100);
+    const rows = t.cams.rows;
+    const a = rows[21232], b = rows[19618];
+    r.a = { lat: a[0], lng: a[1], eb: a.eb, sl: a.sl, sg: a.sg, arrow: t.cams.arrows.has(a), lim: a[2] };
+    r.b = { rear: ((b[10] | 0) & 1) === 1, eb: b.eb, label: t.camLabel(b) };
+    const base = t.cams.userBase || 0;
+    const nv = rows.slice(base).filter((c) => Math.abs(c[0] - 37.687098) < 1e-6 && Math.abs(c[1] - 127.311909) < 1e-6);
+    r.c = nv.length ? { n: nv.length, lim: nv[0][2], kind: nv[0][3], eb: nv[0].eb, nv: !!nv[0].nv, unchecked: t.spotUnchecked(nv[0]), label: t.camLabel(nv[0]) } : { n: 0 };
+    const hv = (x, la, lo) => hav({ lat: x[0], lng: x[1] }, { lat: la, lng: lo });
+    r.d = t.driverSpots.rows.filter((x) => hv(x, 37.290964, 127.103557) < 400 && x[4] === 110).length;
+    const A = r.a, B = r.b, C = r.c;
+    const ok = A.lat === 37.305554 && A.lng === 127.105888 && A.eb === 2 && A.sl === A.lat && A.sg === A.lng && !A.arrow && A.lim === 60 &&
+      B.rear && B.eb === 197 && /후면/.test(B.label) &&
+      C.n === 1 && C.lim === 50 && C.kind === 3 && C.eb === 61 && C.nv && !C.unchecked && !/운전자/.test(C.label) &&
+      r.d === 1;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
   // S127: (v198, 운전자 '어차피 다 테스터이고 익명이라서 누군지는 몰라 그래서 쓸 수 있음', 테스터 쪽지 동의, '출발지 도착지 모두 남는 방향으로 해 줘
   //       원본은 30일 뒤에 자동으로 지우는걸로') 테스터 주행 경로 — 처음 안내는 멈춰 있을 때만(운전 중엔 안 띄우고 기록도 안 함),
   //       출발부터 도착까지 2~5초 간격, 카메라 통과(경고 거리) 표시, 주행마다 새 무작위 번호, 기기·접속 번호 없음, 끄면 지움
   async function s127() {
     const t = T(), r = {}, rr = t.routeRec;
-    const CAM = { lat: 37.3066, lng: 127.10576 };   // 용구대로 보정 60 신호·과속 남행 (S68)
+    const CAM = { lat: 37.44165, lng: 126.8467 };   // 광명로 60 신호·과속 남행 (S68, 23339)
     const keep = { post: rr.post, pref: t.prefs.routeShare, pass: t.prefs.passStats, note: t.store.get('routeNote'), road: t.road.name };
     const bodies = [];
     const parked = async (p, n, dt) => { for (let k = 0; k < n; k++) feed(p, 0, 180, { dt }); await waitFor(() => !rr.busy, 2000, 20); };
@@ -7142,7 +7169,7 @@
       await waitFor(() => bodies.some((b) => b.end === 1), 2000, 20);
       const P = allPts(), b0 = bodies[0] || {}, last = bodies[bodies.length - 1] || {};
       const gaps = P.slice(1).map((q, k) => q[0] - P[k][0]);
-      const cm = bodies.reduce((a, b) => a.concat(b.cams || []), []).find((x) => x.k && x.k.indexOf('37.3066,127.10576|') === 0);
+      const cm = bodies.reduce((a, b) => a.concat(b.cams || []), []).find((x) => x.k && x.k.indexOf('37.44165,126.8467|') === 0);
       r.b = { parts: bodies.length, n: P.length, rid: b0.rid, end: last.end, ps: b0.ps,
         startM: P.length ? Math.round(hav({ lat: P[0][1] / 1e5, lng: P[0][2] / 1e5 }, S0)) : -1,
         endM: P.length ? Math.round(hav({ lat: P[P.length - 1][1] / 1e5, lng: P[P.length - 1][2] / 1e5 }, E0)) : -1,
