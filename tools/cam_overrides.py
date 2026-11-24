@@ -43,17 +43,26 @@ def texts_of(d):
     return {al[k]: [an[al[k + 1]], an[al[k + 2]]] for k in range(0, len(al) - 2, 3)}
 
 
+OFF = 8   # v220: flags 8 — 네이버에 없는 줄 (앱이 찾기·지도·경고에서 뺀다)
+
+
+def _keys_ok(r, w, n):
+    """제한·종류·보호구역이 고치기 전(was) 또는 고친 뒤(now) 값과 같은지 (v220: now 에 limit·kind·zone 이 있을 수 있다)"""
+    def same(lim, kind, zone):
+        return r[2] == lim and r[3] == kind and (zone is None or r[6] == zone)
+    wz = w.get('zone')
+    return same(w['limit'], w['kind'], wz) or same(n.get('limit', w['limit']), n.get('kind', w['kind']), n.get('zone', wz))
+
+
 def find(rows, o, texts=None):
     """v215: 한 기둥 짝의 두 줄은 자리·제한·종류가 같아서, was 에 zone(보호구역)·text(설치장소 글, null 이면 글 없음)가 있으면 그것도 맞춘다"""
     w, n = o['was'], o['now']
     spots = [(w['lat'], w['lng'])] + ([(n['lat'], n['lng'])] if 'lat' in n else [])
     out = []
     for i, r in enumerate(rows):
-        if r[2] != w['limit'] or r[3] != w['kind']:
+        if not _keys_ok(r, w, n):
             continue
-        if 'zone' in w and r[6] != w['zone']:
-            continue
-        if 'text' in w and (texts or {}).get(i) != w['text']:
+        if 'text' in w and (texts or {}).get(i) not in (w['text'], n.get('arrow', w['text']) if 'arrow' in n else w['text']):
             continue
         if any(dist_m(r[0], r[1], la, lo) <= NEAR_M for la, lo in spots):
             out.append(i)
@@ -91,6 +100,18 @@ def apply(d, spec=None):
         r = rows[i]
         if 'lat' in n:
             r[0], r[1] = n['lat'], n['lng']
+        if 'limit' in n:
+            r[2] = n['limit']
+        if 'kind' in n:
+            r[3] = n['kind']
+        if 'zone' in n:
+            r[6] = n['zone']
+        if n.get('off'):
+            f = (r[10] if len(r) > 10 else 0) | OFF
+            if len(r) > 10:
+                r[10] = f
+            else:
+                r.append(f)
         if 'flags' in n:
             f = (r[10] if len(r) > 10 else 0) | n['flags']
             if len(r) > 10:

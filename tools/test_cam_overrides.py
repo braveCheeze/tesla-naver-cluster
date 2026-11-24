@@ -49,6 +49,17 @@ def revert(d, spec):
         i, w, n = hit[0], o['was'], o['now']
         r = rows[i]
         r[0], r[1] = w['lat'], w['lng']
+        # v220: 제한·종류·보호구역·꺼짐
+        if 'limit' in n:
+            r[2] = w['limit']
+        if 'kind' in n:
+            r[3] = w['kind']
+        if 'zone' in n:
+            r[6] = w['zone']
+        if n.get('off') and len(r) > 10:
+            r[10] &= ~8
+            if r[10] == 0:
+                r.pop()
         if 'flags' in n and len(r) > 10:
             r[10] = (r[10] & ~n['flags']) | w.get('flags', 0)
             if r[10] == 0:
@@ -108,6 +119,11 @@ def main():
             ok &= [e[2], e[3]] == n['snap']
         if 'flags' in n:
             ok &= len(r) > 10 and (r[10] & n['flags']) == n['flags']
+        for k, col in (('limit', 2), ('kind', 3), ('zone', 6)):
+            if k in n:
+                ok &= r[col] == n[k]
+        if n.get('off'):
+            ok &= len(r) > 10 and (r[10] & 8) == 8
         if 'arrow' in n and n['arrow'] is None:
             ok &= i not in arrow_rows
         check('%s %s %s has the Naver values' % (o['ver'], o['row'], o['place']), ok)
@@ -115,7 +131,7 @@ def main():
     # 3. 원본이 바뀌면 알린다
     d3 = copy.deepcopy(now)
     o = spec['cams'][-1]
-    d3['rows'][find(d3, o)[0]][2] += 10
+    d3['rows'][find(d3, o)[0]][2] += 7   # 고치기 전·뒤 어느 제한속도와도 다른 값
     rep3 = apply(d3, spec)
     check('a camera that changed in the source is reported, not silently skipped', rep3.get('%s %s' % (o['ver'], o['row'])) == 'MISSING', json.dumps(rep3, ensure_ascii=False))
 

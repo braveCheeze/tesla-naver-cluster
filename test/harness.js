@@ -2907,6 +2907,7 @@
     { id: 'S144', name: "S144 report's nearby cameras say where each came from (v215, keys 2026-11-24: an 울산 report listed the driver's own 놓침 spot, limit 0 and no direction, and the admin page showed it as a real camera '과속 제한 모름'): src 'cam' for police fixed cameras, 'mobile' for box and mobile points, 'spot' for spots the app adds, with who ('mine' this car, 'driver' driver or shared spot, 'crowd') and nv for Naver-checked", fn: s144 },
     { id: 'S145', name: "S145 single-pole camera pairs follow their place text (v216): in 184 pairs the two records swap directions so each direction matches its own 'A→B' text (lane point moves with the direction); 6 pairs stay as before (5 where the two records differ in school or elder zone, until Naver shows which way the zone is, and 6741/6742)", fn: s145 },
     { id: 'S146', name: "S146 test runs never reach the real server (v219: synthetic passes reached production when a non-test page on the same origin — the S67 catalog frame or a hand-opened index.html — read the harness's saved queue): on the test page the send queues are stored under their own '@test' names, records made here carry x: 1, and pass records dated after today (a fake clock) are dropped before sending", fn: s146 },
+    { id: 'S147', name: "S147 Naver verdicts on zone pairs and duplicate poles (v220): labels, limits and rear flags follow Naver's badges, and duplicate records Naver does not show are switched off (kept in the data, left out of lookups) — 평인일주로 138° is a school-zone speed camera, 신재로 is school zone both ways, 해안로 is a school-zone signal-and-speed camera both ways, 적중로 is 50 (253° rear), 17755 moves to Naver's point without its place text", fn: s147 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -7235,6 +7236,26 @@
     const a = r.a, b = r.b;
     const ok = a.plain === null && a.test && a.outboxPlain === null && a.routePlain === null &&
       b.sent === true && b.items.join() === '37.5,127|0@today' && b.cand === 0 && b.left === 0;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S147: keys 네이버 판정 1부 (v220) — 보호구역 짝·같은 기둥 중복 줄
+  async function s147() {
+    const t = T(), r = {};
+    await waitFor(() => t.cams.loaded, 10000, 100);
+    const rows = t.cams.rows, L = (i) => t.camLabel(rows[i]);
+    const inGrid = (i) => { const c = rows[i]; return t.camsNear(c[0], c[1], 5).some((x) => x.i === i); };
+    r.labels = { r1115: L(1115), r1116: L(1116), r2066: L(2066), r2067: L(2067), r26256: L(26256), r26257: L(26257), r6998: L(6998) + ' ' + rows[6998][2], r6999: L(6999) + ' ' + rows[6999][2] };
+    r.off = [6743, 7628, 7629, 17756, 17757, 26263, 7543, 6006].filter((i) => inGrid(i));
+    r.kept = [6741, 6742, 7621, 7623, 17755, 26256, 26257, 7539, 6003, 6007].filter((i) => !inGrid(i));
+    const c = rows[17755];
+    r.r17755 = { at: [c[0], c[1]], eb: c.eb, text: t.cams.arrows.has(c) };
+    const ok = r.labels.r1115 === '어린이보호구역 신호·과속단속' && r.labels.r1116 === '어린이보호구역 과속단속' &&
+      r.labels.r2066 === '어린이보호구역 과속단속' && r.labels.r2067 === '어린이보호구역 과속단속' &&
+      r.labels.r26256 === '어린이보호구역 신호·과속단속' && r.labels.r26257 === '어린이보호구역 신호·과속단속' &&
+      r.labels.r6998 === '과속단속 50' && /후면/.test(r.labels.r6999) && / 50$/.test(r.labels.r6999) &&
+      r.off.length === 0 && r.kept.length === 0 &&
+      r.r17755.at.join() === '36.978956,127.257243' && r.r17755.eb === 254 && !r.r17755.text;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
