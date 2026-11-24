@@ -2911,7 +2911,7 @@
     { id: 'S148', name: "S148 Naver verdicts on the 18 single cameras (v224): wrong directions turned to Naver's, two-way cameras lose their one-way place text, records Naver does not show (and 30 duplicates of 40 or signal cameras) are switched off, 예술공원로 is a rear camera 35 m on", fn: s148 },
     { id: 'S149', name: "S149 feedback button panel (v225): when speech recognition fails like on the Tesla (network), the panel opens with a record button and five picture buttons, later taps open it directly, one tap sends with the cards from the moment 의견 was tapped, a recording is queued until the server takes it, and a denied microphone leaves the picture buttons", fn: s149 },
     { id: 'S150', name: "S150 heading-aware routing (v227): stopped at a light heading north with the destination behind, every route request starts ahead of the car; a route that starts by reversing is asked again further ahead (first route and reroute), a reversing traffic update is dropped, and a car parked over 3 minutes is not given a heading", fn: s150 },
-    { id: 'S151', name: "S151 junction picture and signs (v227): an arterial into a loop entry gets a top-down picture of the real route (no highway scene), a straight highway entry keeps the scene, and sign names are never cut — very long names stay whole inside the picture, and a narrow split-picture sign drops the other sign and shrinks before cutting; v238: that picture is now seen obliquely from above like Naver's 3D map (true route shape, a white arrow along the turn, the sign on the side away from where the route leaves)", fn: s151 },
+    { id: 'S151', name: "S151 junction picture and signs (v227): an arterial into a loop entry gets a top-down picture of the real route (no highway scene), a straight highway entry keeps the scene, and sign names are never cut — very long names stay whole inside the picture, and a narrow split-picture sign drops the other sign and shrinks before cutting; v238: that picture is now seen obliquely from above like Naver's 3D map (true route shape, a white arrow along the turn, the sign on the side away from where the route leaves); v240: signs on a gantry band above the road (ours on the turn side, the road we leave on the other side), never covering the road, fill or arrow", fn: s151 },
     { id: 'S152', name: "S152 arrival pin on the building (v228): a destination that is a building's entrance puts the 도착 pin on that building (its N동, else the complex), the route still ends at the parking entrance or the chosen entrance, the dotted walk and the arrival arrow go to the building, and plain places or far namesakes are left alone", fn: s152 },
     { id: 'S153', name: "S153 trip end and continuation (v229): an 11-minute stop while navigating stays one trip, a reload keeps the trip while navigating (ends without), arrival ends it after a minute stopped even without further GPS, and closing the page after arrival sends the end with keepalive while a mid-drive reload does not end it", fn: s153 },
     { id: 'S154', name: "S154 dark from the first frame (v230): index.html decides night before any CSS or script (setting, or sun height at the last rough position), the page background is dark at once, the font CSS does not block painting, a night GL map hides its day style until the dark style is ready, and /event carries the anonymous device id", fn: s154 },
@@ -7574,9 +7574,26 @@
       const el = document.getElementById('juncCard'), sv = el.querySelector('#juncSvg svg');
       r.a = { shown: visible('#juncCard'), plan: !!(sv && sv.classList.contains('plan')), nv: el.classList.contains('nv'), turn: sv ? Number(sv.dataset.turn) : 0,
         go: !!(sv && sv.querySelector('.plan-go') && sv.querySelector('.plan-go').getAttribute('d').length > 50), place: text('#juncPlace'), sign: signOk(),
-        // v238: 비스듬히 내려다본 그림 — 흰 화살표가 있고, 표지판은 갈 길 끝의 반대쪽 (고리를 돌아 서쪽으로 나가니 오른쪽)
+        // v238: 비스듬히 내려다본 그림 — 흰 화살표. v240: 문형 틀(nv-gan)에 표지판 — 우리 표지는 갈 쪽(왼쪽 진입 → 왼쪽),
+        //   지금 길(경충대로)이 다른 길로 이어지니 반대쪽에 그 길 표지, 표지판 어디에도 길·칠·화살표가 없다(가리지 않는다)
         p3: !!(sv && sv.classList.contains('plan3')), arrow: !!(sv && sv.querySelector('.plan-ar') && sv.querySelector('.plan-ar').getAttribute('d').length > 50),
-        signSide: sv ? sv.dataset.sign : '', labelSide: document.getElementById('juncLabel').classList.contains('sr') ? 'r' : document.getElementById('juncLabel').classList.contains('sl') ? 'l' : '' };
+        gantry: !!(sv && sv.querySelector('.nv-gan')),
+        labelSide: document.getElementById('juncLabel').classList.contains('sr') ? 'r' : document.getElementById('juncLabel').classList.contains('sl') ? 'l' : '',
+        other: text('#juncLabel2'), otherSide: document.getElementById('juncLabel2').classList.contains('sr') ? 'r' : '',
+        cover: (() => {
+          if (!sv) return -1;
+          const parts = [...sv.querySelectorAll('.plan-road,.plan-go,.plan-ar')], ctm = sv.getScreenCTM().inverse();
+          let hit = 0;
+          for (const lab of [document.getElementById('juncLabel'), document.getElementById('juncLabel2')]) {
+            if (!lab.innerHTML || lab.classList.contains('sg-off') || !lab.getClientRects().length) continue;
+            const b = lab.getBoundingClientRect();
+            for (let i = 0; i <= 8; i++) for (let k = 0; k <= 4; k++) {
+              const q = new DOMPoint(b.left + b.width * i / 8, b.top + b.height * k / 4).matrixTransform(ctm);
+              if (parts.some((el) => el.isPointInFill(q))) hit++;
+            }
+          }
+          return hit;
+        })() };
       if (/[?&]hold=1/.test(location.search)) await sleep(9000);   // 눈으로 볼 때만
       t.endNav();
       // (b) 고속도로 위 곧은 진입, 아주 긴 방면 이름
@@ -7612,7 +7629,7 @@
     }
     const a = r.a || {}, b = r.b || {}, c = r.c || {};
     const ok = a.shown && a.plan && !a.nv && a.turn >= 200 && a.go && a.place === '성남IC' && a.sign.text === '일산|판교' && !a.sign.cut && a.sign.inside &&
-      a.p3 && a.arrow && a.signSide === 'r' && a.labelSide === 'r' &&
+      a.p3 && a.arrow && a.gantry && a.labelSide === 'l' && a.other === '경충대로' && a.otherSide === 'r' && a.cover === 0 &&
       b.shown && b.nv && b.sign.text === '인천국제공항|영종대교기념관' && !b.sign.cut && b.sign.inside && b.sign.fs >= 10.5 &&
       c.fitted && c.inside && !c.cut && c.names === '인천국제공항|영종대교기념관' && c.otherOff;
     return { pass: !!ok, detail: JSON.stringify(r) };
