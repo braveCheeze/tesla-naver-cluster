@@ -7250,12 +7250,16 @@
     r.kept = [6741, 6742, 7621, 7623, 17755, 26256, 26257, 7539, 6003, 6007].filter((i) => !inGrid(i));
     const c = rows[17755];
     r.r17755 = { at: [c[0], c[1]], eb: c.eb, text: t.cams.arrows.has(c) };
+    // v221: 7623 (295° 어린이 30) 은 네이버 자리 35.628158,128.32214 진행 방향 296 — 기둥 점보다 104m 앞
+    const c2 = rows[7623];
+    r.r7623 = { at: [c2[0], c2[1]], eb: c2.eb, lane: [c2.sl, c2.sg], label: t.camLabel(c2) };
     const ok = r.labels.r1115 === '어린이보호구역 신호·과속단속' && r.labels.r1116 === '어린이보호구역 과속단속' &&
       r.labels.r2066 === '어린이보호구역 과속단속' && r.labels.r2067 === '어린이보호구역 과속단속' &&
       r.labels.r26256 === '어린이보호구역 신호·과속단속' && r.labels.r26257 === '어린이보호구역 신호·과속단속' &&
       r.labels.r6998 === '과속단속 50' && /후면/.test(r.labels.r6999) && / 50$/.test(r.labels.r6999) &&
       r.off.length === 0 && r.kept.length === 0 &&
-      r.r17755.at.join() === '36.978956,127.257243' && r.r17755.eb === 254 && !r.r17755.text;
+      r.r17755.at.join() === '36.978956,127.257243' && r.r17755.eb === 254 && !r.r17755.text &&
+      r.r7623.at.join() === '35.628158,128.32214' && r.r7623.eb === 296 && r.r7623.lane.join() === '35.628158,128.32214' && r.r7623.label === '어린이보호구역 과속단속';
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
