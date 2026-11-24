@@ -2899,7 +2899,7 @@
     { id: 'S136', name: "S136 camera card sign alignment (v205, driver '가운데로 정렬 해서 보여줘야 되는 거 아니야 110 너무 밑에 있는 느낌이다'): in the Tesla drawer the round sign's top meets the label's top and its bottom meets the distance's bottom (the bar sits below), for section-end, fixed, mobile and child-zone cards alike", fn: s136 },
     { id: 'S137', name: "S137 voice feedback reachable and readable (v206, driver '피드백 음성 버튼이 일단 무슨 버튼인지 잘 모를 거 같고 눌러도 반응이 없어'): during guidance with a camera card, the mic sits in the glass card's compass row, a real tap lands on it and never on the '잘못된 정보 신고' pill (if the pill reaches the card, the card hides and the mic takes no taps); the card is opaque enough over map labels; every failure is shown and logged by stage: start() throwing, a 'network' error, and no onstart within 4 s; a good start logs tap, start, onstart, onaudiostart", fn: s137 },
     { id: 'S138', name: "S138 colour guide line as a split picture, first (v207, driver '이럴 때는 분홍색을 첫 번째 있는 걸로 보여 주고 … 그림을 알려 주는 게 훨씬 더 좋아', '굳이 그림이 표기돼 있으면은 분홍색 화살표로 안 바꿔도 돼', '우리가 가지 않는 방향이라고 해도 그림에서 표지판에 표기를 해 주는 게 좋아'): on the real 서울TG → 판교분기점 route, 990 m before the split the guide card starts with a small split picture: 경부 goes straight with a dim '① 경부' sign, our branch goes right with the pink line and a strong '[100] 일산 · 구리' sign; no pink arrow, the turn row keeps its green arrow and the distance; at 600 m the close-up takes over with pink lanes and both signs; at night the roads turn dark", fn: s138 },
-    { id: 'S139', name: "S139 Naver-checked driver spots look like normal cameras (v208, driver: '운전자 신고 신호 과속 단속 이라고 파란 글씨로 나오는데 … 네이버 지도는 신호 과속 이라고만 표기 하는데'); route line and turn arrow thicker with zoom and a black outline (v208, '여기도 네이버지도처럼 약간 두껍게', '검정색 테두리로 통일하자'): rows with flag 2 read '신호·과속단속' / '이동식단속' with the red (or real-mobile blue) card, sign and voice of normal cameras, flag 4 makes a child zone, /check finds count as checked, unchecked rows keep '운전자 신고 …' in blue; in the data 18 of 21 rows are checked; the route width grows with zoom (9 → 14 → 17 px at 15/17/18) under a black casing 4 px wider, and the arrow's rim is black", fn: s139 },
+    { id: 'S139', name: "S139 Naver-checked driver spots look like normal cameras (v208, driver: '운전자 신고 신호 과속 단속 이라고 파란 글씨로 나오는데 … 네이버 지도는 신호 과속 이라고만 표기 하는데'); route line and turn arrow thicker with zoom and a black outline (v208, '여기도 네이버지도처럼 약간 두껍게', '검정색 테두리로 통일하자'): rows with flag 2 read '신호·과속단속' / '이동식단속' with the red (or real-mobile blue) card, sign and voice of normal cameras, flag 4 makes a child zone, /check finds count as checked, unchecked rows keep '운전자 신고 …' in blue; in the data all 20 rows are checked (v210); the route width grows with zoom (9 → 14 → 17 px at 15/17/18) under a black casing 4 px wider, and the arrow's rim is black", fn: s139 },
     { id: 'S140', name: "S140 arrival like Naver (v209, driver '네이버 지도 보면은 도착지점 거의 도착할 때 화살표로 알려 주잖아', '도착 건물에만 나오면 될 거 같아 화살표로 들어가는 것까지 표기 해 주면 좋을 것 같다'): the last turn before the goal stays its own row (row 2 shows ↰ with its distance, then the goal pin); from where the route ends a thick white arrow with a black outline goes into the building instead of the dotted line, and the goal distance counts to the building; with no turn left, the row says which side the building is on ('목적지 · 왼쪽/오른쪽' with an arrow-and-pin icon); a walk from a parking entrance keeps the dots", fn: s140 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
@@ -6862,7 +6862,7 @@
   //   (a) 표시 2(네이버 확인) 신호·과속 50: '신호·과속단속', 파란 카드 아님, 신호등 표지, 짧은 이름 '신호과속', 노란 띠, 음성 '신호 단속 카메라'
   //   (b) 표시 2 이동식 110: '이동식단속', 파란 카드(진짜 이동식)  (c) 표시 6(확인 + 어린이보호구역) 30: '어린이보호구역 신호·과속단속'
   //   (d) 표시 없는 운전자 지점: 예전처럼 '운전자 신고 신호·과속단속', 파란 카드  (e) /check 로 찾은 공유 지점(ck): 확인됨
-  //   (f) 실제 자료: 21줄 중 18줄이 확인됨, 그중 3줄이 보호구역
+  //   (f) 실제 자료: 20줄 모두 확인됨(v210), 그중 3줄이 보호구역
   //   (g) 경로선 굵기: 배율 15·17·18 에서 9·14·17px, 검정 테두리 = 굵기 + 4, 화살표 테두리는 검정
   async function s139() {
     const t = T(), r = {};
@@ -6899,7 +6899,7 @@
       c.label === '어린이보호구역 신호·과속단속' && c.zone === 2 && !c.blue &&
       d.label === '운전자 신고 신호·과속단속' && d.blue && d.short === '신고 지점' && d.voice === '신고된 단속 지점' &&
       e.label === '과속단속' && !e.blue &&
-      f.rows === 21 && f.checked === 18 && f.zone === 3 &&
+      f.rows === 20 && f.checked === 20 && f.zone === 3 &&   // v210: keys 네이버 확인 — 구갈·삼가 남동 확인(네이버 자리로), 판교JC 하행 합류는 없음(뺌)
       g.w15 === 9 && g.w17 === 14 && g.w18 === 17 && g.w165 === 12.5 && g.casing17 === 18 && g.dots === 3.4 && g.casingColor === '#141414' &&
       g.arrow17 && g.arrow17.inner === 14 && g.arrow17.shaft === 18;
     return { pass: !!ok, detail: JSON.stringify(r) };
