@@ -2902,7 +2902,7 @@
     { id: 'S137', name: "S137 voice feedback reachable and readable (v206, driver '피드백 음성 버튼이 일단 무슨 버튼인지 잘 모를 거 같고 눌러도 반응이 없어'): during guidance with a camera card, the mic sits in the glass card's compass row, a real tap lands on it and never on the '잘못된 정보 신고' pill (if the pill reaches the card, the card hides and the mic takes no taps); the card is opaque enough over map labels; every failure is shown and logged by stage: start() throwing, a 'network' error, and no onstart within 4 s; a good start logs tap, start, onstart, onaudiostart", fn: s137 },
     // S138 (그린 분기 그림 시험) — v245 고정 규칙(운전자 AI 그림만)으로 빠짐, S160 이 대신 확인
     { id: 'S139', name: "S139 Naver-checked driver spots look like normal cameras (v208, driver: '운전자 신고 신호 과속 단속 이라고 파란 글씨로 나오는데 … 네이버 지도는 신호 과속 이라고만 표기 하는데'); route line and turn arrow thicker with zoom and a black outline (v208, '여기도 네이버지도처럼 약간 두껍게', '검정색 테두리로 통일하자'): rows with flag 2 read '신호·과속단속' / '이동식단속' with the red (or real-mobile blue) card, sign and voice of normal cameras, flag 4 makes a child zone, /check finds count as checked, unchecked rows keep '운전자 신고 …' in blue; in the data all 20 rows are checked (v210); the route width grows with zoom (9 → 14 → 17 px at 15/17/18) under a black casing 4 px wider, and the arrow's rim is black", fn: s139 },
-    { id: 'S140', name: "S140 arrival like Naver (v209, driver '네이버 지도 보면은 도착지점 거의 도착할 때 화살표로 알려 주잖아', '도착 건물에만 나오면 될 거 같아 화살표로 들어가는 것까지 표기 해 주면 좋을 것 같다'): the last turn before the goal stays its own row (row 2 shows ↰ with its distance, then the goal pin); from where the route ends a thick white arrow with a black outline goes into the building instead of the dotted line, and the goal distance counts to the building; with no turn left, the row says which side the building is on ('목적지 · 왼쪽/오른쪽' with an arrow-and-pin icon); a walk from a parking entrance keeps the dots", fn: s140 },
+    { id: 'S140', name: "S140 arrival like Naver (v209, driver '네이버 지도 보면은 도착지점 거의 도착할 때 화살표로 알려 주잖아', '도착 건물에만 나오면 될 거 같아 화살표로 들어가는 것까지 표기 해 주면 좋을 것 같다'): the last turn before the goal stays its own row (row 2 shows ↰ with its distance, then the goal pin); from where the route ends a thick white arrow with a black outline goes into the building instead of the dotted line, and the goal distance counts to the building; with no turn left, the row says which side the building is on ('목적지 · 왼쪽/오른쪽' with an arrow-and-pin icon); a walk from a parking entrance keeps the dots; v246 (driver at 더샵강동센트럴시티오피스텔: the straight arrow cut through the apartment blocks): the arrow into the building is at most 20 m, then dots to the pin", fn: s140 },
     { id: 'S141', name: "S141 arrow size has a limit (v211, driver '저 확대한다고해서 저화살표가 계속 커지는게 아니고 어느정도 한계가 있다고봐야 해 크기가 너무 커져도 이상해져버리니까'): route line and arrows stop growing at zoom 18 (16px); on the GL map the arrow head is sized for the GL scale (it was drawn twice as big as meant); an arrow that was removed stays hidden even if the map puts it back; a last turn just before the route end joins the building arrow into one arrow (all arrows go away on arrival); a short stretch after the last turn still points the head the way you turn", fn: s141 },
     { id: 'S142', name: "S142 wider trip card and a gap above the speed (v212, driver '너무 붙어있는 느낌이라 조금 와이드하게 UI 개선해주고 속도도 조금 갭을 줘'): the bottom-left glass card is wider with even cells and a thin line under the compass row; on a wide screen the big speed sits the card's height plus 18 px above it (it used to touch the card), and only the speed hides when the drawer or report button reaches it", fn: s142 },
     { id: 'S143', name: "S143 old driver reports checked on Naver both ways (v213): 용구대로 60 (row 21232) moves to Naver's northbound point and faces north, without the old '보정역→구성역' place text; 남북대로 80 (row 19618) is a rear camera like Naver; a missing 신호·과속 50 on 비룡로 (남양주 화도) is added as a checked spot; 신갈JC has one 이동식 110 spot, moved 210 m north to Naver's point in v214", fn: s143 },
@@ -2922,7 +2922,8 @@
     { id: 'S157', name: "S157 riding out a route server blip (v239, 2026-11-25 Worker /route failed for minutes with Naver 530): the first search falls back from options= to one option= after an upstream 'no route' and retries a 502 after a short backoff, then shows the route card; a reroute that keeps failing retries 3 times and stops, keeping the current route and guidance (no red failure toast, a small status chip, a diag note) and guidance keeps advancing; the next good reroute clears the chip; a 400, Naver's own 'no route' (with a code) and the traffic refresh are not retried", fn: s157 },
     { id: 'S158', name: "S158 junction lane colours match Naver (v243, Naver comparison table cases 8 and 13): the ring road's southbound 성남IC exit to '성남, 광주' gets a green colour line from about 300 m before the split and the junction picture paints the lanes green (the separate colour row hides); 판교분기점 '일산, 구리' paints pink; an 일산-bound car now sees the first-split pink too (OSM shape), while going straight on 경부 (서울·양재) or straight past 성남IC southbound gets neither; v245: the junction slot shows only the driver's AI picture (no painted lanes) while the colour data stays", fn: s158 },
     { id: 'S159', name: "S159 taking back a mistaken report (v244, driver on 경부 상행 near 서울TG: '잘못된 정보 신고' on a section-end card left a lingering '?' card, then '근데 내가 잘못 신고 한거 같애'): after reporting, the dimmed '?' card reads '내가 신고함' and the button becomes '↩ 신고 취소'; pressing it brings back 110 and clears this car's mark and the settings list; a report from another day keeps the normal button; the release clears the mistaken 22040 mark made before its cut-off but keeps later ones", fn: s159 },
-    { id: 'S160', name: "S160 hard rule — junction pictures are only the driver's AI images, in the drawer (v245, driver 2026-11-25 '내가 만든 AI 그림으로만 밑에다 보여 주는 거지. 저렇게 보여 주면 안 돼', first said 2026-11-15 v108/v109): 100 m before 판교분기점 '일산, 구리' the drawer slot holds just the two AI pictures (day/night) with the sign fully shown, no drawn svg, no perspective or top-down scene, no split picture or colour row on the guidance card while the pink line is still worked out; without the AI picture for that kind there is no junction slot at all (no drawn fallback); the 성남IC exit is AI-only too", fn: s160 },
+    { id: 'S160', name: "S160 hard rule — junction pictures are only the driver's AI images, in the drawer (v245, driver 2026-11-25 '내가 만든 AI 그림으로만 밑에다 보여 주는 거지. 저렇게 보여 주면 안 돼', first said 2026-11-15 v108/v109): 100 m before 판교분기점 '일산, 구리' the drawer slot holds just the two AI pictures (day/night) with the sign fully shown, no drawn svg, no perspective or top-down scene, no split picture or colour row on the guidance card while the pink line is still worked out; without the AI picture for that kind there is no junction slot at all (no drawn fallback); the 성남IC exit is AI-only too; v246: the sign of the branch we do not take is shown too (the road we leave, '① 경부 ↑')", fn: s160 },
+    { id: 'S161', name: "S161 turns that follow closely (v246, driver '우회전하고 또 우회전 하는 상황, 성남으로 들어올 때 좀 많이 헷갈리게 돼 있더라. 미리 보여주는 거 조금 개선이 필요해', 성남 여수사거리 east: right, 30 m left, 220 m right): 150 m before the first turn the next row becomes a green '이어서' row with a big arrow, '30m' and '› 220m' for the turn after; the 300 m voice adds '이어서 30미터 앞 왼쪽 방향, 다시 220미터 앞 오른쪽 방향'; a next turn 400 m away keeps the small row", fn: s161 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -4076,7 +4077,7 @@
     } finally {
       softReset();
     }
-    const ok = r.pin && r.dots === 0 && r.leg === 4 && /^base\+dots\+glow\+shine/.test(r.kinds) && r.farNone && r.near === 4 && r.corner >= 2 && r.corner <= 4 && Math.abs(r.arrowCorner - r.corner) < 0.3 && r.span >= 25 && r.span <= 100 && r.endFromTurn >= 0 && r.endFromTurn <= 3 &&
+    const ok = r.pin && r.dots >= 1 /* v246: 건물 쪽 20m 화살표 뒤 점선 */ && r.leg === 4 && /^base\+dots\+glow\+shine/.test(r.kinds) && r.farNone && r.near === 4 && r.corner >= 2 && r.corner <= 4 && Math.abs(r.arrowCorner - r.corner) < 0.3 && r.span >= 25 && r.span <= 100 && r.endFromTurn >= 0 && r.endFromTurn <= 3 &&
       r.zoomOutHidden && r.zoomBack === 4 && r.after === 0 && r.cleared;
     return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + r[k]).join(', ') };
   }
@@ -6979,7 +6980,8 @@
     };
     const snap = () => ({ turn: text('#turnDist') + ' ' + text('#turnText'), icon: (() => { const q = document.querySelector('#turnIcon svg'); return q ? q.getAttribute('class') || '' : ''; })(),
       next: visible('#nextTurn') ? text('#nextDist') + '|' + (document.getElementById('nextTurn').classList.contains('goal') ? 'goal' : 'turn') : '',
-      remain: text('#navRemain'), leg: (t.getMap()._legObjs || []).length, dots: document.querySelectorAll('.destdot').length });
+      remain: text('#navRemain'), leg: (t.getMap()._legObjs || []).length, dots: document.querySelectorAll('.destdot').length,
+      legLen: t.getMap()._leg ? Math.round(hav(t.getMap()._leg[0], t.getMap()._leg[1])) : 0 });
     try {
       await waitFor(() => t.getMap(), 5000);
       // (a)(b) 마지막 좌회전 + 건물 북쪽 60m
@@ -7011,7 +7013,7 @@
     }
     const a = r.a || {}, L = r.left || {}, Rr = r.right || {}, S = r.ahead || {}, P = r.park || {};
     const num = (x) => { const m = String(x || '').match(/([\d.]+)(k?m)/); return m ? +m[1] * (m[2] === 'km' ? 1000 : 1) : -1; };
-    const ok = a.guides === '1,3,2,88' && /좌회전$/.test(a.turn) && a.next.endsWith('|goal') && num(a.next) >= 60 && num(a.next) <= 80 && a.leg === 4 && a.dots === 0 && a.legM === 60 &&
+    const ok = a.guides === '1,3,2,88' && /좌회전$/.test(a.turn) && a.next.endsWith('|goal') && num(a.next) >= 60 && num(a.next) <= 80 && a.leg === 4 && a.legLen >= 19 && a.legLen <= 21 && a.dots >= 3 /* v246: 화살표는 건물 쪽 20m, 나머지 점선 */ && a.legM === 60 &&
       L.side === 'l' && /목적지 · 왼쪽$/.test(L.turn) && /goal-side gs-l/.test(L.icon) && num(L.turn) >= 220 && num(L.turn) <= 240 &&
       Rr.side === 'r' && /목적지 · 오른쪽$/.test(Rr.turn) && /goal-side gs-r/.test(Rr.icon) &&
       S.side === 's' && /목적지$/.test(S.turn) && !/goal-side/.test(S.icon) &&
@@ -7106,7 +7108,7 @@
     const ok = a.w18 === 16 && a.w19 === 16 && a.w20 === 16 && a.w21 === 16 && a.a18 === a.a20 &&
       b.px18 === (b.gl ? 19 : 18) && (!b.gl || (Math.abs(b.headPx - b.want) <= 1 && b.shaft === b.wantShaft)) &&
       (c.n == null || (c.n === 4 && c.hidden && c.gone && c.now === 4)) &&
-      d.arrow === 4 && d.leg === 0 && d.joined && d.tipToBld >= 0 && d.tipToBld < 4 &&
+      d.arrow === 4 && d.leg === 0 && d.joined && d.tipToBld >= 36 && d.tipToBld <= 44 /* v246: 건물(60m) 쪽으로 20m 까지만, 나머지는 점선 */ &&
       da.arrow === 0 && da.leg === 0 && !da.joined && !da.active &&
       e.arrow === 4 && e.leg === 0 && !e.joined && e.legM === 0 && Math.abs(e.dir) <= 30;
     return { pass: !!ok, detail: JSON.stringify(r) };
@@ -7715,7 +7717,9 @@
       const g2 = await go(entrance);
       const d2 = t.nav.dest || {}, m2 = t.getMap();
       r.b = { goal: g2 === pt(D) ? 'entrance' : g2 === pt(E) ? 'park' : g2, dest: near(d2, B) ? 'building' : 'other', gate: !!(d2.park && d2.park.gate),
-        leg: !!(m2 && m2._leg && near(m2._leg[1], B)), pin: near(pin(), B) };
+        // v246: 건물 쪽으로 20m 꺾어 들어가는 화살표(끝이 건물 쪽) + 그 뒤 점선 — 20m 안이면 건물까지
+        leg: !!(m2 && m2._leg && (near(m2._leg[1], B) || (hav(m2._leg[1], B) < hav(m2._leg[0], B) && hav(m2._leg[0], m2._leg[1]) <= 21 && (dots().length > 0 || hav(m2._leg[1], B) < 12)))),
+        legEnd: m2 && m2._leg ? Math.round(hav(m2._leg[1], B)) : -1, pin: near(pin(), B) };
       t.endNav(); softReset();
       // (c) 'N동' 없음 → 단지
       parks = true; dongItems = false;
@@ -8197,6 +8201,48 @@
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
+  // S161: 가까이 이어지는 회전 ('이어서', v246, 운전자 '우회전하고 또 우회전 하는 상황, 성남으로 들어올 때 좀 많이 헷갈리게 돼 있더라. 미리 보여주는 거 조금 개선이 필요해')
+  //   성남 여수사거리 동쪽처럼 오른쪽 방향 → 30m 왼쪽 방향 → 220m 오른쪽 방향: 첫 안내 150m 앞에서 그다음 줄이 '이어서' 줄
+  //   (초록 '이어서' 표, ↖ 30m, › ↱ 220m), 300m 앞 음성은 '… 이어서 30미터 앞 왼쪽 방향, 다시 220미터 앞 오른쪽 방향'.
+  //   그다음이 400m 뒤면 예전처럼 작은 줄('갈림길 지나')
+  async function s161() {
+    const t = T(), r = {};
+    const build = (gap2, gap3) => {
+      const raw = [];
+      for (let k = 0; k <= 160; k++) raw.push(dest(NAV_ORIGIN, 0, 10 * k));
+      const i1 = 60, i2 = i1 + gap2 / 10, i3 = i2 + gap3 / 10;
+      const path = raw.map((p) => [round6(p.lng), round6(p.lat)]);
+      const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0]; for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+      const guide = [{ i: i1, t: 5, s: "여수사거리에서 '광주, 성남IC' 방면으로 오른쪽 방향" }, { i: i2, t: 4, s: "여수사거리에서 '이천, 광주' 방면으로 왼쪽 방향" },
+        { i: i3, t: 5, s: "여수사거리에서 '이천, 광주' 방면으로 오른쪽 방향" }, { i: P.length - 1, t: 88, s: '목적지' }].map((g) => Object.assign({ d: r0(cum[g.i]), ms: 20000 }, g));
+      const total = cum[cum.length - 1];
+      return { route: { distance: r0(total), duration: r0(total / 12 * 1000), tollFare: 0, fuelPrice: 0, path, guide, sections: [{ i: 0, n: P.length, name: '성남대로', speed: 40, cong: 1 }] },
+        P, cum, total, dest: { name: '이어서 시험', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    };
+    const row = () => ({ soon: document.getElementById('nextTurn').classList.contains('soon'), lead: visible('#nextLead'), dist: text('#nextDist'), after: text('#nextAfter'),
+      chain: visible('#nextChain') ? text('#nextChain').replace(/\s+/g, '') : '', aria: document.getElementById('nextTurn').getAttribute('aria-label') || '' });
+    try {
+      for (const [key, g2, g3] of [['close', 30, 220], ['far', 400, 400]]) {
+        const R = build(g2, g3);
+        await resetApp(); softReset(); await planAndStart(R);
+        const from = t.alertLog.length ? t.alertLog[t.alertLog.length - 1] : null;
+        for (let s = 20; s <= 450; s += 20) { const a = pointAt(R, s); feed(a.p, 12, a.h); t.renderNav(); }
+        const said = t.alertLog.slice(from ? t.alertLog.indexOf(from) + 1 : 0).map((e) => e.text);
+        const v300 = said.find((x) => /미터 앞, 여수사거리/.test(x)) || said.join(' | ');
+        r[key] = Object.assign(row(), { v300 });
+        t.endNav();
+      }
+    } finally {
+      await resetApp(); softReset();
+    }
+    const c = r.close || {}, f = r.far || {};
+    const ok = c.soon && c.lead && c.dist === '30m' && c.after === '' && /^›?220m$/.test(c.chain.replace(/[^›0-9m]/g, '')) &&
+      /이어서 30미터 앞 왼쪽 방향, 다시 220미터 앞 오른쪽 방향/.test(c.v300) && /이어서 30m 왼쪽 방향, 다시 220m 오른쪽 방향/.test(c.aria) &&
+      !f.soon && !f.lead && f.dist === '400m' && f.after === '갈림길 지나' && f.chain === '' && !/이어서/.test(f.v300);
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
   // S160: ★ 고정 규칙 — 갈림 그림은 운전자 AI 그림만, 아래 서랍에 (v245, 운전자 2026-11-25 '내가 만든 AI 그림으로만 밑에다 보여 주는 거지.
   //   저렇게 보여 주면 안 돼', '저번에도 말했던 거 같은데' — 처음은 2026-11-15 v108·v109). S130·S138·S151(그린 그림 시험)은 이 시험으로 바뀌었다.
   //   (a) 서울TG→판교분기점 '일산, 구리' 100m 앞: 분기 칸은 서랍에 AI 그림 두 장(낮·밤)뿐이고 그린 그림(svg)·장면(nv)·내려다본 그림(plan)이 없다.
@@ -8221,7 +8267,7 @@
       const imgs = [...sv.querySelectorAll('img')].map((i) => (i.getAttribute('src') || '').replace(/^.*\/img\/ai\//, '').replace(/\?.*$/, '').replace(/__.*$/, ''));
       const panel = document.querySelector('.navpanel');
       return { shown: visible('#juncCard'), inDrawer: !!el.closest('#camDrawer .cd-in'), imgs: imgs.join(','), svg: sv.querySelectorAll('svg').length, nv: el.classList.contains('nv'), plan: el.classList.contains('plan'),
-        sign: text('#juncLabel'), signCut: (() => { const lab = document.getElementById('juncLabel'); return [...lab.querySelectorAll('b')].some((b) => b.scrollWidth > b.clientWidth + 1); })(),
+        sign: text('#juncLabel'), other: visible('#juncLabel2') ? text('#juncLabel2') : '', signCut: (() => { const lab = document.getElementById('juncLabel'); return [...lab.querySelectorAll('b')].some((b) => b.scrollWidth > b.clientWidth + 1); })(),
         colorRow: visible('#colorRow'), splitPic: !!(panel && panel.querySelector('svg.sp-pic')) && visible('#colorRow'), cl: (t.colorLineAhead() || {}).c || '' };
     };
     try {
@@ -8247,7 +8293,8 @@
       await resetApp(); softReset();
     }
     const aiOnly = (x) => x && x.shown && x.inDrawer && /^junc_[a-z]+_day,junc_[a-z]+_night$/.test(x.imgs) && x.svg === 0 && !x.nv && !x.plan && !x.colorRow && !x.splitPic;
-    const ok = aiOnly(r.a) && r.a.cl === 'p' && /일산/.test(r.a.sign) && !r.a.signCut &&
+    // v246: 가지 않는 갈래도 표지 — 지금 길(경부)이 다른 쪽으로 이어지니 '① 경부 ↑' 를 반대쪽에
+    const ok = aiOnly(r.a) && r.a.cl === 'p' && /일산/.test(r.a.sign) && !r.a.signCut && /^1?경부$/.test(r.a.other) &&
       r.b && !r.b.shown && r.b.svg === 0 && !r.b.colorRow &&
       aiOnly(r.c) && r.c.cl === 'g';
     return { pass: !!ok, detail: JSON.stringify(r) };
@@ -9372,7 +9419,7 @@
     }
     const a = r.a || {}, c = r.c || {};
     const ok = a.order === 'navdest>turn>tunnelRow>restCard>nextTurn>navmeta' && /^1\.2km 이배재사거리에서 좌회전/.test(a.main) &&
-      /^3[6-8]0m 이배재터널 출구까지$/.test(a.tunnel) && /^테스트휴게소 1\.[23]km$/.test(a.rest) && a.next === '230m 좌회전 후' &&
+      /^3[6-8]0m 이배재터널 출구까지$/.test(a.tunnel) && /^테스트휴게소 1\.[23]km$/.test(a.rest) && a.next === '230m 오른쪽 방향' /* v246: 300m 안에 이어지는 회전은 '이어서' 줄 (동작 이름) */ &&
       r.b.length === 2 && r.b[0] === 'navdest>turn>tunnelRow>restCard>nextTurn>navmeta' && r.b[1] === 'navdest>turn>restCard>nextTurn>navmeta' &&
       c.order === 'navdest>turn>nextTurn>restCard>navmeta' && /^3[6-8]0m 이배재터널 출구까지$/.test(c.main) && /^8[2-4]0m 터널 지나$/.test(c.next) &&
       r.d.join(',') === 'ABC,ABC,ACB,ACB,CB-A,ACB' &&

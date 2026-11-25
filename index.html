@@ -1355,6 +1355,18 @@
   /* v158: 그다음 칸 거리는 위 안내 지점부터 잰 거리(네이버와 같음)라서 기준을 옆에 작게 ('230m 좌회전 후'). 터널 줄 글자와 같은 모양 */
   .nextturn .nextafter { min-width: 0; font-size: 14px; font-weight: 600; opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .nextturn .nextafter:empty { display: none; }
+  /* v246 '이어서' 줄: 이번 회전 뒤 300m 안에 또 회전 — 초록 띠, 큰 화살표, 굵은 거리·동작 이름, 그다음 회전도 300m 안이면 › 화살표 거리 */
+  .nextturn .nextlead { flex: none; font-size: 13px; font-weight: 800; color: #fff; background: #12a150; border-radius: 6px; padding: 2px 7px; letter-spacing: .02em; }
+  .nextturn.soon { background: #e8f7ee; }
+  #app.tesla .nextturn.soon { background: rgba(18, 161, 80, .16); }
+  .nextturn.soon:not(.goal):not(.via) .nexticon, .nextturn.soon:not(.goal):not(.via) .nexticon svg { width: 32px; height: 32px; }
+  .nextturn.soon #nextDist { font-size: 21px; font-weight: 800; }
+  .nextturn.soon .nextafter { font-size: 15px; font-weight: 800; opacity: 1; }
+  .nextturn .nextchain { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+  .nextturn .nextchain[hidden] { display: none; }
+  .nextturn .nextchain .nc-sep { font-style: normal; font-size: 22px; font-weight: 800; opacity: .55; margin: 0 2px; }
+  .nextturn .nextchain .nexticon, .nextturn .nextchain .nexticon svg { width: 26px; height: 26px; }
+  .nextturn .nextchain b { font-size: 18px; font-weight: 800; }
   #app.tesla .nextturn .nextafter { color: var(--nv-sub); opacity: 1; }
   /* ================= 그다음 칸 구분감 (2026-11-14) =================
      위 회전 안내·아래 회색 요약 줄('910m 2분 도착 13:56')과 헷갈리지 않게: 그다음 칸은 흰(유리) 바탕에 위아래 얇은 줄,
@@ -1534,6 +1546,12 @@
   .sg-arrow { flex: none; }
   .sg-arrow svg { display: block; width: 17px; height: 22px; }
   .junccard.left .sg-arrow svg { transform: scaleX(-1); }
+  /* v246: AI 그림 칸에서 가지 않는 갈래 표지 — 우리 표지 반대쪽 위, 흐리게 (운전자 '하남을 안 보여주는 건 아니야') */
+  .junccard:not(.nv):not(.plan) .jc-label.jc-other { right: auto; left: 8px; flex-direction: row; padding: 5px 7px 5px 10px; opacity: .78; filter: saturate(.5); box-shadow: none; max-width: 44%; }
+  .junccard.left:not(.nv):not(.plan) .jc-label.jc-other { left: auto; right: 8px; }
+  .junccard:not(.nv):not(.plan) .jc-label.jc-other .sg-arrow svg { transform: none; }
+  .junccard:not(.nv):not(.plan):has(.jc-other:not(:empty)) .jc-label:not(.jc-other) { max-width: 52%; }
+  .jc-label.jc-other:empty { display: none; }
   .jc-head {
     position: absolute; left: 10px; bottom: 8px; display: flex; gap: 6px; align-items: baseline; max-width: 46%;
     padding: 3px 8px; border-radius: 7px; background: rgba(255, 255, 255, .88); color: #111; text-shadow: none;
@@ -2034,7 +2052,7 @@
           <div id="turnText" class="turntext"></div>
         </div>
       </div>
-      <div id="nextTurn" class="nextturn" hidden aria-label="그다음 안내"><span id="nextIcon" class="nexticon"></span><span id="nextDist"></span><span id="nextAfter" class="nextafter"></span></div>
+      <div id="nextTurn" class="nextturn" hidden aria-label="그다음 안내"><span id="nextLead" class="nextlead" hidden>이어서</span><span id="nextIcon" class="nexticon"></span><span id="nextDist"></span><span id="nextAfter" class="nextafter"></span><span id="nextChain" class="nextchain" hidden></span></div>
       <!-- v162 (2026-11-19 운전자 '녹색 분홍색 안내선'): 고속도로 분기점·나들목 바닥 색깔 유도선. 갈라지기 1km 앞부터 '분홍색 유도선 따라가기' -->
       <div id="colorRow" class="colorrow" hidden aria-label="노면 색깔 유도선"><span class="cl-sw" aria-hidden="true"><i></i></span><b id="colorDist"></b><span id="colorText" class="cl-text"></span></div>
       <!-- 터널: 3km 앞부터 '남한터널 진입 · 길이 1.2km', 안에서는 '출구까지 799m' + 지나온 만큼 초록 막대 -->
@@ -2268,8 +2286,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-245"></script>
-<script src="img/ai/picks.js?v=2026.11.16-245"></script>
-<script src="app.js?v=2026.11.16-245"></script>
+<script src="icons.js?v=2026.11.16-246"></script>
+<script src="img/ai/picks.js?v=2026.11.16-246"></script>
+<script src="app.js?v=2026.11.16-246"></script>
 </body>
 </html>
