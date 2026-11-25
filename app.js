@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-252'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-253'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -5526,11 +5526,23 @@
   //   실제 경로(오산IC → 경부 상행, 2026-11-16): 신갈분기점 '서울' 0° → 직진. 판교분기점 '일산, 구리'(구간이 수도권제1순환으로 바뀜) → 그대로
   //   음성은 네이버 문장 그대로('왼쪽 도로 주행': 오른쪽 차로가 연결로로 빠지니 차로를 지키라는 뜻이 있다)
   const MAIN_KEEP_T = new Set([4, 5, 41, 42, 54, 81, 82]);
+  // v253: 이 안내 앞 2km 안에 출구(나가기) 안내가 있었나 — 고속도로를 이미 나왔다 (길찾기 구간 이름은 고속도로로 남아 있어도)
+  function exitedBefore(g) {
+    if (!g || !nav.route || !nav.cum || !nav.cum.length) return false;
+    const last = nav.cum.length - 1, at = nav.cum[Math.min(g.i, last)];
+    return (nav.route.guide || []).some((x) => x.i < g.i && /^out/.test(turnKind0(x)) && at - nav.cum[Math.min(x.i, last)] < 2000);
+  }
   function mainKeep(g) {
     if (!g || !MAIN_KEEP_T.has(g.t) || !nav.route || !nav.cum || !nav.cum.length || g.i == null) return false;
     if (g._mkFor === nav.route) return g._mk;
     let ok = false;
     const last = nav.cum.length - 1, i = Math.min(g.i, last), at = nav.cum[i];
+    // v253 (jx 비교표 2번, 운전자 불만 지점 서하남교차로: 네이버 '왼쪽 방향 · 강동', 우리 '직진'): 출구(나가기) 안내 뒤 2km 안의 갈림은
+    //   고속도로 본선이 아니다 — 길찾기 구간 이름이 '수도권제1순환고속도로'로 남아 있어도 네이버 말 그대로 둔다
+    if (exitedBefore(g)) {
+      g._mk = false; g._mkFor = nav.route;
+      return false;
+    }
     const sec = (nav.route.sections || []).find((s) => i >= s.i && i <= s.i + Math.max(1, s.n) - 1);
     const fast = onHighwayRoute(at) || fastRoadSpans().some(([a, b]) => at >= a && at <= b);
     if (sec && sec.name && fast) {
@@ -6313,8 +6325,37 @@
   };
   const JX_GO_R = { exit: true, exit2: true, exit4: true, fork: true, stay: false };   // 뒤집기 전 그림에서 경로 갈래가 오른쪽인가
   const jxHas = (s) => !!(ICON_PICKS['jx_' + s + '_day'] && ICON_PICKS['jx_' + s + '_night']);
-  function jxShape(j) {
+  // v253 (jx 비교표): 이 안내 지점의 정밀도로지도 차로 단면 — 안내 지점 150m 앞 ~ 450m 뒤 단면 중 갈 차로가 가장 많은 것(같으면 가까운 것).
+  //   네이버 그림의 차로 수와 맞다: 신갈JC 하행 'SB|S|S|S|R' = 본선 4 + 출구 1, 기흥IC 'S|S|S|SR|R|R' = 출구 2, 판교IC 'SB|S|S|S|S|R|R' = 출구 2
+  function jxLaneAt(g) {
+    if (!g || !nav.cum || !nav.cum.length) return null;
+    const sg = nav.cum[Math.min(g.i, nav.cum.length - 1)];
+    let best = null;
+    for (const x of ensureRouteForks()) {
+      const d = x.at - sg;
+      if (d < -150 || d > 450) continue;
+      if (!best || x.ok.length > best.ok.length || (x.ok.length === best.ok.length && Math.abs(d) < Math.abs(best.at - sg))) best = x;
+    }
+    return best;
+  }
+  // v253 (jx 비교표 1번): 네이버가 확대 그림을 안 띄우는 곳 — 본선 그대로(판교JC 학의 쪽)와 이름 없는 일반 갈림('서울' 방면 왼쪽 방향, 팔당)에는
+  //   그림 칸 없이 안내 카드·차로 줄만. 본선 그대로라도 차로 단면이 있는 분기점(신갈JC '대전')은 네이버처럼 그림을 띄운다
+  function juncWanted(g, j) {
+    if (!j) return false;
+    if (j.kind === 'main') return !!jxLaneAt(g);
+    if (j.kind === 'fork') return !!(j.place || j.hwy);
+    return true;
+  }
+  function jxShape(j, g) {
     if (!j || !NV_KINDS.has(j.kind)) return null;
+    g = g || nav.next;
+    // v253: 차로 단면이 있으면 그 차로 수로 고른다 (안내 종류보다 먼저): 경로가 곧게 → 본선 그대로, 나가는 차로 둘 이상 → 2+2, 곧게 가는 차로 넷 이상 → 4+1
+    const ln = jxLaneAt(g);
+    if (ln) {
+      const go = ln.ok.length, other = ln.lanes.length - go;
+      const sh = ln.M === 'S' ? 'stay' : go >= 2 ? 'exit2' : other >= 4 ? 'exit4' : 'exit';
+      if (jxHas(sh)) return sh;
+    }
     if (j.kind === 'main') return jxHas('stay') ? 'stay' : null;
     if (j.kind === 'fork') return jxHas('fork') ? 'fork' : null;
     const fl = forkLane();   // 정밀도로지도 분기 단면: 나가는 차로가 둘 이상이면 2+2 그림, 곧게 가는 차로가 넷 이상이면 4+1 그림
@@ -6324,7 +6365,47 @@
     if (j.hwy && jxHas('exit4') && !(fl && fl.lanes)) return 'exit4';
     return jxHas('exit') ? 'exit' : jxHas('exit4') ? 'exit4' : jxHas('exit2') ? 'exit2' : null;
   }
-  const jxMirror = (j) => (j.kind === 'main' ? !j.left : !!j.left);
+  function jxMirror(j, g) {
+    // v253: 차로 단면이 있으면 그대로 — 나가는 쪽이 왼쪽(L)이면 뒤집는다. 본선 그대로면 경로 차로가 오른쪽 끝까지 가고 왼쪽 차로가 빠질 때 뒤집는다
+    const ln = jxLaneAt(g || nav.next);
+    if (ln) {
+      if (ln.M === 'L') return true;
+      if (ln.M === 'R') return false;
+      return ln.ok[ln.ok.length - 1] === ln.lanes.length - 1 && ln.ok[0] > 0;
+    }
+    return j.kind === 'main' ? !j.left : !!j.left;
+  }
+  // v253 (jx 비교표 4번, 서울TG→판교분기점: 네이버 오른쪽 갈래 '일산 안양' 녹색 1 + '구리 성남' 분홍 2): 갈 차로가 둘인 그림(2+2)에서
+  //   경로가 들어간 갈래가 900m 안에서 다시 둘로 갈리면(OSM) 왼쪽 갈 차로에 왼쪽 갈래, 오른쪽 갈 차로에 오른쪽 갈래의 방면과 색깔 유도선 색을 쓴다.
+  //   반환: { names: [왼쪽 차로 이름들, 오른쪽 차로 이름들], colors: ['g'|'p'|'b', …] } (화면 왼쪽→오른쪽), 모르면 null
+  function jxSplit2(g, want) {
+    // 색깔 유도선 자료가 이 갈림에서 서로 다른 색 갈래 둘을 가질 때만 (판교분기점: 녹색 일산 · 분홍 구리). 갈래 끝을 안내 지점에서 본 좌우로 줄 세우고,
+    // 그 끝에 가장 가까운 OSM 연결로의 방면을 이름으로 (판교IC 처럼 색 하나뿐인 곳은 차로 하나로 본다)
+    const cla = colorLineAhead();
+    if (!cla || !clSameTurn(cla) || !jdData.loaded || !nav.cum) return null;
+    const row = clData.rows[cla.k];
+    if (!row || row.br.length < 2 || new Set(row.br.map((b) => b.c)).size < 2) return null;
+    const last = nav.cum.length - 1, T = nav.cum[Math.min(g.i, last)];
+    const h = routeBearingAt(Math.max(0, T - 60), T);
+    if (h === null) return null;
+    const PT = routePointAt(T);
+    const side = (p) => ((bearing(PT, p) - h + 540) % 360) - 180;
+    const brs = row.br.slice().sort((a, b) => side(a) - side(b)).slice(0, 2);
+    // 안내 방면('일산, 구리')과 겹치는 갈래를 먼저 (판교분기점 녹색 끝 옆에 '부산;대전;판교' 연결로가 더 가깝다)
+    const wantSet = new Set((want || []).map((x) => String(x)));
+    const nameOf = (end) => {
+      let best = null;
+      for (const r of jdNear(end)) for (const b of r.br) {
+        const nm = jdNames(b.dest);
+        if (!nm.length) continue;
+        const d = Math.min(...b.pts.map((p) => haversine(p, end))) - (nm.some((x) => wantSet.has(x)) ? 1000 : 0);
+        if (!best || d < best.d) best = { d, nm };
+      }
+      return best && best.d < 400 ? best.nm.slice(0, 2) : [];   // (겹치는 갈래는 -1000 이라 늘 통과)
+    };
+    return { names: brs.map(nameOf), colors: brs.map((b) => (b.c === 'p' ? 'p' : 'g')) };
+  }
+
   // 노면 글자: 네 글자까지(네이버 '판교'·'서울'). 길면 쓰지 않는다 (표지판에 다 있다)
   const jxRoadName = (n) => { const t = String(n || '').replace(/고속도로$/, '').replace(/\s+/g, ''); return t && t.length <= 4 ? t : ''; };
   function jxBoardStyle(b) {
@@ -6358,7 +6439,8 @@
     const g = nav.active && prefs.junction ? nav.next : null;
     let j = g && nav.dg != null && nav.dg <= JUNC_SHOW ? juncInfo(g) : null;
     // AI 그림(낮·밤)이 없는 종류는 그림 칸을 띄우지 않는다 (v245: 모든 종류 — 예전엔 고가·지하차도·옆길만)
-    const jxs = jxShape(j);
+    if (j && !juncWanted(g, j)) j = null;   // v253: 네이버가 그림을 안 띄우는 곳
+    const jxs = jxShape(j, g);
     if (j && !jxs && (JUNC_DRAWN ? JUNC_ROAD[g.t] : true) && !(ICON_PICKS['junc_' + j.kind + '_day'] && ICON_PICKS['junc_' + j.kind + '_night'])) j = null;
     juncState.g = j ? g : null;
     if (!j) {
@@ -6377,7 +6459,7 @@
     const fl = useNv ? forkLane() : null;
     const cla = useNv ? colorLineAhead() : null;
     const clHere = !!cla && clSameTurn(cla);   // renderColorLine 의 '같은 갈림'과 같은 기준
-    const key = g.i + ':' + g.t + ':' + g.s + (jxs ? '|jx' + jxs + (jxMirror(j) ? 'm' : '') + (clData.loaded ? 'c' : '') : '') + (jdData.loaded ? '|jd' : '') + (usePlan ? '|plan' : '') + (useNv ? '|' + (fl ? fl.k + ':' + fl.ok.join(',') : '') + '|' + (clHere ? cla.k + cla.c : '') : '');
+    const key = g.i + ':' + g.t + ':' + g.s + (jxs ? '|jx' + jxs + (jxMirror(j, g) ? 'm' : '') + (clData.loaded ? 'c' : '') : '') + (jdData.loaded ? '|jd' : '') + (usePlan ? '|plan' : '') + (useNv ? '|' + (fl ? fl.k + ':' + fl.ok.join(',') : '') + '|' + (clHere ? cla.k + cla.c : '') : '');
     if (juncState.key !== key) {
       juncState.key = key;
       juncState.fork = null; juncState.cl = null;
@@ -6427,31 +6509,44 @@
         goStraight = false;
       } else if (jxs) {
         // 네이버식 분기점 그림 (2026-11-25): 그림 + 표지판 두 장(경로 갈래 · 다른 갈래) + 차로 방면 글자
-        const mir = jxMirror(j), goR = JX_GO_R[jxs] !== mir;
+        const mir = jxMirror(j, g), goR = JX_GO_R[jxs] !== mir;
         const last = nav.pts ? nav.pts.length - 1 : 0;
         const goRoad = routeRoadAt(Math.min(g.i + 2, last)), curRoad = routeRoadAt(Math.max(g.i - 2, 0));
-        goNo = expwayNo(goRoad);
+        goNo = exitedBefore(g) ? 0 : expwayNo(goRoad);   // v253: 고속도로를 나온 뒤(서하남교차로)는 노선 방패 없이
         goStraight = jxs === 'stay';
         // v249 갈 차로 색: 이 갈림의 노면 색깔 유도선이 분홍이면 분홍, 초록이면 초록(AI 그림 그대로), 없으면 네이버처럼 하늘색.
         //   하늘색·분홍 그림은 build_ai_icons.py 가 AI 그림의 경로 차로 초록만 같은 밝기로 바꿔 만든 것 (<그림>_b.webp, _p.webp)
         const cla = colorLineAhead(), clc = cla && clSameTurn(cla) ? cla.c : '';
         const lc = clc === 'p' ? 'p' : clc === 'g' || clc === 'lg' ? 'g' : 'b';
-        const vf = (f) => (lc === 'g' ? f : String(f).replace(/\.webp$/, '_' + lc + '.webp'));
+        // v253: 갈 차로가 둘인 그림은 갈래가 다시 둘로 갈리면 차로마다 색·방면 (화면 왼쪽→오른쪽). 그림 파일은 뒤집기 전 차로 순서로 '_gp' 처럼
+        const two = (jxs === 'exit2' || jxs === 'fork') ? jxSplit2(g, j.names) : null;
+        const lc2 = two && two.colors[0] !== two.colors[1] ? (mir ? two.colors.slice().reverse() : two.colors).join('') : '';
+        const vf = (f) => (lc2 ? String(f).replace(/\.webp$/, '_' + lc2 + '.webp') : lc === 'g' ? f : String(f).replace(/\.webp$/, '_' + lc + '.webp'));
         const xi = (f, c) => '<img class="jv-img jx-img ' + c + '" src="' + APP_BASE + 'img/ai/' + vf(f) + '?v=' + APP_VERSION + '" alt="" draggable="false">';
         const otherRoad = curRoad && goRoad && curRoad !== goRoad ? curRoad : '';
         // 다른 갈래: OSM 연결로 방면(판교분기점 '일산 평촌', 신갈분기점 '인천 안산')이 있으면 그것, 없으면 곧게 이어지는 지금 길 이름·방패, 모르면 화살표만
         const ot = juncOther(g);
-        const otNames = ot && ot.names.length ? ot.names.slice(0, 2) : otherRoad && jxs !== 'stay' ? [otherRoad.replace(/고속도로$/, '')] : [];
-        const otNo = ot && ot.names.length ? (/^\d+$/.test(ot.ref) ? +ot.ref : 0) : otherRoad && jxs !== 'stay' ? expwayNo(otherRoad) : 0;
+        // v253: 방면이 없는 본선 갈래(OSM 에 destination 없음)는 그 길 이름 ('경부') — 경로 자료의 지금 길 이름보다 OSM 갈래 이름을 먼저
+        const otRoadNm = ot && !ot.names.length && ot.name ? ot.name.replace(/고속도로$|고속국도$/, '') : '';
+        const otNames = ot && ot.names.length ? ot.names.slice(0, 2) : otRoadNm ? [otRoadNm] : otherRoad && jxs !== 'stay' ? [otherRoad.replace(/고속도로$/, '')] : [];
+        const otNo = ot && (ot.names.length || otRoadNm) ? (/^\d+$/.test(ot.ref) ? +ot.ref : expwayNo(ot.name)) : otherRoad && jxs !== 'stay' ? expwayNo(otherRoad) : 0;
         // 차로마다 방면 (네이버처럼 두 줄까지): 경로 차로는 안내 방면, 다른 차로는 다른 갈래 방면 (네 글자 넘는 이름은 뺀다)
         const short = (arr) => arr.map(jxRoadName).filter(Boolean).slice(0, 2);
         const goLane = short(j.names), otLane = short(otNames);
-        const lane = (p) => { const nm = p[2] ? goLane : otLane; if (!nm.length) return '';
+        // 갈 차로 이름: 갈래가 다시 갈리면 왼쪽 차로는 왼쪽 갈래, 오른쪽 차로는 오른쪽 갈래 (그림에서 갈 차로는 뒤집기 전 왼쪽부터 k 번째)
+        const goIdx = JX_LANES[jxs].filter((p) => p[2]).map((p) => p[0]);
+        const goName = (p) => {
+          if (!two) return goLane;
+          const k = goIdx.indexOf(p[0]), disp = mir ? goIdx.length - 1 - k : k;
+          const nm = short(two.names[disp <= 0 ? 0 : 1]);
+          return nm.length ? nm : goLane;
+        };
+        const lane = (p) => { const nm = p[2] ? goName(p) : otLane; if (!nm.length) return '';
           return '<span class="jx-lane' + (p[2] ? ' go' : '') + '" style="left:' + ((mir ? 1 - p[0] : p[0]) * 100).toFixed(1) + '%;top:' + (p[1] * 100).toFixed(1) + '%">' +
             nm.map((x) => '<b>' + esc(x) + '</b>').join('') + '</span>'; };
         $('#juncSvg').innerHTML = xi(ICON_PICKS['jx_' + jxs + '_day'], 'jv-day') + xi(ICON_PICKS['jx_' + jxs + '_night'], 'jv-night') + JX_LANES[jxs].map(lane).join('');
         $('#juncSvg').classList.remove('nv-has-bg');
-        el.dataset.lc = lc;
+        el.dataset.lc = lc2 || lc;
         // 다른 갈래 표지: 나가기면 곧게 가는 쪽, 갈림길이면 반대 갈래, 본선 그대로면 나가는 연결로. 이름을 모르면 화살표만
         const otStraight = jxs === 'exit' || jxs === 'exit2' || jxs === 'exit4';
         // 방면도 지금 길 이름도 모르지만 OSM 에 그 갈래의 노선 번호가 있으면 방패 + 화살표 (성남IC: '↑ [100]')
@@ -6496,7 +6591,7 @@
       el.classList.toggle('nv', useNv);
       el.classList.toggle('plan', usePlan);
       el.classList.toggle('jx', !!jxs);
-      el.classList.toggle('jx-m', !!jxs && jxMirror(j));
+      el.classList.toggle('jx-m', !!jxs && jxMirror(j, g));
       el.dataset.fit = '';
       el.classList.toggle('left', !jxs && j.left);   // jx 는 좌우를 jx-m 으로만 (옛 그림의 뒤집기·표지 자리 규칙과 섞이지 않게)
       el.classList.toggle('main', !jxs && j.kind === 'main');
@@ -7215,28 +7310,46 @@
     return out;
   }
   // 방면 이름: '경부고속도로;서울;판교' → ['서울', '판교'] (길 이름은 노선 방패가 대신한다)
-  const jdNames = (d) => String(d || '').split(';').map((x) => x.trim()).filter((x) => x && !/고속도로$|고속국도$/.test(x));
+  const jdNames = (d) => String(d || '').split(';').map((x) => x.trim())
+    .filter((x) => x && !/고속도로$|고속국도$/.test(x) && !/공사|본부|지사|,/.test(x) && x.length <= 8);   // v253: '한국도로공사 수도권본부' 같은 기관 이름은 뺀다
   // 이 안내(갈림)에서 우리가 가지 않는 갈래: 안내 지점 350m 앞 ~ 120m 뒤에서 경로가 지나는 갈림점(경로선 20m 안, 들어오는 방향 40° 안) 중
   // 갈래 자리(350·200·80m, 먼 것부터 — 판교분기점은 갈린 뒤 80m 에도 두 갈래가 9m 거리) 하나만 경로선 20m 안인 곳. 다른 갈래의 방면(없으면 노선·이름)
-  function juncOther(g) {
+  // v253: 우리 갈래는 경로가 지나는지(먼 자리부터)로 가르되, 갈래 자리가 모자라면(연결로가 곧 다시 갈려 80m 자리 하나뿐 — 신갈분기점 하행 출구,
+  //   서하남교차로 '하남') 갈림 모양으로 가른다: 본선 그대로면 가장 곧은 갈래, 왼쪽·오른쪽 갈림이면 그쪽 끝 갈래
+  function juncSplitAt(g) {
     if (!jdData.loaded || !g || !nav.pts || !nav.cum) return null;
     const last = nav.cum.length - 1, T = nav.cum[Math.min(g.i, last)];
+    const j = juncInfo(g);
     let best = null;
     for (const r of jdNear(routePointAt(T))) {
       const on = routeSegNear(r, 20);
       if (!on || on.at < T - 350 || on.at > T + 120) continue;
       const rb = routeBearingAt(Math.max(0, on.at - 30), on.at);
       if (rb === null || angleDiff(rb, r.h) > 40) continue;
-      let hits = null;
-      for (let lv = 2; lv >= 0 && !hits; lv--) {
+      if (!r.br.some((b) => jdNames(b.dest).length)) continue;
+      let go = -1;
+      for (let lv = 2; lv >= 0 && go < 0; lv--) {
         if (!r.br.every((b) => b.pts[lv])) continue;
         const h = r.br.map((b) => { const q = routeSegNear(b.pts[lv], 20); return !!q && q.at > on.at + 20; });
-        if (h.filter(Boolean).length === 1) hits = h;
+        if (h.filter(Boolean).length === 1) go = h.indexOf(true);
       }
-      if (!hits) continue;
+      if (go < 0 && j) {
+        const ang = r.br.map((b) => { const p = b.pts[b.pts.length - 1]; return ((bearing(r, p) - rb + 540) % 360) - 180; });
+        const order = ang.map((a, i) => i);
+        if (j.kind === 'main') order.sort((a, b) => Math.abs(ang[a]) - Math.abs(ang[b]));
+        else order.sort((a, b) => (j.left ? ang[a] - ang[b] : ang[b] - ang[a]));
+        // 그 갈래로 경로가 실제로 지나는지(가까운 자리 하나라도) 한 번 더 본다
+        const q = routeSegNear(r.br[order[0]].pts[0], 25);
+        if (q && q.at > on.at) go = order[0];
+      }
+      if (go < 0) continue;
       const d = Math.abs(on.at - T);
-      if (!best || d < best.d) best = { d, r, go: hits.indexOf(true) };
+      if (!best || d < best.d) best = { d, r, go, at: on.at };
     }
+    return best;
+  }
+  function juncOther(g) {
+    const best = juncSplitAt(g);
     if (!best) return null;
     const o = best.r.br.find((b, i) => i !== best.go);
     return { names: jdNames(o.dest), ref: o.ref, name: o.name, main: !o.dest, go: jdNames(best.r.br[best.go].dest) };
@@ -10908,7 +11021,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, soonChain, soonSpeech, SOON_M, SEC_JOIN_RULE, loneSecEnd, quietSecEnd, jxShape, jxMirror, JX_BOARD, JX_TEXT, JX_LANES, juncOther, jdData, setJuncDest, loadJuncDest, camFlagUndo, camFlagToday, undoWrongCard, clearConfirmedFlags, CAM_FLAG_CLEAR, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams, passWhy, pruneTurnCams, camDirOk, routeNet, routeUpstream, laneGuideM, planSignPlace, findBuilding, sunPosStored, eventBody, routeArrived, routeIdleCheck, routeStartup, routeHide, tripEndGap, routeHeading, startsReversed, ROUTE_AHEAD, fitSigns, nvSceneFits, planScene, routeTurnSum, renderJunction, juncState,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, soonChain, soonSpeech, SOON_M, exitedBefore, juncSplitAt, jxLaneAt, juncWanted, jxSplit2, mainKeep, SEC_JOIN_RULE, loneSecEnd, quietSecEnd, jxShape, jxMirror, JX_BOARD, JX_TEXT, JX_LANES, juncOther, jdData, setJuncDest, loadJuncDest, camFlagUndo, camFlagToday, undoWrongCard, clearConfirmedFlags, CAM_FLAG_CLEAR, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams, passWhy, pruneTurnCams, camDirOk, routeNet, routeUpstream, laneGuideM, planSignPlace, findBuilding, sunPosStored, eventBody, routeArrived, routeIdleCheck, routeStartup, routeHide, tripEndGap, routeHeading, startsReversed, ROUTE_AHEAD, fitSigns, nvSceneFits, planScene, routeTurnSum, renderJunction, juncState,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,

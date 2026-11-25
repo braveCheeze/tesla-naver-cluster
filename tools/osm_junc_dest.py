@@ -89,6 +89,21 @@ def follow(wid, k):
             break
         nxt = [x for x in starts.get(w['n'][-1], []) if x not in seen]
         if len(nxt) != 1:   # 또 갈라지거나 끝나면 멈춘다
+            # 방면을 못 찾은 채 연결로가 다시 갈라지면 갈래마다 첫 방면을 모은다 (신갈분기점 경부 하행 출구: '인천;안산;동수원' + '원주;마성·에버랜드' → '인천;원주')
+            if not dest and len(nxt) >= 2:
+                subs = []
+                for x in nxt[:3]:
+                    d2, c2, h2 = '', x, set()
+                    for _ in range(4):
+                        if W[c2]['d']:
+                            d2 = W[c2]['d']; break
+                        h2.add(c2)
+                        n2 = [y for y in starts.get(W[c2]['n'][-1], []) if y not in h2]
+                        if len(n2) != 1: break
+                        c2 = n2[0]
+                    if d2: subs.append(d2.split(';')[0])
+                if subs:
+                    dest = ';'.join(dict.fromkeys(subs))
             break
         cur, kk = nxt[0], 0
     # AHEADS m 자리들 (길이 모자라면 그 자리는 없음, 첫 자리만은 끝점)

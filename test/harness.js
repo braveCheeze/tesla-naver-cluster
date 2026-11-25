@@ -2941,6 +2941,7 @@
     { id: 'S164', name: "S164 cameras past a U-turn point (v248, driver 2026-11-25 08:41 at 야탑역사거리 southbound on 성남대로: '이건 유턴이라서 지나가는 게 아니라 안 나와도 돼, 네이버지도 봐봐'): the southbound signal/speed 60 (#22941) has its stop line 11 m past the U-turn point, so on the U-turn route it never shows; on a straight route through the same spot it is still announced", fn: s164 },
     { id: 'S165', name: "S165 '비보호' badge and square lane boxes (v248, driver 2026-11-25: '우리는 비보호를 여기다가 써줘도 좋을 거 같아' at the top right of the guidance row, and '네이버지도 화살표 안내 쟤네는 정사각형인데 우린 약간 세로로 길잖아'): an unprotected left turn shows a blue '비보호' badge at the top right of the turn row and drops the word from the text ('좌회전 · …'), the next guide has no badge; the map lane tip draws every lane as its own 30×30 box with a 3 px gap", fn: s165 },
     { id: 'S166', name: "S166 the branch we do not take, lane names and lane colour (v249, driver 2026-11-25 with Naver's 판교분기점 '일산 안양 | 판교': '여기는 일산 안양 이렇게 알려주잖아 … 차선이랑 바닥에 있는 것도 저렇게 다르게', and 신갈분기점 '초록색 따라가게끔'): at 판교분기점 from 학의 ('구리, 성남', staying on the main road) the other sign shows the OSM ramp destinations '부산 대전'; with Naver-style pictures the other board says '부산 대전', the route lanes are painted '구리/성남' and the other lanes '부산/대전', and the picture is the sky-blue variant (no colour line); at 판교분기점 from 서울TG ('일산, 구리', pink colour line) the pink variant is used", fn: s166 },
+    { id: 'S167', name: "S167 junction pictures matched to Naver (v253, jx comparison table): no picture for a main-road stay without lane data (판교JC from 학의) or an unnamed city fork (팔당 '서울'); a picture for 신갈JC '대전' (stay with lane data) naming the ramp '인천, 원주'; 서하남교차로 keeps Naver's '왼쪽 방향' and names 하남 on the other board; 기흥IC exit is 2+2 pink, 신갈JC '원주, 인천' 4+1 green, 판교IC 2+2 with both route lanes '분당/판교'", fn: s167 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -4143,7 +4144,8 @@
       t.endNav(); softReset();
     }
     const a = r.singal, b = r.pangyo;
-    const ok = !!a && !!b && a.kind === 's' && a.text === '신갈분기점에서 직진 · 서울 방면' && a.junc && a.main && a.left && /^junc_main_day/.test(a.img) && a.scene === '' /* v245: 그린 장면 없이 운전자 AI 그림 */ && a.straightSign && a.sign === '1서울' &&
+    // v253 (jx 비교표 1번): 차로 단면이 없는 본선 그대로(이 합성 길)는 네이버처럼 분기점 그림 칸이 없다 — 글·아이콘은 그대로 '직진'
+    const ok = !!a && !!b && a.kind === 's' && a.text === '신갈분기점에서 직진 · 서울 방면' && !a.junc && a.scene === '' &&
       b.kind === 'kr' && /오른쪽 방향/.test(b.text) && b.junc && !b.main && !b.straightSign &&
       /\bml\b/.test(a.icon) && b.icon === 'sr';
     return { pass: ok, detail: JSON.stringify(r) };
@@ -4780,7 +4782,9 @@
       const sgN = cd.rows.find((x) => x.name === '신갈분기점' && near(x, 37.28315, 127.10385, 300) && Math.abs(((x.h - 0) + 540) % 360 - 180) <= 20);
       r.real = { loaded: cd.loaded, rows: cd.rows.length,
         singalN: sgN ? sgN.br.map((b) => b.c).join('') + (sgN.br.length === 2 && sgN.br.find((b) => b.c === 'g').lng < sgN.br.find((b) => b.c === 'p').lng ? ':g-west' : ':?') : '',
-        singalS: cd.rows.filter((x) => x.name === '신갈분기점' && near(x, 37.2954, 127.1036, 1500) && Math.abs(((x.h - 180) + 540) % 360 - 180) <= 30).length };
+        // v253: 공사 자료의 하행 줄(글자 좌우가 갈래와 반대)은 여전히 빼고, 네이버 비교로 더한 하행 출구 녹색 줄(원주·인천 둘 다 녹색, 좌우 없음) 하나만
+        singalS: cd.rows.filter((x) => x.name === '신갈분기점' && near(x, 37.2954, 127.1036, 1500) && Math.abs(((x.h - 180) + 540) % 360 - 180) <= 30)
+          .map((x) => x.br.map((b) => b.c).join('')).join(',') };
       // 실제 경로 (g) 서울TG → 판교분기점
       softReset();
       const SR = await realRoute('route-seoultg-n.json', '판교분기점');
@@ -4812,7 +4816,7 @@
       none(r.passed) && r.passed.c === '' &&
       none(r.green) && r.green.c === 'g' &&
       none(r.mainline) && r.mainline.c === '' && none(r.both) && r.both.c === '' &&
-      r.real.loaded && r.real.rows > 150 && r.real.singalN === 'gp:g-west' && r.real.singalS === 0 &&
+      r.real.loaded && r.real.rows > 150 && r.real.singalN === 'gp:g-west' && r.real.singalS === 'gg' &&
       r.seoulTg.list.indexOf('판교분기점:p') >= 0 && r.seoulTg.list.indexOf('판교나들목') < 0 &&
       none(r.seoulTg.far) && r.seoulTg.far.c === '' && none(r.seoulTg.near) && r.seoulTg.near.c === 'p' && r.seoulTg.near.name === '판교분기점' &&
       /^하남:p/.test(r.hanam);
@@ -8223,6 +8227,55 @@
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
+  // S167: 네이버 분기점 그림과 맞춤 (v253, jx 비교표 — 부모 세션 '네이버가 기준')
+  //   (a) 학의→판교분기점 '구리, 성남'(본선 그대로, 차로 단면 없음) · (b) 팔당 '서울' 방면 왼쪽 방향(이름 없는 일반 갈림): 그림 칸 없음
+  //   (c) 경부 하행 신갈분기점 '대전'(본선 그대로, 단면 'SB|S|S|S|R'): 그림 있음 · 본선 그대로 · 다른 갈래 '인천, 원주'
+  //   (d) 서하남IC 출구 뒤 서하남교차로 '강동': 글은 네이버 그대로 '왼쪽 방향'(예전 '직진'), 다른 갈래 '하남', 방패 없음
+  //   (e) 경부 하행 기흥IC '기흥'(단면 출구 2차로): 2+2 그림, 분홍 · (f) 신갈분기점 '원주, 인천'(단면 본선 4 + 출구 1): 4+1 그림, 녹색
+  //   (g) 경부 하행 판교IC '분당, 판교'(출구 2차로): 2+2 그림, 갈 차로 둘 다 '분당/판교' (본선 갈림을 두 번째 갈림으로 잡지 않음)
+  async function s167() {
+    const t = T(), r = {};
+    const fixture = async (f) => {
+      const fx = await (await realFetch(harnessDir + 'fixtures/' + f, { cache: 'no-store' })).json();
+      const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0]; for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + hav(P[k - 1], P[k]));
+      return { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '시험', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    };
+    const at = async (f, re, before) => {
+      const R = await fixture(f);
+      await resetApp(); softReset(); await planAndStart(R);
+      const g = R.route.guide.find((x) => re.test(x.s)), sg = R.cum[Math.min(g.i, R.cum.length - 1)];
+      for (let s = Math.max(0, sg - before - 900); s <= sg - before; s += 20) { const a = pointAt(R, s); feed(a.p, 20, a.h); }
+      const a = pointAt(R, sg - before); feed(a.p, 20, a.h); t.juncState.key = ''; t.renderNav(); await sleep(60); t.renderNav(); await sleep(30);
+      const el = document.getElementById('juncCard'), sv = document.getElementById('juncSvg');
+      const o = { shown: visible('#juncCard'), shape: t.jxShape(t.juncInfo(t.nav.next), t.nav.next), m: el.classList.contains('jx-m'), lc: el.dataset.lc || '', turn: text('#turnText'),
+        sign: text('#juncLabel'), other: document.getElementById('juncLabel2').getAttribute('aria-label') || '',
+        lanes: [...sv.querySelectorAll('.jx-lane')].map((x) => (x.classList.contains('go') ? '*' : '') + [...x.querySelectorAll('b')].map((b) => b.textContent).join('/')).join(' ') };
+      t.endNav();
+      return o;
+    };
+    try {
+      await waitFor(() => t.clData.loaded && t.jdData.loaded && t.forksData.loaded, 10000, 100);
+      r.a = await at('route-ring1-pangyo.json', /판교분기점에서 '구리, 성남'/, 330);
+      r.b = await at('route-paldang-hanamic-s.json', /^'서울' 방면으로 왼쪽 방향/, 330);
+      r.c = await at('route-giheung-ic-s.json', /신갈분기점에서 '대전'/, 330);
+      r.d = await at('route-seohanam-ic-n.json', /서하남교차로에서 '강동'/, 330);
+      r.e = await at('route-giheung-ic-s.json', /기흥IC에서 '기흥'/, 330);
+      r.f = await at('route-singal-jc-s.json', /신갈분기점에서 '원주, 인천'/, 330);
+      r.g = await at('route-pangyo-ic-s.json', /판교IC에서 '분당, 판교'/, 330);
+    } finally {
+      await resetApp(); softReset();
+    }
+    const { a = {}, b = {}, c = {}, d = {}, e = {}, f = {}, g = {} } = r;
+    const ok = !a.shown && !b.shown &&
+      c.shown && c.shape === 'stay' && /인천/.test(c.other) && /원주/.test(c.other) &&
+      d.shown && /왼쪽 방향/.test(d.turn) && !/직진/.test(d.turn) && /하남/.test(d.other) && !/^\d/.test(d.sign) &&
+      e.shown && e.shape === 'exit2' && e.lc === 'p' &&
+      f.shown && f.shape === 'exit4' && f.lc === 'g' &&
+      g.shown && g.shape === 'exit2' && g.lanes.split(' ').filter((x) => x[0] === '*').every((x) => x === '*분당/판교');
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
   // S166: 가지 않는 갈래의 방면 · 차로마다 방면 · 갈 차로 색 (v249, 2026-11-25 운전자: 네이버 판교분기점 '일산 안양 | 판교' — '여기는 일산 안양
   //   이렇게 알려주잖아, 이런 식으로 알려줘야 해, 차선이랑 바닥에 있는 것도 저렇게 다르게 나오고', 신갈분기점 '여기는 초록색 따라가게끔 나와 있지 이것도 부탁해')
   //   (a) 학의→판교분기점 '구리, 성남'(본선 그대로): AI 그림 칸의 다른 갈래 표지가 OSM 연결로 방면 '부산 대전'
@@ -8251,10 +8304,11 @@
     };
     try {
       await waitFor(() => t.clData.loaded && t.jdData.loaded, 10000, 100);
-      const C = await fixture('route-ring1-pangyo.json');
+      // v253: 판교JC 학의 쪽(본선 그대로, 차로 단면 없음)은 그림이 없어 — 차로 단면이 있는 경부 하행 신갈분기점 '대전'(본선 그대로)에서 본다
+      const C = await fixture('route-giheung-ic-s.json');
       softReset(); await planAndStart(C);
       const unstash = stashJx();   // (a) 는 예전 AI 그림 칸
-      await driveTo(C, /판교분기점에서 '구리, 성남'/, 200);
+      await driveTo(C, /신갈분기점에서 '대전'/, 300);
       r.a = view();
       unstash();
       for (const k of JX) { keep[k] = t.iconPicks[k]; t.iconPicks[k] = /_night$/.test(k) ? 'jxn__t__1.webp' : 'jxd__t__1.webp'; }
@@ -8271,9 +8325,11 @@
       await resetApp(); softReset();
     }
     const a = r.a || {}, b = r.b || {}, c = r.c || {};
-    const ok = a.shown && !a.jx && /부산/.test(a.other) && /대전/.test(a.other) &&
-      b.shown && b.jx && /부산/.test(b.other) && /대전/.test(b.other) && /\*구리\/성남/.test(b.lanes) && /(^| )부산\/대전/.test(b.lanes) && b.lc === 'b' && /_b\.webp$/.test(b.img) &&
-      c.shown && c.jx && c.lc === 'p' && /_p\.webp$/.test(c.img) && /\*일산\/구리/.test(c.lanes);
+    // (a)(b) 다른 갈래(연결로)의 OSM 방면 '인천 원주' — 연결로가 곧 다시 갈려 갈래 자리가 하나뿐이어도 갈림 모양(본선 그대로 = 가장 곧은 갈래)으로 가른다
+    // (c) v253: 판교분기점은 색깔 유도선이 둘(녹색 일산·분홍 구리) — 차로마다 색('_gp')·방면
+    const ok = a.shown && !a.jx && /인천/.test(a.other) && /원주/.test(a.other) &&
+      b.shown && b.jx && /인천/.test(b.other) && /원주/.test(b.other) && /\*대전/.test(b.lanes) && /(^| )인천\/원주/.test(b.lanes) && b.lc === 'b' && /_b\.webp$/.test(b.img) &&
+      c.shown && c.jx && c.lc === 'gp' && /_gp\.webp$/.test(c.img) && /\*일산\/평촌 \*구리\/성남/.test(c.lanes);
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
@@ -8438,7 +8494,7 @@
       const road = [...sv.querySelectorAll('.jx-lane')].map((x) => ({ c: x.classList.contains('go') ? 'go' : 'ot', t: [...x.querySelectorAll('b')].map((b) => b.textContent).join('/'), x: +((x.getBoundingClientRect().left + x.getBoundingClientRect().width / 2 - cr.left) / cr.width).toFixed(3) }));
       return { shown: visible('#juncCard'), jx: el.classList.contains('jx'), m: el.classList.contains('jx-m'), left: el.classList.contains('left'),
         shape: t.jxShape(t.juncInfo(t.nav.next)), ratio: +(cr.width / cr.height).toFixed(2), w: Math.round(cr.width),
-        imgs: [...sv.querySelectorAll('img')].map((i) => (i.getAttribute('src') || '').replace(/^.*\/img\/ai\//, '').replace(/\?.*$/, '').replace(/_[bp]\.webp$/, '.webp')).join(','),
+        imgs: [...sv.querySelectorAll('img')].map((i) => (i.getAttribute('src') || '').replace(/^.*\/img\/ai\//, '').replace(/\?.*$/, '').replace(/_[bpg]{1,2}\.webp$/, '.webp')).join(','),
         flip: img ? getComputedStyle(img).transform : '', svg: sv.querySelectorAll('svg').length,
         sign: lab.textContent.trim(), sb: box(lab), other: oth.textContent.trim(), ob: box(oth), road,
         cut: [lab, oth].some((x) => x.scrollWidth > x.clientWidth + 1 || x.scrollHeight > x.clientHeight + 1 || [...x.querySelectorAll('.sg-row, .sg-names')].some((b) => b.scrollWidth > b.clientWidth + 1)),
@@ -8454,22 +8510,26 @@
       await driveTo(B, /판교분기점에서 '일산, 구리'/, 100);
       r.a = view();
       t.endNav();
+      // (c) jx 그림을 빼면 예전 AI 그림 (같은 판교분기점을 다시 달린다 — 위에서 안내를 끝냈다)
+      for (const k of JX) delete t.iconPicks[k];
+      await resetApp(); softReset(); await planAndStart(B);
+      t.juncState.key = '';
+      await driveTo(B, /판교분기점에서 '일산, 구리'/, 100);
+      r.c = view();
+      t.endNav();
+      for (const k of JX) t.iconPicks[k] = /_night$/.test(k) ? pickN : pick;
+      // (b) v253: 학의→판교분기점 '구리, 성남'(본선 그대로, 차로 단면 없음) — 네이버처럼 그림 칸이 없다
       const C = await fixture('route-ring1-pangyo.json');
       await resetApp(); softReset(); await planAndStart(C);
       t.juncState.key = '';
       await driveTo(C, /판교분기점에서 '구리, 성남'/, 120);
       r.b = view();
-      // (c) jx 그림을 빼면 예전 AI 그림
-      for (const k of JX) delete t.iconPicks[k];
-      t.juncState.key = ''; t.renderNav(); await sleep(30); t.renderNav();
-      r.c = view();
       t.endNav();
-      // (d) 왼쪽 갈림길 (팔당→하남IC '서울' 방면 왼쪽 방향): 갈림길 그림을 좌우로 뒤집는다
-      for (const k of JX) t.iconPicks[k] = /_night$/.test(k) ? pickN : pick;
-      const D = await fixture('route-paldang-hanamic-s.json');
+      // (d) 왼쪽 갈림 (v253: 서하남IC 출구 뒤 서하남교차로 '강동' 방면 왼쪽 방향): 갈림길 그림을 좌우로 뒤집는다
+      const D = await fixture('route-seohanam-ic-n.json');
       await resetApp(); softReset(); await planAndStart(D);
       t.juncState.key = '';
-      await driveTo(D, /^'서울' 방면으로 왼쪽 방향/, 120);
+      await driveTo(D, /서하남교차로에서 '강동'/, 330);
       r.d = view();
       t.endNav();
     } finally {
@@ -8482,12 +8542,12 @@
     const allGo = (o, f) => o.road.filter((x) => x.c === 'go').every(f);
     const ok = a.shown && a.jx && !a.m && !a.left && a.shape && a.ratio >= 1.45 && a.ratio <= 1.55 && a.imgs === pick + ',' + pickN && a.svg === 0 && a.flip === 'none' &&
       /일산/.test(a.sign) && a.sb.l > 0.48 && inside(a.sb) && /경부/.test(a.other) && a.ob.r < 0.52 && inside(a.ob) && !a.cut && !a.overlap &&
-      goA && goA.t === '일산/구리' && allGo(a, (x) => x.x > 0.5) &&
-      b.shown && b.jx && !b.m && b.shape === 'stay' && b.flip === 'none' && /구리/.test(b.sign) && b.sb.r < 0.52 && inside(b.sb) && b.ob.l > 0.48 && inside(b.ob) && !b.cut &&
-      goB && goB.t === '구리/성남' && allGo(b, (x) => x.x < 0.5) &&
-      c.shown && !c.jx && !c.m && /^junc_main_day__/.test(c.imgs) && c.road.length === 0 &&
-      d.shown && d.jx && d.m && d.shape === 'fork' && /^matrix\(-1/.test(d.flip) && /서울/.test(d.sign) && d.sb.r < 0.52 && inside(d.sb) && d.ob.l > 0.48 && inside(d.ob) && !d.cut &&
-      goD && goD.t === '서울' && allGo(d, (x) => x.x < 0.5);
+      // v253: 갈래가 다시 갈려 차로마다 방면 — 왼쪽 '일산/평촌', 오른쪽 '구리/성남'
+      a.road.filter((x) => x.c === 'go').map((x) => x.t).join(',') === '일산/평촌,구리/성남' && allGo(a, (x) => x.x > 0.5) &&
+      !b.shown &&
+      c.shown && !c.jx && !c.m && /^junc_fork_day__/.test(c.imgs) && c.road.length === 0 &&
+      d.shown && d.jx && d.m && d.shape === 'fork' && /^matrix\(-1/.test(d.flip) && /강동/.test(d.sign) && /하남/.test(d.other) && d.sb.r < 0.52 && inside(d.sb) && d.ob.l > 0.48 && inside(d.ob) && !d.cut &&
+      goD && goD.t === '강동' && allGo(d, (x) => x.x < 0.5);
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
@@ -8736,7 +8796,7 @@
       // v245 고정 규칙: 분기 칸은 운전자 AI 그림만(칠한 차로·안내 카드 맨 위 유도선 그림 없음). 색 자료는 그대로 계산한다
       a.at300.ai && !a.at300.nv && a.at300.fill === '' && !a.at300.row && a.at300.cl === 'g' &&
       b.at100 && b.at100.ai && !b.at100.nv && b.at100.fill === '' && !b.at100.row && b.at100.cl === 'p' &&
-      Array.isArray(r.c) && r.c[0] === '판교분기점:p' &&
+      Array.isArray(r.c) && r.c[0] === '판교분기점:g' &&   /* v253: 네이버 비교표 — 일산 쪽 차로는 녹색(구리 쪽 분홍) */
       Array.isArray(r.dSeoul) && r.dSeoul.length === 0 && Array.isArray(r.dSouth) && r.dSouth.length === 0;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }

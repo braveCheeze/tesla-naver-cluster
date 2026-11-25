@@ -256,6 +256,51 @@ def recolor(im, name, c):
     return Image.fromarray(hsv, 'HSV').convert('RGB')
 
 
+def lane_region(name, k, size=(W, H)):
+    """경로 차로 k 번째(뒤집기 전 왼쪽부터) 하나의 자리 — 차로 사이 흰 선 가운데까지 (색을 차로마다 다르게 칠할 때)"""
+    sh = SHAPES[name]
+    go = [ln for ln in sh['lanes'] if ln[2] == sh['go']]
+    x0, x1, s = go[k]
+    m = Image.new('L', (W, H))
+    d = ImageDraw.Draw(m)
+    left = 0.35 if k == 0 else 0.0
+    right = 0.35 if k == len(go) - 1 else 0.0
+    d.polygon(strip(x0 - left, x1 + right, s, sh), fill=255)
+    if size != (W, H):
+        m = m.resize(size, Image.NEAREST)
+    return m
+
+
+def recolor_lanes(im, name, cols):
+    """갈 차로마다 다른 색 (v253, 판교분기점 '일산 안양' 녹색 + '구리 성남' 분홍): cols = 뒤집기 전 왼쪽부터 'g'|'p'|'b'.
+    차로 자리 경계는 흰 차선 가운데라 넓히지 않고, 바깥 두 차로만 그림 폭 5% 넓힌다 (recolor 와 같은 칠 기준)"""
+    out = im.convert('RGB')
+    a = np.asarray(out)
+    r, g, b = a[..., 0].astype(int), a[..., 1].astype(int), a[..., 2].astype(int)
+    paint = (g > 110) & (g - r > 70) & (g - b > 35)
+    paint[: int(0.37 * im.size[1])] = False
+    hsv = np.array(out.convert('HSV'))
+    kk = max(3, int(im.size[0] * 0.05) | 1)
+    n = len(cols)
+    full = np.array(Image.fromarray((route_region(name, im.size) * 255).astype(np.uint8), 'L').filter(ImageFilter.MaxFilter(kk))) > 0
+    regs = [np.array(lane_region(name, k, im.size)) > 0 for k in range(n)]
+    # 넓힌 경로 자리 중 어느 차로에도 안 든 곳은 가까운 바깥 차로 쪽으로 (x 위치로 가른다)
+    xs = np.arange(im.size[0])[None, :].repeat(im.size[1], 0)
+    cx = [xs[rg].mean() if rg.any() else 0 for rg in regs]
+    for k, c in enumerate(cols):
+        if c == 'g':
+            continue
+        own = regs[k] | (full & ~np.any(regs, axis=0) & (np.abs(xs - cx[k]) <= np.min([np.abs(xs - x) for x in cx], axis=0)))
+        mask = own & paint
+        hsv[..., 0][mask] = int(LANE_HUE[c] / 360 * 255)
+        ks, kv = LANE_SV[c]
+        for ch, f in ((1, ks), (2, kv)):
+            v = hsv[..., ch].astype(float)
+            v[mask] = np.minimum(255, v[mask] * f)
+            hsv[..., ch] = v.astype(np.uint8)
+    return Image.fromarray(hsv, 'HSV').convert('RGB')
+
+
 def is_green(rgb):
     r, g, b = rgb[..., 0].astype(int), rgb[..., 1].astype(int), rgb[..., 2].astype(int)
     # 밤 그림은 초록 차로가 어두울 수 있다 (g 60 이상). 낮 풀밭도 초록이지만 검사 자리는 차로 안쪽뿐이다
