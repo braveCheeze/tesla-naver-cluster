@@ -2925,6 +2925,7 @@
     { id: 'S160', name: "S160 hard rule — junction pictures are only the driver's AI images, in the drawer (v245, driver 2026-11-25 '내가 만든 AI 그림으로만 밑에다 보여 주는 거지. 저렇게 보여 주면 안 돼', first said 2026-11-15 v108/v109): 100 m before 판교분기점 '일산, 구리' the drawer slot holds just the two AI pictures (day/night) with the sign fully shown, no drawn svg, no perspective or top-down scene, no split picture or colour row on the guidance card while the pink line is still worked out; without the AI picture for that kind there is no junction slot at all (no drawn fallback); the 성남IC exit is AI-only too; v246: the sign of the branch we do not take is shown too (the road we leave, '① 경부 ↑')", fn: s160 },
     { id: 'S161', name: "S161 turns that follow closely (v246, driver '우회전하고 또 우회전 하는 상황, 성남으로 들어올 때 좀 많이 헷갈리게 돼 있더라. 미리 보여주는 거 조금 개선이 필요해', 성남 여수사거리 east: right, 30 m left, 220 m right): 150 m before the first turn the next row becomes a green '이어서' row with a big arrow, '30m' and '› 220m' for the turn after; the 300 m voice adds '이어서 30미터 앞 왼쪽 방향, 다시 220미터 앞 오른쪽 방향'; a next turn 400 m away keeps the small row", fn: s161 },
     { id: 'S162', name: "S162 Naver-style junction picture jx (2026-11-25, driver sent Naver's 성남IC junction view: '그냥 네이버지도처럼 만들어 달라니까, 자바스크립트로 그리지 말고 AI로 — 헷갈리고 사고 날 것 같아 방향 잘못 틀어서'): with jx AI pictures picked, 100 m before 판교분기점 '일산, 구리' the drawer slot is the 3:2 AI picture (day/night, no drawn svg, not mirrored), the route sign '일산' sits on the right board and the other branch '경부' on the left board, both inside the picture and not cut, and '일산' is painted under the green lanes on the right; at the same junction from 학의 ('구리, 성남', keep left on the main road) the 'stay' picture is used as is with the route sign on the left board; without jx pictures the old AI picture is used; the left fork '서울' (팔당→하남IC) mirrors the fork picture and swaps boards and the painted name", fn: s162 },
+    { id: 'S163', name: "S163 joining a section after its start camera (2026-11-25, driver's rule '시작점 뒤에서 들어오면 구간단속은 해당 안 됨'; real case: 신갈동 → 경부 상행 about 1.7 km past the 신갈→죽전 110 start camera, the end camera was still shown as '구간 110' from 2200 m): synthetic OSM-shaped routes — the control route from 2 km before the start camera opens the 110 section and shows the end camera as the section end; the join route must show no section card, no average meter and no section voice (SKIP with the current behaviour until the rule lands after the Naver check)", fn: s163 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -8200,6 +8201,54 @@
       !c.pill && c.active &&
       d.bad400 === 1 && d.naverNo === 1 && d.traffic === 1 && d.upstream.every(Boolean) && !d.pillAfterEnd;
     return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S163: 구간단속 중간 합류 (2026-11-25, 운전자 규칙 '시작점 뒤에서 들어오면 구간단속은 해당 안 됨'). 실제 사례: 신갈동에서 출발해
+  //   경부 상행 구간단속(신갈→죽전 110, 시작 #20098 · 끝 #22040) 시작 카메라 약 1.7km 뒤로 들어왔는데 끝 카메라를 '구간 110'으로
+  //   2200m 앞부터 알렸다(v244). 궤적은 저장소에 넣지 않고 OSM 경부 상행 본선 모양의 합성 경로 두 개로 시험한다:
+  //   대조군(route-gyeongbu-secfull-n: 시작 카메라 2km 앞부터) — 시작 카메라에서 구간이 열리고 끝 카메라는 '구간단속 끝'
+  //   합류(route-gyeongbu-secjoin-n: 시작 카메라 1.7km 뒤부터) — 구간 카드·평균 속도·'구간단속 끝' 경고가 없어야 한다.
+  //   끝 카메라를 지점 카메라로 알릴지는 네이버 확인 뒤 정한다. 규칙이 들어가기 전(t.SEC_JOIN_RULE 없음)에는 대조군만 보고
+  //   합류는 지금 동작을 적어 SKIP 으로 둔다
+  async function s163() {
+    const t = T(), r = {};
+    const START = { lat: 37.25084, lng: 127.10393 }, END = { lat: 37.3539, lng: 127.10339 };
+    const fixture = async (f) => {
+      const fx = await (await realFetch(harnessDir + 'fixtures/' + f, { cache: 'no-store' })).json();
+      const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0]; for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + hav(P[k - 1], P[k]));
+      return { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '시험', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    };
+    const drive = async (R) => {
+      let endS = 0, endD = Infinity;
+      for (let s = 0; s <= R.total; s += 5) { const d = hav(pointAt(R, s).p, END); if (d < endD) { endD = d; endS = s; } }
+      const o = { sec: false, secLimit: null, avg: false, endAt: null, endType: '', voice: [] };
+      const n0 = t.alertLog.length;
+      await planAndStart(R);
+      for (let s = 0; s <= Math.min(R.total, endS + 80); s += 25) {
+        const a = pointAt(R, s); feed(a.p, 25, a.h);
+        if (t.camState.section) { o.sec = true; o.secLimit = t.camState.section.limit; }
+        if (visible('#camAvg')) o.avg = true;
+        const tg = t.camState.target;
+        if (tg && sameCam(tg.c, END) && o.endAt === null) { o.endAt = Math.round(endS - s); t.renderCam(); o.endType = text('#camType'); }
+      }
+      o.voice = t.alertLog.slice(n0).map((x) => String(x.text || x.msg || x)).filter((x) => /구간/.test(x)).slice(0, 4);
+      t.endNav();
+      return o;
+    };
+    try {
+      await waitFor(() => t.cams.loaded, 10000, 100);
+      softReset(); r.full = await drive(await fixture('route-gyeongbu-secfull-n.json'));
+      await resetApp(); softReset(); r.join = await drive(await fixture('route-gyeongbu-secjoin-n.json'));
+    } finally {
+      await resetApp(); softReset();
+    }
+    const f = r.full || {}, j = r.join || {};
+    const fullOk = f.sec && f.secLimit === 110 && f.endAt !== null && /구간/.test(f.endType);
+    if (!fullOk) return { pass: false, detail: 'control route (full section) did not open the section: ' + JSON.stringify(r) };
+    if (!t.SEC_JOIN_RULE) return { status: 'SKIP', detail: 'join rule waits for the Naver check (구간단속 중간 합류); current behaviour on the join route: ' + JSON.stringify(r) };
+    const joinOk = !j.sec && !j.avg && !/구간/.test(j.endType) && !j.voice.some((x) => /구간단속 끝|구간단속 시작/.test(x));
+    return { pass: !!joinOk, detail: JSON.stringify(r) };
   }
 
   // S162: 네이버식 분기점 그림 jx (2026-11-25 운전자가 네이버 성남IC 확대 그림을 보내며 '그냥 네이버지도처럼 만들어 달라니까, 자바스크립트로
