@@ -133,8 +133,9 @@ def draw_base(name):
     # 갈라지는 곳 앞은 한 판
     allx0 = min(x0 for x0, _ in groups.values()); allx1 = max(x1 for _, x1 in groups.values())
     d.polygon(strip(allx0 - 0.8, allx1 + 0.8, 0, sh, Z0, ZS), fill=asphalt)
-    # 갈라진 틈(갈래 사이)은 흰 빗금 지대 → 밑그림에서는 흰 줄무늬 삼각형
-    keys = sorted(groups)
+    # 갈라진 틈(갈래 사이) 빗금은 밑그림에 그리지 않는다 (2026-11-25 운전자가 갈림 바로 뒤 짧은 흰 가로 막대에 '?' — 빗금 한 줄이
+    # 갈래 사이를 가로질러 이상한 선처럼 보였다). 빗금은 AI 가 갈래 사이에 그리게 글로만 시킨다 (JX_EDIT 'white chevron hatching in the gore')
+    keys = []
     for a, b in zip(keys, keys[1:]):
         xa, xb = groups[a][1], groups[b][0]
         for z in [ZS + 3 + 6 * i for i in range(14)]:
@@ -212,6 +213,39 @@ def masks(name):
     cut = int(0.45 * H)
     a[:cut] = False; b[:cut] = False
     return a, b
+
+
+def route_region(name, size=(W, H)):
+    """경로 차로 전체(갈래 끝까지, 양옆 0.35m 더) → 그림 크기의 참/거짓 배열 (색 바꾸기용)"""
+    sh = SHAPES[name]
+    m = Image.new('L', (W, H))
+    d = ImageDraw.Draw(m)
+    for x0, x1, s in sh['lanes']:
+        if s == sh['go']:
+            d.polygon(strip(x0 - 0.35, x1 + 0.35, s, sh), fill=255)
+    if size != (W, H):
+        m = m.resize(size, Image.NEAREST)
+    return np.array(m) > 0
+
+
+# 네이버처럼 갈 차로 색: 노면 색깔 유도선이 없으면 하늘색(b), 분홍 유도선이면 분홍(p). AI 그림은 초록(g)으로 그린다
+LANE_HUE = {'b': 196, 'p': 329}
+LANE_SV = {'b': (0.85, 1.32), 'p': (0.62, 1.3)}   # (채도, 밝기) 배
+
+
+def recolor(im, name, c):
+    """AI 그림(PIL RGB)의 경로 차로 초록만 같은 채도·밝기로 색만 바꾼 새 그림. 흰 화살표·차선은 그대로 (초록이 아니므로)"""
+    a = np.asarray(im.convert('RGB'))
+    mask = route_region(name, im.size) & is_green(a)
+    hsv = np.array(im.convert('RGB').convert('HSV'))
+    hsv[..., 0][mask] = int(LANE_HUE[c] / 360 * 255)
+    # 네이버 분기점 그림의 밝은 하늘색(#22bff2)·연분홍(#f68cc0)처럼: 채도는 조금 낮추고 밝기는 올린다
+    ks, kv = LANE_SV[c]
+    for ch, k in ((1, ks), (2, kv)):
+        v = hsv[..., ch].astype(float)
+        v[mask] = np.minimum(255, v[mask] * k)
+        hsv[..., ch] = v.astype(np.uint8)
+    return Image.fromarray(hsv, 'HSV').convert('RGB')
 
 
 def is_green(rgb):

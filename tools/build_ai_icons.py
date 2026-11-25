@@ -75,6 +75,9 @@ def main():
             im.thumbnail((720, 480), Image.LANCZOS)
             im.save(path, 'WEBP', quality=86)
             shape = slot[3:].rsplit('_', 1)[0]
+            # v249 갈 차로 색 두 가지 더: 하늘색(유도선 없음, 네이버 기본) · 분홍(분홍 유도선). 초록(초록 유도선)은 AI 그림 그대로
+            for c in ('b', 'p'):
+                jx_scene.recolor(im, shape, c).save(path[:-5] + '_' + c + '.webp', 'WEBP', quality=86)
             ok, why, go, ot = jx_scene.check(src, shape)
             it = {'slot': slot, 'kind': kind, 'file': out, 'model': m['model'], 'n': int(m['n']), 'pink': 0, 'jx': [go, ot]}
             if not ok:

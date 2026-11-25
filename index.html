@@ -1572,6 +1572,15 @@
   .junccard.jx .jc-label.jx-board .sg-names { align-items: center; }
   .junccard.jx .jc-label.jc-other.jx-board > :not(.sg-arrow) { opacity: .88; }
   .junccard.jx .jc-head { display: none; }
+  /* v249 차로마다 방면 글자 (네이버 '일산 일산 일산 일산 | 성남'): 바닥에 칠한 것처럼 납작하게, 두 줄까지. 갈 차로는 하얗게 크게 */
+  .jx-lane { position: absolute; transform: translate(-50%, -50%) scaleY(.72); display: flex; flex-direction: column; align-items: center; pointer-events: none;
+    color: rgba(255, 255, 255, .86); line-height: 1.02; }
+  .jx-lane b { font-size: 13px; font-weight: 900; letter-spacing: 1px; white-space: nowrap; text-shadow: 0 0 1.5px rgba(0, 0, 0, .45); }
+  .jx-lane.go { color: #fff; }
+  .jx-lane.go b { font-size: 14px; }
+  /* v249 AI 그림 칸의 다른 갈래 표지: 그 갈래가 왼쪽이면 화살표를 왼쪽에, 왼쪽 위를 가리키게 (신갈분기점 '↖ 인천 안산') */
+  .junccard:not(.nv):not(.plan):not(.jx) .jc-label.jc-other.oth-l .sg-arrow { order: -1; }
+  .junccard:not(.nv):not(.plan):not(.jx) .jc-label.jc-other.oth-l .sg-arrow svg { transform: scaleX(-1); }
   .jx-road { position: absolute; transform: translate(-50%, -50%) scaleY(.6); color: #fff; font-size: 24px; font-weight: 900; letter-spacing: 2px;
     white-space: nowrap; pointer-events: none; line-height: 1; text-shadow: 0 0 1px rgba(0, 0, 0, .25); }
   .jx-road.ot { color: rgba(255, 255, 255, .86); font-size: 21px; }
@@ -2310,8 +2319,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-248"></script>
-<script src="img/ai/picks.js?v=2026.11.16-248"></script>
-<script src="app.js?v=2026.11.16-248"></script>
+<script src="icons.js?v=2026.11.16-249"></script>
+<script src="img/ai/picks.js?v=2026.11.16-249"></script>
+<script src="app.js?v=2026.11.16-249"></script>
 </body>
 </html>
