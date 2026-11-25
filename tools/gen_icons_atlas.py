@@ -21,7 +21,7 @@ ef_car_app.png 로 저장해 두면 그 느낌을 따라 그린다 (저장소에
   그림 없이 글로만 그린다(GPT Image 2.6 Flare·Sunburst $0.007, Ideogram v4 $0.025): 120장 약 $1.56
   도로만: --icons roads   회전교차로만: --icons rb   구도 밑그림 다시 그리기: py -I tools\ref_roads.py
 - 네이버식 분기점 그림 (2026-11-25, 모양 4가지 × 낮·밤, 밑그림: py -X utf8 tools\jx_scene.py):
-    py -X utf8 tools\gen_icons_atlas.py --icons jx --models flare26e,sunburst26e --per 2   (32장 약 $0.26)
+    py -X utf8 tools\gen_icons_atlas.py --icons jx --models flare26e,sunburst26e --per 2   (40장 약 $0.32)
 - 옵션: --models flare,sunburst,gpt15   --per 2   --icons over_r,junc_fork_r   --dry (요청 없이 계획과 예상 비용만)
 """
 import argparse
@@ -739,7 +739,7 @@ JX_DAY = 'Daytime: clear blue sky with a few soft clouds, bright even sunlight, 
 JX_NIGHT = ('Night: deep navy sky, the road lit by warm street lights, apartment windows glowing, the white markings and the green '
             'route lanes still bright and easy to read; the scene is dark but clear, not murky.')
 JX = {}
-for _k in ('exit', 'exit2', 'stay', 'fork'):
+for _k in ('exit', 'exit4', 'exit2', 'stay', 'fork'):
     JX['jx_%s_day' % _k] = (('ref/jx_%s.png' % _k,), JX_EDIT, JX_DAY)
     JX['jx_%s_night' % _k] = (('ref/jx_%s.png' % _k,), JX_EDIT, JX_NIGHT)
 WIDE_JX = set(JX)

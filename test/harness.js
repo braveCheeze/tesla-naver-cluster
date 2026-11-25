@@ -2029,7 +2029,7 @@
   }
 
   // S48: 분기점 그림 (2026-11-14 요청). 고속도로 진입(66: 오른쪽)과 분기점(4: 왼쪽 방향)이 있는 경로로, 테슬라 모드에서
-  //      안내 지점 800m 앞부터 서랍 맨 위에 그림: 진입로는 'ramp'·오른쪽, 방면 '서울 · 대전', 지점 '하남IC'.
+  //      안내 지점 600m 앞부터(v248, 예전 800m) 서랍 맨 위에 그림: 진입로는 'ramp'·오른쪽, 방면 '서울 · 대전', 지점 '하남IC'.
   //      분기점은 'fork'·왼쪽, 방면은 짧은 이름 '대전 · 호법'. 900m 앞·지난 뒤에는 없음
   async function s48() {
     const t = T(), box = TESLA_ONLY, prev = t.prefs.tesla;
@@ -2061,11 +2061,13 @@
       await planAndStart(R);
       for (let s = 20; s <= 300; s += 20) go(s);
       r.far = snap();                                   // 하남IC 900m 앞
-      for (let s = 320; s <= 600; s += 20) go(s);
-      r.ramp = snap();                                  // 하남IC 600m 앞
-      for (let s = 620; s <= 1300; s += 20) go(s);
-      r.fork = snap();                                  // 하남분기점 700m 앞
-      for (let s = 1320; s <= 2100; s += 20) go(s);
+      for (let s = 320; s <= 620; s += 20) go(s);
+      r.ramp = snap();                                  // 하남IC 580m 앞 (v248: 600m 앞부터)
+      for (let s = 640; s <= 1300; s += 20) go(s);
+      r.fork700 = snap();                               // 하남분기점 700m 앞: v248 부터 아직 없음 (600m 앞부터, 네이버처럼)
+      for (let s = 1320; s <= 1420; s += 20) go(s);
+      r.fork = snap();                                  // 하남분기점 580m 앞
+      for (let s = 1440; s <= 2100; s += 20) go(s);
       r.after = snap();                                 // 분기점 지난 뒤 (그다음은 목적지)
       t.endNav();
     } finally {
@@ -2074,7 +2076,7 @@
     }
     const ok = !r.far.shown && r.ramp.shown && r.ramp.kind === 'ramp' /* v110: 하남IC '오른쪽 고속도로 진입'은 오른쪽으로 갈라져 들어가는 그림 */ && !r.ramp.left && r.ramp.hwy && r.ramp.label === '서울 · 대전' &&
       r.ramp.place === '하남IC' && r.ramp.dist === '' && r.ramp.inDrawer && r.ramp.open &&
-      r.fork.shown && r.fork.kind === 'fork' && r.fork.left && r.fork.label === '대전 · 호법' && r.fork.place === '하남분기점' && !r.after.shown;
+      !r.fork700.shown && r.fork.shown && r.fork.kind === 'fork' && r.fork.left && r.fork.label === '대전 · 호법' && r.fork.place === '하남분기점' && !r.after.shown;
     return { pass: ok, detail: JSON.stringify(r) + (ok ? '✓' : '✗') };
   }
 
@@ -2926,6 +2928,8 @@
     { id: 'S161', name: "S161 turns that follow closely (v246, driver '우회전하고 또 우회전 하는 상황, 성남으로 들어올 때 좀 많이 헷갈리게 돼 있더라. 미리 보여주는 거 조금 개선이 필요해', 성남 여수사거리 east: right, 30 m left, 220 m right): 150 m before the first turn the next row becomes a green '이어서' row with a big arrow, '30m' and '› 220m' for the turn after; the 300 m voice adds '이어서 30미터 앞 왼쪽 방향, 다시 220미터 앞 오른쪽 방향'; a next turn 400 m away keeps the small row", fn: s161 },
     { id: 'S162', name: "S162 Naver-style junction picture jx (2026-11-25, driver sent Naver's 성남IC junction view: '그냥 네이버지도처럼 만들어 달라니까, 자바스크립트로 그리지 말고 AI로 — 헷갈리고 사고 날 것 같아 방향 잘못 틀어서'): with jx AI pictures picked, 100 m before 판교분기점 '일산, 구리' the drawer slot is the 3:2 AI picture (day/night, no drawn svg, not mirrored), the route sign '일산' sits on the right board and the other branch '경부' on the left board, both inside the picture and not cut, and '일산' is painted under the green lanes on the right; at the same junction from 학의 ('구리, 성남', keep left on the main road) the 'stay' picture is used as is with the route sign on the left board; without jx pictures the old AI picture is used; the left fork '서울' (팔당→하남IC) mirrors the fork picture and swaps boards and the painted name", fn: s162 },
     { id: 'S163', name: "S163 joining a section after its start camera (2026-11-25, driver's rule '시작점 뒤에서 들어오면 구간단속은 해당 안 됨'; real case: 신갈동 → 경부 상행 about 1.7 km past the 신갈→죽전 110 start camera, the end camera was still shown as '구간 110' from 2200 m): synthetic OSM-shaped routes — the control route from 2 km before the start camera opens the 110 section and shows the end camera as the section end; the join route must show no section card, no average meter and no section voice (SKIP with the current behaviour until the rule lands after the Naver check)", fn: s163 },
+    { id: 'S164', name: "S164 cameras past a U-turn point (v248, driver 2026-11-25 08:41 at 야탑역사거리 southbound on 성남대로: '이건 유턴이라서 지나가는 게 아니라 안 나와도 돼, 네이버지도 봐봐'): the southbound signal/speed 60 (#22941) has its stop line 11 m past the U-turn point, so on the U-turn route it never shows; on a straight route through the same spot it is still announced", fn: s164 },
+    { id: 'S165', name: "S165 '비보호' badge and square lane boxes (v248, driver 2026-11-25: '우리는 비보호를 여기다가 써줘도 좋을 거 같아' at the top right of the guidance row, and '네이버지도 화살표 안내 쟤네는 정사각형인데 우린 약간 세로로 길잖아'): an unprotected left turn shows a blue '비보호' badge at the top right of the turn row and drops the word from the text ('좌회전 · …'), the next guide has no badge; the map lane tip draws every lane as its own 30×30 box with a 3 px gap", fn: s165 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -4118,9 +4122,9 @@
     try {
       softReset();
       await planAndStart(R);
-      for (let s = 20; s <= 900; s += 20) go(s);
-      r.singal = snap();                     // 신갈분기점 600m 앞
-      for (let s = 920; s <= 2000; s += 20) go(s);
+      for (let s = 20; s <= 920; s += 20) go(s);
+      r.singal = snap();                     // 신갈분기점 580m 앞 (v248: 분기점 그림은 600m 앞부터)
+      for (let s = 940; s <= 2000; s += 20) go(s);
       r.pangyo = snap();                     // 판교분기점 500m 앞
     } finally {
       t.endNav(); softReset();
@@ -8203,6 +8207,81 @@
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
+  // S165: '비보호' 표와 정사각형 차로 칸 (v248, 2026-11-25 운전자)
+  //   (a) '비보호 좌회전' 안내: 안내 줄 오른쪽 위에 파란 '비보호' 표, 글에서는 '비보호'를 뺀다 ('좌회전 · …'). 다음 안내(우회전)로 넘어가면 표가 없다
+  //   (b) 지도 위 차로 말풍선: 차로마다 따로 정사각형 칸 (네이버처럼, '쟤네는 정사각형인데 우린 약간 세로로 길잖아')
+  async function s165() {
+    const t = T(), r = {};
+    try {
+      const R = buildNavRoute();
+      R.route.guide[1] = Object.assign({}, R.route.guide[1], { t: 2, s: "'양재대로' 방면으로 비보호 좌회전" });
+      softReset(); await planAndStart(R);
+      for (let s = 20; s <= R.cum[5] - 100; s += 20) { const a = pointAt(R, s); feed(a.p, 12, a.h); }
+      t.renderNav();
+      const b = document.getElementById('turnBadge'), row = document.querySelector('#navPanel .turn');
+      const bb = b.getBoundingClientRect(), rr = row.getBoundingClientRect(), dd = document.getElementById('turnDist').getBoundingClientRect();
+      r.a = { shown: visible('#turnBadge'), text: b.textContent, turn: text('#turnText'), right: Math.round(rr.right - bb.right), top: Math.round(bb.top - rr.top),
+        noOverlap: bb.left >= dd.right, bg: getComputedStyle(b).backgroundColor };
+      for (let s = R.cum[5] + 20; s <= R.cum[5] + 120; s += 20) { const a = pointAt(R, s); feed(a.p, 12, a.h); }
+      t.renderNav();
+      r.after = { shown: visible('#turnBadge') };
+      t.endNav();
+      // (b) 말풍선 칸
+      const tip = document.createElement('div');
+      tip.className = 'lanetip';
+      tip.innerHTML = t.laneCell('L', true, 'L', 'tl') + t.laneCell('S', false, 'L', 'tl') + t.laneCell('S', false, 'L', 'tl');
+      document.getElementById('map').appendChild(tip);
+      const cells = [...tip.querySelectorAll('.tl')].map((c) => c.getBoundingClientRect());
+      r.b = { sizes: cells.map((q) => Math.round(q.width) + 'x' + Math.round(q.height)).join(' '), gap: Math.round(cells[1].left - cells[0].right),
+        cellBg: getComputedStyle(tip.querySelector('.tl')).backgroundColor, tipBg: getComputedStyle(tip).backgroundColor };
+      tip.remove();
+    } finally {
+      await resetApp(); softReset();
+    }
+    const a = r.a || {}, bq = r.b || {};
+    const ok = a.shown && a.text === '비보호' && /^좌회전/.test(a.turn) && !/비보호/.test(a.turn) && a.right >= 0 && a.right <= 20 && a.top >= 0 && a.top <= 16 && a.noOverlap &&
+      r.after && !r.after.shown &&
+      bq.sizes === '30x30 30x30 30x30' && bq.gap === 3 && bq.cellBg !== 'rgba(0, 0, 0, 0)' && bq.tipBg === 'rgba(0, 0, 0, 0)';
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S164: 유턴 지점 너머 카메라 (v248, 2026-11-25 08:41 운전자: 성남대로 남행 야탑역사거리 유턴 60m 앞에서 신호·과속 60 카드 —
+  //   '이건 유턴이라서 지나가는 게 아니라 안 나와도 돼, 네이버지도 봐봐'). 남행 60(#22941)의 정지선이 유턴 지점 11m 너머라 지나지 않는다.
+  //   (a) 유턴 경로(route-yatap-uturn, 네이버 응답 앞부분): 유턴까지 가는 동안 이 카메라가 한 번도 뜨지 않는다
+  //   (b) 대조군(route-yatap-straight, 같은 자리를 곧게 남쪽으로): 그대로 알린다
+  async function s164() {
+    const t = T(), r = {};
+    const CAM = { lat: 37.40964, lng: 127.12854 };
+    const fixture = async (f) => {
+      const fx = await (await realFetch(harnessDir + 'fixtures/' + f, { cache: 'no-store' })).json();
+      const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0]; for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + hav(P[k - 1], P[k]));
+      return { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '시험', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    };
+    const drive = async (R, until) => {
+      await planAndStart(R);
+      const o = { seen: null, card: '' };
+      for (let s = 0; s <= until; s += 10) {
+        const a = pointAt(R, s); feed(a.p, 12, a.h);
+        const tg = t.camState.target;
+        if (tg && sameCam(tg.c, CAM) && o.seen === null) { o.seen = s; t.renderCam(); o.card = text('#camType') + ' ' + text('#camDist'); }
+      }
+      t.endNav();
+      return o;
+    };
+    try {
+      await waitFor(() => t.cams.loaded, 10000, 100);
+      const U = await fixture('route-yatap-uturn.json');
+      softReset(); r.uturn = await drive(U, U.cum[U.route.guide[0].i] - 5);
+      const S = await fixture('route-yatap-straight.json');
+      await resetApp(); softReset(); r.straight = await drive(S, S.total - 20);
+    } finally {
+      await resetApp(); softReset();
+    }
+    const ok = r.uturn && r.uturn.seen === null && r.straight && r.straight.seen !== null && /60|신호/.test(r.straight.card);
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
   // S163: 구간단속 중간 합류 (2026-11-25, 운전자 규칙 '시작점 뒤에서 들어오면 구간단속은 해당 안 됨'). 실제 사례: 신갈동에서 출발해
   //   경부 상행 구간단속(신갈→죽전 110, 시작 #20098 · 끝 #22040) 시작 카메라 약 1.7km 뒤로 들어왔는데 끝 카메라를 '구간 110'으로
   //   2200m 앞부터 알렸다(v244). 궤적은 저장소에 넣지 않고 OSM 경부 상행 본선 모양의 합성 경로 두 개로 시험한다:
@@ -9861,7 +9940,7 @@
       r.straight.shown && r.straight.move === 'S' && r.straight.go === '1,2' && r.straight.bus === '3' && r.straight.busIcons === 1 && r.straight.busArrows === 0 &&
       r.right.shown && r.right.go === '3' && r.right.bus === '4' && r.right.busIcons === 1 && r.right.busArrows === 0 && r.right.busBlue === 0 &&
       r.tipNear.shown && r.tipNear.cells === 4 && r.tipNear.goIdx === '3' && r.tipNear.bus === 1 && r.tipNear.left === true && r.tipNear.blue === true &&
-      r.tipNear.w === 4 * 28 + 3 * 2 + 8 && r.tipNear.h === 36 &&
+      r.tipNear.w === 4 * 30 + 3 * 3 && r.tipNear.h === 30 &&   /* v248: 차로마다 따로 30×30 칸 (네이버처럼) */
       !r.tipOff.shown && !r.tipOff.obj && r.tipOn.shown && !r.tipAfter.shown && !r.tipEnded.shown && !r.tipEnded.obj &&
       r.busOnly.shown && r.busOnly.go === '3' && r.busOnly.goBus === 1 && r.tipBusOnly.shown && r.tipBusOnly.goIdx === '3' &&
       r.leftTip.shown && r.leftTip.left === false && r.leftTip.goIdx === '1,2' && r.left.go === '1,2' && r.left.bus === '4' &&

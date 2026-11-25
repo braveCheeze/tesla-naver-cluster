@@ -1419,6 +1419,10 @@
   body:has(#app.tesla):has(#map.night) .turnicon img.tn-ai { filter: none; }
   /* 안내 줄이 터널일 때(터널 안) 밑에 지나온 만큼 초록 막대 */
   .turn { position: relative; }
+  /* v248 (2026-11-25 운전자가 네이버 '101m 양재대로' + 파란 '비보호' 표를 보내며 '우리는 비보호를 여기다가 써줘도 좋을 거 같아' — 안내 줄 오른쪽 위 빈 곳) */
+  .turnbadge { position: absolute; top: 10px; right: 12px; padding: 3px 9px; border-radius: 6px; background: #1f6fe5; color: #fff; font-size: 15px; font-weight: 800;
+    letter-spacing: -.2px; line-height: 1.2; box-shadow: 0 1px 3px rgba(0, 0, 0, .3); }
+  .turnbadge[hidden] { display: none; }
   .turn.tn-main::after { content: ''; position: absolute; left: 0; bottom: 0; height: 3px; width: var(--tnp, 0%); background: #03c75a; transition: width .9s linear; }
   #app.tesla .turn.tn-main::after { background: var(--nv-green); }
   /* v133 (2026-11-16 사용자 '네이버처럼 위로'): 휴게소가 3km 안이고 회전이 급하지 않으면 안내 줄을 휴게소로 — 파란 칸에 흰 표지·거리·이름 */
@@ -1461,18 +1465,19 @@
   /* v139 지도 위 차로 말풍선 (네이버 길안내처럼 다음 회전 교차로에 흰 말풍선, app.js laneTipFor): 꼬리 끝이 정지선.
      좌회전·유턴은 꼬리가 왼쪽(말풍선이 정지선 오른쪽 위), 우회전은 오른쪽(.tip-l). 칸 28px (화면 대비 네이버 말풍선 크기쯤) */
   .lanetip {
-    position: relative; box-sizing: border-box; display: flex; gap: 2px; padding: 4px; height: 36px; pointer-events: none;
-    background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0, 0, 0, .28), 0 0 0 1px rgba(0, 0, 0, .08);
+    position: relative; box-sizing: border-box; display: flex; gap: 3px; padding: 0; height: 30px; pointer-events: none;
   }
-  .lanetip::after { content: ''; position: absolute; left: 6px; bottom: -7px; border: 6px solid transparent; border-bottom: 0; border-top: 7px solid #fff; }
-  .lanetip.tip-l::after { left: auto; right: 6px; }
-  .lanetip .tl { flex: 0 0 28px; height: 28px; display: flex; align-items: center; justify-content: center; }
-  .lanetip .tl svg { width: 24px; height: 24px; overflow: visible; }
+  .lanetip::after { content: ''; position: absolute; left: 9px; bottom: -7px; border: 6px solid transparent; border-bottom: 0; border-top: 7px solid #fff; }
+  .lanetip.tip-l::after { left: auto; right: 9px; }
+  /* v248: 차로마다 따로 정사각형 칸 (네이버처럼) */
+  .lanetip .tl { flex: 0 0 30px; height: 30px; box-sizing: border-box; display: flex; align-items: center; justify-content: center;
+    background: #fff; border-radius: 6px; box-shadow: 0 2px 6px rgba(0, 0, 0, .28), 0 0 0 1px rgba(0, 0, 0, .08); }
+  .lanetip .tl svg { width: 22px; height: 22px; overflow: visible; }
   .lanetip .pt { color: #b4bac2; }
   .lanetip .pt.on, .lanetip .lbus .pt.bus { color: #1a73e8; }
   .lanetip .pt path { fill: none; stroke: currentColor; stroke-width: 3.8; stroke-linecap: butt; stroke-linejoin: round; }
   .lanetip .pt polygon { fill: currentColor; stroke: currentColor; stroke-width: .6; stroke-linejoin: round; }
-  #map.night .lanetip { background: #23272e; box-shadow: 0 2px 8px rgba(0, 0, 0, .5), 0 0 0 1px rgba(255, 255, 255, .1); }
+  #map.night .lanetip .tl { background: #23272e; box-shadow: 0 2px 6px rgba(0, 0, 0, .5), 0 0 0 1px rgba(255, 255, 255, .12); }
   #map.night .lanetip::after { border-top-color: #23272e; }
   #map.night .lanetip .pt { color: #69707a; }
   #map.night .lanetip .pt.on, #map.night .lanetip .lbus .pt.bus { color: #4aa8ff; }
@@ -1964,7 +1969,7 @@
           <!-- 차로 안내 (시험판): 서랍 맨 위. 회전 500m 앞이면 그 회전, 아니면 300m 안 직진 교차로의 차로 칸(1차로부터 네모 칸, 칠해진 화살표),
                갈 차로는 줄기와 이번 방향 가지가 파랗게. 직진이면 오른쪽에 남은 거리 -->
           <div id="laneRow" class="lanerow" hidden></div>
-          <!-- 분기점 그림: 고속도로 진출입·갈림길 800m 앞부터 (가야 할 쪽 파랗게, 위에 방면, 밑에 안내 지점·남은 거리) -->
+          <!-- 분기점 그림: 고속도로 진출입·갈림길 600m 앞부터 (v248, 예전 800m) (가야 할 쪽 파랗게, 위에 방면, 밑에 안내 지점·남은 거리) -->
           <div id="juncCard" class="junccard" hidden><div id="juncSvg" class="jc-svg"></div><div id="juncLabel" class="jc-label"></div><div id="juncLabel2" class="jc-label jc-other"></div><div class="jc-head"><b id="juncPlace"></b></div></div>
           <div id="camCard" class="camcard" hidden>
             <div class="cam-sign"><i class="cam-ico" aria-hidden="true"></i><span id="camLimit">60</span></div>
@@ -2069,6 +2074,7 @@
           <div id="turnDist" class="turndist">-</div>
           <div id="turnText" class="turntext"></div>
         </div>
+        <span id="turnBadge" class="turnbadge" hidden>비보호</span>
       </div>
       <div id="nextTurn" class="nextturn" hidden aria-label="그다음 안내"><span id="nextLead" class="nextlead" hidden>이어서</span><span id="nextIcon" class="nexticon"></span><span id="nextDist"></span><span id="nextAfter" class="nextafter"></span><span id="nextChain" class="nextchain" hidden></span></div>
       <!-- v162 (2026-11-19 운전자 '녹색 분홍색 안내선'): 고속도로 분기점·나들목 바닥 색깔 유도선. 갈라지기 1km 앞부터 '분홍색 유도선 따라가기' -->
@@ -2304,8 +2310,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-247"></script>
-<script src="img/ai/picks.js?v=2026.11.16-247"></script>
-<script src="app.js?v=2026.11.16-247"></script>
+<script src="icons.js?v=2026.11.16-248"></script>
+<script src="img/ai/picks.js?v=2026.11.16-248"></script>
+<script src="app.js?v=2026.11.16-248"></script>
 </body>
 </html>

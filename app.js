@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-247'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-248'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -3467,6 +3467,17 @@
       //   양방향 카메라는 두 방향 중 하나라도 내 접근 방향이면 남긴다. 남기는 카메라가 회전 전 자리로 잡혔으면(중앙분리대 길 유턴의
       //   건너편 차로) 회전 뒤 자리로 옮긴다
       const PT = routePointAt(T);
+      // v248 (2026-11-25 08:41 운전자, 성남대로 남행 야탑역사거리 유턴 60m 앞에서 신호·과속 60 카드 — '이건 유턴이라서 지나가는 게 아니라
+      //   안 나와도 돼, 네이버지도 봐봐'): 유턴은 그 자리에서 되돌아가므로, 내 접근 방향을 찍는 카메라가 유턴 지점이나 그 너머(진행 방향으로
+      //   8m 앞보다 뒤가 아닌 곳)에 있으면 지나지 않는다 — 뺀다. 야탑역사거리 남행 60 은 정지선이 유턴 지점 11m 너머다.
+      //   유턴 지점보다 8m 넘게 앞의 카메라(유턴 전에 지남)와 돌아가는 방향도 찍는 양방향 카메라는 그대로
+      if (turnKind0(g) === 'u') {
+        for (const x of list.filter((q) => q.at >= T - 60 && q.at <= T + 60)) {
+          if (!camHasDir(x.c) || !camDirOk(x.c, inB) || camDirOk(x.c, outB)) continue;
+          const p = camPt(x.c), d = haversine(PT, p), v = d < 1 ? 0 : d * Math.cos(toRad(angleDiff(bearing(PT, p), inB)));
+          if (v > -8) drop(x);
+        }
+      }
       for (const x of list.filter((q) => q.at >= T - 60 && q.at <= T + 40)) {
         if (!camDirs(x.c) || camDirOk(x.c, inB) || !camDirOk(x.c, outB)) continue;
         const p = camPt(x.c), d = haversine(PT, p), u = d < 1 ? 0 : d * Math.cos(toRad(angleDiff(bearing(PT, p), outB)));
@@ -6008,7 +6019,9 @@
   const JUNC_ENTRY = new Set([57, 59, 66, 68, 76, 77]);               // 진입로: 본선으로 합류 (2026-11-15: 진출 그림이 나오던 것)
   // 고가·지하차도·옆길 (2026-11-15 '안내 표기가 어려우면 밑에처럼 이미지로')
   const JUNC_ROAD = { 62: 'over', 71: 'over', 64: 'under', 73: 'under', 63: 'oside', 72: 'oside', 65: 'side', 74: 'side' };   // v110: 55·56(직진)은 빼다
-  const JUNC_SHOW = 800;
+  // v248 (2026-11-25 운전자, 판교IC 네이버 712m 그림 없음 · 329m 그림 있음, 신갈JC 571m 있음 — '안내도 비중을 좀 맞춰줘, 너무 일찍 알려주면 헷갈리는
+  //   경우도 있으니까'): 분기점 그림은 600m 앞부터 (예전 800m)
+  const JUNC_SHOW = 600;
   const juncState = { g: null, key: '', fork: null, cl: null };   // v197 fork·cl: 장면에 그린 분기 단면·색깔 유도선 (차로 칸·유도선 줄은 그때 숨김)
   function juncInfo(g) {
     if (!g || (!JUNC_FORK.has(g.t) && !JUNC_RAMP.has(g.t) && !JUNC_ROAD[g.t])) return null;
@@ -7553,7 +7566,9 @@
   // 버스전용차로는 버스 그림. 좌회전·유턴이면 정지선 오른쪽 위, 우회전이면 왼쪽 위 (회전해 나가는 길을 덮지 않게).
   // 자료가 없는 곳(정밀도로지도 밖)은 아무것도 안 그린다
   const LANE_TIP_SHOW = 1000;
-  const LANE_TIP = { cell: 28, gap: 2, pad: 4, tail: 7, nose: 12 };
+  // v248 (운전자 '네이버지도 화살표 안내 쟤네는 정사각형인데 우린 약간 세로로 길잖아? 정사각형 쟤네처럼'): 한 말풍선(36px 높이)에 칸을 담던 것을
+  // 네이버처럼 차로마다 따로 정사각형 칸(30×30, 틈 3px)으로. 꼬리는 첫(또는 마지막) 칸 밑
+  const LANE_TIP = { cell: 30, gap: 3, pad: 0, tail: 7, nose: 15 };
   function laneTipFor(g) {
     if (!prefs.lanes || !nav.active || !g || nav.dg == null || nav.dg > LANE_TIP_SHOW || !LANE_MOVE[turnKind(g)]) return null;
     const hit = laneGuide(g);
@@ -7717,6 +7732,10 @@
     } else {
       $('#turnText').textContent = (g ? guideText(g.s, mainStraight(g)) : nav.dest.name) + (toGoal && SIDE_WORD[nav.goalSide] ? ' · ' + SIDE_WORD[nav.goalSide] : '');
     }
+    // v248 '비보호' 표: 안내 줄 오른쪽 위 (운전자 '우리는 비보호를 여기다가 써줘도 좋을 거 같아'). 표가 있으면 글에서는 '비보호'를 뺀다 ('좌회전 · 양재대로 방면')
+    const unprot = !!g && !restMain && !tnMain && /비보호/.test(String(g.s || ''));
+    $('#turnBadge').hidden = !unprot;
+    if (unprot) $('#turnText').textContent = $('#turnText').textContent.replace(/비보호\s*/g, '');
     renderLanes(tnMain ? null : g);   // 회전 500m 앞부터 차로 칸 (정밀도로지도가 있는 곳만)
     renderLaneTip(g);                 // 지도 위 다음 회전 교차로 말풍선 (1km 앞부터)
     // 그다음 칸: 이번 회전을 하고 나서 무엇이 얼마 뒤에 오는지 (거리는 이번 안내 지점 → 그다음 안내 지점).

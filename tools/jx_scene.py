@@ -43,6 +43,8 @@ EXIT_BEND = {0: (-0.15, 0.0), 1: (0.0, 0.03)}
 SHAPES = {
     'exit':  {'lanes': [(-10.8, -7.2, 0), (-7.2, -3.6, 0), (-3.6, 0, 0), (0, 3.6, 1)], 'go': 1, 'bend': EXIT_BEND},
     'exit2': {'lanes': [(-7.2, -3.6, 0), (-3.6, 0, 0), (0, 3.6, 1), (3.6, 7.2, 1)], 'go': 1, 'bend': {0: (-0.15, 0.0), 1: (0.0, 0.024)}},
+    # 2026-11-25 운전자 성남IC·판교분기점·신갈분기점 네이버 그림이 모두 본선 4차로 + 출구 1차로 ('일산 일산 일산 일산 | 성남')
+    'exit4': {'lanes': [(-10.8, -7.2, 0), (-7.2, -3.6, 0), (-3.6, 0, 0), (0, 3.6, 0), (3.6, 7.2, 1)], 'go': 1, 'bend': EXIT_BEND},
     'stay':  {'lanes': [(-10.8, -7.2, 0), (-7.2, -3.6, 0), (-3.6, 0, 0), (0, 3.6, 1)], 'go': 0, 'bend': EXIT_BEND},
     'fork':  {'lanes': [(-7.2, -3.6, -1), (-3.6, 0, -1), (0, 3.6, 1), (3.6, 7.2, 1)], 'go': 1, 'bend': {-1: (-0.2, -0.006), 1: (0.05, 0.016)}},
 }
@@ -186,6 +188,18 @@ def text_anchor(name):
     return (round(p[0] / W, 3), round(p[1] / H, 3)), (round(o[0] / W, 3), round(o[1] / H, 3))
 
 
+def lane_anchors(name, z=8.9):
+    """차로마다 노면 방면 글자 자리 (그림 비율 x, y, 경로 차로인가) — 그림 안(4%~96%)에 보이는 차로만"""
+    sh = SHAPES[name]
+    out = []
+    for x0, x1, s in sh['lanes']:
+        p = proj((x0 + x1) / 2 + shift(z, s, sh), z)
+        fx = p[0] / W
+        if 0.04 <= fx <= 0.96:
+            out.append([round(fx, 3), round(p[1] / H, 3), 1 if s == sh['go'] else 0])
+    return out
+
+
 def masks(name):
     """검사용: 경로 차로 · 다른 차로 (그림 아래 60%에서, 차선·화살표에서 조금 떨어진 안쪽만)"""
     sh = SHAPES[name]
@@ -233,7 +247,7 @@ def main():
         p = os.path.join(REF, 'jx_%s.png' % name)
         draw_base(name).save(p)
         ok, why, go, ot = check(p, name)
-        print('%-6s → %s  (밑그림 검사 %s %s, 경로 %.2f 다른 %.2f)  글자 자리 %s' % (name, os.path.relpath(p, ROOT), 'OK' if ok else '✗', why, go, ot, text_anchor(name)))
+        print('%-6s → %s  (밑그림 검사 %s %s, 경로 %.2f 다른 %.2f)  차로 글자 %s' % (name, os.path.relpath(p, ROOT), 'OK' if ok else '✗', why, go, ot, lane_anchors(name)))
 
 
 if __name__ == '__main__':
