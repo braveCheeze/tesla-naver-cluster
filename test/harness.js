@@ -2957,6 +2957,7 @@
     { id: 'S169', name: "S169 Naver-style junction picture v2 (v256, parent session checklist after the driver's 성남IC complaint '봐바 이거 안돼 … 비슷하게 좀 만들어 줘'): with v2 pictures picked, the picture is 4:3 and as wide as the drawer; the shape follows the real lane counts (성남IC 4+1, 판교분기점 from 서울TG 4 + 1 + 2, 하남분기점 4+2, 신갈분기점 '대전' main road 4 + exit 1 with the bus lane not painted); every visible lane carries a bold label about a third of the lane width tall, the lanes not taken say the OSM destination at that split ('서울') or else the road name ('중부', board '수도권제1순환'; v257: never a rest-area direction city), the exit board has no route shield and an exit-number tab ('2B 성남'), and the route lanes at 판교분기점 are green 1 + pink 2", fn: s169 },
     { id: 'S170', name: "S170 driver feedback after the v262 night drive (2026-11-26): with the turn 3.4 km away the '이어서' row leaves the card and becomes a chip beside it ('↱ 160m'), near the turn the row stays; a far rest area is a chip under the turn chips (closest first); remaining distance, time, ETA and '안내 종료' sit in the bottom-centre bar, not in the card; with a waypoint the top line is the waypoint with an orange '경유' tag and the destination below; the trip card is bottom right, the feedback button bottom left; lane labels follow each picture's measured lane centres (day and night sets)", fn: s170 },
     { id: 'S171', name: "S171 camera fixes from the Naver check of the night-drive reports (2026-11-26): rear cameras look like Naver's '60 후면단속' — black band '후면단속', voice '후면단속 카메라', after passing '후면단속 중' with the speed warning for about 100 m (마북 삼거리 #21024 southbound); the 분당수서로 signal camera #22322 above 백현지하도로 is not given to a car in the underpass below (Naver's 백현지하차도 entry guide 1.24 km before; the same route driven on the surface — section 분당수서로, entry guides turned into straight guides — still gets it); 탄천 80 #22931/#22952 sit on Naver's pole and the warning distance matches it; the four Naver rear cameras carry the rear flag", fn: s171 },
+    { id: 'S172', name: "S172 junction-picture lane labels like Naver (v267–v268, parent session side by side with Naver's 330 m pictures): one label size per picture (two-line labels 86% of it), the label row low in the picture with no label below the picture's bottom edge, no two labels overlapping (2 px apart at most), labels centred inside the picture; through lanes say what Naver says at the checked spots — 서하남IC '구리 대전' (board still '구리'), 판교IC '대전 부산'", fn: s172 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -8244,6 +8245,65 @@
       b.calls === 4 && b.active && b.same && b.pill && !b.redToast && b.panel && b.turn && b.log.join(',') === 'failed:3' && b.moved &&
       !c.pill && c.active &&
       d.bad400 === 1 && d.naverNo === 1 && d.traffic === 1 && d.upstream.every(Boolean) && !d.pillAfterEnd;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S172: 2판 분기점 그림 차로 글자 (v267·v268, 부모 세션 네이버 대조) — 고른 2판 그림 그대로, 지금 보이는(낮) 글자만
+  async function s172() {
+    const t = T(), r = {};
+    const fixture = async (f) => {
+      const fx = await (await realFetch(harnessDir + 'fixtures/' + f, { cache: 'no-store' })).json();
+      const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0]; for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + hav(P[k - 1], P[k]));
+      return { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '시험', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    };
+    const view = () => {
+      const sv = document.getElementById('juncSvg'), img = [...sv.querySelectorAll('img')].find((i) => i.getBoundingClientRect().width);
+      const ib = img ? img.getBoundingClientRect() : null;
+      const ls = [...sv.querySelectorAll('.jx-lane')].filter((x) => x.getClientRects().length);
+      const one = new Set(), two = new Set(), boxes = [];
+      for (const x of ls) {
+        const bs = [...x.querySelectorAll('b')];
+        (bs.length > 1 ? two : one).add(parseFloat(getComputedStyle(bs[0]).fontSize).toFixed(2));
+        const q = bs.map((b) => b.getBoundingClientRect());
+        // 가운데 줄 높이에서의 글자 폭 = 기울이기 전 폭 (offsetWidth) — 기울인 글자의 바깥 상자는 실제 글자보다 넓다
+        boxes.push([Math.min(...q.map((v) => v.left)), Math.min(...q.map((v) => v.top)), Math.max(...q.map((v) => v.right)), Math.max(...q.map((v) => v.bottom)), Math.max(...bs.map((b) => b.offsetWidth))]);
+      }
+      const ctr = ib ? boxes.map((q) => (q[0] + q[2]) / 2) : [];
+      let overlap = 0;
+      for (let k = 1; k < boxes.length; k++) if (ctr[k] - ctr[k - 1] < (boxes[k][4] + boxes[k - 1][4]) / 2 - 0.5) overlap++;
+      return { n: ls.length, lanes: ls.map((x) => (x.classList.contains('go') ? '*' : '') + [...x.querySelectorAll('b')].map((b) => b.textContent).join('/')).join(' '),
+        one: [...one], two: [...two], overlap, below: ib ? Math.round(Math.max(...boxes.map((q) => q[3])) - ib.bottom) : 99,
+        inside: ib ? ctr.every((c) => c > ib.left && c < ib.right) : false, fs: ls.length ? ls[0].style.getPropertyValue('--fs') : '',
+        sign: document.getElementById('juncLabel').textContent.trim(), other: document.getElementById('juncLabel2').textContent.trim() };
+    };
+    const at = async (f, re, before) => {
+      const R = await fixture(f);
+      await resetApp(); softReset(); t.setNightMode('off'); await planAndStart(R);
+      const g = R.route.guide.find((x) => re.test(x.s)), sg = R.cum[Math.min(g.i, R.cum.length - 1)];
+      for (let s = Math.max(0, sg - before - 900); s <= sg - before; s += 20) { const a = pointAt(R, s); feed(a.p, 20, a.h); }
+      const a = pointAt(R, sg - before); feed(a.p, 20, a.h); t.juncState.key = ''; t.renderNav(); await sleep(80); t.renderNav();
+      await waitFor(() => [...document.querySelectorAll('#juncSvg img')].some((i) => i.complete && i.naturalWidth), 3000, 50).catch(() => {}); await sleep(40);
+      const o = view();
+      t.endNav();
+      return o;
+    };
+    try {
+      await waitFor(() => t.jdData.loaded && t.forksData.loaded && t.clData.loaded, 10000, 100);
+      r.sh = await at('route-seohanam-ic-n.json', /서하남IC에서 '강동, 서하남'/, 330);
+      r.pi = await at('route-pangyo-ic-s.json', /판교IC에서 '분당, 판교'/, 330);
+      r.sn = await at('route-paldang-hanamic-s.json', /성남IC에서 '성남, 광주'/, 330);
+      r.gh = await at('route-giheung-ic-s.json', /기흥IC에서 '기흥'/, 330);
+    } finally {
+      t.setNightMode('auto'); await resetApp(); softReset();
+    }
+    const { sh = {}, pi = {}, sn = {}, gh = {} } = r;
+    const sizeOk = (o) => o.n > 0 && o.one.length <= 1 && o.two.length <= 1 && (!o.one.length || !o.two.length || Math.abs(+o.two[0] / +o.one[0] - 0.86) < 0.02);
+    const shapeOk = (o) => sizeOk(o) && o.overlap === 0 && o.below <= 1 && o.inside;
+    const ok = [sh, pi, sn, gh].every(shapeOk) &&
+      sh.lanes === '구리/대전 구리/대전 구리/대전 구리/대전 *강동/서하남 *강동/서하남' && /구리/.test(sh.other) && !/대전/.test(sh.other) &&
+      pi.lanes === '대전/부산 대전/부산 대전/부산 대전/부산 *분당/판교 *분당/판교' &&
+      sn.lanes === '일산 일산 일산 일산 *성남/광주' && gh.lanes === '대전 대전 대전 대전 *기흥 *기흥';
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

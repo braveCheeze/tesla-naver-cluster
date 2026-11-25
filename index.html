@@ -1594,9 +1594,11 @@
     text-shadow: 0 0 2px rgba(0, 0, 0, .9), 1px 1px 0 rgba(0, 0, 0, .8), -1px -1px 0 rgba(0, 0, 0, .8), 1px -1px 0 rgba(0, 0, 0, .8), -1px 1px 0 rgba(0, 0, 0, .8); }
   .jx-lane.two b { font-size: 16px; font-size: calc(var(--lw, .17) * 34cqw * var(--fk, 1)); }   /* 두 줄('성남 광주') v266 +26%, 넘치면 --fk 로 줄인다 */
   /* v267: 2판 그림은 그림마다 글자 크기 하나(--fs, 그림 폭 %) — 두 줄은 86% (app.js labelSet) */
+  .jx-lane.fs { transform: translate(-50%, -50%) skewX(var(--sk, 0deg)); }   /* v268: 네이버처럼 세로로 펴서 (예전 scaleY .84) */
   .jx-lane.fs b { font-size: calc(var(--fs, 7) * 1cqw); }
   .jx-lane.fs.two b { font-size: calc(var(--fs, 7) * .86cqw); }
   .jx-lane-sh.fs .sg-shield svg { width: calc(var(--fs, 7) * 1.2cqw); }
+  .jx-lane.fs b.tt { letter-spacing: -.08em; }   /* v268: 세 글자 줄('서하남')은 줄이기 전에 자간부터 좁힌다 */
   /* v263: 2판 차로 글자는 낮·밤 그림마다 따로 (그림마다 차로 자리가 조금 다르다) — 지금 보이는 그림의 것만 */
   .jc-svg .jx-lane.jv-night { display: none; }
   body:has(#map.night) .jc-svg .jx-lane.jv-night { display: flex; }
@@ -2451,8 +2453,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-267"></script>
-<script src="img/ai/picks.js?v=2026.11.16-267"></script>
-<script src="app.js?v=2026.11.16-267"></script>
+<script src="icons.js?v=2026.11.16-268"></script>
+<script src="img/ai/picks.js?v=2026.11.16-268"></script>
+<script src="app.js?v=2026.11.16-268"></script>
 </body>
 </html>

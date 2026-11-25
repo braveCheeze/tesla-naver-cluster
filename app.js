@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-267'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-268'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -6560,16 +6560,18 @@
   //   본선의 지시도시를 쓴다. 노선(OSM ref) · 들어오는 방향(±45°) · 확인한 갈림점에서 5km 안. 표 밖은 길 이름 (틀린 도시보다 길 이름)
   const JX_CITY = [
     { ref: '100', h: 180, at: [[37.4305, 127.1234]], names: ['일산'], why: '네이버 성남IC(수도권제1순환 남행) 지나치는 차로 일산 ×4' },
-    { ref: '100', h: 40, at: [[37.5117, 127.1504]], names: ['구리'], why: '네이버 서하남IC(수도권제1순환 북행) 본선 표지 구리 (차로 구리 대전)' },
+    // v268 (부모 세션): 표지와 차로 글자가 다르면 lanes — 네이버 서하남IC 본선 표지는 '구리', 지나치는 차로 넷은 '구리 대전' 두 줄
+    { ref: '100', h: 40, at: [[37.5117, 127.1504]], names: ['구리'], lanes: ['구리', '대전'], why: '네이버 서하남IC(수도권제1순환 북행) 본선 표지 구리, 차로 구리 대전' },
     { ref: '35', h: 270, at: [[37.5318, 127.2013]], names: ['구리', '상일'], why: '네이버 하남분기점(중부 서행) 지나치는 차로 구리 상일' },
+    // 판교IC 갈림점은 이 점에서 659m — 다른 갈림점(같은 방향)에 '부산'이 붙지 않게 800m 안만
+    { ref: '1', h: 180, at: [[37.3986, 127.0993]], names: ['대전'], lanes: ['대전', '부산'], near: 800, why: '네이버 경부 하행 판교IC 지나치는 차로 대전 부산 두 줄' },
     { ref: '1', h: 180, at: [[37.3986, 127.0993], [37.2954, 127.1036], [37.2268, 127.1042]], names: ['대전'],
       why: '네이버 경부 하행 판교IC(대전 부산)·신갈분기점(대전)·기흥IC(대전)' },
   ];
-  function jxCity(ref, p) {
-    if (!ref || !p) return [];
-    const e = JX_CITY.find((c) => c.ref === String(ref) && angleDiff(c.h, p.h) <= 45 && c.at.some((q) => haversine(p, { lat: q[0], lng: q[1] }) <= 5000));
-    return e ? e.names.slice() : [];
-  }
+  const jxCityRow = (ref, p) => (!ref || !p ? null
+    : JX_CITY.find((c) => c.ref === String(ref) && angleDiff(c.h, p.h) <= 45 && c.at.some((q) => haversine(p, { lat: q[0], lng: q[1] }) <= (c.near || 5000))) || null);
+  function jxCity(ref, p) { const e = jxCityRow(ref, p); return e ? e.names.slice() : []; }
+  function jxCityLanes(ref, p) { const e = jxCityRow(ref, p); return e ? (e.lanes || e.names).slice() : []; }
   function jxBoardStyle(b) {
     const m = 0.006;   // AI 그림의 표지판이 밑그림에서 조금 비켜도 덮이게
     return 'left:' + ((b[0] - m) * 100).toFixed(2) + '%;top:' + ((b[1] - m) * 100).toFixed(2) + '%;width:' + ((b[2] - b[0] + 2 * m) * 100).toFixed(2) +
@@ -6713,7 +6715,7 @@
         // 차로마다 방면 (네이버처럼 두 줄까지): 경로 차로는 안내 방면, 다른 차로는 다른 갈래 방면 (네 글자 넘는 이름은 뺀다)
         // v256: 둘째 이름은 세 글자까지 (네이버 '일산 안양'·'강동 서하남' — '서울 한남대교'는 좁은 차로에서 옆 글자에 닿는다)
         const short = (arr) => { const a = arr.map(jxRoadName).filter(Boolean).slice(0, 2); return a.length === 2 && a[1].length > 3 ? a.slice(0, 1) : a; };
-        const goLane = short(j.names), otLane = short(otNames);
+        const goLane = short(j.names), otLane = short(ot && !ot.names.length && ot.cityLanes && ot.cityLanes.length ? ot.cityLanes : otNames);
         // 갈 차로 이름: 갈래가 다시 갈리면 왼쪽 차로는 왼쪽 갈래, 오른쪽 차로는 오른쪽 갈래 (그림에서 갈 차로는 뒤집기 전 왼쪽부터 k 번째)
         // 경로 차로 차례 (뒤집기 전 왼쪽부터 몇 번째 경로 차로인가)
         const goOrd = []; let gk = 0;
@@ -6750,21 +6752,30 @@
           return { x, w, c: (a + b) / 2, aw: Math.max(0, b - a), y };
         };
         const laneNames = laneAt.map((p0, k) => (p0[2] ? goName(k) : otLane));
-        const laneUnit = laneNames.map((nm) => (nm.length ? Math.max(2, ...nm.map((x) => x.length)) * (nm.length > 1 ? 0.86 : 1) : 1.2));
+        // 글자 덩어리 폭 (글자 크기 단위): 굵은 한 자 ≈ 1.08, 세 글자 넘는 줄('서하남')은 자간을 좁혀(-0.08em) 1.0. 두 줄은 86% 크기
+        const lineW = (x) => Math.max(2, x.length) * (x.length >= 3 ? 1.0 : 1.08);
+        const laneUnit = laneNames.map((nm) => (nm.length ? Math.max(...nm.map(lineW)) * (nm.length > 1 ? 0.86 : 1) : 1.3));
         const labelSet = (fit) => {
           const P = laneAt.map((p0, k) => (fit && fit[k] ? [fit[k][0], p0[1], p0[2], fit[k][1], fit[k][2]] : p0));
           const row0 = P[0][1], vis = (p, y) => { const g = laneGeo(p, y); return g.aw / g.w; };
           const v0 = P.map((p) => vis(p, row0));
           let row = row0;
           for (let y = 0.92; y > row0 + 0.004; y -= 0.01) if (P.every((p, k) => vis(p, y) >= Math.min(0.8, v0[k] - 0.02))) { row = y; break; }
-          const G = P.map((p) => laneGeo(p, row)), ws = G.map((g) => g.w).sort((a, b) => a - b), med = ws[ws.length >> 1];
+          const fit2 = (y) => {
+          const G = P.map((p) => laneGeo(p, y)), ws = G.map((g) => g.w).sort((a, b) => a - b), med = ws[ws.length >> 1];
           let F = 0.43 * med;
           G.forEach((g, k) => {
-            // 굵은 글자 한 자의 실제 폭은 글자 크기의 1.08 배쯤 (기흥IC '기흥기흥'이 붙었다)
-            F = Math.min(F, 1.25 * g.aw / (1.08 * laneUnit[k]));
-            if (k) F = Math.min(F, 2 * (g.c - G[k - 1].c - 0.01) / (1.08 * (laneUnit[k] + laneUnit[k - 1])));
+            // v268 (부모 세션: 네이버 서하남IC·하남JC 출구 글자는 차선에 걸쳐 거의 맞닿는다): 보이는 폭의 140% 까지, 옆 글자와는 2px(그림 폭 0.7%)까지
+            F = Math.min(F, 1.4 * g.aw / laneUnit[k]);
+            if (k) F = Math.min(F, 2 * (g.c - G[k - 1].c - 0.007) / (laneUnit[k] + laneUnit[k - 1]));
           });
-          return { P, G, F: Math.max(0.55 * 0.43 * med, F) };
+          return { G, F: Math.max(0.55 * 0.43 * med, F) };
+          };
+          // v268: 글자를 네이버처럼 세로로 펴서(눌러 쓰지 않음) 두 줄 글자가 그림 아래로 나가지 않게 — 글자 덩어리 아래 끝이 0.985 안
+          let r = fit2(row);
+          const half = (F) => (laneNames.some((nm) => nm.length > 1) ? 1.72 : 1) * F / 0.75 / 2;
+          if (row + half(r.F) > 0.985) { row = Math.max(0.72, 0.985 - half(r.F)); r = fit2(row); }
+          return { P, G: r.G, F: r.F };
         };
         const lane = (p0, k, cls, fit, set) => {
           const f = fit && fit[k];
@@ -6787,7 +6798,7 @@
             return no ? '<span class="jx-lane jx-lane-sh' + fs + (p[2] ? ' go' : '') + cls + '" style="' + pos + '"><i class="sg-shield">' + shieldSvg(no) + '</i></span>' : '';
           }
           return '<span class="jx-lane' + fs + (p[2] && !bus ? ' go' : '') + (nm.length > 1 ? ' two' : '') + cls + '" style="' + pos + ';--nc:' + Math.max(2, ...nm.map((x) => x.length)) + '">' +
-            nm.map((x) => '<b>' + esc(x) + '</b>').join('') + '</span>'; };
+            nm.map((x) => '<b' + (set && x.length >= 3 ? ' class="tt"' : '') + '>' + esc(x) + '</b>').join('') + '</span>'; };
         const fD = v2 ? jx2Fit[ICON_PICKS[key2v + jxs + '_day']] : null, fN = v2 ? jx2Fit[ICON_PICKS[key2v + jxs + '_night']] : null;
         const sD = v2 ? labelSet(fD) : null, sN = v2 ? labelSet(fN) : null;
         const lanesHtml = fD || fN ? laneAt.map((p, k) => lane(p, k, ' jv-day', fD, sD)).join('') + laneAt.map((p, k) => lane(p, k, ' jv-night', fN, sN)).join('')
@@ -7640,6 +7651,7 @@
     const oi = s.r.br.findIndex((b, i) => i !== s.go), o = s.r.br[oi], ex = s.r.ex || {};
     return { names: jdNames(o.dest), ref: o.ref, name: o.name, main: !o.dest, go: jdNames(s.r.br[s.go].dest),
       city: o.dest ? [] : jxCity(o.ref, s.r),   // v259: OSM 방면이 없는 본선 갈래만 — 확인 표
+      cityLanes: o.dest ? [] : jxCityLanes(o.ref, s.r),   // v268: 차로 글자 (네이버 서하남IC '구리 대전', 판교IC '대전 부산')
       mw: !!ex.m,   // v262: 갈림점이 고속도로·고속도로 연결로 위 (OSM motorway·motorway_link)
       xref: ex.x ? String(ex.x).replace(/;/g, ' ') : '', xname: ex.x ? String(ex.xn || '') : '' };
   }
