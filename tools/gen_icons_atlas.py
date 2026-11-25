@@ -25,7 +25,7 @@ ef_car_app.png 로 저장해 두면 그 느낌을 따라 그린다 (저장소에
   4+2 만 (v255, 네이버 하남분기점·서하남IC·판교IC 본선 4 + 출구 2):
     py -X utf8 tools\gen_icons_atlas.py --icons jx_exit42_day,jx_exit42_night --models flare26e,sunburst26e --per 2   (8장)
 - 네이버식 분기점 그림 2판 (v256, 키 큰 4:3 · 실제 차로 수 8가지 × 낮·밤, 밑그림: py -X utf8 tools\jx_scene2.py):
-    py -X utf8 tools\gen_icons_atlas.py --icons jx2 --models flare26e,sunburst26e --per 2   (64장)
+    py -X utf8 tools\gen_icons_atlas.py --icons jx2 --models flare26e,sunburst26e --per 2   (v258: 모양 10가지 × 낮·밤 = 80장)
 - 옵션: --models flare,sunburst,gpt15   --per 2   --icons over_r,junc_fork_r   --dry (요청 없이 계획과 예상 비용만)
 """
 import argparse
@@ -756,6 +756,11 @@ JX2_EDIT = ('Redraw image 1 as a finished junction view for the guidance panel o
             'splits, the same direction and curve of every branch, the overhead sign gantry, and the exact position and size of the two '
             'sign boards. The top quarter of the image is cropped away by the app, so keep it plain sky. '
             'LANE COUNT IS CRITICAL: %s Count the lanes in the sketch and draw exactly that many, each lane the same width. '
+            'GEOMETRY IS CRITICAL (like a real junction seen about 300 m before the exit): in the whole foreground and middle of the '
+            'image every lane runs straight ahead and parallel toward the same vanishing point; the exit lanes are a straight deceleration '
+            'lane beside the through lanes, separated from them only by a lane line, and every lane arrow points straight ahead. Nothing '
+            'curves in the foreground. The road splits (the gore with chevron hatching) only far ahead, close to the horizon, exactly where '
+            'the sketch has it, and the exit ramp bends to the right only beyond that gore. '
             'Lane markings exactly like a real Korean expressway: dashed white lines between lanes that go the same way, solid white lines '
             'at both road edges, a solid white line where the branches separate, white chevron hatching inside the gore between the branches. '
             'Route highlight: the lanes that are bright green in the sketch are the route. Keep exactly those lanes filled with solid bright '
@@ -768,15 +773,20 @@ JX2_EDIT = ('Redraw image 1 as a finished junction view for the guidance panel o
             'Add realism: fine asphalt texture, a concrete median barrier and metal guard rails or sound walls, grassy embankments with a few '
             'trees, distant apartment blocks and low hills on the horizon. No cars, no people, no text anywhere, no logos, no route shields, '
             'no watermark. ')
+_SIDE = (' On the far right, beyond a guard rail, a separate one-lane ramp that has already left the expressway runs alongside and curves '
+         'away to the right in the middle distance, exactly where the sketch has the separate grey road; it stays grey.')
 JX2_LANES_TXT = {
-    'x31': 'the road has exactly 4 lanes: 3 lanes go straight on the left and 1 lane (the green route) exits to the right.',
-    'x41': 'the road has exactly 5 lanes: 4 lanes go straight on the left and 1 lane (the green route) exits to the right.',
-    'x22': 'the road has exactly 4 lanes: 2 lanes go straight on the left and 2 lanes (the green route) exit to the right.',
-    'x42': 'the road has exactly 6 lanes: 4 lanes go straight on the left and 2 lanes (the green route) exit to the right; the outermost lanes may be cut by the image edge.',
-    'x43': 'the road has exactly 7 lanes: 4 lanes go straight on the left and 3 lanes (the green route) exit to the right; the outermost lanes may be cut by the image edge.',
-    's31': 'the road has exactly 4 lanes: 3 lanes (the green route) go straight on the left and 1 grey lane exits to the right.',
-    's41': 'the road has exactly 5 lanes: 4 lanes (the green route) go straight on the left and 1 grey lane exits to the right.',
-    'f22': 'the road has exactly 4 lanes that split into two branches of 2 lanes each: the left 2 grey lanes curve left and the right 2 green lanes (the route) curve right.',
+    'x31': 'the road has exactly 4 lanes: 3 lanes go straight on the left and 1 lane (the green route) exits to the right far ahead.',
+    'x41': 'the road has exactly 5 lanes: 4 lanes go straight on the left and 1 lane (the green route) exits to the right far ahead.',
+    'x41s': 'the road has exactly 5 lanes: 4 lanes go straight on the left and 1 lane (the green route) exits to the right far ahead.' + _SIDE,
+    'x22': 'the road has exactly 4 lanes: 2 lanes go straight on the left and 2 lanes (the green route) exit to the right far ahead.',
+    'x42': 'the road has exactly 6 lanes: 4 lanes go straight on the left and 2 lanes (the green route) exit to the right far ahead; the outermost lanes may be cut by the image edge.',
+    'x42s': 'the road has exactly 6 lanes: 4 lanes go straight on the left and 2 lanes (the green route) exit to the right far ahead; the outermost lanes may be cut by the image edge.' + _SIDE,
+    'x43': 'the road has exactly 7 lanes: 4 lanes go straight on the left and 3 lanes (the green route) exit to the right far ahead; the outermost lanes may be cut by the image edge.',
+    's31': 'the road has exactly 4 lanes: 3 lanes (the green route) go straight on the left and 1 grey lane exits to the right far ahead.',
+    's41': 'the road has exactly 5 lanes: 4 lanes (the green route) go straight on the left and 1 grey lane exits to the right far ahead.',
+    'f22': ('the road has exactly 4 lanes that run straight in the foreground and split in the middle distance into two branches of 2 lanes '
+            'each: the left 2 grey lanes curve left and the right 2 green lanes (the route) curve right.'),
 }
 JX2 = {}
 for _k, _t in JX2_LANES_TXT.items():

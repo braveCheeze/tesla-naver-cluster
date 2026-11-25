@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-257'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-258'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -6332,12 +6332,17 @@
   //   그대로 쓰는 건 아니지만 비슷하게 좀 만들어 줘'): 키 큰 그림(정사각형 AI 그림의 아래 3/4 = 4:3, 안내 카드 폭에 꽉 차게), 실제 차로 수
   //   (곧게 가는 차로 + 나가는 차로, 정밀도로지도 단면 → OSM lanes), 차로마다 큰 방면 글자, 표지판 위 나들목 번호 띠 ----------
   // 모양(tools/jx_scene2.py): x31·x41·x22·x42·x43 = 본선 T + 출구 E (경로 = 출구), s31·s41 = 본선(경로) + 출구 1, f22 = 2 + 2 갈림길
+  //   v258 (운전자 '오른쪽이 이런 식으로 나오는데 우린 왜 오른쪽으로 빠지도록 나와 있어'): 앞쪽은 모든 차로가 곧게, 고어는 지평선 가까이.
+  //   x41s·x42s = 오른쪽에 이미 갈라진 다른 연결로가 보이는 그림 (이 갈림 앞뒤 450m 안에 경로가 지나는 다른 갈림점이 있을 때 — 네이버 성남IC 2A)
   // 표: [x, 보이는 띠 y, 경로 차로, 차로 폭(그림 폭 비율), 기울기°] — tools/jx_scene2.py lane_anchors()
   const JX2_LANES = {
     x31: [[0.234, 0.879, 0, 0.177, -37.6], [0.411, 0.879, 0, 0.177, -14.4], [0.589, 0.879, 0, 0.177, 14.4], [0.766, 0.879, 1, 0.177, 37.6]],
     x41: [[0.146, 0.879, 0, 0.177, -45.8], [0.323, 0.879, 0, 0.177, -27.2], [0.5, 0.879, 0, 0.177, 0], [0.677, 0.879, 0, 0.177, 27.2], [0.854, 0.879, 1, 0.177, 45.8]],
+    x41s: [[0.146, 0.879, 0, 0.177, -45.8], [0.323, 0.879, 0, 0.177, -27.2], [0.5, 0.879, 0, 0.177, 0], [0.677, 0.879, 0, 0.177, 27.2], [0.854, 0.879, 1, 0.177, 45.8]],
     x22: [[0.234, 0.879, 0, 0.177, -37.6], [0.411, 0.879, 0, 0.177, -14.4], [0.589, 0.879, 1, 0.177, 14.4], [0.766, 0.879, 1, 0.177, 37.6]],
     x42: [[0.088, 0.847, 0, 0.165, -52.1], [0.253, 0.847, 0, 0.165, -37.6], [0.418, 0.847, 0, 0.165, -14.4], [0.582, 0.847, 0, 0.165, 14.4],
+      [0.747, 0.847, 1, 0.165, 37.6], [0.912, 0.847, 1, 0.165, 52.1]],
+    x42s: [[0.088, 0.847, 0, 0.165, -52.1], [0.253, 0.847, 0, 0.165, -37.6], [0.418, 0.847, 0, 0.165, -14.4], [0.582, 0.847, 0, 0.165, 14.4],
       [0.747, 0.847, 1, 0.165, 37.6], [0.912, 0.847, 1, 0.165, 52.1]],
     x43: [[0.057, 0.803, 0, 0.148, -57.1], [0.205, 0.803, 0, 0.148, -45.8], [0.352, 0.803, 0, 0.148, -27.2], [0.5, 0.803, 0, 0.148, 0],
       [0.648, 0.803, 1, 0.148, 27.2], [0.795, 0.803, 1, 0.148, 45.8], [0.943, 0.803, 1, 0.148, 57.1]],
@@ -6345,7 +6350,7 @@
     s41: [[0.146, 0.879, 1, 0.177, -45.8], [0.323, 0.879, 1, 0.177, -27.2], [0.5, 0.879, 1, 0.177, 0], [0.677, 0.879, 1, 0.177, 27.2], [0.854, 0.879, 0, 0.177, 45.8]],
     f22: [[0.234, 0.879, 0, 0.177, -37.6], [0.411, 0.879, 0, 0.177, -14.4], [0.589, 0.879, 1, 0.177, 14.4], [0.766, 0.879, 1, 0.177, 37.6]],
   };
-  const JX2_NGO = { x31: 1, x41: 1, x22: 2, x42: 2, x43: 3, s31: 3, s41: 4, f22: 2 };   // 경로 차로 수 (그림 밖으로 잘린 차로 포함)
+  const JX2_NGO = { x31: 1, x41: 1, x41s: 1, x22: 2, x42: 2, x42s: 2, x43: 3, s31: 3, s41: 4, f22: 2 };   // 경로 차로 수 (그림 밖으로 잘린 차로 포함)
   const JX2_BOARD = { l: [0.08, 0.113, 0.47, 0.353], r: [0.53, 0.113, 0.92, 0.353] };     // tools/jx_scene2.py boards_vis()
   const jxHas2 = (s) => !!(ICON_PICKS['jx2_' + s + '_day'] && ICON_PICKS['jx2_' + s + '_night']);
   const jxGoR = (s) => (JX2_LANES[s] ? s[0] !== 's' : JX_GO_R[s]);
@@ -6364,23 +6369,37 @@
         return { T, E: Math.max(1, ex), stay: true, bus: L.slice(0, T).map((m, i) => (isBusLane(m) ? i : -1)).filter((i) => i >= 0), src: 'hd' };
       }
       const ex = L.filter((m) => m.indexOf(ln.M) >= 0 && m.indexOf('S') < 0).length, E = Math.max(1, ex || ln.ok.length);
-      return { T: L.length - E, E, stay: false, src: 'hd' };
+      return { T: L.length - E, E, stay: false, side: jxSideRamp(g), src: 'hd' };
     }
     if (j.kind === 'main') return { T: 3, E: 1, stay: true, src: '' };
     const ol = jxOsmLanes(g);
-    if (ol) return { T: ol.other, E: ol.go, stay: false, fork: j.kind === 'fork' && ol.other <= 2 && ol.go <= 2, sub: ol.sub, src: 'osm' };
+    if (ol) return { T: ol.other, E: ol.go, stay: false, fork: j.kind === 'fork' && ol.other <= 2 && ol.go <= 2, sub: ol.sub, side: jxSideRamp(g), src: 'osm' };
     if (j.kind === 'fork') return { T: 2, E: 2, stay: false, fork: true, src: '' };
-    return { T: j.hwy ? 4 : 3, E: 1, stay: false, src: '' };
+    return { T: j.hwy ? 4 : 3, E: 1, stay: false, side: jxSideRamp(g), src: '' };
+  }
+  // v258: 이 안내의 갈림점 앞뒤 450m 안에 경로가 지나는 다른 갈림점(OSM)이 있는가 — 있으면 오른쪽에 다른 연결로가 보이는 그림(x41s·x42s)
+  function jxSideRamp(g) {
+    const s = juncSplitAt(g);
+    if (!s) return false;
+    for (const r of jdNear(s.r)) {
+      if (r === s.r) continue;
+      const on = routeSegNear(r, 30);
+      if (!on || Math.abs(on.at - s.at) > 450) continue;
+      const rb = routeBearingAt(Math.max(0, on.at - 30), on.at);
+      if (rb !== null && angleDiff(rb, r.h) <= 40) return true;
+    }
+    return false;
   }
   function jx2ShapeOf(c) {
     if (c.stay) return c.T >= 4 ? 's41' : 's31';
     if (c.fork) return 'f22';
     if (c.E >= 3) return 'x43';
-    if (c.E === 2) return c.T >= 3 ? 'x42' : 'x22';
-    return c.T >= 4 ? 'x41' : 'x31';
+    if (c.E === 2) return c.T >= 3 ? (c.side ? 'x42s' : 'x42') : 'x22';
+    return c.T >= 4 ? (c.side ? 'x41s' : 'x41') : 'x31';
   }
   // 2판 그림이 있으면 그 모양 (차로 수가 가장 가까운 2판 그림까지), 없으면 null — renderJunction 은 1판(jxShape)으로
-  const JX2_NEAR = { x43: ['x43', 'x42'], x42: ['x42', 'x43', 'x22'], x22: ['x22', 'x42'], x41: ['x41', 'x31'], x31: ['x31', 'x41'], s41: ['s41', 's31'], s31: ['s31', 's41'], f22: ['f22', 'x22'] };
+  const JX2_NEAR = { x43: ['x43', 'x42'], x42: ['x42', 'x43', 'x22'], x42s: ['x42s', 'x42'], x22: ['x22', 'x42'], x41: ['x41', 'x31'], x41s: ['x41s', 'x41'], x31: ['x31', 'x41'],
+    s41: ['s41', 's31'], s31: ['s31', 's41'], f22: ['f22', 'x22'] };
   function jxShape2(j, g) {
     if (!j || !NV_KINDS.has(j.kind)) return null;
     const c = jxConfig(j, g || nav.next);

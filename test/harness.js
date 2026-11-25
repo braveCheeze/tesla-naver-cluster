@@ -8242,7 +8242,7 @@
       const cum = [0]; for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + hav(P[k - 1], P[k]));
       return { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '시험', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
     };
-    const K2 = ['x31', 'x41', 'x22', 'x42', 'x43', 's31', 's41', 'f22'].flatMap((k) => ['jx2_' + k + '_day', 'jx2_' + k + '_night']), keep = {};
+    const K2 = ['x31', 'x41', 'x41s', 'x22', 'x42', 'x42s', 'x43', 's31', 's41', 'f22'].flatMap((k) => ['jx2_' + k + '_day', 'jx2_' + k + '_night']), keep = {};
     // 그림 파일은 있는 것(1판 4+1 그림)을 빌려 쓴다 — 비율·폭을 재려면 그림이 실제로 떠야 한다 (색 바꾼 파일 이름은 없어도 됨)
     for (const k of K2) { keep[k] = t.iconPicks[k]; t.iconPicks[k] = /_night$/.test(k) ? 'jx_exit4_night__sunburst26e__1.webp' : 'jx_exit4_day__sunburst26e__1.webp'; }
     const view = () => {
@@ -8282,7 +8282,8 @@
     // v257 (부모 세션 '틀린 도시는 안 된다'): 도시 이름은 그 갈림점의 OSM 방면만 — 성남IC 본선은 OSM 방면이 없어 길 이름(표지 '수도권제1순환',
     //   차로에는 네 글자 넘는 길 이름을 쓰지 않음), 하남분기점 본선은 '중부'. v256 의 휴게소 방향 '부산'·'일산'은 어디에도 없다
     const noCity = [a, b, c, d].every((x) => !/부산|일산 일산/.test(x.lanes || '') && !/부산/.test(x.other || ''));
-    const ok = noCity && a.shown && a.jx2 && a.shape === 'x41' && a.ratio === 1.33 && Math.abs(a.wide) <= 2 && a.lanes === '*성남/광주' && a.minK >= 0.25 &&
+    // v258: 성남IC 는 230m 앞에서 2A(판교) 연결로가 먼저 갈라져 '오른쪽 옆 연결로' 그림(x41s, 네이버 성남IC 그림 오른쪽처럼)
+    const ok = noCity && a.shown && a.jx2 && a.shape === 'x41s' && a.ratio === 1.33 && Math.abs(a.wide) <= 2 && a.lanes === '*성남/광주' && a.minK >= 0.25 &&
       /^2B/.test(a.tab) && !/\d/.test(a.sign) && /수도권제1순환/.test(a.other) && !/일산/.test(a.other) &&
       b.shown && b.shape === 'x43' && b.lc === 'gpp' && /_gpp\.webp/.test(b.img) && /서울/.test(b.other) &&
       c.shown && c.shape === 'x42' && c.lc === 'p' && /중부/.test(c.other) && /^중부 중부 중부 중부 /.test(c.lanes) &&

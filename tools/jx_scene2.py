@@ -10,6 +10,11 @@
     s31 본선 3(경로) + 출구 1     s41 본선 4(경로) + 출구 1 (신갈분기점 '대전')
     f22 갈림길 2 + 2 (오른쪽 갈래가 경로 — 서하남교차로처럼 일반도로 갈림)
   모두 오른쪽으로 나가는 그림이고 왼쪽이면 앱이 좌우로 뒤집는다
+- v258 (운전자가 성남IC 미리보기에 '오른쪽이 이런 식으로 나오는데 우린 왜 오른쪽으로 빠지도록 나와 있어', 부모 세션): 네이버 330m 그림처럼
+  앞쪽은 모든 차로가 곧게 나란히(출구 차로는 차선 하나로만 나뉜 감속 차로, 화살표도 곧게), 고어는 멀리(길 바닥 위쪽 1/4), 연결로는 고어
+  뒤에서야 오른쪽으로 휜다. 연결로가 다시 갈리는 곳(성남IC 2B·2A)은 그 뒤에 두 번째 갈림:
+    x41s·x42s  오른쪽 가드레일 너머에 이미 갈라진 다른 연결로가 그림 가운데쯤에서 오른쪽으로 휜다 (네이버 성남IC 오른쪽의 2A 판교 연결로).
+               연결로가 고어 뒤에서 다시 갈리는 것(ZS2)은 330m 에서는 지평선에 묻혀 보이지 않는다 — 판교분기점 '일산' 1 + '구리' 2 는 차로 색으로
 - 같은 방향 차로 사이는 흰 점선, 갈라지는 곳(고어)과 길 가장자리는 실선. 경로 차로는 고어 너머까지 초록
 - 문형 표지 틀에 빈 표지판 두 장(왼쪽 = 본선 위, 오른쪽 = 출구 위). 앱이 글자 표지(방면·화살표·나들목 번호 띠)를 얹는다
 - 차로마다 아래쪽에 방면 글자 자리(앱이 굵은 흰 글씨로, 차로 폭의 1/3 높이)
@@ -32,7 +37,9 @@ HZ = Y0 + 0.42 * (H - Y0)   # 지평선 (보이는 띠 42%)
 CAM_H = 7.0            # 눈높이 (m)
 F = 403.0              # 초점 (px) — 라벨 줄(Z≈8m)에서 차로 여섯이 보이게
 LW = 3.6               # 차로 폭 (m)
-ZS = 18.0              # 갈라지는 곳 (고어 시작, m)
+ZS = 29.0              # 고어 (갈라지는 곳, m) — v258: 앞쪽은 곧게, 고어는 길 바닥 높이의 22% (지평선에서). 네이버 330m 그림:
+                       #   하남JC 26% · 서하남IC 30% · 판교JC 27% · 신갈JC 19% · 성남IC 5% (성남IC 만 지평선 가까이)
+ZS2 = 72.0             # 연결로가 다시 갈리는 곳 (x42s·x43s)
 Z0, Z1 = F * CAM_H / (H - HZ), 900.0
 
 # 표지판 두 장 (그림 비율 x0, y0, x1, y1 — 정사각형 기준). 앱(app.js JX2_BOARD)은 보이는 띠 기준으로 바꿔 쓴다
@@ -40,27 +47,55 @@ BOARD_L = (0.08, 0.335, 0.47, 0.515)
 BOARD_R = (0.53, 0.335, 0.92, 0.515)
 BEAM = (0.03, 0.300, 0.97, 0.330)
 
-EXIT_BEND = {0: (-0.12, 0.0), 1: (0.0, 0.022)}
+# 갈래마다 휘는 항 [(a, k, 시작 Z)]: 옆 이동 = Σ a·d + k·d² (d = Z - 시작). 본선(0)은 곧게.
+#   1 = 연결로 (고어 ZS 뒤에서 오른쪽으로), 2 = 연결로가 ZS2 에서 다시 갈려 더 오른쪽으로,
+#   3 = 이미 갈라져 오른쪽에 따로 가는 다른 연결로 (네이버 성남IC 오른쪽의 2A 판교 연결로) — 그림 가운데쯤에서 오른쪽으로 휜다
+RAMP = (0.15, 0.012, ZS)   # 고어 뒤 연결로가 그림 위쪽 가운데쯤에서 오른쪽으로 휘어 오른쪽 끝으로
+EXIT_BEND = {0: [], 1: [RAMP], 2: [RAMP, (0.40, 0.020, ZS2)], 3: [(0.9, 0.04, 20.0)]}
 
 
-def _exit(T, E, go_exit=True, lz=8.0):
-    """본선 T + 출구 E. 차로 묶음 가운데가 카메라(X=0) 가까이 오게"""
+def _exit(T, E, go_exit=True, lz=8.0, split=None):
+    """본선 T + 출구 E. 차로 묶음 가운데가 카메라(X=0) 가까이 오게.
+    split: None | 'side' (오른쪽에 이미 갈라진 다른 연결로 하나 — 칠 안 함)
+           | ('half', k, 'stop'|'all') (출구 차로가 ZS2 에서 왼쪽 k 차로 · 나머지로 다시 갈림. 'stop' 은 칠을 ZS2 까지만 — 어느 갈래가 경로인지 그림에 정하지 않는다)"""
     b = (T - E) * LW / 2.0
-    lanes = [(b - (T - i) * LW, b - (T - i - 1) * LW, 0) for i in range(T)] + [(b + i * LW, b + (i + 1) * LW, 1) for i in range(E)]
-    return {'lanes': lanes, 'go': 1 if go_exit else 0, 'bend': EXIT_BEND, 'lz': lz}
+    lanes = [(b - (T - i) * LW, b - (T - i - 1) * LW, 0) for i in range(T)]
+    sh = {'bend': EXIT_BEND, 'lz': lz, 'paint_to': Z1}
+    if split and split[0] == 'half':
+        k = split[1]
+        lanes += [(b + i * LW, b + (i + 1) * LW, 1 if i < k else 2) for i in range(E)]
+        sh['go'] = (1, 2) if go_exit else (0,)
+        if split[2] == 'stop':
+            sh['paint_to'] = ZS2
+    else:
+        lanes += [(b + i * LW, b + (i + 1) * LW, 1) for i in range(E)]
+        sh['go'] = (1,) if go_exit else (0,)
+        if split == 'side':
+            x = b + E * LW + 5.0   # 가드레일 너머 (출구 차로와 떨어져)
+            lanes.append((x, x + LW, 3, 14.0))   # 앞쪽 차로 수·글자에 넣지 않는다 — 출구 연결로보다 먼저 오른쪽으로 빠진다
+    sh['lanes'] = lanes
+    return sh
 
 
 SHAPES = {
     'x31': _exit(3, 1),
     'x41': _exit(4, 1),
+    'x41s': _exit(4, 1, split='side'),
     'x22': _exit(2, 2),
     'x42': _exit(4, 2, lz=8.6),
+    'x42s': _exit(4, 2, lz=8.6, split='side'),
     'x43': _exit(4, 3, lz=9.6),
     's31': _exit(3, 1, go_exit=False),
     's41': _exit(4, 1, go_exit=False),
-    'f22': {'lanes': [(-7.2, -3.6, -1), (-3.6, 0, -1), (0, 3.6, 1), (3.6, 7.2, 1)], 'go': 1,
-            'bend': {-1: (-0.16, -0.004), 1: (0.05, 0.014)}, 'lz': 8.0},
+    # 일반도로 갈림길 2 + 2: 네이버 서하남교차로처럼 갈림이 그림 가운데쯤
+    'f22': {'lanes': [(-7.2, -3.6, -1), (-3.6, 0, -1), (0, 3.6, 1), (3.6, 7.2, 1)], 'go': (1,),
+            'bend': {-1: [(-0.25, -0.010, 28.0)], 1: [(0.25, 0.010, 28.0)]}, 'lz': 8.0, 'paint_to': Z1, 'zs': 28.0},
 }
+GO_N = {k: sum(1 for ln in v['lanes'] if ln[2] in v['go'] and len(ln) < 4) for k, v in SHAPES.items()}
+
+
+def lane_za(ln):
+    return ln[3] if len(ln) > 3 else None
 
 
 def proj(X, Z):
@@ -68,11 +103,12 @@ def proj(X, Z):
 
 
 def shift(Z, side, sh):
-    if Z <= ZS or side not in sh['bend']:
-        return 0.0
-    a, k = sh['bend'][side]
-    d = Z - ZS
-    return a * d + k * d * d
+    out = 0.0
+    for a, k, z0 in sh['bend'].get(side, ()):
+        if Z > z0:
+            d = Z - z0
+            out += a * d + k * d * d
+    return out
 
 
 def zs():
@@ -112,10 +148,13 @@ def arrow_poly(cx, side, sh, z0, z1, turn):
 
 
 def lane_groups(sh):
+    """갈래별 (왼쪽 X, 오른쪽 X, 시작 Z)"""
     g = {}
-    for x0, x1, s in sh['lanes']:
-        a, b = g.get(s, (x0, x1))
-        g[s] = (min(a, x0), max(b, x1))
+    for ln in sh['lanes']:
+        x0, x1, s = ln[:3]
+        za = lane_za(ln) or Z0
+        a, b, z = g.get(s, (x0, x1, za))
+        g[s] = (min(a, x0), max(b, x1), min(z, za))
     return g
 
 
@@ -131,28 +170,39 @@ def draw_base(name):
         d.rectangle([x, HZ - h, x + w, HZ], fill=(205, 210, 218))
     groups = lane_groups(sh)
     asphalt, green, white = (74, 79, 87), (0, 178, 80), (250, 250, 250)
-    for s, (x0, x1) in groups.items():
-        d.polygon(strip(x0 - 0.8, x1 + 0.8, s, sh), fill=asphalt)
-    allx0 = min(x0 for x0, _ in groups.values()); allx1 = max(x1 for _, x1 in groups.values())
-    d.polygon(strip(allx0 - 0.8, allx1 + 0.8, 0, sh, Z0, ZS), fill=asphalt)
+    zs0 = sh.get('zs', ZS)
+    # 갈래마다 길 바닥 (어깨 0.8m) — 갈래가 시작하는 곳(ZS2 에서 생기는 갈래)부터
+    for s, (x0, x1, za) in groups.items():
+        d.polygon(strip(x0 - 0.8, x1 + 0.8, s, sh, za), fill=asphalt)
+    fg = [g for g in groups.values() if g[2] <= Z0 + 0.01]
+    allx0 = min(g[0] for g in fg); allx1 = max(g[1] for g in fg)
+    d.polygon(strip(allx0 - 0.8, allx1 + 0.8, 0, sh, Z0, zs0), fill=asphalt)   # 고어 앞은 한 판 (모든 차로가 곧게 나란히)
     go = sh['go']
-    for x0, x1, s in sh['lanes']:
-        if s == go:
-            d.polygon(strip(x0 + 0.15, x1 - 0.15, s, sh), fill=green)
-    # 차선: 가장자리·갈래 경계(고어 뒤)는 실선, 같은 갈래 안은 점선, 갈라지기 전 갈래 경계는 굵은 점선
-    for s, (x0, x1) in groups.items():
-        lane_line(x0, s, sh, False, d, white, 0.16)
-        lane_line(x1, s, sh, False, d, white, 0.16)
-    for i, (x0, x1, s) in enumerate(sh['lanes'][1:], 1):
+    for ln in sh['lanes']:
+        x0, x1, s = ln[:3]
+        if s in go and not lane_za(ln):
+            d.polygon(strip(x0 + 0.15, x1 - 0.15, s, sh, Z0, sh['paint_to']), fill=green)
+    # 차선: 길 가장자리·갈래 경계(고어 뒤)는 실선, 같은 갈래 안은 점선, 고어 앞 갈래 경계(본선 | 출구)는 굵은 점선
+    for s, (x0, x1, za) in groups.items():
+        lane_line(x0, s, sh, False, d, white, 0.16, za)
+        lane_line(x1, s, sh, False, d, white, 0.16, za)
+    for i, ln in enumerate(sh['lanes'][1:], 1):
+        x0, x1, s = ln[:3]
         ps = sh['lanes'][i - 1][2]
+        if lane_za(ln):
+            continue
         if ps == s:
             lane_line(x0, s, sh, True, d, white, 0.13)
+        elif ps == 0 or s == 0:
+            lane_line(x0, 0, sh, True, d, white, 0.2, Z0, zs0)
         else:
-            lane_line(x0, 0, sh, True, d, white, 0.2, Z0, ZS)
-    for x0, x1, s in sh['lanes']:
-        cx = (x0 + x1) / 2
-        turn = 0 if s == 0 else (1 if s > 0 else -1)
-        d.polygon(arrow_poly(cx, s, sh, 10.2, 14.5, turn * (1 if s == go else 0.6)), fill=white)
+            lane_line(x0, 1, sh, True, d, white, 0.13, Z0, ZS2)   # 출구 안 두 무리: 다시 갈리기 전까지는 같은 연결로
+    # 노면 화살표: 앞쪽은 모두 곧게 (네이버 330m — 출구 차로도 아직 감속 차로)
+    for ln in sh['lanes']:
+        if lane_za(ln):
+            continue
+        x0, x1, s = ln[:3]
+        d.polygon(arrow_poly((x0 + x1) / 2, s, sh, 10.2, 14.5, 0), fill=white)
     gray = (120, 128, 138)
     d.rectangle([BEAM[0] * W, BEAM[1] * H, BEAM[2] * W, BEAM[3] * H], fill=gray)
     d.rectangle([0.035 * W, BEAM[1] * H, 0.055 * W, HZ + 40], fill=gray)
@@ -174,14 +224,17 @@ def lane_anchors(name):
     sh = SHAPES[name]
     z = sh['lz']
     out = []
-    for x0, x1, s in sh['lanes']:
+    for ln in sh['lanes']:
+        if lane_za(ln):
+            continue
+        x0, x1, s = ln[:3]
         cx = (x0 + x1) / 2 + shift(z, s, sh)
         p = proj(cx, z)
         fx = p[0] / W
         w = (proj(x1 + shift(z, s, sh), z)[0] - proj(x0 + shift(z, s, sh), z)[0]) / W
         ang = math.degrees(math.atan(cx / CAM_H))
         if 0.02 <= fx <= 0.98:
-            out.append([round(fx, 3), round(vis_y(p[1]), 3), 1 if s == sh['go'] else 0, round(w, 3), round(ang, 1)])
+            out.append([round(fx, 3), round(vis_y(p[1]), 3), 1 if s in sh['go'] else 0, round(w, 3), round(ang, 1)])
     return out
 
 
@@ -194,9 +247,12 @@ def masks(name):
     sh = SHAPES[name]
     mg = Image.new('L', (W, H)); mo = Image.new('L', (W, H))
     dg, do = ImageDraw.Draw(mg), ImageDraw.Draw(mo)
-    for x0, x1, s in sh['lanes']:
+    for ln in sh['lanes']:
+        if lane_za(ln):
+            continue
+        x0, x1, s = ln[:3]
         poly = strip(x0 + 0.7, x1 - 0.7, s, sh, Z0, 45.0)
-        (dg if s == sh['go'] else do).polygon(poly, fill=255)
+        (dg if s in sh['go'] else do).polygon(poly, fill=255)
     a = np.array(mg) > 0; b = np.array(mo) > 0
     cut = int(HZ + 0.12 * (H - HZ))
     a[:cut] = False; b[:cut] = False
@@ -207,9 +263,10 @@ def route_region(name, size=(W, H)):
     sh = SHAPES[name]
     m = Image.new('L', (W, H))
     d = ImageDraw.Draw(m)
-    for x0, x1, s in sh['lanes']:
-        if s == sh['go']:
-            d.polygon(strip(x0 - 0.35, x1 + 0.35, s, sh), fill=255)
+    for ln in sh['lanes']:
+        x0, x1, s = ln[:3]
+        if s in sh['go'] and not lane_za(ln):
+            d.polygon(strip(x0 - 0.35, x1 + 0.35, s, sh, Z0, sh['paint_to']), fill=255)
     if size != (W, H):
         m = m.resize(size, Image.NEAREST)
     return np.array(m) > 0
@@ -253,11 +310,11 @@ def recolor(im, name, c):
 
 def lane_region(name, k, size=(W, H)):
     sh = SHAPES[name]
-    go = [ln for ln in sh['lanes'] if ln[2] == sh['go']]
-    x0, x1, s = go[k]
+    go = [ln for ln in sh['lanes'] if ln[2] in sh['go'] and not lane_za(ln)]
+    x0, x1, s = go[k][:3]
     m = Image.new('L', (W, H))
     d = ImageDraw.Draw(m)
-    d.polygon(strip(x0 - (0.35 if k == 0 else 0.0), x1 + (0.35 if k == len(go) - 1 else 0.0), s, sh), fill=255)
+    d.polygon(strip(x0 - (0.35 if k == 0 else 0.0), x1 + (0.35 if k == len(go) - 1 else 0.0), s, sh, Z0, sh['paint_to']), fill=255)
     if size != (W, H):
         m = m.resize(size, Image.NEAREST)
     return m

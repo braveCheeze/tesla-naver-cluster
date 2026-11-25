@@ -31,7 +31,7 @@ for slot, f in re.findall(r'"(jx_(?:exit2|exit42|fork)_(?:day|night))": "([^"]+)
         n += 1
 for slot, f in re.findall(r'"(jx2_[a-z0-9]+_(?:day|night))": "([^"]+)"', picks):
     shape = slot[4:].rsplit('_', 1)[0]
-    ngo = sum(1 for ln in jx_scene2.SHAPES[shape]['lanes'] if ln[2] == jx_scene2.SHAPES[shape]['go'])
+    ngo = jx_scene2.GO_N[shape]
     if ngo < 2:
         continue
     src = os.path.join(ROOT, 'tools', 'icon-src', 'ai', f[:-5] + '.png')
