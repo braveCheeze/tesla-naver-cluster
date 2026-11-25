@@ -1560,8 +1560,20 @@
   /* 2026-11-25 네이버식 분기점 그림 (jx, AI 그림 3:2): 운전자 '그냥 네이버지도처럼 — 자바스크립트로 그리지 말고 AI로'.
      그림 속 빈 표지판 두 장 자리(app.js JX_BOARD)에 글자 표지를 얹는다: 판마다 같은 모양(네이버처럼), 화살표는 판의 바깥쪽.
      초록 차로 아래에 방면 글자(네이버 '판교'), 다른 갈래 차로에는 지금 길 이름(옅게). 왼쪽으로 가면 그림만 좌우로 뒤집는다 */
-  .junccard.jx .jc-svg { position: relative; }
+  .junccard.jx .jc-svg { position: relative; container-type: inline-size; }
   .junccard.jx .jc-svg .jv-img { aspect-ratio: 3 / 2; object-fit: cover; transform: none; }
+  /* v256 2판(jx2): 정사각형 AI 그림의 아래 3/4 (위 하늘을 잘라 4:3) — 네이버처럼 키 큰 그림 */
+  .junccard.jx.jx2 .jc-svg .jv-img { aspect-ratio: 4 / 3; object-position: 50% 100%; }
+  /* 안내 카드(서랍) 폭에 꽉 차게: 서랍 안쪽 여백을 넘어 양옆·위까지 (네이버처럼 그림이 안내 칸 폭 전체) */
+  #app.tesla .cd-in .junccard.jx { margin: -12px -14px -2px; border-radius: 0; }
+  .junccard.jx.jx2 .jc-label.jx-board .sg-row { font-size: calc(18px * var(--sgk, 1)); }
+  .junccard.jx.jx2 .jc-label.jx-board .sg-names.one .sg-row { font-size: calc(19px * var(--sgk, 1)); }
+  .junccard.jx.jx2 .jc-label.jx-board .sg-arrow svg { width: 22px; height: 28px; }
+  /* 나들목 번호 띠 (네이버 '2B 성남'): 출구 쪽 표지판 위 왼쪽에 검은 띠 */
+  .jx-tab { position: absolute; transform: translateY(-100%); display: flex; align-items: center; gap: 4px; padding: 1px 5px 1px 3px; border-radius: 3px 3px 0 0;
+    background: #10161c; color: #fff; font-size: 11px; line-height: 1.25; white-space: nowrap; pointer-events: none; z-index: 2; }
+  .jx-tab b { background: #fff; color: #10161c; border-radius: 2px; padding: 0 3px; font-weight: 900; letter-spacing: -.2px; }
+  .jx-tab i { font-style: normal; font-weight: 800; }
   .junccard.jx.jx-m .jc-svg .jv-img { transform: scaleX(-1); }
   .junccard.jx .jc-label.jx-board { position: absolute; right: auto; bottom: auto; max-width: none; box-sizing: border-box; justify-content: center; gap: 6px;
     padding: 3px 7px; border-radius: 5px; outline-offset: -3px; box-shadow: 0 1px 3px rgba(0, 0, 0, .3); flex-direction: row; overflow: hidden; opacity: 1; filter: none; }
@@ -1573,11 +1585,12 @@
   .junccard.jx .jc-label.jc-other.jx-board > :not(.sg-arrow) { opacity: .88; }
   .junccard.jx .jc-head { display: none; }
   /* v249 차로마다 방면 글자 (네이버 '일산 일산 일산 일산 | 성남'): 바닥에 칠한 것처럼 납작하게, 두 줄까지. 갈 차로는 하얗게 크게 */
-  .jx-lane { position: absolute; transform: translate(-50%, -50%) scaleY(.72); display: flex; flex-direction: column; align-items: center; pointer-events: none;
-    color: rgba(255, 255, 255, .86); line-height: 1.02; }
-  .jx-lane b { font-size: 13px; font-weight: 900; letter-spacing: 1px; white-space: nowrap; text-shadow: 0 0 1.5px rgba(0, 0, 0, .45); }
-  .jx-lane.go { color: #fff; }
-  .jx-lane.go b { font-size: 14px; }
+  /* v256 (부모 세션 점검표 3·4, 네이버처럼): 모든 차로에 굵은 흰 글씨 + 검은 테, 글자 높이 = 차로 폭(--lw, 그림 폭 비율)의 1/3 쯤, 차로 기울기대로(--sk) */
+  .jx-lane { position: absolute; transform: translate(-50%, -50%) skewX(var(--sk, 0deg)) scaleY(.84); display: flex; flex-direction: column; align-items: center;
+    pointer-events: none; color: #fff; line-height: 1; }
+  .jx-lane b { font-size: 16px; font-size: calc(var(--lw, .17) * 34cqw * min(1, 2.6 / var(--nc, 2))); font-weight: 900; letter-spacing: .5px; white-space: nowrap;
+    text-shadow: 0 0 2px rgba(0, 0, 0, .9), 1px 1px 0 rgba(0, 0, 0, .8), -1px -1px 0 rgba(0, 0, 0, .8), 1px -1px 0 rgba(0, 0, 0, .8), -1px 1px 0 rgba(0, 0, 0, .8); }
+  .jx-lane.two b { font-size: 13px; font-size: calc(var(--lw, .17) * 27cqw * min(1, 3 / var(--nc, 2))); }   /* 세 글자 이름까지 같은 크기, 넷이면 줄인다 */
   /* v249 AI 그림 칸의 다른 갈래 표지: 그 갈래가 왼쪽이면 화살표를 왼쪽에, 왼쪽 위를 가리키게 (신갈분기점 '↖ 인천 안산') */
   .junccard:not(.nv):not(.plan):not(.jx) .jc-label.jc-other.oth-l .sg-arrow { order: -1; }
   .junccard:not(.nv):not(.plan):not(.jx) .jc-label.jc-other.oth-l .sg-arrow svg { transform: scaleX(-1); }
@@ -2319,8 +2332,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-255"></script>
-<script src="img/ai/picks.js?v=2026.11.16-255"></script>
-<script src="app.js?v=2026.11.16-255"></script>
+<script src="icons.js?v=2026.11.16-256"></script>
+<script src="img/ai/picks.js?v=2026.11.16-256"></script>
+<script src="app.js?v=2026.11.16-256"></script>
 </body>
 </html>

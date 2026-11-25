@@ -24,6 +24,8 @@ ef_car_app.png 로 저장해 두면 그 느낌을 따라 그린다 (저장소에
     py -X utf8 tools\gen_icons_atlas.py --icons jx --models flare26e,sunburst26e --per 2   (모양 6가지면 48장)
   4+2 만 (v255, 네이버 하남분기점·서하남IC·판교IC 본선 4 + 출구 2):
     py -X utf8 tools\gen_icons_atlas.py --icons jx_exit42_day,jx_exit42_night --models flare26e,sunburst26e --per 2   (8장)
+- 네이버식 분기점 그림 2판 (v256, 키 큰 4:3 · 실제 차로 수 8가지 × 낮·밤, 밑그림: py -X utf8 tools\jx_scene2.py):
+    py -X utf8 tools\gen_icons_atlas.py --icons jx2 --models flare26e,sunburst26e --per 2   (64장)
 - 옵션: --models flare,sunburst,gpt15   --per 2   --icons over_r,junc_fork_r   --dry (요청 없이 계획과 예상 비용만)
 """
 import argparse
@@ -745,6 +747,41 @@ for _k in ('exit', 'exit4', 'exit2', 'exit42', 'stay', 'fork'):
     JX['jx_%s_day' % _k] = (('ref/jx_%s.png' % _k,), JX_EDIT, JX_DAY)
     JX['jx_%s_night' % _k] = (('ref/jx_%s.png' % _k,), JX_EDIT, JX_NIGHT)
 WIDE_JX = set(JX)
+# v256 2판 (부모 세션 점검표 — 운전자 '봐바 이거 안돼, 그대로 쓰는 건 아니지만 비슷하게 좀 만들어 줘', 네이버 성남IC 그림과 나란히):
+# 정사각형(1024×1024)으로 그리고 앱이 위 1/4(하늘)을 잘라 4:3 으로 쓴다. 차로 수를 모양마다 글로도 못박는다 (밑그림의 차로 수가 실제 길)
+JX2_EDIT = ('Redraw image 1 as a finished junction view for the guidance panel of a premium Korean car navigation app, in the polished '
+            '3D computer-graphics style of a Korean expressway junction view: a clean, realistic CG render seen from the driver\'s eye '
+            'just above the road, looking straight down the lanes, not a photo and not flat vector art. Image 1 is a layout sketch. '
+            'Keep its layout EXACTLY: the same square framing, the same camera view and horizon height, the same place where the road '
+            'splits, the same direction and curve of every branch, the overhead sign gantry, and the exact position and size of the two '
+            'sign boards. The top quarter of the image is cropped away by the app, so keep it plain sky. '
+            'LANE COUNT IS CRITICAL: %s Count the lanes in the sketch and draw exactly that many, each lane the same width. '
+            'Lane markings exactly like a real Korean expressway: dashed white lines between lanes that go the same way, solid white lines '
+            'at both road edges, a solid white line where the branches separate, white chevron hatching inside the gore between the branches. '
+            'Route highlight: the lanes that are bright green in the sketch are the route. Keep exactly those lanes filled with solid bright '
+            'green (#00C853) from the bottom of the image, past the gore and all the way along their branch, with crisp white lane arrows on '
+            'them. No other lane may be green: every other lane stays dark grey asphalt with white arrows. '
+            'Sign boards: two plain dark-green Korean expressway direction boards (#0B7A43) with a thin white inner border, hanging from the '
+            'gantry exactly where the sketch has them, completely BLANK: no text, letters, numbers, arrows or symbols on them (the app writes '
+            'the text). Keep the bottom fifth of the image (below the lane arrows) plain lane surface or plain green paint with no painted '
+            'words, because the app writes a destination name on every lane there. '
+            'Add realism: fine asphalt texture, a concrete median barrier and metal guard rails or sound walls, grassy embankments with a few '
+            'trees, distant apartment blocks and low hills on the horizon. No cars, no people, no text anywhere, no logos, no route shields, '
+            'no watermark. ')
+JX2_LANES_TXT = {
+    'x31': 'the road has exactly 4 lanes: 3 lanes go straight on the left and 1 lane (the green route) exits to the right.',
+    'x41': 'the road has exactly 5 lanes: 4 lanes go straight on the left and 1 lane (the green route) exits to the right.',
+    'x22': 'the road has exactly 4 lanes: 2 lanes go straight on the left and 2 lanes (the green route) exit to the right.',
+    'x42': 'the road has exactly 6 lanes: 4 lanes go straight on the left and 2 lanes (the green route) exit to the right; the outermost lanes may be cut by the image edge.',
+    'x43': 'the road has exactly 7 lanes: 4 lanes go straight on the left and 3 lanes (the green route) exit to the right; the outermost lanes may be cut by the image edge.',
+    's31': 'the road has exactly 4 lanes: 3 lanes (the green route) go straight on the left and 1 grey lane exits to the right.',
+    's41': 'the road has exactly 5 lanes: 4 lanes (the green route) go straight on the left and 1 grey lane exits to the right.',
+    'f22': 'the road has exactly 4 lanes that split into two branches of 2 lanes each: the left 2 grey lanes curve left and the right 2 green lanes (the route) curve right.',
+}
+JX2 = {}
+for _k, _t in JX2_LANES_TXT.items():
+    JX2['jx2_%s_day' % _k] = (('ref/jx2_%s.png' % _k,), JX2_EDIT % _t, JX_DAY)
+    JX2['jx2_%s_night' % _k] = (('ref/jx2_%s.png' % _k,), JX2_EDIT % _t, JX_NIGHT)
 
 
 def _gpt25(model):
@@ -940,6 +977,8 @@ def main():
         JOBS.update(JBG)   # v197 분기점 장면 풍경
     if 'jx' in a.icons.split(',') or any(i.startswith('jx_') for i in a.icons.split(',')):
         JOBS.update(JX)   # 네이버식 분기점 그림 (2026-11-25)
+    if 'jx2' in a.icons.split(',') or any(i.startswith('jx2_') for i in a.icons.split(',')):
+        JOBS.update(JX2)   # 2판 (v256, 정사각형 → 앱이 4:3)
     if 'junc3' in a.icons.split(','):
         JOBS.update(JUNC3)   # 분기점 그림 14장: 길게 이어진 화살표·은은한 파란 빛
     models = [m for m in (a.models or 'flare,sunburst,flare26,sunburst26').split(',') if m in MODELS]
@@ -949,7 +988,7 @@ def main():
     groups = {'cars': [k for k in JOBS if is_car(k)], 'signs': [k for k in JOBS if is_sign(k)],
               'guide': [k for k in JOBS if not is_car(k) and not is_sign(k)],
               'roads': ROADS, 'rb': RBS, 'redo': ROADS + RBS,
-              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s'], 'fix3': ['outs', 'ins', 'over_r', 'under_s', 'under_r', 'side_r', 'oside_r'], 'grass': RBS, 'junc': sorted(PANO), 'green': list(GREEN_KIND), 'junc2': JV2, 'soft': list(SOFT), 'rbdepth': list(RBDEPTH), 'junc3': list(JUNC3), 'clean': list(CLEAN), 'klbold': ['kl'], 'sharp': ['sharp_r'], 'slbold': ['sl'], 'fix4': list(FIX4), 'fix5': list(FIX5), 'fix6': list(FIX6), 'under3d': list(UNDER3D), 'grade3': list(GRADE3), 'grade4': list(GRADE4), 'mainline': list(MAINLINE), 'jc': ['jc'], 'cams': list(CAMS), 'camnum': list(CAMNUM), 'jbg': list(JBG), 'jx': list(JX)}
+              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s'], 'fix3': ['outs', 'ins', 'over_r', 'under_s', 'under_r', 'side_r', 'oside_r'], 'grass': RBS, 'junc': sorted(PANO), 'green': list(GREEN_KIND), 'junc2': JV2, 'soft': list(SOFT), 'rbdepth': list(RBDEPTH), 'junc3': list(JUNC3), 'clean': list(CLEAN), 'klbold': ['kl'], 'sharp': ['sharp_r'], 'slbold': ['sl'], 'fix4': list(FIX4), 'fix5': list(FIX5), 'fix6': list(FIX6), 'under3d': list(UNDER3D), 'grade3': list(GRADE3), 'grade4': list(GRADE4), 'mainline': list(MAINLINE), 'jc': ['jc'], 'cams': list(CAMS), 'camnum': list(CAMNUM), 'jbg': list(JBG), 'jx': list(JX), 'jx2': list(JX2)}
     want = []
     for i in a.icons.split(','):
         want += groups.get(i, [i])

@@ -2943,6 +2943,7 @@
     { id: 'S166', name: "S166 the branch we do not take, lane names and lane colour (v249, driver 2026-11-25 with Naver's 판교분기점 '일산 안양 | 판교': '여기는 일산 안양 이렇게 알려주잖아 … 차선이랑 바닥에 있는 것도 저렇게 다르게', and 신갈분기점 '초록색 따라가게끔'): at 판교분기점 from 학의 ('구리, 성남', staying on the main road) the other sign shows the OSM ramp destinations '부산 대전'; with Naver-style pictures the other board says '부산 대전', the route lanes are painted '구리/성남' and the other lanes '부산/대전', and the picture is the sky-blue variant (no colour line); at 판교분기점 from 서울TG ('일산, 구리', pink colour line) the pink variant is used", fn: s166 },
     { id: 'S167', name: "S167 junction pictures matched to Naver (v253, jx comparison table): no picture for a main-road stay without lane data (판교JC from 학의) or an unnamed city fork (팔당 '서울'); a picture for 신갈JC '대전' (stay with lane data) naming the ramp '인천, 원주'; 서하남교차로 keeps Naver's '왼쪽 방향' and names 하남 on the other board; 기흥IC exit is 2+2 pink, 신갈JC '원주, 인천' 4+1 green, 판교IC 2+2 with both route lanes '분당/판교'", fn: s167 },
     { id: 'S168', name: "S168 lane counts from OSM where there is no HD-map lane data (v255, parent session: Naver 하남분기점 4+2, 서하남IC 2-lane exit): at 하남분기점 (중부 westbound, '판교, 서하남') and 서하남IC ('강동, 서하남') OSM gives 2 route lanes + 4 other lanes, so the picture is 4+2 when one is picked and the closest existing shape (2+2) until then; 성남IC (ramp lanes not in OSM) stays 4+1; 판교IC (HD-map 'SB|S|S|S|S|R|R') becomes 4+2 too once picked", fn: s168 },
+    { id: 'S169', name: "S169 Naver-style junction picture v2 (v256, parent session checklist after the driver's 성남IC complaint '봐바 이거 안돼 … 비슷하게 좀 만들어 줘'): with v2 pictures picked, the picture is 4:3 and as wide as the drawer; the shape follows the real lane counts (성남IC 4+1, 판교분기점 from 서울TG 4 + 1 + 2, 하남분기점 4+2, 신갈분기점 '대전' main road 4 + exit 1 with the bus lane not painted); every visible lane carries a bold label about a third of the lane width tall, the lanes not taken say the main road's direction ('일산') or destination ('서울'), the exit board has no route shield and an exit-number tab ('2B 성남'), and the route lanes at 판교분기점 are green 1 + pink 2", fn: s169 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -8228,11 +8229,69 @@
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
+  // S169: 네이버식 분기점 그림 2판 (v256, 부모 세션 점검표 — 운전자 성남IC '봐바 이거 안돼, 비슷하게 좀 만들어 줘')
+  //   2판 그림(jx2_*)을 고른 것으로 하고 (a) 성남IC '성남, 광주': 4+1(x41), 4:3, 서랍 폭, 차로 글자 '일산'×4 + '*성남/광주', 글자 높이 ≥ 차로 폭의 1/4,
+  //   출구 표지에 노선 방패 없음, 나들목 번호 띠 '2B', 다른 표지 '일산'
+  //   (b) 서울TG → 판교분기점 '일산, 구리': 4 + 3(x43), 차로 색 녹색 1 + 분홍 2('gpp'), 다른 표지 '서울'
+  //   (c) 하남분기점: 4+2(x42) 분홍  (d) 신갈분기점 '대전'(본선 그대로): s41, 버스전용차로 칠 안 함('nbbb'), 출구 표지 위 나들목 번호 띠
+  async function s169() {
+    const t = T(), r = {};
+    const fixture = async (f) => {
+      const fx = await (await realFetch(harnessDir + 'fixtures/' + f, { cache: 'no-store' })).json();
+      const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0]; for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + hav(P[k - 1], P[k]));
+      return { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '시험', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    };
+    const K2 = ['x31', 'x41', 'x22', 'x42', 'x43', 's31', 's41', 'f22'].flatMap((k) => ['jx2_' + k + '_day', 'jx2_' + k + '_night']), keep = {};
+    // 그림 파일은 있는 것(1판 4+1 그림)을 빌려 쓴다 — 비율·폭을 재려면 그림이 실제로 떠야 한다 (색 바꾼 파일 이름은 없어도 됨)
+    for (const k of K2) { keep[k] = t.iconPicks[k]; t.iconPicks[k] = /_night$/.test(k) ? 'jx_exit4_night__sunburst26e__1.webp' : 'jx_exit4_day__sunburst26e__1.webp'; }
+    const view = () => {
+      const el = document.getElementById('juncCard'), sv = document.getElementById('juncSvg'), img = [...sv.querySelectorAll('img')].find((i) => i.getBoundingClientRect().width) || sv.querySelector('img.jv-day');
+      const ib = img ? img.getBoundingClientRect() : { width: 0, height: 0 }, db = document.querySelector('#app.tesla .cd-in') ? document.querySelector('#app.tesla .cd-in').getBoundingClientRect() : ib;
+      const lanes = [...sv.querySelectorAll('.jx-lane')];
+      const sizes = lanes.map((x) => { const b = x.querySelector('b'); return b ? parseFloat(getComputedStyle(b).fontSize) / (parseFloat(x.style.getPropertyValue('--lw')) * ib.width) : 0; });
+      return { shown: visible('#juncCard'), jx2: el.classList.contains('jx2'), shape: t.jxShape2(t.juncInfo(t.nav.next), t.nav.next), lc: el.dataset.lc || '',
+        ratio: ib.height ? +(ib.width / ib.height).toFixed(2) : 0, wide: Math.round(db.width - ib.width),
+        lanes: lanes.map((x) => (x.classList.contains('go') ? '*' : '') + [...x.querySelectorAll('b')].map((b) => b.textContent).join('/')).join(' '),
+        minK: sizes.length ? +Math.min(...sizes).toFixed(2) : 0, tab: (sv.querySelector('.jx-tab') || {}).textContent || '',
+        sign: document.getElementById('juncLabel').textContent.trim(), other: document.getElementById('juncLabel2').textContent.trim(),
+        img: sv.querySelector('img.jv-day') ? sv.querySelector('img.jv-day').getAttribute('src').replace(/^.*\/img\/ai\//, '').replace(/\?.*$/, '') : '' };
+    };
+    const at = async (f, re, before) => {
+      const R = await fixture(f);
+      await resetApp(); softReset(); await planAndStart(R);
+      const g = R.route.guide.find((x) => re.test(x.s)), sg = R.cum[Math.min(g.i, R.cum.length - 1)];
+      for (let s = Math.max(0, sg - before - 900); s <= sg - before; s += 20) { const a = pointAt(R, s); feed(a.p, 20, a.h); }
+      const a = pointAt(R, sg - before); feed(a.p, 20, a.h); t.juncState.key = ''; t.renderNav(); await sleep(80); t.renderNav();
+      await waitFor(() => [...document.querySelectorAll('#juncSvg img')].some((i) => i.complete && i.naturalWidth), 3000, 50).catch(() => {}); await sleep(40);
+      const o = view();
+      t.endNav();
+      return o;
+    };
+    try {
+      await waitFor(() => t.jdData.loaded && t.forksData.loaded && t.clData.loaded, 10000, 100);
+      r.a = await at('route-paldang-hanamic-s.json', /성남IC에서 '성남, 광주'/, 330);
+      r.b = await at('route-seoultg-n.json', /판교분기점에서 '일산, 구리'/, 330);
+      r.c = await at('route-paldang-hanamic-s.json', /하남분기점에서 '수도권제1순환선, 판교, 서하남'/, 330);
+      r.d = await at('route-giheung-ic-s.json', /신갈분기점에서 '대전'/, 330);
+    } finally {
+      for (const k of K2) { if (keep[k]) t.iconPicks[k] = keep[k]; else delete t.iconPicks[k]; }
+      await resetApp(); softReset();
+    }
+    const { a = {}, b = {}, c = {}, d = {} } = r;
+    const ok = a.shown && a.jx2 && a.shape === 'x41' && a.ratio === 1.33 && Math.abs(a.wide) <= 2 && a.lanes === '일산 일산 일산 일산 *성남/광주' && a.minK >= 0.25 &&
+      /^2B/.test(a.tab) && !/\d/.test(a.sign) && /일산/.test(a.other) &&
+      b.shown && b.shape === 'x43' && b.lc === 'gpp' && /_gpp\.webp/.test(b.img) && /서울/.test(b.other) &&
+      c.shown && c.shape === 'x42' && c.lc === 'p' &&
+      d.shown && d.shape === 's41' && d.lc === 'nbbb' && /_nbbb\.webp/.test(d.img) && /^45A/.test(d.tab) && /대전/.test(d.sign);
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
   // S168: OSM 차로 수로 그림 모양 (v255, 부모 세션 'OSM lanes 대체' — 네이버 하남분기점 4+2, 서하남IC 출구 2차로)
   //   (a) 하남분기점 중부 서행 '수도권제1순환선, 판교, 서하남': OSM 갈래 차로 수 경로 2 · 다른 4 → 4+2 그림이 아직 없으면 2+2(가까운 모양),
   //       4+2 를 고르면 4+2 (차로 글자 여섯, 갈 차로 둘)
   //   (b) 서하남IC 북행 '강동, 서하남': 연결로 차로 수는 LANES_FIX 2 · 본선 4 → (a) 와 같다
-  //   (c) 성남IC '성남, 광주': 연결로에 OSM lanes 가 없어 모름 → 예전처럼 4+1
+  //   (c) 성남IC '성남, 광주': 연결로 차로 수는 LANES_FIX 1 (v256, 네이버 4+1) · 본선 4 → 4+1
   //   (d) 판교IC '분당, 판교': 정밀도로지도 단면 'SB|S|S|S|S|R|R'(갈 차로 2, 다른 5) → 지금은 2+2, 4+2 를 고르면 4+2 (네이버도 버스 + 4 + 출구 2)
   //   (e) 모양 고르기: 1+1 갈림길은 갈림길 그림, 출구 1 + 본선 3 은 3+1, 출구 1 + 본선 4 는 4+1
   async function s168() {
@@ -8284,7 +8343,7 @@
       x.with42.shown && x.with42.shape === 'exit42' && x.with42.lanes === 6 && x.with42.go === 2 && /^jxd__t__1_/.test(x.with42.img);
     const ok = four2(a) && a.now.osm && a.now.osm.go === 2 && a.now.osm.other === 4 &&
       four2(b) && b.now.osm && b.now.osm.go === 2 && b.now.osm.other === 4 &&
-      c.now && c.now.shown && c.now.shape === 'exit4' && !c.now.osm && c.with42.shape === 'exit4' &&
+      c.now && c.now.shown && c.now.shape === 'exit4' && c.now.osm && c.now.osm.go === 1 && c.now.osm.other === 4 && c.with42.shape === 'exit4' &&   /* v256: LANES_FIX 출구 1 */
       four2(d) &&
       r.e === 'fork,exit,exit4,fork,exit2';
     return { pass: !!ok, detail: JSON.stringify(r) };
@@ -8525,7 +8584,7 @@
   // S162: 네이버식 분기점 그림 jx (2026-11-25 운전자가 네이버 성남IC 확대 그림을 보내며 '그냥 네이버지도처럼 만들어 달라니까, 자바스크립트로
   //   그리지 말고 AI로 — 헷갈리고 사고 날 것 같아 저렇게 그리면 방향 잘못 틀어서'). AI 그림 자리는 아무 그림으로 시험한다 (모양·자리만 본다)
   //   (a) 서울TG→판교분기점 '일산, 구리'(오른쪽) 100m 앞: 서랍 칸이 jx (3:2), 그림 두 장(그 모양의 낮·밤), 그린 svg 없음, 뒤집지 않음.
-  //       표지판 둘이 그림 속 판 자리에: 경로 갈래(일산) 오른쪽 판, 다른 갈래(경부) 왼쪽 판 — 둘 다 그림 안, 글자 잘림 없음.
+  //       표지판 둘이 그림 속 판 자리에: 경로 갈래(일산) 오른쪽 판, 다른 갈래(v256: 방면 '서울', 예전 '경부') 왼쪽 판 — 둘 다 그림 안, 글자 잘림 없음.
   //       초록 차로 아래 노면 글자 '일산'이 경로 갈래 쪽(오른쪽 절반)에
   //   (b) 학의→판교분기점 '구리, 성남'(본선 그대로 왼쪽): '본선 그대로' 그림(경로 차로가 왼쪽, 연결로가 오른쪽) 그대로, 경로 표지는 왼쪽 판,
   //       노면 글자는 왼쪽 절반
@@ -8546,7 +8605,8 @@
     };
     const pick = 'junc_fork_day__flare26x__2.webp', pickN = 'junc_fork_night__sunburst26f__1.webp';
     const keep = {};
-    const JX = ['exit', 'exit2', 'stay', 'fork'].flatMap((k) => ['jx_' + k + '_day', 'jx_' + k + '_night']);
+    // v256: 1판 모양 전부 (4+1·4+2 포함 — 판교분기점은 이제 차로 수 4 + 3 이라 1판에서는 2+2 그림)
+    const JX = ['exit', 'exit2', 'exit4', 'exit42', 'stay', 'fork'].flatMap((k) => ['jx_' + k + '_day', 'jx_' + k + '_night']);
     const view = () => {
       const el = document.getElementById('juncCard'), sv = document.getElementById('juncSvg'), cr = el.getBoundingClientRect();
       const lab = document.getElementById('juncLabel'), oth = document.getElementById('juncLabel2');
@@ -8604,7 +8664,8 @@
     const goA = a.road && a.road.find((x) => x.c === 'go'), goB = b.road && b.road.find((x) => x.c === 'go'), goD = d.road && d.road.find((x) => x.c === 'go');
     const allGo = (o, f) => o.road.filter((x) => x.c === 'go').every(f);
     const ok = a.shown && a.jx && !a.m && !a.left && a.shape && a.ratio >= 1.45 && a.ratio <= 1.55 && a.imgs === pick + ',' + pickN && a.svg === 0 && a.flip === 'none' &&
-      /일산/.test(a.sign) && a.sb.l > 0.48 && inside(a.sb) && /경부/.test(a.other) && a.ob.r < 0.52 && inside(a.ob) && !a.cut && !a.overlap &&
+      // v256 (점검표 6): 다른 갈래 표지는 길 이름('경부')이 아니라 방면 — OSM 본선 갈래 방면 '서울'
+      /일산/.test(a.sign) && a.sb.l > 0.48 && inside(a.sb) && /서울/.test(a.other) && a.ob.r < 0.52 && inside(a.ob) && !a.cut && !a.overlap &&
       // v253: 갈래가 다시 갈려 차로마다 방면 — 왼쪽 '일산/평촌', 오른쪽 '구리/성남'
       a.road.filter((x) => x.c === 'go').map((x) => x.t).join(',') === '일산/평촌,구리/성남' && allGo(a, (x) => x.x > 0.5) &&
       !b.shown &&
@@ -8708,7 +8769,7 @@
     }
     const aiOnly = (x) => x && x.shown && x.inDrawer && /^junc_[a-z]+_day,junc_[a-z]+_night$/.test(x.imgs) && x.svg === 0 && !x.nv && !x.plan && !x.colorRow && !x.splitPic;
     // v246: 가지 않는 갈래도 표지 — 지금 길(경부)이 다른 쪽으로 이어지니 '① 경부 ↑' 를 반대쪽에
-    const ok = aiOnly(r.a) && r.a.cl === 'p' && /일산/.test(r.a.sign) && !r.a.signCut && /^1?경부$/.test(r.a.other) &&
+    const ok = aiOnly(r.a) && r.a.cl === 'p' && /일산/.test(r.a.sign) && !r.a.signCut && /서울/.test(r.a.other) &&   /* v256: 다른 갈래 표지는 길 이름('경부')이 아니라 OSM 본선 방면 '서울' */
       r.b && !r.b.shown && r.b.svg === 0 && !r.b.colorRow &&
       aiOnly(r.c) && r.c.cl === 'g';
     return { pass: !!ok, detail: JSON.stringify(r) };
