@@ -544,7 +544,14 @@
   // v250: 네이버식 분기점 그림(jx)을 고른 뒤에도 예전 AI 그림(junc_<종류>) 흐름을 보는 시험은 jx 고름을 잠깐 뺀다 (jx 는 S162·S166)
   function stashJx() {
     const t = T(), keep = {};
-    Object.keys(t.iconPicks).filter((k) => /^jx_/.test(k)).forEach((k) => { keep[k] = t.iconPicks[k]; delete t.iconPicks[k]; });
+    Object.keys(t.iconPicks).filter((k) => /^jx2?_/.test(k)).forEach((k) => { keep[k] = t.iconPicks[k]; delete t.iconPicks[k]; });   // v261: 2판(jx2_)도
+    t.juncState.key = '';
+    return () => { Object.assign(t.iconPicks, keep); t.juncState.key = ''; };
+  }
+  // v261: 1판 네이버식 그림(jx_)을 보는 시험은 2판 고름(jx2_)만 잠깐 뺀다 (2판이 있으면 1판보다 먼저 쓰인다)
+  function stashJx2() {
+    const t = T(), keep = {};
+    Object.keys(t.iconPicks).filter((k) => /^jx2_/.test(k)).forEach((k) => { keep[k] = t.iconPicks[k]; delete t.iconPicks[k]; });
     t.juncState.key = '';
     return () => { Object.assign(t.iconPicks, keep); t.juncState.key = ''; };
   }
@@ -8305,6 +8312,7 @@
   //   (e) 모양 고르기: 1+1 갈림길은 갈림길 그림, 출구 1 + 본선 3 은 3+1, 출구 1 + 본선 4 는 4+1
   async function s168() {
     const t = T(), r = {};
+    const unJx2 = stashJx2();   // v261: 1판 그림을 본다
     const fixture = async (f) => {
       const fx = await (await realFetch(harnessDir + 'fixtures/' + f, { cache: 'no-store' })).json();
       const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
@@ -8344,6 +8352,7 @@
       // (e) 모양 고르기 (그림은 지금 고른 것: 4+2 없음)
       r.e = [t.jxByLanes(1, 1, 'fork'), t.jxByLanes(1, 3, 'fork'), t.jxByLanes(1, 4, 'ramp'), t.jxByLanes(2, 2, 'fork'), t.jxByLanes(2, 5, 'ramp')].join(',');
     } finally {
+      unJx2();
       for (const k of K42) { if (keep[k]) t.iconPicks[k] = keep[k]; else delete t.iconPicks[k]; }
       await resetApp(); softReset();
     }
@@ -8414,6 +8423,7 @@
   //   (c) 서울TG→판교분기점 '일산, 구리'(분홍 유도선): 분홍 그림(_p)
   async function s166() {
     const t = T(), r = {};
+    const unJx2 = stashJx2();   // v261: 1판 그림을 본다
     const fixture = async (f) => {
       const fx = await (await realFetch(harnessDir + 'fixtures/' + f, { cache: 'no-store' })).json();
       const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
@@ -8452,6 +8462,7 @@
       r.c = view();
       t.endNav();
     } finally {
+      unJx2();
       for (const k of JX) { if (keep[k]) t.iconPicks[k] = keep[k]; else delete t.iconPicks[k]; }
       await resetApp(); softReset();
     }
@@ -8601,6 +8612,7 @@
   //   (d) 팔당→하남IC '서울' 방면 왼쪽 방향(왼쪽 갈림길): 갈림길 그림을 좌우로 뒤집고(jx-m), 경로 표지는 왼쪽 판, 노면 글자 '서울'은 왼쪽 절반
   async function s162() {
     const t = T(), r = {};
+    const unJx2 = stashJx2();   // v261: 1판 그림을 본다
     const fixture = async (f) => {
       const fx = await (await realFetch(harnessDir + 'fixtures/' + f, { cache: 'no-store' })).json();
       const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
@@ -8665,6 +8677,7 @@
       r.d = view();
       t.endNav();
     } finally {
+      unJx2();
       for (const k of JX) { if (keep[k]) t.iconPicks[k] = keep[k]; else delete t.iconPicks[k]; }
       await resetApp(); softReset();
     }

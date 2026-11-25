@@ -3490,6 +3490,1081 @@
    "pink": 0
   },
   {
+   "slot": "jx2_f22_day",
+   "kind": "scene",
+   "file": "jx2_f22_day__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.9,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_f22_day",
+   "kind": "scene",
+   "file": "jx2_f22_day__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    1.0,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_f22_day",
+   "kind": "scene",
+   "file": "jx2_f22_day__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.94,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_f22_day",
+   "kind": "scene",
+   "file": "jx2_f22_day__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.99,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_f22_night",
+   "kind": "scene",
+   "file": "jx2_f22_night__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.92,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_f22_night",
+   "kind": "scene",
+   "file": "jx2_f22_night__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.96,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_f22_night",
+   "kind": "scene",
+   "file": "jx2_f22_night__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.91,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_f22_night",
+   "kind": "scene",
+   "file": "jx2_f22_night__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.94,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_f22k_day",
+   "kind": "scene",
+   "file": "jx2_f22k_day__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.95,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_f22k_day",
+   "kind": "scene",
+   "file": "jx2_f22k_day__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.93,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_f22k_day",
+   "kind": "scene",
+   "file": "jx2_f22k_day__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.99,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_f22k_day",
+   "kind": "scene",
+   "file": "jx2_f22k_day__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.95,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_f22k_night",
+   "kind": "scene",
+   "file": "jx2_f22k_night__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.99,
+    0.0
+   ],
+   "bad": "왼쪽 표지판 자리 초록 32%, 오른쪽 표지판 자리 초록 32%"
+  },
+  {
+   "slot": "jx2_f22k_night",
+   "kind": "scene",
+   "file": "jx2_f22k_night__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.92,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_f22k_night",
+   "kind": "scene",
+   "file": "jx2_f22k_night__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.94,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_f22k_night",
+   "kind": "scene",
+   "file": "jx2_f22k_night__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.94,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_s31_day",
+   "kind": "scene",
+   "file": "jx2_s31_day__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.97,
+    0.38
+   ],
+   "bad": "다른 차로에 초록 38%"
+  },
+  {
+   "slot": "jx2_s31_day",
+   "kind": "scene",
+   "file": "jx2_s31_day__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.96,
+    0.28
+   ],
+   "bad": "다른 차로에 초록 28%"
+  },
+  {
+   "slot": "jx2_s31_day",
+   "kind": "scene",
+   "file": "jx2_s31_day__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.95,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_s31_day",
+   "kind": "scene",
+   "file": "jx2_s31_day__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.95,
+    0.64
+   ],
+   "bad": "다른 차로에 초록 64%, 왼쪽 표지판 자리 초록 35%, 오른쪽 표지판 자리 초록 35%"
+  },
+  {
+   "slot": "jx2_s31_night",
+   "kind": "scene",
+   "file": "jx2_s31_night__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.95,
+    0.26
+   ],
+   "bad": "다른 차로에 초록 26%"
+  },
+  {
+   "slot": "jx2_s31_night",
+   "kind": "scene",
+   "file": "jx2_s31_night__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.94,
+    0.36
+   ],
+   "bad": "다른 차로에 초록 36%"
+  },
+  {
+   "slot": "jx2_s31_night",
+   "kind": "scene",
+   "file": "jx2_s31_night__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.96,
+    0.5
+   ],
+   "bad": "다른 차로에 초록 50%, 왼쪽 표지판 자리 초록 1%, 오른쪽 표지판 자리 초록 1%"
+  },
+  {
+   "slot": "jx2_s31_night",
+   "kind": "scene",
+   "file": "jx2_s31_night__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.93,
+    0.37
+   ],
+   "bad": "다른 차로에 초록 37%"
+  },
+  {
+   "slot": "jx2_s41_day",
+   "kind": "scene",
+   "file": "jx2_s41_day__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.95,
+    0.53
+   ],
+   "bad": "다른 차로에 초록 53%"
+  },
+  {
+   "slot": "jx2_s41_day",
+   "kind": "scene",
+   "file": "jx2_s41_day__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.93,
+    0.62
+   ],
+   "bad": "다른 차로에 초록 62%"
+  },
+  {
+   "slot": "jx2_s41_day",
+   "kind": "scene",
+   "file": "jx2_s41_day__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.93,
+    0.18
+   ],
+   "bad": "다른 차로에 초록 18%"
+  },
+  {
+   "slot": "jx2_s41_day",
+   "kind": "scene",
+   "file": "jx2_s41_day__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.94,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_s41_night",
+   "kind": "scene",
+   "file": "jx2_s41_night__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.95,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_s41_night",
+   "kind": "scene",
+   "file": "jx2_s41_night__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.96,
+    0.35
+   ],
+   "bad": "다른 차로에 초록 35%"
+  },
+  {
+   "slot": "jx2_s41_night",
+   "kind": "scene",
+   "file": "jx2_s41_night__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.94,
+    0.73
+   ],
+   "bad": "다른 차로에 초록 73%"
+  },
+  {
+   "slot": "jx2_s41_night",
+   "kind": "scene",
+   "file": "jx2_s41_night__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.94,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x22_day",
+   "kind": "scene",
+   "file": "jx2_x22_day__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.93,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x22_day",
+   "kind": "scene",
+   "file": "jx2_x22_day__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.94,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x22_day",
+   "kind": "scene",
+   "file": "jx2_x22_day__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.95,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x22_day",
+   "kind": "scene",
+   "file": "jx2_x22_day__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.93,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x22_night",
+   "kind": "scene",
+   "file": "jx2_x22_night__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.97,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x22_night",
+   "kind": "scene",
+   "file": "jx2_x22_night__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.93,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x22_night",
+   "kind": "scene",
+   "file": "jx2_x22_night__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.96,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x22_night",
+   "kind": "scene",
+   "file": "jx2_x22_night__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.95,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x31_day",
+   "kind": "scene",
+   "file": "jx2_x31_day__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.25,
+    0.0
+   ],
+   "bad": "경로 차로 초록 25%"
+  },
+  {
+   "slot": "jx2_x31_day",
+   "kind": "scene",
+   "file": "jx2_x31_day__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.0,
+    0.0
+   ],
+   "bad": "경로 차로 초록 0%"
+  },
+  {
+   "slot": "jx2_x31_day",
+   "kind": "scene",
+   "file": "jx2_x31_day__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.56,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x31_day",
+   "kind": "scene",
+   "file": "jx2_x31_day__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.73,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x31_night",
+   "kind": "scene",
+   "file": "jx2_x31_night__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.96,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x31_night",
+   "kind": "scene",
+   "file": "jx2_x31_night__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.77,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x31_night",
+   "kind": "scene",
+   "file": "jx2_x31_night__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.94,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x31_night",
+   "kind": "scene",
+   "file": "jx2_x31_night__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.81,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x41_day",
+   "kind": "scene",
+   "file": "jx2_x41_day__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.77,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x41_day",
+   "kind": "scene",
+   "file": "jx2_x41_day__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.48,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x41_day",
+   "kind": "scene",
+   "file": "jx2_x41_day__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.18,
+    0.0
+   ],
+   "bad": "경로 차로 초록 18%"
+  },
+  {
+   "slot": "jx2_x41_day",
+   "kind": "scene",
+   "file": "jx2_x41_day__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.94,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x41_night",
+   "kind": "scene",
+   "file": "jx2_x41_night__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.7,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x41_night",
+   "kind": "scene",
+   "file": "jx2_x41_night__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.83,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x41_night",
+   "kind": "scene",
+   "file": "jx2_x41_night__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.93,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x41_night",
+   "kind": "scene",
+   "file": "jx2_x41_night__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.94,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x41s_day",
+   "kind": "scene",
+   "file": "jx2_x41s_day__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.44,
+    0.0
+   ],
+   "bad": "경로 차로 초록 44%"
+  },
+  {
+   "slot": "jx2_x41s_day",
+   "kind": "scene",
+   "file": "jx2_x41s_day__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.61,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x41s_day",
+   "kind": "scene",
+   "file": "jx2_x41s_day__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.95,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x41s_day",
+   "kind": "scene",
+   "file": "jx2_x41s_day__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.42,
+    0.0
+   ],
+   "bad": "경로 차로 초록 42%"
+  },
+  {
+   "slot": "jx2_x41s_night",
+   "kind": "scene",
+   "file": "jx2_x41s_night__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.94,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x41s_night",
+   "kind": "scene",
+   "file": "jx2_x41s_night__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.58,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x41s_night",
+   "kind": "scene",
+   "file": "jx2_x41s_night__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.58,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x41s_night",
+   "kind": "scene",
+   "file": "jx2_x41s_night__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.94,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x42_day",
+   "kind": "scene",
+   "file": "jx2_x42_day__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.94,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x42_day",
+   "kind": "scene",
+   "file": "jx2_x42_day__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.87,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x42_day",
+   "kind": "scene",
+   "file": "jx2_x42_day__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.82,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x42_day",
+   "kind": "scene",
+   "file": "jx2_x42_day__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.62,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x42_night",
+   "kind": "scene",
+   "file": "jx2_x42_night__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.94,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x42_night",
+   "kind": "scene",
+   "file": "jx2_x42_night__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.92,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x42_night",
+   "kind": "scene",
+   "file": "jx2_x42_night__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.86,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x42_night",
+   "kind": "scene",
+   "file": "jx2_x42_night__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.67,
+    0.0
+   ],
+   "bad": "왼쪽 표지판 자리 초록 28%, 오른쪽 표지판 자리 초록 28%"
+  },
+  {
+   "slot": "jx2_x42s_day",
+   "kind": "scene",
+   "file": "jx2_x42s_day__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.93,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x42s_day",
+   "kind": "scene",
+   "file": "jx2_x42s_day__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.84,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x42s_day",
+   "kind": "scene",
+   "file": "jx2_x42s_day__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.94,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x42s_day",
+   "kind": "scene",
+   "file": "jx2_x42s_day__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.85,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x42s_night",
+   "kind": "scene",
+   "file": "jx2_x42s_night__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.94,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x42s_night",
+   "kind": "scene",
+   "file": "jx2_x42s_night__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.82,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x42s_night",
+   "kind": "scene",
+   "file": "jx2_x42s_night__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.95,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x42s_night",
+   "kind": "scene",
+   "file": "jx2_x42s_night__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.85,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x43_day",
+   "kind": "scene",
+   "file": "jx2_x43_day__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.91,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x43_day",
+   "kind": "scene",
+   "file": "jx2_x43_day__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.85,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x43_day",
+   "kind": "scene",
+   "file": "jx2_x43_day__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.82,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x43_day",
+   "kind": "scene",
+   "file": "jx2_x43_day__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.94,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x43_night",
+   "kind": "scene",
+   "file": "jx2_x43_night__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.85,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x43_night",
+   "kind": "scene",
+   "file": "jx2_x43_night__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.93,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x43_night",
+   "kind": "scene",
+   "file": "jx2_x43_night__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.94,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx2_x43_night",
+   "kind": "scene",
+   "file": "jx2_x43_night__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.93,
+    0.0
+   ]
+  },
+  {
    "slot": "jx_exit2_day",
    "kind": "scene",
    "file": "jx_exit2_day__flare26e__1.webp",
