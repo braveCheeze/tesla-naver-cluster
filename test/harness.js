@@ -2920,6 +2920,7 @@
     { id: 'S155', name: "S155 intersection cameras only for their approach (v236, the driver's 강동세무서 drawing): turning left into the direction of a camera that enforces the leg before the junction gives no alert and is not a miss; going straight on that leg alerts; a camera on the new road past the junction alerts; passing a 30 camera on a parallel road at 90 km/h is recorded as another road, not a miss", fn: s155 },
     { id: 'S156', name: "S156 the intersection camera rule everywhere (v237, driver '그런 건 전국에 다 해당되는 건 알지?', '직진으로 오는 차였으면 저기에 50 단속이 있으면 감지해주는 게 맞고'): on seven synthetic junctions (4-way left and right, T-junction, 60 and 120 deg skewed lefts, a U-turn on a divided road, two-way cameras on a crossing road), guided and free: a camera at the stop line of the leg the car turns into (one-way or two-way) never alerts, a camera on the new road past the junction and on the car's own approach does, straight through on the camera's leg alerts with limit 50 at the normal 400 m; a two-way camera on a crossing road does not alert or record a pass for straight-through traffic; a left-turn pass of the stop-line camera is 'turned', the new-road camera is a normal pass", fn: s156 },
     { id: 'S157', name: "S157 riding out a route server blip (v239, 2026-11-25 Worker /route failed for minutes with Naver 530): the first search falls back from options= to one option= after an upstream 'no route' and retries a 502 after a short backoff, then shows the route card; a reroute that keeps failing retries 3 times and stops, keeping the current route and guidance (no red failure toast, a small status chip, a diag note) and guidance keeps advancing; the next good reroute clears the chip; a 400, Naver's own 'no route' (with a code) and the traffic refresh are not retried", fn: s157 },
+    { id: 'S158', name: "S158 junction lane colours match Naver (v243, Naver comparison table cases 8 and 13): the ring road's southbound 성남IC exit to '성남, 광주' gets a green colour line from about 300 m before the split and the junction picture paints the lanes green (the separate colour row hides); 판교분기점 '일산, 구리' paints pink; an 일산-bound car now sees the first-split pink too (OSM shape), while going straight on 경부 (서울·양재) or straight past 성남IC southbound gets neither", fn: s158 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -8183,6 +8184,93 @@
       b.calls === 4 && b.active && b.same && b.pill && !b.redToast && b.panel && b.turn && b.log.join(',') === 'failed:3' && b.moved &&
       !c.pill && c.active &&
       d.bad400 === 1 && d.naverNo === 1 && d.traffic === 1 && d.upstream.every(Boolean) && !d.pillAfterEnd;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S158: 분기점 그림의 갈 차로 색을 네이버에 맞춤 (v243, 2026-11-25 네이버 비교표 8번·13번 — 둘 다 우리는 기본 하늘색이었다)
+  //   (a) 수도권제1순환 남행 성남IC '성남, 광주' 출구 (route-paldang-hanamic-s): 색 선 줄 '성남IC' 녹색이 갈림 약 300m 앞부터,
+  //       300m 앞 분기점 그림의 갈 차로가 녹색으로 칠해지고 따로 뜨는 유도선 줄은 숨는다
+  //   (b) 경부 상행 판교분기점 '일산, 구리' (route-seoultg-n): 100m 앞 그림의 갈 차로가 분홍
+  //   (c) OSM 길 모양으로 만든 일산행(1차 갈림 → 일산·구리 공통 연결로 → 일산 쪽): 1차 분홍이 보인다 (예전엔 구리행에만)
+  //   (d) 같은 곳 경부 본선 직진(서울·양재)과 성남IC 남행 본선 직진에는 그 색이 안 붙는다
+  async function s158() {
+    const t = T(), r = {};
+    const fromPath = (path, guide, name) => {
+      const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0]; for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + hav(P[k - 1], P[k]));
+      const total = cum[cum.length - 1];
+      const route = { distance: r0(total), duration: r0(total / 20 * 1000), tollFare: 0, fuelPrice: 0, path,
+        guide: guide.map((g) => Object.assign({ d: r0(cum[g.i]), ms: 20000 }, g)), sections: [{ i: 0, n: P.length, name: '', speed: 80, cong: 1 }] };
+      return { route, P, cum, total, dest: { name, addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    };
+    const fixture = async (f) => {
+      const fx = await (await realFetch(harnessDir + 'fixtures/' + f, { cache: 'no-store' })).json();
+      const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0]; for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + hav(P[k - 1], P[k]));
+      return { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '시험', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    };
+    const lines = (R, re) => t.ensureRouteColorLines().filter((x) => re.test(x.name)).map((x) => x.name + ':' + x.c);
+    // 안내 지점 before m 앞까지 몰고 가서 분기점 그림의 갈 차로 색
+    const paintAt = async (R, re, before) => {
+      const g = R.route.guide.find((x) => re.test(x.s)), sg = R.cum[Math.min(g.i, R.cum.length - 1)];
+      for (let s = Math.max(0, sg - before - 800); s <= sg - before; s += 20) { const a = pointAt(R, s); feed(a.p, 20, a.h); }
+      const a = pointAt(R, sg - before); feed(a.p, 20, a.h); t.renderNav();
+      await sleep(30); t.renderNav();
+      const go = document.querySelector('#juncSvg .nv-go'), card = document.getElementById('juncCard');
+      return { nv: visible('#juncCard') && card.classList.contains('nv'), fill: go && go.classList.contains('nv-cl') ? go.style.fill.replace(/\s/g, '') : '',
+        row: !document.getElementById('colorRow').hidden };
+    };
+    const GREEN = 'rgb(68,196,110)', PINK = 'rgb(246,140,192)';
+    try {
+      await waitFor(() => t.clData.loaded, 10000, 100);
+      // (a) 성남IC 남행 출구
+      const A = await fixture('route-paldang-hanamic-s.json');
+      await resetApp(); softReset(); await planAndStart(A);
+      const ga = A.route.guide.find((x) => /성남IC에서 '성남, 광주'/.test(x.s));
+      const la = t.ensureRouteColorLines().find((x) => x.name === '성남IC');
+      r.a = { list: lines(A, /성남IC/), start: la ? Math.round(la.at - A.cum[ga.i]) : null, at300: await paintAt(A, /성남IC에서 '성남, 광주'/, 300) };
+      t.endNav();
+      // (b) 판교분기점 '일산, 구리'
+      const B = await fixture('route-seoultg-n.json');
+      await resetApp(); softReset(); await planAndStart(B);
+      r.b = { at100: await paintAt(B, /판교분기점에서 '일산, 구리'/, 100) };
+      t.endNav();
+      // (c) 일산행: 경부 상행 본선 → 1차 갈림(OSM 37.401851 부터 일산·구리 공통) → 1110773683 → 일산 쪽 연결로 59242893
+      const NB = [[37.388515, 127.102479], [37.391162, 127.101986], [37.392182, 127.101794], [37.393447, 127.101556], [37.394273, 127.101389], [37.394821, 127.101293],
+        [37.396643, 127.10097], [37.397731, 127.100747], [37.398689, 127.100566], [37.399313, 127.100455], [37.399819, 127.100336], [37.400323, 127.100115],
+        [37.400651, 127.099926], [37.401035, 127.099673], [37.401395, 127.099403], [37.401851, 127.09909], [37.402633, 127.098161], [37.403286, 127.097474]];
+      const ILSAN = [[37.403779, 127.09712], [37.404087, 127.096937], [37.404383, 127.096846], [37.404715, 127.096832], [37.404978, 127.09686], [37.405245, 127.096881],
+        [37.405433, 127.096867], [37.405606, 127.096853], [37.405829, 127.09679], [37.406038, 127.096695], [37.406206, 127.096551], [37.406354, 127.0964],
+        [37.406534, 127.096108], [37.406645, 127.095818], [37.406722, 127.095528], [37.406779, 127.095007], [37.406785, 127.094625]];
+      const SEOUL = [[37.403749, 127.096909], [37.40423, 127.096398], [37.406612, 127.094006], [37.407199, 127.093337], [37.408215, 127.092254]];
+      const path = (a) => a.map((p) => [p[1], p[0]]);
+      const C = fromPath(path(NB.concat(ILSAN)), [{ i: 13, t: 67, s: "판교분기점에서 '일산, 구리' 방면으로 오른쪽 방향" }, { i: NB.length + ILSAN.length - 1, t: 88, s: '목적지' }], '일산 쪽');
+      await resetApp(); softReset(); await planAndStart(C);
+      r.c = lines(C, /판교분기점/);
+      t.endNav();
+      // (d) 본선 직진 둘
+      const D = fromPath(path(NB.concat(SEOUL)), [{ i: NB.length + SEOUL.length - 1, t: 88, s: '목적지' }], '서울 쪽');
+      await resetApp(); softReset(); await planAndStart(D);
+      r.dSeoul = lines(D, /판교분기점/);
+      t.endNav();
+      const SB = [[37.439519, 127.122484], [37.43904, 127.122503], [37.438523, 127.122538], [37.437879, 127.122611], [37.437811, 127.122622], [37.435551, 127.122991],
+        [37.434927, 127.1231], [37.43386, 127.123327], [37.433453, 127.123385], [37.433032, 127.123404], [37.432549, 127.123408], [37.430502, 127.123402],
+        [37.42985, 127.123387], [37.429482, 127.123382], [37.427552, 127.123356], [37.42683, 127.123322], [37.425665, 127.123341], [37.425371, 127.123338],
+        [37.424504, 127.123329], [37.423836, 127.123326], [37.423548, 127.123329], [37.421937, 127.12331]];
+      const E = fromPath(path(SB), [{ i: SB.length - 1, t: 88, s: '목적지' }], '남행 직진');
+      await resetApp(); softReset(); await planAndStart(E);
+      r.dSouth = lines(E, /성남IC/);
+      t.endNav();
+    } finally {
+      await resetApp(); softReset();
+    }
+    const a = r.a || {}, b = r.b || {};
+    // 안내 지점은 갈림 약 40m 뒤 (네이버 guide 점) — 색 선 시작은 안내 지점 약 340m 앞
+    const ok = a.list && a.list.join(',') === '성남IC:g' && a.start >= -370 && a.start <= -290 &&
+      a.at300.nv && a.at300.fill === GREEN && !a.at300.row &&
+      b.at100 && b.at100.nv && b.at100.fill === PINK &&
+      Array.isArray(r.c) && r.c[0] === '판교분기점:p' &&
+      Array.isArray(r.dSeoul) && r.dSeoul.length === 0 && Array.isArray(r.dSouth) && r.dSouth.length === 0;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
