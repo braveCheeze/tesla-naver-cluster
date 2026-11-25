@@ -55,7 +55,8 @@ EXIT_BEND = {0: [], 1: [RAMP], 2: [RAMP, (0.40, 0.020, ZS2)], 3: [(0.9, 0.04, 20
 # v263 (운전자 '성남IC 는 네이버지도를 봐 — 네이버대로'): 네이버 성남IC 330m 는 우리 출구 차로(2B)가 지평선까지 곧게 가고, 그 오른쪽에서
 #   먼저 갈라지는 다른 출구(2A 판교)가 빗금 고어를 지나 휘어 나간다. 옆 연결로 그림은 경로 출구가 휘지 않고(1s), 옆 연결로(3s)가
 #   출구 차로 바로 오른쪽에 붙어 있다가 고어(Z 20m)에서 갈라져 휜다
-SIDE_BEND = {0: [], 1: [], 3: [(0.20, 0.022, 20.0)]}
+SIDE_BEND = {0: [], 1: [], 3: [(0.08, 0.014, 19.0)]}
+SIDE_Z = 14.0   # 옆 연결로가 출구 차로 오른쪽 가장자리에서 생기는 곳 (그 앞은 출구 차로 오른쪽이 길 가장자리 — 네이버처럼)
 
 
 def _exit(T, E, go_exit=True, lz=8.0, split=None):
@@ -75,8 +76,9 @@ def _exit(T, E, go_exit=True, lz=8.0, split=None):
         lanes += [(b + i * LW, b + (i + 1) * LW, 1) for i in range(E)]
         sh['go'] = (1,) if go_exit else (0,)
         if split == 'side':
-            x = b + E * LW   # 출구 차로 바로 오른쪽 (고어 전에는 붙어 있다)
-            lanes.append((x, x + LW, 3, 9.0))   # 앞쪽 차로 수·글자에 넣지 않는다 — 고어(20m)에서 오른쪽으로 갈라진다
+            x = b + E * LW   # 출구 차로 바로 오른쪽 (그림 가운데쯤에서 생겨 빗금 고어를 지나 오른쪽으로 휜다)
+            lanes.append((x, x + LW, 3, SIDE_Z))   # 앞쪽 차로 수·글자에 넣지 않는다
+            sh['side'] = (x, SIDE_Z)
             sh['bend'] = SIDE_BEND
     sh['lanes'] = lanes
     return sh
@@ -183,6 +185,30 @@ def draw_base(name):
     fg = [g for g in groups.values() if g[2] <= Z0 + 0.01]
     allx0 = min(g[0] for g in fg); allx1 = max(g[1] for g in fg)
     d.polygon(strip(allx0 - 0.8, allx1 + 0.8, 0, sh, Z0, zs0), fill=asphalt)   # 고어 앞은 한 판 (모든 차로가 곧게 나란히)
+    if sh.get('side'):
+        # v263 (운전자: 네이버 성남IC 처럼 — 다른 출구가 우리 출구 차로 오른쪽에서 빗금 고어를 지나 갈라진다)
+        #   고어 = 출구 차로 오른쪽 가장자리와 옆 연결로 왼쪽 가장자리 사이 삼각형 (벌어짐이 GORE_W 가 될 때까지만). 길 바닥 + 흰 빗금, 그 뒤는 풀밭
+        xs, z0s = sh['side']
+        GORE_W = 9.0
+        zg = z0s
+        while zg < 200 and shift(zg, 3, sh) < GORE_W:
+            zg += 0.5
+        Zs = [z for z in zs() if z0s < z < zg] + [zg]
+        tri = [proj(xs, z) for z in [z0s] + Zs] + [proj(xs + shift(z, 3, sh), z) for z in Zs[::-1]]
+        d.polygon(tri, fill=asphalt)
+        z = z0s + 4.0
+        while z < zg - 1.0:
+            g = shift(z, 3, sh)
+            if g > 0.7:
+                a0, a1 = xs + 0.3, xs + g - 0.3
+                d.polygon([proj(a0, z), proj(a1, z + 1.8), proj(a1, z + 2.6), proj(a0, z + 0.8)], fill=white)
+            z += 2.4
+        # 옆 연결로 앞머리: 출구 차로 어깨에서 비스듬히 넓어진다 (계단처럼 툭 생기지 않게)
+        zt = z0s - 7.0
+        d.polygon([proj(xs + 0.8, zt), proj(xs + LW + 0.8, z0s), proj(xs + 0.8, z0s)], fill=asphalt)
+        d.polygon([proj(xs + 0.65, zt), proj(xs + 0.97, zt), proj(xs + LW + 0.16, z0s), proj(xs + LW - 0.16, z0s)], fill=white)
+        lane_line(xs, 0, sh, False, d, white, 0.16, Z0, zg)   # 출구 차로 오른쪽 가장자리 (맨 앞부터 고어 끝까지)
+        lane_line(xs, 3, sh, False, d, white, 0.16, z0s, ZS + 1)   # 고어 오른쪽 = 옆 연결로 왼쪽 가장자리
     go = sh['go']
     for ln in sh['lanes']:
         x0, x1, s = ln[:3]

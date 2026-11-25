@@ -775,9 +775,9 @@ JX2_EDIT = ('Redraw image 1 as a finished junction view for the guidance panel o
             'no watermark. ')
 # v263 (운전자 '성남IC 는 네이버지도대로'): 경로 출구 차로는 지평선까지 곧게, 그 오른쪽 다른 출구가 빗금 고어에서 갈라져 휜다
 _SIDE = (' IMPORTANT for this view: the green exit lane does NOT bend; it runs perfectly straight all the way to the horizon, parallel to the '
-         'through lanes. Directly to the right of the green lane there is one more grey lane (a different exit): it runs alongside the green '
-         'lane, then splits off at a white chevron-hatched gore in the middle distance and curves away to the right, exactly as in the '
-         'sketch. That grey ramp stays grey.')
+         'through lanes. In the foreground the green lane is the rightmost lane, with a solid white edge line on its right. Only in the middle of '
+         'the picture does one more grey lane (a different exit) widen out next to the right edge of the green lane; it splits off at a white '
+         'chevron-hatched gore and curves away to the right, exactly as in the sketch. That grey ramp stays grey.')
 JX2_LANES_TXT = {
     'x31': 'the road has exactly 4 lanes: 3 lanes go straight on the left and 1 lane (the green route) exits to the right far ahead.',
     'x41': 'the road has exactly 5 lanes: 4 lanes go straight on the left and 1 lane (the green route) exits to the right far ahead.',
