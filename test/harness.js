@@ -8253,7 +8253,7 @@
       return { shown: visible('#juncCard'), jx2: el.classList.contains('jx2'), shape: t.jxShape2(t.juncInfo(t.nav.next), t.nav.next), lc: el.dataset.lc || '',
         ratio: ib.height ? +(ib.width / ib.height).toFixed(2) : 0, wide: Math.round(db.width - ib.width),
         lanes: lanes.map((x) => (x.classList.contains('go') ? '*' : '') + [...x.querySelectorAll('b')].map((b) => b.textContent).join('/')).join(' '),
-        minK: sizes.length ? +Math.min(...sizes).toFixed(2) : 0, tab: (sv.querySelector('.jx-tab') || {}).textContent || '',
+        minK: sizes.length ? +Math.min(...sizes).toFixed(2) : 0, tab: [...sv.querySelectorAll('.jx-tab')].map((x) => x.textContent).join('|'),
         sign: document.getElementById('juncLabel').textContent.trim(), other: document.getElementById('juncLabel2').textContent.trim(),
         img: sv.querySelector('img.jv-day') ? sv.querySelector('img.jv-day').getAttribute('src').replace(/^.*\/img\/ai\//, '').replace(/\?.*$/, '') : '' };
     };
@@ -8279,14 +8279,15 @@
       await resetApp(); softReset();
     }
     const { a = {}, b = {}, c = {}, d = {} } = r;
-    // v257 (부모 세션 '틀린 도시는 안 된다'): 도시 이름은 그 갈림점의 OSM 방면만 — 성남IC 본선은 OSM 방면이 없어 길 이름(표지 '수도권제1순환',
-    //   차로에는 네 글자 넘는 길 이름을 쓰지 않음), 하남분기점 본선은 '중부'. v256 의 휴게소 방향 '부산'·'일산'은 어디에도 없다
-    const noCity = [a, b, c, d].every((x) => !/부산|일산 일산/.test(x.lanes || '') && !/부산/.test(x.other || ''));
+    // v257 (부모 세션 '틀린 도시는 안 된다'): 휴게소 방향 '부산'은 어디에도 없다. v259: 지시도시는 네이버와 맞춘 확인 표에서만 —
+    //   성남IC '일산'(×4, 네이버 같음), 하남분기점 '구리 상일', 경부 하행 '대전'. 차로는 비우지 않는다
+    const noCity = [a, b, c, d].every((x) => !/부산/.test(x.lanes || '') && !/부산/.test(x.other || ''));
     // v258: 성남IC 는 230m 앞에서 2A(판교) 연결로가 먼저 갈라져 '오른쪽 옆 연결로' 그림(x41s, 네이버 성남IC 그림 오른쪽처럼)
-    const ok = noCity && a.shown && a.jx2 && a.shape === 'x41s' && a.ratio === 1.33 && Math.abs(a.wide) <= 2 && a.lanes === '*성남/광주' && a.minK >= 0.25 &&
-      /^2B/.test(a.tab) && !/\d/.test(a.sign) && /수도권제1순환/.test(a.other) && !/일산/.test(a.other) &&
+    // v259 (③): 네이버처럼 본선 표지 없이 출구 표지 두 장 — '2B 성남 | 성남 광주 ↗' · '2A 성남 | 판교 ↗' (방패 없음)
+    const ok = noCity && a.shown && a.jx2 && a.shape === 'x41s' && a.ratio === 1.33 && Math.abs(a.wide) <= 2 && a.lanes === '일산 일산 일산 일산 *성남/광주' && a.minK >= 0.25 &&
+      /^2B성남\|2A/.test(a.tab) && !/\d/.test(a.sign) && a.other === '판교' &&
       b.shown && b.shape === 'x43' && b.lc === 'gpp' && /_gpp\.webp/.test(b.img) && /서울/.test(b.other) &&
-      c.shown && c.shape === 'x42' && c.lc === 'p' && /중부/.test(c.other) && /^중부 중부 중부 중부 /.test(c.lanes) &&
+      c.shown && c.shape === 'x42' && c.lc === 'p' && /구리상일/.test(c.other) && /^구리\/상일 구리\/상일 구리\/상일 구리\/상일 /.test(c.lanes) &&
       d.shown && d.shape === 's41' && d.lc === 'nbbb' && /_nbbb\.webp/.test(d.img) && /^45A/.test(d.tab) && /대전/.test(d.sign);
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
