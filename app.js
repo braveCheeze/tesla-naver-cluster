@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-265'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-266'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -6728,13 +6728,23 @@
         // v256 (점검표 3·4): 모든 차로에 방면 글자 하나씩, 굵은 흰 글씨 + 검은 테, 차로 폭의 1/3 높이(--lw), 차로 기울기대로 비스듬히(--sk)
         // v263 (운전자 신갈 사진 — 둘째 '신갈'이 차선에 붙음): 2판 그림은 그림마다 잰 실제 차로 가운데·폭·기울기(img/ai/jx2_lanes.json,
         //   tools/jx_lanefit.py)로. 낮·밤 그림이 달라 글자도 두 벌 (jv-day·jv-night, 지금 보이는 그림 것만 보인다)
+        // v266 (부모 세션, 네이버 대조): 차로 글자를 28% 키운다(CSS). 글자 덩어리 폭 = 글자 수 × 크기 (글자는 차로 기울기대로 눕혀 가로로 재면 차로 안).
+        //   그 폭이 쓸 수 있는 폭(차로 폭, 옆 글자 가운데까지 거리, 그림 끝까지 거리의 두 배 중 가장 작은 것)의 86% 를 넘으면 그만큼만 줄인다 (--fk).
+        //   가장자리 차로는 그림 안 9~91% 로 당겨져 옆 차로와 가까워서 예전엔 '서울서울'·'기흥기흥'처럼 붙었다
+        const laneXs = (fit) => laneAt.map((p0, k) => (fit && fit[k] ? fit[k][0] : p0[0]));
+        const laneFk = (p, k, xs, lines, nc) => {
+          const x = p[0], aw = Math.min(p[3], k > 0 ? x - xs[k - 1] : 2 * x, k < xs.length - 1 ? xs[k + 1] - x : 2 * (1 - x));
+          const base = lines > 1 ? 0.34 : 0.43;
+          return Math.max(0.45, Math.min(1, 0.86 * aw / (base * p[3] * nc)));
+        };
         const lane = (p0, k, cls, fit) => {
           const f = fit && fit[k];
           const p = f ? [f[0], p0[1], p0[2], f[1], f[2]] : p0;
           const bus = stay && goOrd[k] >= 0 && cols[goOrd[k]] === 'n';
           const nm = p[2] ? goName(k) : otLane;
           const sk = Math.max(-38, Math.min(38, mir ? -p[4] : p[4]));
-          const pos = 'left:' + ((mir ? 1 - p[0] : p[0]) * 100).toFixed(1) + '%;top:' + (p[1] * 100).toFixed(1) + '%;--lw:' + p[3] + ';--sk:' + sk + 'deg';
+          const xs = laneXs(fit), fk = laneFk(p, k, xs, Math.max(1, nm.length), nm.length ? Math.max(2, ...nm.map((x) => x.length)) : 1.2);
+          const pos = 'left:' + ((mir ? 1 - p[0] : p[0]) * 100).toFixed(1) + '%;top:' + (p[1] * 100).toFixed(1) + '%;--lw:' + p[3] + ';--sk:' + sk + 'deg;--fk:' + fk.toFixed(3);
           // v259: 이름이 없으면 비우지 않고 그 갈래의 노선 방패 (네 글자 넘는 길 이름에 짧은 이름도 없을 때)
           if (!nm.length) {
             const no = p[2] ? goNo : otNo;
