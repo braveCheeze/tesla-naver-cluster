@@ -19,7 +19,7 @@ import math
 import os
 
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REF = os.path.join(ROOT, 'tools', 'icon-src', 'ref')
@@ -236,7 +236,15 @@ LANE_SV = {'b': (0.85, 1.32), 'p': (0.62, 1.3)}   # (채도, 밝기) 배
 def recolor(im, name, c):
     """AI 그림(PIL RGB)의 경로 차로 초록만 같은 채도·밝기로 색만 바꾼 새 그림. 흰 화살표·차선은 그대로 (초록이 아니므로)"""
     a = np.asarray(im.convert('RGB'))
-    mask = route_region(name, im.size) & is_green(a)
+    # AI 가 경로 차로를 밑그림보다 조금 넓게·멀리 칠하기도 한다(먼 연결로 끝, 차로 바깥 가장자리) — 경로 자리를 그림 폭 5% 만큼 넓히고,
+    # 그 안에서 채도가 높은 차로 칠(풀밭·표지판보다 훨씬 진한 초록)만 바꾼다. 표지판(위 37%)은 건드리지 않는다
+    reg = Image.fromarray((route_region(name, im.size) * 255).astype(np.uint8), 'L')
+    k = max(3, int(im.size[0] * 0.05) | 1)
+    reg = np.array(reg.filter(ImageFilter.MaxFilter(k))) > 0
+    r, g, b = a[..., 0].astype(int), a[..., 1].astype(int), a[..., 2].astype(int)
+    paint = (g > 110) & (g - r > 70) & (g - b > 35)
+    paint[: int(0.37 * im.size[1])] = False
+    mask = reg & paint
     hsv = np.array(im.convert('RGB').convert('HSV'))
     hsv[..., 0][mask] = int(LANE_HUE[c] / 360 * 255)
     # 네이버 분기점 그림의 밝은 하늘색(#22bff2)·연분홍(#f68cc0)처럼: 채도는 조금 낮추고 밝기는 올린다

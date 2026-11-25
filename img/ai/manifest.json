@@ -1,5 +1,5 @@
 {
- "date": "2026-11-24",
+ "date": "2026-11-25",
  "items": [
   {
    "slot": "cam_mobile_100",
@@ -3488,6 +3488,463 @@
    "model": "sunburst26w",
    "n": 3,
    "pink": 0
+  },
+  {
+   "slot": "jx_exit2_day",
+   "kind": "scene",
+   "file": "jx_exit2_day__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.9,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_exit2_day",
+   "kind": "scene",
+   "file": "jx_exit2_day__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.92,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_exit2_day",
+   "kind": "scene",
+   "file": "jx_exit2_day__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.9,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_exit2_day",
+   "kind": "scene",
+   "file": "jx_exit2_day__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.88,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_exit2_night",
+   "kind": "scene",
+   "file": "jx_exit2_night__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.92,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_exit2_night",
+   "kind": "scene",
+   "file": "jx_exit2_night__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.91,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_exit2_night",
+   "kind": "scene",
+   "file": "jx_exit2_night__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.84,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_exit4_day",
+   "kind": "scene",
+   "file": "jx_exit4_day__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.89,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_exit4_day",
+   "kind": "scene",
+   "file": "jx_exit4_day__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.88,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_exit4_day",
+   "kind": "scene",
+   "file": "jx_exit4_day__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.88,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_exit4_night",
+   "kind": "scene",
+   "file": "jx_exit4_night__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.88,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_exit4_night",
+   "kind": "scene",
+   "file": "jx_exit4_night__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.91,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_exit4_night",
+   "kind": "scene",
+   "file": "jx_exit4_night__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.9,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_exit4_night",
+   "kind": "scene",
+   "file": "jx_exit4_night__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.86,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_exit_day",
+   "kind": "scene",
+   "file": "jx_exit_day__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.9,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_exit_day",
+   "kind": "scene",
+   "file": "jx_exit_day__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.85,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_exit_day",
+   "kind": "scene",
+   "file": "jx_exit_day__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.92,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_exit_day",
+   "kind": "scene",
+   "file": "jx_exit_day__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.9,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_exit_night",
+   "kind": "scene",
+   "file": "jx_exit_night__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.84,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_exit_night",
+   "kind": "scene",
+   "file": "jx_exit_night__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.92,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_exit_night",
+   "kind": "scene",
+   "file": "jx_exit_night__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.9,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_exit_night",
+   "kind": "scene",
+   "file": "jx_exit_night__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.91,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_fork_day",
+   "kind": "scene",
+   "file": "jx_fork_day__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.9,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_fork_day",
+   "kind": "scene",
+   "file": "jx_fork_day__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.92,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_fork_day",
+   "kind": "scene",
+   "file": "jx_fork_day__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.91,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_fork_day",
+   "kind": "scene",
+   "file": "jx_fork_day__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.91,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_fork_night",
+   "kind": "scene",
+   "file": "jx_fork_night__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.92,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_fork_night",
+   "kind": "scene",
+   "file": "jx_fork_night__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.92,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_fork_night",
+   "kind": "scene",
+   "file": "jx_fork_night__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.92,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_fork_night",
+   "kind": "scene",
+   "file": "jx_fork_night__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.91,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_stay_day",
+   "kind": "scene",
+   "file": "jx_stay_day__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.9,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_stay_day",
+   "kind": "scene",
+   "file": "jx_stay_day__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.92,
+    0.29
+   ],
+   "bad": "다른 차로에 초록 29%"
+  },
+  {
+   "slot": "jx_stay_day",
+   "kind": "scene",
+   "file": "jx_stay_day__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.91,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_stay_day",
+   "kind": "scene",
+   "file": "jx_stay_day__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.91,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_stay_night",
+   "kind": "scene",
+   "file": "jx_stay_night__flare26e__1.webp",
+   "model": "flare26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.91,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_stay_night",
+   "kind": "scene",
+   "file": "jx_stay_night__flare26e__2.webp",
+   "model": "flare26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.91,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_stay_night",
+   "kind": "scene",
+   "file": "jx_stay_night__sunburst26e__1.webp",
+   "model": "sunburst26e",
+   "n": 1,
+   "pink": 0,
+   "jx": [
+    0.9,
+    0.0
+   ]
+  },
+  {
+   "slot": "jx_stay_night",
+   "kind": "scene",
+   "file": "jx_stay_night__sunburst26e__2.webp",
+   "model": "sunburst26e",
+   "n": 2,
+   "pink": 0,
+   "jx": [
+    0.91,
+    0.0
+   ]
   },
   {
    "slot": "kl",

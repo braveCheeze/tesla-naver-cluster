@@ -541,6 +541,13 @@
     };
     return { route, P, cum, total, dest: { name: '테스트 목적지', addr: '테스트시 율곡로 1', lat: P[9].lat, lng: P[9].lng } };
   }
+  // v250: 네이버식 분기점 그림(jx)을 고른 뒤에도 예전 AI 그림(junc_<종류>) 흐름을 보는 시험은 jx 고름을 잠깐 뺀다 (jx 는 S162·S166)
+  function stashJx() {
+    const t = T(), keep = {};
+    Object.keys(t.iconPicks).filter((k) => /^jx_/.test(k)).forEach((k) => { keep[k] = t.iconPicks[k]; delete t.iconPicks[k]; });
+    t.juncState.key = '';
+    return () => { Object.assign(t.iconPicks, keep); t.juncState.key = ''; };
+  }
   function pointAt(R, s) {
     const P = R.P, cum = R.cum;
     s = Math.max(0, Math.min(s, cum[cum.length - 1]));
@@ -2055,6 +2062,7 @@
         inDrawer: !!el.closest('#camDrawer .cd-in'), open: document.getElementById('camDrawer').classList.contains('open') }; };
     const go = (s) => { const a = pointAt(R, s); feed(a.p, 20, a.h); t.renderNav(); };
     const r = {};
+    const unstash = stashJx();   // v250: 예전 AI 그림(junc_<종류>)의 종류·좌우를 본다 (jx 는 S162·S166)
     try {
       set(true);
       softReset();
@@ -2071,6 +2079,7 @@
       r.after = snap();                                 // 분기점 지난 뒤 (그다음은 목적지)
       t.endNav();
     } finally {
+      unstash();
       set(prev);
       softReset();
     }
@@ -4120,6 +4129,7 @@
         // v143: 안내 칸 그림 — 본선 그대로는 네이버 '도로 주행' 그림(ml/mr), '오른쪽 방향'은 굵은 화살표 하나(sr 그림)
         icon: (() => { const ti = document.querySelector('#turnIcon svg, #turnIcon img'); if (!ti) return ''; if (ti.tagName === 'IMG') return ti.getAttribute('src').replace(/^.*\/img\/ai\//, '').split('__')[0]; return (ti.getAttribute('class') || '').replace(/\s+/g, ' ').trim(); })() };
     };
+    const unstash = stashJx();
     try {
       softReset();
       await planAndStart(R);
@@ -4128,6 +4138,7 @@
       for (let s = 940; s <= 2000; s += 20) go(s);
       r.pangyo = snap();                     // 판교분기점 500m 앞
     } finally {
+      unstash();
       t.endNav(); softReset();
     }
     const a = r.singal, b = r.pangyo;
@@ -8238,8 +8249,10 @@
       await waitFor(() => t.clData.loaded && t.jdData.loaded, 10000, 100);
       const C = await fixture('route-ring1-pangyo.json');
       softReset(); await planAndStart(C);
+      const unstash = stashJx();   // (a) 는 예전 AI 그림 칸
       await driveTo(C, /판교분기점에서 '구리, 성남'/, 200);
       r.a = view();
+      unstash();
       for (const k of JX) { keep[k] = t.iconPicks[k]; t.iconPicks[k] = /_night$/.test(k) ? 'jxn__t__1.webp' : 'jxd__t__1.webp'; }
       t.juncState.key = ''; t.renderNav(); await sleep(40);
       r.b = view();
@@ -8539,6 +8552,7 @@
         sign: text('#juncLabel'), other: visible('#juncLabel2') ? text('#juncLabel2') : '', signCut: (() => { const lab = document.getElementById('juncLabel'); return [...lab.querySelectorAll('b')].some((b) => b.scrollWidth > b.clientWidth + 1); })(),
         colorRow: visible('#colorRow'), splitPic: !!(panel && panel.querySelector('svg.sp-pic')) && visible('#colorRow'), cl: (t.colorLineAhead() || {}).c || '' };
     };
+    const unstash = stashJx();
     try {
       await waitFor(() => t.clData.loaded, 10000, 100);
       const B = await fixture('route-seoultg-n.json');
@@ -8559,7 +8573,7 @@
       r.c = view();
       t.endNav();
     } finally {
-      await resetApp(); softReset();
+      unstash(); await resetApp(); softReset();
     }
     const aiOnly = (x) => x && x.shown && x.inDrawer && /^junc_[a-z]+_day,junc_[a-z]+_night$/.test(x.imgs) && x.svg === 0 && !x.nv && !x.plan && !x.colorRow && !x.splitPic;
     // v246: 가지 않는 갈래도 표지 — 지금 길(경부)이 다른 쪽으로 이어지니 '① 경부 ↑' 를 반대쪽에
