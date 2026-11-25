@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-244'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-245'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -6214,11 +6214,19 @@
     const z0 = 5, z1 = 13.5, hw = 0.18, hh = 0.58, hl = 4.2;
     return poly([[x - hw, z0], [x - hw, z1], [x - hh, z1], [x, z1 + hl], [x + hh, z1], [x + hw, z1], [x + hw, z0]]);
   }
+  // ★ 고정 규칙 (v245, 운전자 2026-11-25 — 처음은 2026-11-15 v108·v109):
+  //   '이거 너무 헷갈리게 되어 있고 이런 식으로 보여 주는 거 아니야. 내가 만든 AI 그림으로만 밑에다 보여 주는 거지. 저렇게 보여 주면 안 돼',
+  //   '저기다 그림을 크게 보여 준 게 아니라 저번에도 말했던 거 같은데'.
+  //   갈림·나들목·교차로 그림은 운전자가 고른 AI 그림(img/ai junc_<종류>_day·night)만, 아래 서랍 분기점 칸에. 그 종류 그림이 없으면 아무것도 없다.
+  //   코드가 그린 그림은 쓰지 않는다: v197 원근 장면(nvScene), v227~v243 내려다본 그림(planScene), 예전 원근 그림(juncSvg),
+  //   v207 안내 카드 맨 위 유도선 갈림 그림(splitPic). 네이버에 그림이 있다는 것만으로 다시 켜지 말 것 — 필요하면 운전자에게 AI 그림으로 묻는다
+  const JUNC_DRAWN = false;
   function renderJunction() {
     const el = $('#juncCard');
     const g = nav.active && prefs.junction ? nav.next : null;
     let j = g && nav.dg != null && nav.dg <= JUNC_SHOW ? juncInfo(g) : null;
-    if (j && JUNC_ROAD[g.t] && !(ICON_PICKS['junc_' + j.kind + '_day'] && ICON_PICKS['junc_' + j.kind + '_night'])) j = null;
+    // AI 그림(낮·밤)이 없는 종류는 그림 칸을 띄우지 않는다 (v245: 모든 종류 — 예전엔 고가·지하차도·옆길만)
+    if (j && (JUNC_DRAWN ? JUNC_ROAD[g.t] : true) && !(ICON_PICKS['junc_' + j.kind + '_day'] && ICON_PICKS['junc_' + j.kind + '_night'])) j = null;
     juncState.g = j ? g : null;
     if (!j) {
       juncState.fork = null; juncState.cl = null; juncState.key = '';
@@ -6231,8 +6239,8 @@
     cancelDrawerClose();
     el._d = nav.dg;   // 서랍 칸 순서 (v158): 안내 지점까지
     // v197: 고속도로·도시고속도로 갈림은 네이버식 장면 (분기 차로 단면·이 갈림의 색깔 유도선이 바뀌면 다시 그린다)
-    const useNv = NV_KINDS.has(j.kind) && nvSceneFits(g);
-    const usePlan = NV_KINDS.has(j.kind) && !useNv;   // v227: 일반도로에서 들어가거나 크게 휘는 갈림은 위에서 본 경로 그림
+    const useNv = JUNC_DRAWN && NV_KINDS.has(j.kind) && nvSceneFits(g);
+    const usePlan = JUNC_DRAWN && NV_KINDS.has(j.kind) && !useNv;   // v227: 일반도로에서 들어가거나 크게 휘는 갈림은 위에서 본 경로 그림 (v245: 끔)
     const fl = useNv ? forkLane() : null;
     const cla = useNv ? colorLineAhead() : null;
     const clHere = !!cla && clSameTurn(cla);   // renderColorLine 의 '같은 갈림'과 같은 기준
@@ -6285,8 +6293,10 @@
         sg2.setAttribute('aria-label', other ? curRoad + ' 직진' : '');
         goStraight = false;
       } else {
-        $('#juncSvg').innerHTML = jd && jn ? jimg(jd, 'jv-day') + jimg(jn, 'jv-night') : juncSvg(j.kind === 'entry' ? Object.assign({}, j, { kind: 'ramp' }) : j);
+        $('#juncSvg').innerHTML = jd && jn ? jimg(jd, 'jv-day') + jimg(jn, 'jv-night') : JUNC_DRAWN ? juncSvg(j.kind === 'entry' ? Object.assign({}, j, { kind: 'ramp' }) : j) : '';
         $('#juncSvg').classList.remove('nv-has-bg');
+        // v245: AI 그림 위 방면 표지에도 들어가는 고속도로의 노선 방패 (예전엔 그린 장면에서만)
+        if (NV_KINDS.has(j.kind)) goNo = expwayNo(routeRoadAt(Math.min(g.i + 2, nav.pts ? nav.pts.length - 1 : 0)));
         sg2.innerHTML = ''; sg2.className = 'jc-label jc-other';
       }
       // 방면 표지판 (v115). 방면이 없으면 비운다(빈 칸은 CSS 로 숨김). '오른쪽'을 지어 넣지 않는다
@@ -7103,6 +7113,8 @@
   }
   function renderColorLine() {
     const el = $('#colorRow'), a = colorLineAhead();
+    // v245 고정 규칙(renderJunction 위 JUNC_DRAWN): 안내 카드 맨 위에 그린 갈림 그림은 보여 주지 않는다. 색 선 자료(경로 위 자리)는 그대로 계산만
+    if (!JUNC_DRAWN) { el.hidden = true; el._d = Infinity; el._first = false; return; }
     // v197: 분기점 장면이 이 유도선을 그림 안에 그렸으면 줄은 숨긴다 (네이버처럼 그림 안에서)
     const inScene = !!a && !!juncState.g && juncState.cl === a.k && !$('#juncCard').hidden;
     el.hidden = !a || inScene;
