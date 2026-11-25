@@ -1284,7 +1284,8 @@
         if (sec && !o.mid && s >= (sStart + sEnd) / 2) {
           const rm = /남은 거리 ([\d.]+)(km|m)/.exec(text('#secRemain'));
           // v137: 평균은 속도 칸('구간평균 97'), 경고 카드에는 게이지 밑 '남은 시간 01:05' (구간단속 카드는 경고 카드가 있으면 접힘)
-          o.mid = { avg: num('#secAvg'), over: hasCls('#secCard', 'over'), shown: visible('#secCard') || (visible('#camHint') && document.getElementById('camHint').getClientRects().length > 0), remain: text('#secRemain'),
+          // v252: 구간 안 끝 카메라는 카드가 없어 구간 칸만 본다 (숨긴 창에서는 나타나는 애니메이션이 멈춰 불투명도 0 이라 hidden·자리로 본다)
+          o.mid = { avg: num('#secAvg'), over: hasCls('#secCard', 'over'), shown: visible('#secCard') || (!document.getElementById('secCard').hidden && document.getElementById('secCard').getClientRects().length > 0) || (visible('#camHint') && document.getElementById('camHint').getClientRects().length > 0), remain: text('#secRemain'),
             chip: text('#mySpeedLim'), hint: visible('#camHint') ? text('#camHint') : '',
             remainM: rm ? parseFloat(rm[1]) * (rm[2] === 'km' ? 1000 : 1) : null, wantM: sEnd - s };
         }
@@ -6745,8 +6746,10 @@
   //   테슬라 서랍 안 카드에서 동그란 표지 위 끝 = 종류 글씨 위 끝, 아래 끝 = 거리 숫자 아래 끝 (띠는 그 밑).
   //   구간단속 끝·고정식·이동식·보호구역 카드가 모두 같다
   async function s136() {
+    await waitFor(() => T().cams.loaded, 10000, 100);   // 카메라 자료가 늦게 오면 카드를 못 고른다
     const t = T(), r = {};
-    const pick = { sec: (x) => x[4] === 2 && x[2] === 110, fixed: (x) => !x[4] && x[3] === 1 && x[6] !== 2, mobile: (x) => !x[4] && x[3] === 8, zone: (x) => !x[4] && x[6] === 2 && x[2] === 30 };
+    // v252: 구간 안 끝 카메라는 카드가 없다 → 구간단속 '시작' 카드로 본다
+    const pick = { sec: (x) => x[4] === 1 && x[2] === 110, fixed: (x) => !x[4] && x[3] === 1 && x[6] !== 2, mobile: (x) => !x[4] && x[3] === 8, zone: (x) => !x[4] && x[6] === 2 && x[2] === 30 };
     const card = document.getElementById('camCard');
     const B = (el) => el.getBoundingClientRect();
     try {
@@ -6756,8 +6759,7 @@
         const i = t.cams.rows.findIndex((x, j) => j < t.cams.userBase && pick[k === 'secDoubt' ? 'sec' : k](x));
         if (i < 0) { r[k] = 'none'; continue; }
         const c = t.cams.rows[i];
-        // v251: 구간이 열려 있지 않으면 구간 끝 카메라는 지점 과속 카메라(합류)라, 구간단속 끝 카드는 구간을 연 채로 본다
-        t.camState.section = /^sec/.test(k) ? { limit: 110, len: 11000, t0: Date.now(), d0: t.state.odo - 3000 } : null;
+        t.camState.section = null;   // 구간단속 시작 카드는 구간이 열리기 전에 뜬다
         t.camState.target = { i, c, d: 2000, r: 2000, minD: 2000, after: false, t0: Date.now(), first: 2600, flag: k === 'secDoubt' ? 'doubt' : undefined };
         t.renderCam();
         const sg = B(card.querySelector('.cam-sign')), lb = B(document.getElementById('camType')), ds = B(document.getElementById('camDist')), bar = B(card.querySelector('.cam-bar'));
@@ -8369,7 +8371,7 @@
     const drive = async (R) => {
       let endS = 0, endD = Infinity;
       for (let s = 0; s <= R.total; s += 5) { const d = hav(pointAt(R, s).p, END); if (d < endD) { endD = d; endS = s; } }
-      const o = { sec: false, secLimit: null, avg: false, endAt: null, endType: '', endKind: '', endLimit: '', voice: [] };
+      const o = { sec: false, secLimit: null, avg: false, endAt: null, endType: '', endKind: '', endLimit: '', endShown: null, secCard: false, voice: [] };
       const seen = new Set(t.alertLog);   // 로그는 길이가 정해져 있어 앞이 잘린다: 새로 들어온 줄만
       await planAndStart(R);
       for (let s = 0; s <= Math.min(R.total, endS + 80); s += 25) {
@@ -8377,7 +8379,7 @@
         if (t.camState.section) { o.sec = true; o.secLimit = t.camState.section.limit; }
         if (visible('#camAvg')) o.avg = true;
         const tg = t.camState.target;
-        if (tg && sameCam(tg.c, END) && o.endAt === null) { o.endAt = Math.round(endS - s); t.renderCam(); o.endType = text('#camType'); o.endKind = text('#camKind'); o.endLimit = text('#camLimit'); }
+        if (tg && sameCam(tg.c, END) && o.endAt === null) { o.endAt = Math.round(endS - s); t.renderCam(); o.endShown = visible('#camCard'); o.endType = o.endShown ? text('#camType') : ''; o.endKind = o.endShown ? text('#camKind') : ''; o.endLimit = o.endShown ? text('#camLimit') : ''; o.secCard = !document.getElementById('secCard').hidden; }
       }
       o.voice = t.alertLog.filter((x) => !seen.has(x)).map((x) => String(x.text || x.msg || x)).filter((x) => /단속/.test(x)).slice(0, 6);
       t.endNav();
@@ -8391,7 +8393,8 @@
       await resetApp(); softReset();
     }
     const f = r.full || {}, j = r.join || {};
-    const fullOk = f.sec && f.secLimit === 110 && f.endAt !== null && /구간/.test(f.endType);
+    // v252: 구간 안에서는 끝 카메라 카드·'구간단속 끝' 음성이 없고(네이버처럼), 지나면 '구간단속이 끝났습니다'
+    const fullOk = f.sec && f.secLimit === 110 && f.endAt !== null && !f.endShown && !f.voice.some((x) => /구간단속 끝/.test(x)) && f.voice.some((x) => /구간단속이 끝났습니다/.test(x)) && f.secCard;
     if (!fullOk) return { pass: false, detail: 'control route (full section) did not open the section: ' + JSON.stringify(r) };
     if (!t.SEC_JOIN_RULE) return { status: 'SKIP', detail: 'join rule waits for the Naver check (구간단속 중간 합류); current behaviour on the join route: ' + JSON.stringify(r) };
     // v251 (keys 세션 네이버 확인): 합류면 구간 없이 끝 카메라를 보통 지점 카메라 '110 과속단속'으로 (2km 앞 고속도로 지점 카메라 음성 그대로)
@@ -8429,7 +8432,8 @@
       const el = document.getElementById('juncCard'), sv = document.getElementById('juncSvg'), cr = el.getBoundingClientRect();
       const lab = document.getElementById('juncLabel'), oth = document.getElementById('juncLabel2');
       const box = (x) => { const q = x.getBoundingClientRect(); return { l: +((q.left - cr.left) / cr.width).toFixed(3), r: +((q.right - cr.left) / cr.width).toFixed(3), t: +((q.top - cr.top) / cr.height).toFixed(3), b: +((q.bottom - cr.top) / cr.height).toFixed(3), w: Math.round(q.width) }; };
-      const img = sv.querySelector('img.jv-day') || sv.querySelector('img');
+      // 낮·밤 중 지금 보이는 그림 (해가 지면 낮 그림은 display:none 이라 뒤집기 값이 안 잡힌다)
+      const img = [...sv.querySelectorAll('img')].find((i) => i.getClientRects().length > 0) || sv.querySelector('img.jv-day') || sv.querySelector('img');
       // v249: 차로마다 방면 (.jx-lane, 두 줄까지 '일산/구리')
       const road = [...sv.querySelectorAll('.jx-lane')].map((x) => ({ c: x.classList.contains('go') ? 'go' : 'ot', t: [...x.querySelectorAll('b')].map((b) => b.textContent).join('/'), x: +((x.getBoundingClientRect().left + x.getBoundingClientRect().width / 2 - cr.left) / cr.width).toFixed(3) }));
       return { shown: visible('#juncCard'), jx: el.classList.contains('jx'), m: el.classList.contains('jx-m'), left: el.classList.contains('left'),
