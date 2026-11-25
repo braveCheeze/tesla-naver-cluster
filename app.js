@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-263'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-264'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -2983,8 +2983,9 @@
   const camState = { target: null, passed: new Map(), saidById: new Map(), section: null, markerAt: null, lastOverBeep: 0 };
   // 카메라를 지나간 뒤 경고를 유지하는 거리 (데이터 좌표와 실제 단속 지점이 15m 안팎 다르다)
   const CAM_HOLD = 30;
-  // 후면 단속 카메라는 지나간 차의 뒤를 찍으므로 기둥을 지난 뒤가 단속 지점이다: 더 길게(60m) 경고를 유지한다
-  const REAR_HOLD = 60;
+  // 후면 단속 카메라는 지나간 차의 뒤를 찍으므로 기둥을 지난 뒤가 단속 지점이다: 더 길게 경고를 유지한다
+  // v264 (keys 2026-11-26 네이버 확인, 올림픽로·용구대로 '60 후면단속'): 네이버는 지난 뒤 '후면단속 중'을 약 80~120m 더 보인다 → 60 → 100m
+  const REAR_HOLD = 100;
   // 11번째 값(flags): 1 후면 단속, 2 박스형 (둘 다 원본에 없어 직접 확인한 것만)
   const isRear = (c) => ((c[10] | 0) & 1) === 1;
   const isBox = (c) => ((c[10] | 0) & 2) === 2;
@@ -3021,8 +3022,10 @@
     if (c[4] === 1) return '구간단속 시작';
     if (c[4] === 2) return '구간단속 끝';
     const zone = c[6] === 2 ? '어린이보호구역 ' : c[6] === 1 ? '노인보호구역 ' : '';
+    // v264: 후면 카메라는 종류(신호·과속이어도)와 상관없이 '후면단속 카메라' (네이버 배지 '60 후면단속')
+    if (isRear(c)) return zone + '후면단속 카메라';
     const what = c[3] === 2 || c[3] === 3 ? '신호 단속 카메라' : c[3] === 8 ? '이동식 단속' : c[3] === 9 ? '구간단속' : '단속 카메라';
-    return zone + (isRear(c) ? '후면 ' : '') + what;
+    return zone + what;
   }
   function camLabel(c) {
     if (spotUnchecked(c)) {
@@ -3036,7 +3039,7 @@
     let s = loneSecEnd(c) ? '과속단속' : c[4] === 1 ? '구간단속 시작' : c[4] === 2 ? '구간단속 끝' : (KIND_NAME[c[3]] || '단속 카메라');
     if (c[6] === 2) s = '어린이보호구역 ' + (c[3] === 2 ? '단속' : s);
     else if (c[6] === 1) s = '노인보호구역 ' + s;
-    if (isRear(c)) s = s.replace(/ ?단속$/, ' 후면단속');   // 예: '신호·과속 후면단속'
+    if (isRear(c)) s = (c[6] === 2 ? '어린이보호구역 ' : c[6] === 1 ? '노인보호구역 ' : '') + '후면단속';   // v264: 네이버 배지처럼 '후면단속' (신호·과속이어도)
     if (isBox(c)) s = '박스형 ' + s;                        // 예: '박스형 과속단속' (2026-11-14 팔당 제보)
     return s;
   }
@@ -3049,12 +3052,12 @@
     if (c[4] === 2) return '구간단속 끝';
     if (isBox(c)) return '박스형';
     if (c[3] === 8) return '이동식';
-    const rear = isRear(c);
-    if (c[3] === 3) return rear ? '신호과속 후면' : '신호과속';
-    if (c[3] === 2) return rear ? '신호 후면' : '신호단속';
-    return rear ? '후면단속' : '과속단속';
+    if (isRear(c)) return '후면단속';   // v264: 네이버 '60 후면단속' (검은 띠)
+    if (c[3] === 3) return '신호과속';
+    if (c[3] === 2) return '신호단속';
+    return '과속단속';
   }
-  const camBand = (c) => (spotUnchecked(c) || c[3] === 8 ? 'white' : 'yellow');
+  const camBand = (c) => (spotUnchecked(c) || c[3] === 8 ? 'white' : isRear(c) ? 'black' : 'yellow');   // v264: 후면단속은 검은 띠 (네이버)
   // v192 (운전자 '이런거는 ai 아틀라스로 만들고'): 단속 표지 그림 칸 — 신호(·과속)는 신호등, 이동식·박스형·신고 지점은 파란 테, 나머지는 카메라
   function camSignSlot(c) {
     if (c[3] === 2 || c[3] === 3) return 'cam_signal';
@@ -3115,6 +3118,20 @@
     for (const s of secs) if (idx >= s.i && idx <= s.i + Math.max(1, s.n) - 1) return s.name || '';
     return '';
   }
+  // v264: 구간 이름이 빈 자리(지하도로·고가에서 네이버가 비움)인데 바로 앞 구간과 바로 뒤 구간 이름이 같고 그 사이가 2km 안이면 그 이름
+  function routeRoadBetween(idx) {
+    const secs = nav.route && nav.route.sections;
+    if (!secs || !nav.cum) return '';
+    let prev = null, next = null;
+    for (const sc of secs) {
+      const e = sc.i + Math.max(1, sc.n) - 1;
+      if (e < idx && (!prev || e > prev.e)) prev = { name: sc.name || '', e };
+      if (sc.i > idx && (!next || sc.i < next.i)) next = { name: sc.name || '', i: sc.i };
+    }
+    if (!prev || !next || !prev.name || prev.name !== next.name) return '';
+    const last = nav.cum.length - 1;
+    return nav.cum[Math.min(next.i, last)] - nav.cum[Math.min(prev.e, last)] <= 2000 ? prev.name : '';
+  }
   // 경고를 시작하는 거리 (카메라가 서 있는 도로 기준):
   //   고속도로(고속국도) 3km · 고속화도로(제한 80 이상: 도시고속도로·자동차전용도로 등) 1km · 일반도로 400m
   // 첫 음성 안내는 고속도로만 2km 에서, 나머지는 경고 시작과 함께 한다
@@ -3151,16 +3168,27 @@
     const pa = routePointAt(Math.max(0, s0)), pb = routePointAt(Math.min(nav.total, s1));
     return pa && pb && haversine(pa, pb) > 3 ? bearing(pa, pb) : null;
   }
-  function camLevelOk(c, at, rn, hw) {
+  function camLevelOk(c, at, rn, hw, rnGap) {
     const lv = c.lv | 0;
     if (!(lv & 28)) return true;
     const sep = gradeSepNear(at);
-    if ((lv & 12) && sep) return false;
+    if ((lv & 12) && (sep || gradeSepCovers(at, lv))) return false;
     // v165 (2026-11-20 전 카메라 가상 주행: 고가·지하 카메라 63대가 길안내 중에 모두 빠졌다 — 수도권1순환·평택시흥·내부순환로·강변북로 구간단속 등).
     // 네이버는 고속도로·도시고속도로 본선에서 고가·지하차도 안내를 주지 않는다. 경로 구간이 빠른 길이거나 카메라 길 이름이 구간과 같으면 남긴다
     if ((lv & 16) && !sep) return !!hw || (!!rn && (isFastRoad(rn) || sameCamRoad(rn, c)));
+    // v264 (keys 2026-11-26 네이버 확인, #22322 분당수서로 남행 60 신호·과속): 분당수서간도시고속화도로 남행으로 백현지하도로를 지나는데
+    //   바로 위 일반도로(분당수서로) 신호 카메라가 20m 앞 경고로 떴다. 두 길이 10~20m 로 겹치고 방향도 같아 거리·방향으로는 못 가른다
+    //   (경찰·OSM 이름 '분당수서로'도 고속화도로와 같은 길로 본다). 네이버는 고속화도로·지하도로 남행 앞뒤 700m 에 배지 없음.
+    //   네이버는 빠른 길 본선에서 지하차도·고가 안내를 주지 않으므로(sep 없음), 경로가 신호 없는 빠른 길(고속도로·도시고속·고속화·간선·
+    //   자동차전용)인데 그 자리를 지하차도·고가가 지나가는 지상 카메라(4·8)가 일반도로 카메라(신호·신호과속·저속·제한 70 미만, 이름도
+    //   빠른 길이 아님)면 다른 층 길 카메라다
+    //   네이버 경로는 지하도로·고가 구간에 구간 이름을 비우곤 한다(백현지하도로 1km) — 앞뒤 구간 이름이 같으면 그 이름(rnGap)으로 본다
+    if ((lv & 12) && !sep && (hw || noSignalRoad(rn || rnGap)) && surfaceCam(c)) return false;
     return true;
   }
+  const NO_SIGNAL_ROAD = /고속|간선|강변북로|올림픽대로|자동차전용/;
+  const noSignalRoad = (rn) => !!rn && NO_SIGNAL_ROAD.test(rn);
+  const surfaceCam = (c) => (c[3] === 2 || c[3] === 3 || slowCam(c) || (c[2] > 0 && c[2] < 70)) && !camNames(c).some((n) => NO_SIGNAL_ROAD.test(n));
   // 굽은 길: 최근 주행 궤적이 휜 정도(곡률 k, 1m 당 라디안, + 는 오른쪽으로 굽음)로 앞길을 원호로 보고,
   // 거리 d 앞 지점이 놓일 방향(현 방향 + 원호의 현이 꺾인 각)을 구한다. 곧은 길이면 지금 방향 그대로
   const curv = { hist: [], k: 0 };
@@ -3393,7 +3421,7 @@
     // v167 (v165 가상 주행: 경로 구간 이름이 비면 고가·지하 카메라 67대가 여전히 빠졌다 — 네이버 경로에 구간 이름이 빠지는 일이 있다, S52 거여동):
     // 구간 이름이 없으면 카메라가 빠른 길(이름이 고속·순환로·간선이거나 제한 80 이상) 위에 있고 경로와 나란하면(20° 안) 남긴다
     const fastCam = !specificRoad(rn) && camHasDir(c) && angleDiff(c.eb, bearing(a, b)) <= 20 && (camNames(c).some(isFastRoad) || c[2] >= 80);
-    if (!camLevelOk(c, at, rn, hwHere || fastCam)) return null;                // 지하차도·고가로 넘어가는 곳의 지상 카메라 등
+    if (!camLevelOk(c, at, rn, hwHere || fastCam, rn ? '' : routeRoadBetween(i))) return null;                // 지하차도·고가로 넘어가는 곳의 지상 카메라 등
     // 찍는 방향이 이 자리 경로 방향과 50° 안. 교차로에서 꺾는 곳이면 들어오는 쪽(30m 전)·나가는 쪽(30m 뒤) 방향도 본다
     // (가락시장역교차로에서 좌회전: 들어오는 송파대로 북행 카메라). 설치장소 'A→B' 가 안내 문구로 갈리면 그게 먼저:
     // 반대면 빼고, 내 방향이라고 나오면 기하 판단과 달라도 알린다 (2026-11-14 하남 창우로 J2735, 11-15 가천대역 '복정역→성남시청')
@@ -4082,6 +4110,8 @@
       card.classList.toggle('signal', !speedCam);
       card.classList.toggle('mobile', tg.c[3] === 8 || isBox(tg.c) || spotUnchecked(tg.c)); // 이동식·박스형·확인 전 신고 지점은 파란색 (v114, v169, v208)
       card.classList.toggle('box', isBox(tg.c));
+      // v264 (keys 네이버 확인): 후면단속은 검은 띠 흰 글씨 '후면단속', 지난 뒤 REAR_HOLD 동안 '후면단속 중' (과속 경고 색 유지)
+      card.classList.toggle('rear', isRear(tg.c) && !spotUnchecked(tg.c));
       card.classList.toggle('sigspeed', tg.c[3] === 3); // 신호·과속: 표지 위에 작은 신호등
       // 어린이·노인 보호구역: 도로 주의 표지 모양 타일 (삼각 표지 + 빨간 띠에 남은 거리 + '어린이보호' 와 제한속도)
       const zone = tg.c[6] === 2 ? 'kid' : tg.c[6] === 1 ? 'elder' : '';
@@ -8657,6 +8687,19 @@
     const last = nav.cum ? nav.cum.length - 1 : -1;
     if (last < 0) return false;
     return (nav.guides || []).some((g) => GRADE_SEP.has(g.t) && nav.cum[Math.min(g.i, last)] > at - 300 && nav.cum[Math.min(g.i, last)] < at + 400);
+  }
+  // v264 (keys 2026-11-26, #22322 백현지하차도): 긴 지하차도·고가는 진입 안내 뒤 1km 넘게 이어진다(백현지하차도 진입 1.24km 뒤에 위 일반도로
+  //   신호 카메라). 경로 거리 at 바로 앞 안내가 지하차도 진입(56·64·73)이고 1.5km 안이면 카메라 옆을 지나는 지하차도(층 4) 안, 고가 진입
+  //   (55·62·71)이면 고가(층 8) 위로 본다. 그 사이에 다른 안내(꺾기·옆길·직진)가 있거나 카메라 바로 뒤 150m 안에서 꺾으면 지상이다
+  const UNDER_IN = new Set([56, 64, 73]), OVER_IN = new Set([55, 62, 71]), GRADE_SEP_SPAN = 1500;
+  function gradeSepCovers(at, lv) {
+    const gs = nav.guides, last = nav.cum ? nav.cum.length - 1 : -1;
+    if (!gs || last < 0 || !(lv & 12)) return false;
+    let prev = null, prevS = -1e9;
+    for (const g of gs) { const s0 = nav.cum[Math.min(g.i, last)]; if (s0 <= at && s0 >= prevS) { prev = g; prevS = s0; } }
+    if (!prev || at - prevS > GRADE_SEP_SPAN) return false;
+    if (!((lv & 4) && UNDER_IN.has(prev.t)) && !((lv & 8) && OVER_IN.has(prev.t))) return false;
+    return !gs.some((g) => { const s0 = nav.cum[Math.min(g.i, last)]; return s0 > at && s0 < at + 150 && !GRADE_SEP.has(g.t); });
   }
   function camMissCheck(f) {
     if (!cams.loaded || !prefs.cams) return;

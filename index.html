@@ -1998,23 +1998,31 @@
     display: flex; flex-direction: column; align-items: stretch; position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%);
     z-index: 990; max-width: min(56%, 420px); min-width: 0; pointer-events: none;
   }
-  #app.tesla .navbar .road { position: static; transform: none; max-width: none; left: auto; bottom: auto; }
+  /* v264 (운전자 '순서도 바꿔주고 안내종료랑 저 화살표랑 안겹치게'): 지금 위치 줄이 위, 남은 거리·도착·안내 종료 줄이 밑.
+     꺾쇠는 지금 위치 줄 안 오른쪽(줄 높이 가운데) — 예전엔 띠 전체 가운데라 두 줄 사이 '안내 종료'와 겹쳤다 */
+  #app.tesla .navbar .road { position: relative; order: -1; transform: none; max-width: none; left: auto; bottom: auto; }
   #app.tesla .navbar.on { left: var(--nb-left, 50%); max-width: var(--nb-max, 56%); }
   #app.tesla .navbar.on {
     background-color: var(--nv-glass); background-image: var(--nv-sheen); -webkit-backdrop-filter: var(--nv-blur); backdrop-filter: var(--nv-blur);
     box-shadow: inset 0 1px 0 var(--nv-glass-hi), inset 0 0 0 1px var(--nv-glass-edge), var(--nv-shadow-lg); border-radius: 14px; overflow: hidden;
   }
-  #app.tesla .navbar.on .road { background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; border-radius: 0; padding: 2px 30px 7px 14px; }
+  #app.tesla .navbar.on .road { background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; border-radius: 0; padding: 7px 36px 3px 14px; }
   #app.tesla .navbar.on .road small { font-size: 12px; }
   #app.tesla .nb-meta:not([hidden]) {
-    display: flex; align-items: center; gap: 7px; padding: 6px 4px 2px 12px; white-space: nowrap; pointer-events: auto;
+    display: flex; align-items: center; gap: 7px; padding: 1px 6px 6px 14px; white-space: nowrap; pointer-events: auto;
     color: var(--nv-fg); font-size: 14px; font-variant-numeric: tabular-nums; text-shadow: none;
   }
   #app.tesla .nb-meta b { font-weight: 800; }
   #app.tesla .nb-meta span { color: var(--nv-sub); font-weight: 700; }
-  #app.tesla .nb-meta button { margin-left: auto; border: 0; background: rgba(240, 62, 62, .12); color: #f03e3e; font: inherit; font-size: 13px; font-weight: 800;
-    padding: 4px 9px; border-radius: 8px; cursor: pointer; }
-  #app.tesla .navbar.on .road::after { right: 12px; }
+  #app.tesla .nb-meta button { margin-left: auto; flex: none; min-height: 32px; border: 0; background: rgba(240, 62, 62, .12); color: #f03e3e; font: inherit; font-size: 13px; font-weight: 800;
+    padding: 4px 11px; border-radius: 9px; cursor: pointer; }
+  #app.tesla .nb-meta #nbEta { margin-right: 12px; }
+  #app.tesla .navbar.on .road::after { right: 16px; }
+  /* v264: 후면단속 — 네이버 배지처럼 검은 띠 흰 글씨 (노란 띠 신호과속·과속단속과 색으로 갈림) */
+  #app .camcard.rear .cam-type {
+    display: inline-block; max-width: 100%; color: #fff !important; background: #121418 !important; border-radius: 6px; padding: 1px 8px 2px;
+    font-size: 14px; line-height: 1.35; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .22);
+  }
   /* 멀리 있는 안내 칩: 안내 카드 오른쪽 옆 (위쪽 버튼 줄 밑) */
   .navchips { display: none; }
   #app.tesla .navchips:not([hidden]) {
@@ -2437,8 +2445,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-263"></script>
-<script src="img/ai/picks.js?v=2026.11.16-263"></script>
-<script src="app.js?v=2026.11.16-263"></script>
+<script src="icons.js?v=2026.11.16-264"></script>
+<script src="img/ai/picks.js?v=2026.11.16-264"></script>
+<script src="app.js?v=2026.11.16-264"></script>
 </body>
 </html>

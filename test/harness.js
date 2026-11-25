@@ -1521,8 +1521,9 @@
     };
     const navSw = await navRun('route-gapyeong-sw.json'), navNe = await navRun('route-gapyeong-ne.json');
     softReset();
-    const okNav = navSw.rear && navSw.rearLabel === '신호·과속 후면단속' && !navSw.h7738 && !navNe.rear && navNe.h7738;
-    const okSw = sw.label === '신호·과속 후면단속' && sw.limit === 70 && sw.past45 === true && sw.past45over === true && sw.clearedAt !== null && sw.clearedAt >= 55 && sw.clearedAt <= 75;
+    // v264: 후면 카메라는 네이버 배지처럼 '후면단속'(신호·과속이어도), 지난 뒤 100m 까지 '후면단속 중'
+    const okNav = navSw.rear && navSw.rearLabel === '후면단속' && !navSw.h7738 && !navNe.rear && navNe.h7738;
+    const okSw = sw.label === '후면단속' && sw.limit === 70 && sw.past45 === true && sw.past45over === true && sw.clearedAt !== null && sw.clearedAt >= 95 && sw.clearedAt <= 115;
     return {
       pass: okSw && !ne && okNav,
       detail: '서울 방향 80 km/h: ' + JSON.stringify(sw) + (okSw ? '✓' : '✗') + ' | 반대 방향: ' + (ne ? 'ALERTED✗' : 'not alerted✓') +
@@ -2955,6 +2956,7 @@
     { id: 'S168', name: "S168 lane counts from OSM where there is no HD-map lane data (v255, parent session: Naver 하남분기점 4+2, 서하남IC 2-lane exit): at 하남분기점 (중부 westbound, '판교, 서하남') and 서하남IC ('강동, 서하남') OSM gives 2 route lanes + 4 other lanes, so the picture is 4+2 when one is picked and the closest existing shape (2+2) until then; 성남IC (ramp lanes not in OSM) stays 4+1; 판교IC (HD-map 'SB|S|S|S|S|R|R') becomes 4+2 too once picked", fn: s168 },
     { id: 'S169', name: "S169 Naver-style junction picture v2 (v256, parent session checklist after the driver's 성남IC complaint '봐바 이거 안돼 … 비슷하게 좀 만들어 줘'): with v2 pictures picked, the picture is 4:3 and as wide as the drawer; the shape follows the real lane counts (성남IC 4+1, 판교분기점 from 서울TG 4 + 1 + 2, 하남분기점 4+2, 신갈분기점 '대전' main road 4 + exit 1 with the bus lane not painted); every visible lane carries a bold label about a third of the lane width tall, the lanes not taken say the OSM destination at that split ('서울') or else the road name ('중부', board '수도권제1순환'; v257: never a rest-area direction city), the exit board has no route shield and an exit-number tab ('2B 성남'), and the route lanes at 판교분기점 are green 1 + pink 2", fn: s169 },
     { id: 'S170', name: "S170 driver feedback after the v262 night drive (2026-11-26): with the turn 3.4 km away the '이어서' row leaves the card and becomes a chip beside it ('↱ 160m'), near the turn the row stays; a far rest area is a chip under the turn chips (closest first); remaining distance, time, ETA and '안내 종료' sit in the bottom-centre bar, not in the card; with a waypoint the top line is the waypoint with an orange '경유' tag and the destination below; the trip card is bottom right, the feedback button bottom left; lane labels follow each picture's measured lane centres (day and night sets)", fn: s170 },
+    { id: 'S171', name: "S171 camera fixes from the Naver check of the night-drive reports (2026-11-26): rear cameras look like Naver's '60 후면단속' — black band '후면단속', voice '후면단속 카메라', after passing '후면단속 중' with the speed warning for about 100 m (마북 삼거리 #21024 southbound); the 분당수서로 signal camera #22322 above 백현지하도로 is not given to a car in the underpass below (Naver's 백현지하차도 entry guide 1.24 km before; the same route driven on the surface — section 분당수서로, entry guides turned into straight guides — still gets it); 탄천 80 #22931/#22952 sit on Naver's pole and the warning distance matches it; the four Naver rear cameras carry the rear flag", fn: s171 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -3318,7 +3320,8 @@
   const SCORE_CASES = [
     { file: 'route-night-seongnam-giheung.json', cams: [
       ['중앙시장사거리 옆길 50', 37.44093, 127.13197, 'no'],
-      ['벌말 남행 80 (원본에 없음)', 37.4089, 127.11853, 'yes'],
+      ['벌말 남행 80 (원본에 없음, v264 네이버 자리)', 37.409916, 127.118459, 'yes'],
+      ['백현지하도로 위 분당수서로 남행 60 신호·과속 (#22322, v264)', 37.37226, 127.10391, 'navno'],   // 길안내 없이는 층을 모른다 (OSM 지하도로 자료 없음)
       ['삼성르노삼거리 50 (원본에 없음)', 37.32188, 127.10475, 'yes'],
       ['장애인복지관 앞 50 (북행)', 37.31518, 127.10526, 'no'],
       ['미키주유소앞 50', 37.31171, 127.10494, 'yes'],
@@ -3369,8 +3372,8 @@
       out.alerts += all.size;
       for (const [name, , , want] of sc.cams) {
         const got = seen.has(name), label = seen.get(name) || '';
-        if (want === 'no' && got) { out.fp++; out.bad.push('오탐 ' + name); }
-        if (want !== 'no' && !got) { out.miss++; out.bad.push('놓침 ' + name); }
+        if ((want === 'no' || (want === 'navno' && withNav)) && got) { out.fp++; out.bad.push('오탐 ' + name); }
+        if (want !== 'no' && want !== 'navno' && !got) { out.miss++; out.bad.push('놓침 ' + name); }
         if (want === 'rear' && got && !/후면/.test(label)) { out.type++; out.bad.push('종류 ' + name + ' "' + label + '"'); }
       }
     }
@@ -8241,6 +8244,71 @@
       b.calls === 4 && b.active && b.same && b.pill && !b.redToast && b.panel && b.turn && b.log.join(',') === 'failed:3' && b.moved &&
       !c.pill && c.active &&
       d.bad400 === 1 && d.naverNo === 1 && d.traffic === 1 && d.upstream.every(Boolean) && !d.pillAfterEnd;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S171: v262 밤 주행 신고의 네이버 확인 (keys 2026-11-26)
+  //   (a) 마북 삼거리 남행 60 (#21024, 후면): 종류 줄 '후면단속'(검은 띠 rear), 음성 '후면단속 카메라', 지난 뒤 '후면단속 중'·과속 빨강, 95~115m 에서 내림
+  //   (b) 성남→기흥 밤 경로(분당수서간도시고속화도로 남행, 백현지하도로): #22322 분당수서로 신호·과속 60 안 뜸. 구간 이름을 '분당수서로'로 바꾸면 뜸
+  //   (c) 탄천 80 남행 #22931: 네이버 기둥 100m 앞에서 거리 100m 안팎
+  //   (d) 자료: #22931·#22952 네이버 자리, #21024·#20912·#21121·#22313 후면
+  async function s171() {
+    const t = T(), r = {};
+    const MABUK = { lat: 37.29611, lng: 127.1096 }, FOOT = { lat: 37.29611 - 0.00019, lng: 127.1096 + 0.00022 }, C22322 = { lat: 37.37226, lng: 127.10391 }, TANCHEON = { lat: 37.409916, lng: 127.118459 };
+    try {
+      await waitFor(() => t.cams.loaded, 10000, 100);
+      // (a)
+      softReset();
+      const from = dest(FOOT, 348, 600);
+      const a = { label: null, kind: null, rear: null, past60: null, past60over: null, clearedAt: null };
+      for (let s = 0; s <= 760; s += 5) {
+        feed(dest(from, 168, s), 72 / 3.6, 168);
+        const past = s - 600, tg = t.camState.target, mine = !!tg && sameCam(tg.c, MABUK);
+        if (mine && a.label === null) { a.label = text('#camType'); a.kind = text('#camKind'); a.rear = hasCls('#camCard', 'rear'); }
+        if (past >= 60 && a.past60 === null) { a.past60 = mine ? text('#camDist') : ''; a.past60over = hasCls('#camCard', 'over'); }
+        if (a.label !== null && !mine && a.clearedAt === null && past > 0) a.clearedAt = past;
+      }
+      a.said = [t.camSpoken(t.cams.rows[21024]), t.camSpoken(t.cams.rows[22313])];
+      r.a = a;
+      // (b)·(c) 길안내
+      const run = async (rename) => {
+        await resetApp(); softReset();
+        const fx = await (await realFetch(harnessDir + 'fixtures/route-night-seongnam-giheung.json', { cache: 'no-store' })).json();
+        // 대조: 지상 분당수서로로 달린 것처럼 (구간 이름 '분당수서로', 지하차도 진입 안내를 직진 안내로) — 그러면 이 신호 카메라를 알린다
+        if (rename) { fx.sections.forEach((x) => { if (/고속화/.test(x.name)) x.name = '분당수서로'; }); fx.guide.forEach((g) => { if (g.t === 56) g.t = 1; }); }   // 진입 안내 → 직진 (방면 글은 그대로 — 설치장소 'A→B' 판단용)
+        const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+        const cum = [0]; for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + hav(P[k - 1], P[k]));
+        const R = { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '시험', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+        await planAndStart(R);
+        let sT = 0, best = 1e9;
+        for (let s = 0; s <= R.total; s += 5) { const d = hav(pointAt(R, s).p, TANCHEON); if (d < best) { best = d; sT = s; } }
+        const o = { c22322: false, tanDist: null };
+        try {
+          for (let s = Math.max(0, sT - 1200); s <= Math.min(R.total - 30, sT + 6000); s += 10) {
+            const q = pointAt(R, s);
+            feed(q.p, 80 / 3.6, q.h, { dt: 450 });
+            const tg = t.camState.target;
+            if (tg && sameCam(tg.c, C22322)) o.c22322 = true;
+            if (o.tanDist === null && s >= sT - 100 && tg && sameCam(tg.c, TANCHEON)) o.tanDist = text('#camDist');
+          }
+        } finally { t.endNav(); }
+        return o;
+      };
+      r.b = await run(false);
+      r.b2 = await run(true);
+      // (d)
+      const rows = t.cams.rows, row = (i) => rows[i].slice(0, 4).concat([rows[i][10] | 0]);
+      r.d = { 22931: row(22931), 22952: row(22952), rear: [21024, 20912, 21121, 22313, 21120].map((i) => rows[i][10] & 1) };
+    } finally {
+      await resetApp(); softReset();
+    }
+    const { a = {}, b = {}, b2 = {}, d = {} } = r;
+    const tan = parseInt(String(b.tanDist || '').replace(/[^0-9]/g, ''), 10);
+    const ok = a.label === '후면단속' && a.kind === '후면단속' && a.rear === true && a.past60 === '후면단속 중' && a.past60over === true &&
+      a.clearedAt !== null && a.clearedAt >= 95 && a.clearedAt <= 115 && a.said.every((x) => x === '후면단속 카메라') &&
+      b.c22322 === false && b2.c22322 === true && tan >= 80 && tan <= 120 &&
+      d[22931] && d[22931][0] === 37.409916 && d[22931][1] === 127.118459 && d[22952][0] === 37.409804 && d[22952][1] === 127.11862 &&
+      d.rear.every((x) => x === 1);
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
