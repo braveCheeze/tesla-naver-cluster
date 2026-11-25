@@ -30,7 +30,7 @@ const TOKEN = 'T'.repeat(40);
 const env = { LOGS, ADMIN_TOKEN: TOKEN, NCP_KEY_ID: 'id', NCP_KEY: 'k' };
 const ROUTE1 = { summary: { distance: 1200, duration: 90000, tollFare: 0, fuelPrice: 100 }, path: [[127.1, 37.5], [127.2, 37.6]],
   guide: [{ pointIndex: 1, type: 88, instructions: '목적지', distance: 1200, duration: 90000 }], section: [{ pointIndex: 0, pointCount: 2, name: '테스트로', speed: 40, congestion: 1 }] };
-const routeCalls = [];
+const routeCalls = [], hostCalls = [];
 globalThis.fetch = async (u) => {
   u = String(u);
   if (u.includes('map-direction')) {
@@ -40,6 +40,12 @@ globalThis.fetch = async (u) => {
     // v239: 530 한 번 뒤 정상 (127.77,37.77) · 늘 530 (127.78,37.78)
     if (q.get('start') === '127.77,37.77' && routeCalls.filter((s) => s === '127.77,37.77').length === 1) return new Response('error code: 1016', { status: 530 });
     if (q.get('start') === '127.78,37.78') return new Response('error code: 1016', { status: 530 });
+    // v269 다른 주소로 묻기: 127.79 = maps 주소만 530 (naveropenapi 주소는 답함) · 127.76 = maps 530, naveropenapi 401 (키 안 받음)
+    const host = new URL(u).hostname;
+    hostCalls.push(host + ' ' + q.get('start'));
+    if (q.get('start') === '127.79,37.79' && host === 'maps.apigw.ntruss.com') return new Response('error code: 1016', { status: 530 });
+    if (q.get('start') === '127.76,37.76') return host === 'maps.apigw.ntruss.com' ? new Response('error code: 1016', { status: 530 })
+      : new Response(JSON.stringify({ error: { errorCode: '210', message: 'Permission Denied' } }), { status: 401 });
     // v215 자동 확인 길 검사: 바다(경도 129.6 넘게)는 네이버가 오류, 길 밖 시험 점(37.757,128.92)은 300m 떨어진 길로 붙임, 그 밖은 그 자리
     if (sx > 129.6) return new Response(JSON.stringify({ error: { errorCode: '400', message: 'bad start' } }), { status: 400 });
     let r1 = ROUTE1;
@@ -143,7 +149,15 @@ ok((await call('GET', '/config', { origin: 'https://evil.example' })).s === 403,
   ok(b1.s === 200 && routeCalls.length - n0 === 2, 'upstream 530 once → retried → 200');
   const n1 = routeCalls.length;
   const b2 = await call('GET', '/route?start=127.78,37.78&goal=127.2,37.6&option=trafast', { ip: '100.64.7.2' });
-  ok(b2.s === 502 && b2.j.error === 'upstream' && b2.j.status === 530 && routeCalls.length - n1 === 3, 'upstream 530 every time → 3 tries → 502 upstream');
+  ok(b2.s === 502 && b2.j.error === 'upstream' && b2.j.status === 530 && routeCalls.length - n1 === 4, 'upstream 530 every time (both hosts) → 3 tries + 1 on the other host → 502 upstream');
+  // v269: 다른 주소가 답하면 그 답, 다른 주소가 키를 안 받으면(401) 처음 오류 그대로
+  const h0 = hostCalls.length;
+  const b4 = await call('GET', '/route?start=127.79,37.79&goal=127.2,37.6&option=trafast', { ip: '100.64.7.4' });
+  const hs = hostCalls.slice(h0);
+  ok(b4.s === 200 && hs.length === 4 && hs.slice(0, 3).every((x) => x.startsWith('maps.apigw.ntruss.com')) && hs[3].startsWith('naveropenapi.apigw.ntruss.com'),
+    'maps host 530 three times → naveropenapi host answers → 200 (' + hs.length + ' calls)');
+  const b5 = await call('GET', '/route?start=127.76,37.76&goal=127.2,37.6&option=trafast', { ip: '100.64.7.5' });
+  ok(b5.s === 502 && b5.j.error === 'upstream' && b5.j.status === 530, 'other host 401 → the first 530 error unchanged (502 upstream 530)');
   const b3 = await call('GET', '/route?start=127.78,37.78&goal=127.2,37.6&options=traoptimal:trafast', { ip: '100.64.7.3' });
   ok(b3.s === 404 && b3.j.error === 'no route' && b3.j.code == null, 'multi-option call with a dead upstream → no route without a Naver code (the app treats it as upstream)');
 }

@@ -350,11 +350,33 @@ function round6(n) { return Math.round(n * 1e6) / 1e6; }
 // 잠깐 닿지 않는 응답(502·503·504, 520~530)은 0.3초·0.8초 뒤 두 번까지 다시 묻는다 (앱도 1·3·8초 뒤 다시 묻지만 옛 앱도 버티게)
 const UPSTREAM_RETRY = [300, 800];
 const blip = (s) => s === 502 || s === 503 || s === 504 || (s >= 520 && s <= 530);
+// v269 (2026-11-26 03:11~03:21 /route·/geocode 가 모두 530 — Cloudflare → maps.apigw.ntruss.com 길만 막혔고 이 PC 에서는 닿았다):
+//   네이버 지도 API 는 두 주소로 받는다 — maps.apigw.ntruss.com(110.165.24.x·28.x) · naveropenapi.apigw.ntruss.com(211.249.59.32, 다른 망).
+//   위 다시 묻기 뒤에도 닿지 않으면(502~504·520~530) 같은 경로·질의·머리글로 다른 주소에 한 번 묻는다. 그 주소가 키를 받지 않으면(401·403)
+//   이나 그 주소도 닿지 않으면 처음 응답을 그대로 돌려준다(더 나빠지지 않게). 어느 주소가 답했는지 Worker 로그에 남긴다
+const NCP_HOSTS = ['maps.apigw.ntruss.com', 'naveropenapi.apigw.ntruss.com'];
 async function upstream(url, headers) {
   let r = await fetch(url, { headers });
   for (let k = 0; k < UPSTREAM_RETRY.length && blip(r.status); k++) {
     await new Promise((ok) => setTimeout(ok, UPSTREAM_RETRY[k]));
     r = await fetch(url, { headers });
+  }
+  if (blip(r.status)) {
+    let u = null;
+    try { u = new URL(url); } catch (e) { u = null; }
+    const hi = u ? NCP_HOSTS.indexOf(u.hostname) : -1;
+    if (hi >= 0) {
+      const from = u.hostname;
+      u.hostname = NCP_HOSTS[1 - hi];
+      try {
+        const r2 = await fetch(u.toString(), { headers });
+        const use = !blip(r2.status) && r2.status !== 401 && r2.status !== 403;
+        console.log('ncp host fallback ' + from + ' ' + r.status + ' -> ' + u.hostname + ' ' + r2.status + (use ? ' (answered)' : ' (kept first)'));
+        if (use) r = r2;
+      } catch (e) {
+        console.log('ncp host fallback ' + from + ' ' + r.status + ' -> ' + u.hostname + ' failed: ' + String(e && e.message || e).slice(0, 120));
+      }
+    }
   }
   const text = await r.text();
   let data;
@@ -418,6 +440,7 @@ export default {
         hipass: !!env.EX_KEY,
         autoFix: !!ipSalt(env),
         stats: !!env.STATS,
+        hostFallback: true,   // v269: 네이버 주소 막히면 다른 주소로 한 번 (배포됐는지 이것으로 본다)
       }, 200, cors);
     }
     // 브라우저가 아닌 곳에서 마구 부르는 것을 1차로 막는다 (Origin 은 위조 가능하므로 완벽하진 않음)
