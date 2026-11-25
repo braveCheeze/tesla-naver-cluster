@@ -13,9 +13,8 @@ OpenStreetMap(ODbL)의 연결로 destination 태그에서 가져온다. 네이�
   (data/forks.json, 경부만)이 없는 곳에서 앱이 분기점 그림 모양(4+2, 2+2, 4+1, 3+1)을 고른다. 네이버 확대 그림의 차로 수와 맞다:
   하남분기점 중부 서행 본선 4 + '판교;서하남' 2. 연결로에 lanes 가 없는 곳은 LANES_FIX 로 채운다(서하남IC)
 - v4 (v256, 부모 세션 '네이버처럼' 점검표 — 성남IC 네이버 '일산 일산 일산 일산 | 성남 광주', 표지 '2B 성남'): 여섯째 칸 {…}
-    a  갈래마다 앞쪽 방면: 방면 태그가 없는 본선 갈래는 그 본선을 따라 25km 안에서 처음 만나는 '이어지는 본선 길'의 destination,
-       없으면 그 본선을 따라 120km 안에서 처음 만나는 우리 쪽 휴게소의 한국도로공사 방향 이름 (data/rest.json '의왕휴게소(일산)' → '일산').
-       네이버가 지나치는 차로에 쓰는 본선 방면 (성남IC 남행 '일산'). 모르면 ''
+    (v257: v256 의 'a' 앞쪽 방면 — 앞쪽 본선 destination · 휴게소 방향 이름 — 은 뺐다. 부모 세션: 휴게소 'X방향'은 끝 도시라 표지판 방면이
+     아니다(경부 하행 '부산', 네이버 '대전'). 운전자 '이런거 실수나오면 안 된다'. 도시 이름은 그 갈림점의 OSM destination 이나 확인된 표만)
     x  나들목 번호 (OSM motorway_junction ref, 갈림점이나 들어오는 길 700m 안·연결로 900m 안의 가장 가까운 것: 서하남 '4', 성남 '2')
     xn 그 나들목 이름
     s  갈래 안에서 다시 갈리는 차로 수 {갈래 번호: [왼쪽 차로 수, 오른쪽 차로 수]} (판교분기점 경부 북행 '일산;구리' 3 = 일산 1 + 구리 2)
@@ -160,25 +159,6 @@ def follow(wid, k):
     return ats, dest, ref, nm
 
 
-def ahead_dest(wid):
-    """본선 갈래를 같은 노선(ref, 없으면 이름)으로 따라가며 처음 나오는 이어지는 본선 길의 destination (25km 안)"""
-    w0 = W[wid]
-    ref, nm = w0['r'], w0['nm']
-    seen, cur, dist = {wid}, wid, 0.0
-    while dist < 25000:
-        w = W[cur]
-        if cur != wid and w['d']:
-            return w['d']
-        dist += sum(hav(w['p'][i - 1], w['p'][i]) for i in range(1, len(w['p'])))
-        nxt = [x for x in starts.get(w['n'][-1], []) if x not in seen and W[x]['hw'] in ('motorway', 'trunk')]
-        same = [x for x in nxt if (ref and W[x]['r'] == ref) or (not ref and nm and W[x]['nm'] == nm)]
-        if not same:
-            return ''
-        cur = same[0]
-        seen.add(cur)
-    return ''
-
-
 def exit_ref(nid, wi, ki, links):
     """갈림점의 나들목 번호: 갈림점 → 들어오는 길을 거슬러 700m → 연결로 900m 안의 나들목 점 중 가장 가까운 것"""
     if nid in MJ:
@@ -215,65 +195,6 @@ def exit_ref(nid, wi, ki, links):
     return best[1] if best else None
 
 
-# 휴게소 방향 이름 (한국도로공사 휴게소 위치정보 → data/rest.json): 휴게소마다 같은 노선 이름의 가장 가까운 본선 길(400m 안)에 붙인다.
-#   휴게소는 자기 쪽 차로 바로 옆이라 가장 가까운 본선이 그 방향 차로다
-REST = {}
-try:
-    _rest = json.load(open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'rest.json'), encoding='utf-8'))['items']
-except (OSError, ValueError, KeyError):
-    _rest = []
-_grid = {}
-for _wid, _w in W.items():
-    if _w['hw'] not in ('motorway', 'trunk') or not _w['nm']:
-        continue
-    for _p in _w['p']:
-        _grid.setdefault((int(_p[0] * 100), int(_p[1] * 100)), set()).add(_wid)
-for _la, _lo, _nm, _dir, _route in _rest:
-    if not _dir or _dir in ('한쪽', '양방향'):
-        continue
-    base = _route.split('(')[0].rstrip('선')
-    best = None
-    for dy in (-1, 0, 1):
-        for dx in (-1, 0, 1):
-            for _wid in _grid.get((int(_la * 100) + dy, int(_lo * 100) + dx), ()):
-                _w = W[_wid]
-                if not _w['nm'].startswith(base):
-                    continue
-                # 가장 가까운 점과 그 점의 진행 방향 — 휴게소는 자기 차로의 오른쪽에 있다 (반대 차로가 더 가까운 곳: 서울만남(부산)휴게소)
-                qi = min(range(len(_w['p'])), key=lambda i: hav((_la, _lo), _w['p'][i]))
-                d = hav((_la, _lo), _w['p'][qi])
-                a0, a1 = (_w['p'][qi - 1], _w['p'][qi]) if qi > 0 else (_w['p'][0], _w['p'][1])
-                side = (brg(_w['p'][qi], (_la, _lo)) - brg(a0, a1)) % 360
-                if not (20 <= side <= 160):
-                    continue
-                if d <= 400 and (best is None or d < best[0]):
-                    best = (d, _wid)
-    if best:
-        REST[best[1]] = _dir
-
-
-def rest_dir(wid):
-    """본선 갈래를 같은 노선으로 따라가며 처음 만나는 휴게소의 방향 이름 (120km 안)"""
-    ref = W[wid]['r']
-    if not ref:
-        return ''
-    seen, cur, dist = {wid}, wid, 0.0
-    while dist < 120000:
-        if cur in REST:
-            return REST[cur]
-        w = W[cur]
-        dist += sum(hav(w['p'][i - 1], w['p'][i]) for i in range(1, len(w['p'])))
-        cont = [x for x in starts.get(w['n'][-1], []) if x not in seen and W[x]['hw'] in ('motorway', 'trunk')]
-        nxt = [x for x in cont if W[x]['r'] == ref]
-        if not nxt and len(cont) == 1 and W[cont[0]]['r']:
-            nxt, ref = cont, W[cont[0]]['r']   # 노선이 끝나 다른 고속도로로 곧게 이어지면 (중부 → 하남분기점 뒤) 그 노선으로
-        if not nxt:
-            return ''
-        cur = nxt[0]
-        seen.add(cur)
-    return ''
-
-
 MJ = h.mj
 rows, fixed = [], []
 for nid, outs in through.items():
@@ -306,10 +227,7 @@ for nid, outs in through.items():
                     if len(fx) > 5:
                         extra.setdefault('s', {})[str(i)] = fx[5]
                     fixed.append((why, here, b[2], n))
-    # v4: 방면이 없는 본선 갈래의 앞쪽 방면 · 나들목 번호
-    a = [(ahead_dest(wid) or rest_dir(wid)) if not b[2] and W[wid]['hw'] in ('motorway', 'trunk') else '' for (wid, k), b in zip(outs, br)]
-    if any(a):
-        extra['a'] = a
+    # v4: 나들목 번호 (v257: 앞쪽 방면 'a' 는 뺐다)
     xr = exit_ref(nid, wi, ki, [(wid, k) for (wid, k), b in zip(outs, br) if W[wid]['hw'].endswith('_link')])
     if xr:
         extra['x'], extra['xn'] = xr
@@ -317,8 +235,7 @@ for nid, outs in through.items():
 
 json.dump({'v': 4, 'src': 'OpenStreetMap contributors (ODbL), destination·lanes tags, motorway_junction ref', 'ahead': AHEADS, 'rows': rows},
           open(OUT, 'w', encoding='utf-8'), ensure_ascii=False, separators=(',', ':'))
-print('갈림점', len(rows), '· 갈래 차로 수를 다 아는 곳', sum(1 for r in rows if all(r[4])), '· 본선 앞쪽 방면', sum(1 for r in rows if r[5].get('a')),
-      '· 나들목 번호', sum(1 for r in rows if r[5].get('x')), '· 휴게소 방향을 붙인 본선 길', len(REST))
+print('갈림점', len(rows), '· 갈래 차로 수를 다 아는 곳', sum(1 for r in rows if all(r[4])), '· 나들목 번호', sum(1 for r in rows if r[5].get('x')))
 for f in fixed:
     print('  LANES_FIX', f)
 if len(fixed) != len(LANES_FIX):

@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-256'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-257'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -6420,11 +6420,10 @@
   //   길의 lanes 태그, 연결로에 없으면 LANES_FIX). 네이버와 같다: 하남분기점 중부 서행 본선 4 + '판교 서하남' 2, 서하남IC 북행 본선 4 + 출구 2.
   //   갈래 하나라도 차로 수를 모르면 null (성남IC: 연결로 lanes 없음 → 예전처럼 고속도로 4+1)
   function jxOsmLanes(g) {
-    // v256: 후보 갈림점 중 모든 갈래의 차로 수를 아는 가장 가까운 것 (판교분기점 경부 북행: 바로 앞 갈림점은 연결로 차로 수를 모른다)
-    const first = juncSplitAt(g);
-    const s = first && first.all.find((c) => c.r.lanes && c.r.lanes.length === c.r.br.length && c.r.lanes.every((n) => n > 0));
+    // v257: 이 안내의 갈림점(가장 가까운 한 곳)의 차로 수만 — 다른 갈림점(출구 안쪽 갈림)의 차로 수를 쓰지 않는다
+    const s = juncSplitAt(g);
     const L = s && s.r.lanes;
-    if (!L) return null;
+    if (!L || L.length !== s.r.br.length || !L.every((n) => n > 0)) return null;
     const sub = s.r.ex && s.r.ex.s && s.r.ex.s[String(s.go)];
     return { go: L[s.go], other: L.reduce((a, n, i) => a + (i === s.go ? 0 : n), 0), sub: Array.isArray(sub) && sub.length === 2 ? sub.map(Number) : null };
   }
@@ -6630,10 +6629,10 @@
         const ot = juncOther(g);
         // v253: 방면이 없는 본선 갈래(OSM 에 destination 없음)는 그 길 이름 ('경부') — 경로 자료의 지금 길 이름보다 OSM 갈래 이름을 먼저
         const otRoadNm = ot && !ot.names.length && ot.name ? ot.name.replace(/고속도로$|고속국도$/, '') : '';
-        // v256: 지나치는 본선 갈래는 그 본선의 방면 (네이버 성남IC '일산') — OSM 갈래 방면 → 앞쪽 본선 방면·휴게소 방향 → 길 이름
-        const otNames = ot && ot.names.length ? ot.names.slice(0, 2) : ot && ot.ahead.length ? ot.ahead.slice(0, 2) : otRoadNm ? [otRoadNm]
+        // 지나치는 갈래: 이 갈림점에서 OSM 이 그 갈래에 적은 방면, 없으면 길 이름 (v257: 앞쪽 방면·휴게소 방향은 쓰지 않는다)
+        const otNames = ot && ot.names.length ? ot.names.slice(0, 2) : otRoadNm ? [otRoadNm]
           : otherRoad && !stay ? [otherRoad.replace(/고속도로$/, '')] : [];
-        const otNo = ot && (ot.names.length || ot.ahead.length || otRoadNm) ? (/^\d+$/.test(ot.ref) ? +ot.ref : expwayNo(ot.name)) : otherRoad && !stay ? expwayNo(otherRoad) : 0;
+        const otNo = ot && (ot.names.length || otRoadNm) ? (/^\d+$/.test(ot.ref) ? +ot.ref : expwayNo(ot.name)) : otherRoad && !stay ? expwayNo(otherRoad) : 0;
         // 차로마다 방면 (네이버처럼 두 줄까지): 경로 차로는 안내 방면, 다른 차로는 다른 갈래 방면 (네 글자 넘는 이름은 뺀다)
         // v256: 둘째 이름은 세 글자까지 (네이버 '일산 안양'·'강동 서하남' — '서울 한남대교'는 좁은 차로에서 옆 글자에 닿는다)
         const short = (arr) => { const a = arr.map(jxRoadName).filter(Boolean).slice(0, 2); return a.length === 2 && a[1].length > 3 ? a.slice(0, 1) : a; };
@@ -7404,7 +7403,7 @@
         for (let k = 5; k + 1 < b.length; k += 2) pts.push({ lat: +b[k], lng: +b[k + 1] });
         return { pts, dest: String(b[2] || ''), ref: String(b[3] || ''), name: String(b[4] || '') };
       }), lanes: Array.isArray(r[4]) ? r[4].map((n) => Math.max(0, Math.floor(+n) || 0)) : null,   // v3 (v255): 갈래마다 차로 수, 0 = 모름
-      ex: r[5] && typeof r[5] === 'object' && !Array.isArray(r[5]) ? r[5] : {} };   // v4 (v256): a 본선 앞쪽 방면 · x 나들목 번호 · xn 나들목 이름 · s 갈래 안 다시 갈림
+      ex: r[5] && typeof r[5] === 'object' && !Array.isArray(r[5]) ? r[5] : {} };   // v4 (v256): x 나들목 번호 · xn 나들목 이름 · s 갈래 안 다시 갈림 (v257: 'a' 없음)
       if (row.br.length < 2) return;
       const key = Math.floor(row.lat * 100) + ':' + Math.floor(row.lng * 100);
       let c = jdData.grid.get(key);
@@ -7438,7 +7437,6 @@
     const last = nav.cum.length - 1, T = nav.cum[Math.min(g.i, last)];
     const j = juncInfo(g);
     let best = null;
-    const all = [];   // v256: 후보 갈림점 모두 (가까운 순) — 차로 수·방면·나들목 번호를 아는 갈림점을 고를 수 있게
     for (const r of jdNear(routePointAt(T))) {
       // v256: 갈림점은 경로선 30m 안 (네이버 경로선이 OSM 선과 20m 넘게 비켜 가는 곳: 판교분기점 경부 북행 24m)
       const on = routeSegNear(r, 30);
@@ -7463,30 +7461,19 @@
       }
       if (go < 0) continue;
       const d = Math.abs(on.at - T);
-      all.push({ d, r, go, at: on.at });
       if (!best || d < best.d) best = { d, r, go, at: on.at };
     }
-    if (best) best.all = all.sort((u, v) => u.d - v.d);
     return best;
   }
+  // v257 (부모 세션, 운전자 '이런거 실수나오면 안 된다'): 도시 이름은 이 안내의 갈림점(가장 가까운 한 곳)에서 그 갈래에 OSM 이 적은 방면만.
+  //   v256 의 앞쪽 본선 방면·휴게소 방향 이름('부산' — 끝 도시라 표지 방면이 아님)과 더 먼 갈림점 찾기는 뺐다 (신갈분기점 출구 안쪽 갈림의
+  //   '인천'을 본선 차로에 쓸 수 있었다). 모르면 길 이름 — 길 이름은 괜찮지만 틀린 도시는 안 된다. 나들목 번호도 그 갈림점 것만
   function juncOther(g) {
-    const first = juncSplitAt(g);
-    if (!first) return null;
-    // v256 (점검표 6 '가지 않는 표지는 방면을'): 가까운 갈림점부터, 다른 갈래의 방면(OSM 방면 → 앞쪽 본선 방면)을 아는 첫 갈림점
-    //   (판교분기점 경부 북행: 바로 앞 갈림점은 본선 이름 '경부'뿐, 그 앞 갈림점은 본선 방면 '서울')
-    const view = (s) => {
-      const oi = s.r.br.findIndex((b, i) => i !== s.go), o = s.r.br[oi], ex = s.r.ex || {};
-      return { names: jdNames(o.dest), ref: o.ref, name: o.name, main: !o.dest, go: jdNames(s.r.br[s.go].dest), ahead: jdNames((ex.a || [])[oi] || '') };
-    };
-    let best = view(first);
-    if (!best.names.length && !best.ahead.length) {
-      for (const s of first.all) { const v = view(s); if (v.names.length || v.ahead.length) { best = v; break; } }
-    }
-    // 나들목 번호 (네이버 '2B 성남'): 번호를 아는 가장 가까운 갈림점
-    const xs = first.all.find((s) => s.r.ex && s.r.ex.x);
-    best.xref = xs ? String(xs.r.ex.x).replace(/;/g, ' ') : '';
-    best.xname = xs ? String(xs.r.ex.xn || '') : '';
-    return best;
+    const s = juncSplitAt(g);
+    if (!s) return null;
+    const oi = s.r.br.findIndex((b, i) => i !== s.go), o = s.r.br[oi], ex = s.r.ex || {};
+    return { names: jdNames(o.dest), ref: o.ref, name: o.name, main: !o.dest, go: jdNames(s.r.br[s.go].dest),
+      xref: ex.x ? String(ex.x).replace(/;/g, ' ') : '', xname: ex.x ? String(ex.xn || '') : '' };
   }
   // 경로 위 유도선 자리들 (경로가 바뀔 때 한 번): [{ at, end, c, name, k }] at 순서
   function ensureRouteColorLines() {

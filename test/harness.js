@@ -2943,7 +2943,7 @@
     { id: 'S166', name: "S166 the branch we do not take, lane names and lane colour (v249, driver 2026-11-25 with Naver's 판교분기점 '일산 안양 | 판교': '여기는 일산 안양 이렇게 알려주잖아 … 차선이랑 바닥에 있는 것도 저렇게 다르게', and 신갈분기점 '초록색 따라가게끔'): at 판교분기점 from 학의 ('구리, 성남', staying on the main road) the other sign shows the OSM ramp destinations '부산 대전'; with Naver-style pictures the other board says '부산 대전', the route lanes are painted '구리/성남' and the other lanes '부산/대전', and the picture is the sky-blue variant (no colour line); at 판교분기점 from 서울TG ('일산, 구리', pink colour line) the pink variant is used", fn: s166 },
     { id: 'S167', name: "S167 junction pictures matched to Naver (v253, jx comparison table): no picture for a main-road stay without lane data (판교JC from 학의) or an unnamed city fork (팔당 '서울'); a picture for 신갈JC '대전' (stay with lane data) naming the ramp '인천, 원주'; 서하남교차로 keeps Naver's '왼쪽 방향' and names 하남 on the other board; 기흥IC exit is 2+2 pink, 신갈JC '원주, 인천' 4+1 green, 판교IC 2+2 with both route lanes '분당/판교'", fn: s167 },
     { id: 'S168', name: "S168 lane counts from OSM where there is no HD-map lane data (v255, parent session: Naver 하남분기점 4+2, 서하남IC 2-lane exit): at 하남분기점 (중부 westbound, '판교, 서하남') and 서하남IC ('강동, 서하남') OSM gives 2 route lanes + 4 other lanes, so the picture is 4+2 when one is picked and the closest existing shape (2+2) until then; 성남IC (ramp lanes not in OSM) stays 4+1; 판교IC (HD-map 'SB|S|S|S|S|R|R') becomes 4+2 too once picked", fn: s168 },
-    { id: 'S169', name: "S169 Naver-style junction picture v2 (v256, parent session checklist after the driver's 성남IC complaint '봐바 이거 안돼 … 비슷하게 좀 만들어 줘'): with v2 pictures picked, the picture is 4:3 and as wide as the drawer; the shape follows the real lane counts (성남IC 4+1, 판교분기점 from 서울TG 4 + 1 + 2, 하남분기점 4+2, 신갈분기점 '대전' main road 4 + exit 1 with the bus lane not painted); every visible lane carries a bold label about a third of the lane width tall, the lanes not taken say the main road's direction ('일산') or destination ('서울'), the exit board has no route shield and an exit-number tab ('2B 성남'), and the route lanes at 판교분기점 are green 1 + pink 2", fn: s169 },
+    { id: 'S169', name: "S169 Naver-style junction picture v2 (v256, parent session checklist after the driver's 성남IC complaint '봐바 이거 안돼 … 비슷하게 좀 만들어 줘'): with v2 pictures picked, the picture is 4:3 and as wide as the drawer; the shape follows the real lane counts (성남IC 4+1, 판교분기점 from 서울TG 4 + 1 + 2, 하남분기점 4+2, 신갈분기점 '대전' main road 4 + exit 1 with the bus lane not painted); every visible lane carries a bold label about a third of the lane width tall, the lanes not taken say the OSM destination at that split ('서울') or else the road name ('중부', board '수도권제1순환'; v257: never a rest-area direction city), the exit board has no route shield and an exit-number tab ('2B 성남'), and the route lanes at 판교분기점 are green 1 + pink 2", fn: s169 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -8230,8 +8230,8 @@
   }
 
   // S169: 네이버식 분기점 그림 2판 (v256, 부모 세션 점검표 — 운전자 성남IC '봐바 이거 안돼, 비슷하게 좀 만들어 줘')
-  //   2판 그림(jx2_*)을 고른 것으로 하고 (a) 성남IC '성남, 광주': 4+1(x41), 4:3, 서랍 폭, 차로 글자 '일산'×4 + '*성남/광주', 글자 높이 ≥ 차로 폭의 1/4,
-  //   출구 표지에 노선 방패 없음, 나들목 번호 띠 '2B', 다른 표지 '일산'
+  //   2판 그림(jx2_*)을 고른 것으로 하고 (a) 성남IC '성남, 광주': 4+1(x41), 4:3, 서랍 폭, 출구 차로 '*성남/광주', 글자 높이 ≥ 차로 폭의 1/4,
+  //   출구 표지에 노선 방패 없음, 나들목 번호 띠 '2B', 다른 표지 길 이름 '수도권제1순환' (v257: OSM 방면이 없으면 도시 이름을 쓰지 않는다)
   //   (b) 서울TG → 판교분기점 '일산, 구리': 4 + 3(x43), 차로 색 녹색 1 + 분홍 2('gpp'), 다른 표지 '서울'
   //   (c) 하남분기점: 4+2(x42) 분홍  (d) 신갈분기점 '대전'(본선 그대로): s41, 버스전용차로 칠 안 함('nbbb'), 출구 표지 위 나들목 번호 띠
   async function s169() {
@@ -8279,10 +8279,13 @@
       await resetApp(); softReset();
     }
     const { a = {}, b = {}, c = {}, d = {} } = r;
-    const ok = a.shown && a.jx2 && a.shape === 'x41' && a.ratio === 1.33 && Math.abs(a.wide) <= 2 && a.lanes === '일산 일산 일산 일산 *성남/광주' && a.minK >= 0.25 &&
-      /^2B/.test(a.tab) && !/\d/.test(a.sign) && /일산/.test(a.other) &&
+    // v257 (부모 세션 '틀린 도시는 안 된다'): 도시 이름은 그 갈림점의 OSM 방면만 — 성남IC 본선은 OSM 방면이 없어 길 이름(표지 '수도권제1순환',
+    //   차로에는 네 글자 넘는 길 이름을 쓰지 않음), 하남분기점 본선은 '중부'. v256 의 휴게소 방향 '부산'·'일산'은 어디에도 없다
+    const noCity = [a, b, c, d].every((x) => !/부산|일산 일산/.test(x.lanes || '') && !/부산/.test(x.other || ''));
+    const ok = noCity && a.shown && a.jx2 && a.shape === 'x41' && a.ratio === 1.33 && Math.abs(a.wide) <= 2 && a.lanes === '*성남/광주' && a.minK >= 0.25 &&
+      /^2B/.test(a.tab) && !/\d/.test(a.sign) && /수도권제1순환/.test(a.other) && !/일산/.test(a.other) &&
       b.shown && b.shape === 'x43' && b.lc === 'gpp' && /_gpp\.webp/.test(b.img) && /서울/.test(b.other) &&
-      c.shown && c.shape === 'x42' && c.lc === 'p' &&
+      c.shown && c.shape === 'x42' && c.lc === 'p' && /중부/.test(c.other) && /^중부 중부 중부 중부 /.test(c.lanes) &&
       d.shown && d.shape === 's41' && d.lc === 'nbbb' && /_nbbb\.webp/.test(d.img) && /^45A/.test(d.tab) && /대전/.test(d.sign);
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
