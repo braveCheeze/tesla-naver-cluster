@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-250'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-251'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -3009,8 +3009,15 @@
   const camWanted = (c) => (isSpeedCam(c) ? limitKnown(c) : prefs.signalCams || !!c.forceWanted);   // v171: '놓침' 진단으로 알리게 한 신호 전용
   // 음성으로 읽는 이름: '과속'이라는 말은 빼고 '단속 카메라'로 (v122, 2026-11-15 밤 '속도 초과라는 말 없애줘 놀란다 자꾸').
   // 화면 글자(camLabel)는 그대로
+  // v251 구간단속 중간 합류 (2026-11-25 운전자 '시작점 뒤에서 들어오면 구간단속은 해당 안 됨'; keys 세션 네이버 확인: 신갈동 → 수원신갈IC 로
+  //   경부 상행 신갈→죽전 110 구간 시작 뒤에 들어오면 구간 카드·평균 속도·남은 구간 없이 끝 카메라(#22040)를 보통 지점 카메라
+  //   '110 과속단속'으로만 알린다 — 배지 94장에 '구간'이 한 번도 없음): 구간이 열려 있지 않은데 만난 구간 끝 카메라는 지점 과속 카메라다.
+  //   이름·종류 띠·음성·표지 그림(빨간 원 110 + 노란 '과속단속')·제한속도·'다음 단속'이 모두 보통 과속 카메라와 같다
+  const SEC_JOIN_RULE = true;
+  const loneSecEnd = (c) => c[4] === 2 && !camState.section;
   function camSpoken(c) {
     if (spotUnchecked(c)) return '신고된 단속 지점';
+    if (loneSecEnd(c)) return '단속 카메라';
     if (c[4] === 1) return '구간단속 시작';
     if (c[4] === 2) return '구간단속 끝';
     const zone = c[6] === 2 ? '어린이보호구역 ' : c[6] === 1 ? '노인보호구역 ' : '';
@@ -3026,7 +3033,7 @@
       if (c[3] === 8) return who + ' 이동식 단속';   // v204
       return who + ' 단속 지점';
     }
-    let s = c[4] === 1 ? '구간단속 시작' : c[4] === 2 ? '구간단속 끝' : (KIND_NAME[c[3]] || '단속 카메라');
+    let s = loneSecEnd(c) ? '과속단속' : c[4] === 1 ? '구간단속 시작' : c[4] === 2 ? '구간단속 끝' : (KIND_NAME[c[3]] || '단속 카메라');
     if (c[6] === 2) s = '어린이보호구역 ' + (c[3] === 2 ? '단속' : s);
     else if (c[6] === 1) s = '노인보호구역 ' + s;
     if (isRear(c)) s = s.replace(/ ?단속$/, ' 후면단속');   // 예: '신호·과속 후면단속'
@@ -3037,6 +3044,7 @@
   // 노란 띠: 과속단속·신호과속·신호단속·구간단속·박스형. 흰 띠: 이동식·신고 지점. 보호구역은 따로 뜨는 주의 표지가 알린다
   function camShort(c) {
     if (spotUnchecked(c)) return c.who === 'mine' ? '내 신고 지점' : c.who === 'crowd' ? '제보 지점' : '신고 지점';
+    if (loneSecEnd(c)) return '과속단속';
     if (c[4] === 1) return '구간단속 시작';
     if (c[4] === 2) return '구간단속 끝';
     if (isBox(c)) return '박스형';
@@ -3923,7 +3931,7 @@
           const ahead = it.at - nav.along;
           if (ahead <= 0) continue;
           if (ahead > 20000) break;
-          if (!camWanted(it.c) || camState.passed.has(it.i) || it.c[4] === 2) continue;
+          if (!camWanted(it.c) || camState.passed.has(it.i) || (it.c[4] === 2 && camState.section)) continue;
           if (haversine(f, { lat: it.c[0], lng: it.c[1] }) <= alertRange(it.c)) continue;
           nx = { i: it.i, c: it.c, at: it.at };
           break;
@@ -4053,7 +4061,7 @@
       $('#camKind').textContent = camShort(tg.c);   // v191: 종류 띠 (긴 이름은 #camType·화면 읽기용)
       card.dataset.band = camBand(tg.c);
       // v192: 카드는 원래 모양(운전자 '원래 우리 스타일대로 해 줘'), 표지만 AI 아틀라스 그림. 구간단속은 표지도 예전 그림('구간단속은 기존께 더 좋은거 같아')
-      const secCam = tg.c[4] === 1 || tg.c[4] === 2 || tg.c[3] === 9;
+      const secCam = !loneSecEnd(tg.c) && (tg.c[4] === 1 || tg.c[4] === 2 || tg.c[3] === 9);
       card.classList.toggle('seccam', secCam);
       const sgEl = card.querySelector('.cam-sign'), sgImg = secCam ? null : camSignImg(tg.c, doubt || !speedCam), sgUrl = sgImg ? sgImg.url : '';
       card.classList.toggle('aisign', !!sgImg);
@@ -4270,7 +4278,7 @@
   // v161 (2026-11-20 점검): 구간단속 안에서도 앞의 지점 카메라(어린이보호구역 30 등)가 더 낮으면 그 값을 보여 준다
   function pointLimit() {
     const tg = camState.target;
-    return tg && !tg.after && tg.flag !== 'doubt' && camShownDist(tg) < 1000 && isSpeedCam(tg.c) && tg.c[4] !== 1 && tg.c[4] !== 2 && tg.c[2] > 0 ? tg.c[2] : null;
+    return tg && !tg.after && tg.flag !== 'doubt' && camShownDist(tg) < 1000 && isSpeedCam(tg.c) && tg.c[4] !== 1 && (tg.c[4] !== 2 || loneSecEnd(tg.c)) && tg.c[2] > 0 ? tg.c[2] : null;
   }
   function currentLimit() {
     const s = camState.section, p = pointLimit();
@@ -10894,7 +10902,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, soonChain, soonSpeech, SOON_M, jxShape, jxMirror, JX_BOARD, JX_TEXT, JX_LANES, juncOther, jdData, setJuncDest, loadJuncDest, camFlagUndo, camFlagToday, undoWrongCard, clearConfirmedFlags, CAM_FLAG_CLEAR, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams, passWhy, pruneTurnCams, camDirOk, routeNet, routeUpstream, laneGuideM, planSignPlace, findBuilding, sunPosStored, eventBody, routeArrived, routeIdleCheck, routeStartup, routeHide, tripEndGap, routeHeading, startsReversed, ROUTE_AHEAD, fitSigns, nvSceneFits, planScene, routeTurnSum, renderJunction, juncState,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, soonChain, soonSpeech, SOON_M, SEC_JOIN_RULE, loneSecEnd, jxShape, jxMirror, JX_BOARD, JX_TEXT, JX_LANES, juncOther, jdData, setJuncDest, loadJuncDest, camFlagUndo, camFlagToday, undoWrongCard, clearConfirmedFlags, CAM_FLAG_CLEAR, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams, passWhy, pruneTurnCams, camDirOk, routeNet, routeUpstream, laneGuideM, planSignPlace, findBuilding, sunPosStored, eventBody, routeArrived, routeIdleCheck, routeStartup, routeHide, tripEndGap, routeHeading, startsReversed, ROUTE_AHEAD, fitSigns, nvSceneFits, planScene, routeTurnSum, renderJunction, juncState,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,

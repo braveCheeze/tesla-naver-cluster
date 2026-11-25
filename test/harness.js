@@ -2936,7 +2936,7 @@
     { id: 'S160', name: "S160 hard rule — junction pictures are only the driver's AI images, in the drawer (v245, driver 2026-11-25 '내가 만든 AI 그림으로만 밑에다 보여 주는 거지. 저렇게 보여 주면 안 돼', first said 2026-11-15 v108/v109): 100 m before 판교분기점 '일산, 구리' the drawer slot holds just the two AI pictures (day/night) with the sign fully shown, no drawn svg, no perspective or top-down scene, no split picture or colour row on the guidance card while the pink line is still worked out; without the AI picture for that kind there is no junction slot at all (no drawn fallback); the 성남IC exit is AI-only too; v246: the sign of the branch we do not take is shown too (the road we leave, '① 경부 ↑')", fn: s160 },
     { id: 'S161', name: "S161 turns that follow closely (v246, driver '우회전하고 또 우회전 하는 상황, 성남으로 들어올 때 좀 많이 헷갈리게 돼 있더라. 미리 보여주는 거 조금 개선이 필요해', 성남 여수사거리 east: right, 30 m left, 220 m right): 150 m before the first turn the next row becomes a green '이어서' row with a big arrow, '30m' and '› 220m' for the turn after; the 300 m voice adds '이어서 30미터 앞 왼쪽 방향, 다시 220미터 앞 오른쪽 방향'; a next turn 400 m away keeps the small row", fn: s161 },
     { id: 'S162', name: "S162 Naver-style junction picture jx (2026-11-25, driver sent Naver's 성남IC junction view: '그냥 네이버지도처럼 만들어 달라니까, 자바스크립트로 그리지 말고 AI로 — 헷갈리고 사고 날 것 같아 방향 잘못 틀어서'): with jx AI pictures picked, 100 m before 판교분기점 '일산, 구리' the drawer slot is the 3:2 AI picture (day/night, no drawn svg, not mirrored), the route sign '일산' sits on the right board and the other branch '경부' on the left board, both inside the picture and not cut, and '일산' is painted under the green lanes on the right; at the same junction from 학의 ('구리, 성남', keep left on the main road) the 'stay' picture is used as is with the route sign on the left board; without jx pictures the old AI picture is used; the left fork '서울' (팔당→하남IC) mirrors the fork picture and swaps boards and the painted name", fn: s162 },
-    { id: 'S163', name: "S163 joining a section after its start camera (2026-11-25, driver's rule '시작점 뒤에서 들어오면 구간단속은 해당 안 됨'; real case: 신갈동 → 경부 상행 about 1.7 km past the 신갈→죽전 110 start camera, the end camera was still shown as '구간 110' from 2200 m): synthetic OSM-shaped routes — the control route from 2 km before the start camera opens the 110 section and shows the end camera as the section end; the join route must show no section card, no average meter and no section voice (SKIP with the current behaviour until the rule lands after the Naver check)", fn: s163 },
+    { id: 'S163', name: "S163 joining a section after its start camera (2026-11-25, driver's rule '시작점 뒤에서 들어오면 구간단속은 해당 안 됨'; real case: 신갈동 → 경부 상행 about 1.7 km past the 신갈→죽전 110 start camera, the end camera was still shown as '구간 110' from 2200 m): synthetic OSM-shaped routes — the control route from 2 km before the start camera opens the 110 section and shows the end camera as the section end; the join route must show no section card, no average meter and no section voice; v251, as Naver does (keys session check): the end camera is an ordinary '110 과속단속' camera (red 110 sign, yellow '과속단속' tag, voice '단속 카메라. 제한속도 110')", fn: s163 },
     { id: 'S164', name: "S164 cameras past a U-turn point (v248, driver 2026-11-25 08:41 at 야탑역사거리 southbound on 성남대로: '이건 유턴이라서 지나가는 게 아니라 안 나와도 돼, 네이버지도 봐봐'): the southbound signal/speed 60 (#22941) has its stop line 11 m past the U-turn point, so on the U-turn route it never shows; on a straight route through the same spot it is still announced", fn: s164 },
     { id: 'S165', name: "S165 '비보호' badge and square lane boxes (v248, driver 2026-11-25: '우리는 비보호를 여기다가 써줘도 좋을 거 같아' at the top right of the guidance row, and '네이버지도 화살표 안내 쟤네는 정사각형인데 우린 약간 세로로 길잖아'): an unprotected left turn shows a blue '비보호' badge at the top right of the turn row and drops the word from the text ('좌회전 · …'), the next guide has no badge; the map lane tip draws every lane as its own 30×30 box with a 3 px gap", fn: s165 },
     { id: 'S166', name: "S166 the branch we do not take, lane names and lane colour (v249, driver 2026-11-25 with Naver's 판교분기점 '일산 안양 | 판교': '여기는 일산 안양 이렇게 알려주잖아 … 차선이랑 바닥에 있는 것도 저렇게 다르게', and 신갈분기점 '초록색 따라가게끔'): at 판교분기점 from 학의 ('구리, 성남', staying on the main road) the other sign shows the OSM ramp destinations '부산 대전'; with Naver-style pictures the other board says '부산 대전', the route lanes are painted '구리/성남' and the other lanes '부산/대전', and the picture is the sky-blue variant (no colour line); at 판교분기점 from 서울TG ('일산, 구리', pink colour line) the pink variant is used", fn: s166 },
@@ -6756,6 +6756,8 @@
         const i = t.cams.rows.findIndex((x, j) => j < t.cams.userBase && pick[k === 'secDoubt' ? 'sec' : k](x));
         if (i < 0) { r[k] = 'none'; continue; }
         const c = t.cams.rows[i];
+        // v251: 구간이 열려 있지 않으면 구간 끝 카메라는 지점 과속 카메라(합류)라, 구간단속 끝 카드는 구간을 연 채로 본다
+        t.camState.section = /^sec/.test(k) ? { limit: 110, len: 11000, t0: Date.now(), d0: t.state.odo - 3000 } : null;
         t.camState.target = { i, c, d: 2000, r: 2000, minD: 2000, after: false, t0: Date.now(), first: 2600, flag: k === 'secDoubt' ? 'doubt' : undefined };
         t.renderCam();
         const sg = B(card.querySelector('.cam-sign')), lb = B(document.getElementById('camType')), ds = B(document.getElementById('camDist')), bar = B(card.querySelector('.cam-bar'));
@@ -6766,7 +6768,7 @@
           limit: text('#camLimit'), after: getComputedStyle(document.getElementById('camType'), '::after').content };
       }
     } finally {
-      t.camState.target = null; t.renderCam();
+      t.camState.section = null; t.camState.target = null; t.renderCam();
     }
     const sd = r.secDoubt || {};
     const ok = Object.values(r).every((x) => x && x.inDrawer && Math.abs(x.top) <= 1 && Math.abs(x.bottom) <= 2 && x.barBelow && x.h >= 50 && (x.ai || Math.abs(x.num) <= 1.5)) &&
@@ -8367,17 +8369,17 @@
     const drive = async (R) => {
       let endS = 0, endD = Infinity;
       for (let s = 0; s <= R.total; s += 5) { const d = hav(pointAt(R, s).p, END); if (d < endD) { endD = d; endS = s; } }
-      const o = { sec: false, secLimit: null, avg: false, endAt: null, endType: '', voice: [] };
-      const n0 = t.alertLog.length;
+      const o = { sec: false, secLimit: null, avg: false, endAt: null, endType: '', endKind: '', endLimit: '', voice: [] };
+      const seen = new Set(t.alertLog);   // 로그는 길이가 정해져 있어 앞이 잘린다: 새로 들어온 줄만
       await planAndStart(R);
       for (let s = 0; s <= Math.min(R.total, endS + 80); s += 25) {
         const a = pointAt(R, s); feed(a.p, 25, a.h);
         if (t.camState.section) { o.sec = true; o.secLimit = t.camState.section.limit; }
         if (visible('#camAvg')) o.avg = true;
         const tg = t.camState.target;
-        if (tg && sameCam(tg.c, END) && o.endAt === null) { o.endAt = Math.round(endS - s); t.renderCam(); o.endType = text('#camType'); }
+        if (tg && sameCam(tg.c, END) && o.endAt === null) { o.endAt = Math.round(endS - s); t.renderCam(); o.endType = text('#camType'); o.endKind = text('#camKind'); o.endLimit = text('#camLimit'); }
       }
-      o.voice = t.alertLog.slice(n0).map((x) => String(x.text || x.msg || x)).filter((x) => /구간/.test(x)).slice(0, 4);
+      o.voice = t.alertLog.filter((x) => !seen.has(x)).map((x) => String(x.text || x.msg || x)).filter((x) => /단속/.test(x)).slice(0, 6);
       t.endNav();
       return o;
     };
@@ -8392,7 +8394,9 @@
     const fullOk = f.sec && f.secLimit === 110 && f.endAt !== null && /구간/.test(f.endType);
     if (!fullOk) return { pass: false, detail: 'control route (full section) did not open the section: ' + JSON.stringify(r) };
     if (!t.SEC_JOIN_RULE) return { status: 'SKIP', detail: 'join rule waits for the Naver check (구간단속 중간 합류); current behaviour on the join route: ' + JSON.stringify(r) };
-    const joinOk = !j.sec && !j.avg && !/구간/.test(j.endType) && !j.voice.some((x) => /구간단속 끝|구간단속 시작/.test(x));
+    // v251 (keys 세션 네이버 확인): 합류면 구간 없이 끝 카메라를 보통 지점 카메라 '110 과속단속'으로 (2km 앞 고속도로 지점 카메라 음성 그대로)
+    const joinOk = !j.sec && !j.avg && !/구간/.test(j.endType) && !j.voice.some((x) => /구간/.test(x)) &&
+      j.endAt !== null && j.endType === '과속단속' && j.endKind === '과속단속' && j.endLimit === '110' && j.voice.some((x) => /단속 카메라. 제한속도 110/.test(x));
     return { pass: !!joinOk, detail: JSON.stringify(r) };
   }
 
