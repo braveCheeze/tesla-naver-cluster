@@ -2924,6 +2924,7 @@
     { id: 'S159', name: "S159 taking back a mistaken report (v244, driver on 경부 상행 near 서울TG: '잘못된 정보 신고' on a section-end card left a lingering '?' card, then '근데 내가 잘못 신고 한거 같애'): after reporting, the dimmed '?' card reads '내가 신고함' and the button becomes '↩ 신고 취소'; pressing it brings back 110 and clears this car's mark and the settings list; a report from another day keeps the normal button; the release clears the mistaken 22040 mark made before its cut-off but keeps later ones", fn: s159 },
     { id: 'S160', name: "S160 hard rule — junction pictures are only the driver's AI images, in the drawer (v245, driver 2026-11-25 '내가 만든 AI 그림으로만 밑에다 보여 주는 거지. 저렇게 보여 주면 안 돼', first said 2026-11-15 v108/v109): 100 m before 판교분기점 '일산, 구리' the drawer slot holds just the two AI pictures (day/night) with the sign fully shown, no drawn svg, no perspective or top-down scene, no split picture or colour row on the guidance card while the pink line is still worked out; without the AI picture for that kind there is no junction slot at all (no drawn fallback); the 성남IC exit is AI-only too; v246: the sign of the branch we do not take is shown too (the road we leave, '① 경부 ↑')", fn: s160 },
     { id: 'S161', name: "S161 turns that follow closely (v246, driver '우회전하고 또 우회전 하는 상황, 성남으로 들어올 때 좀 많이 헷갈리게 돼 있더라. 미리 보여주는 거 조금 개선이 필요해', 성남 여수사거리 east: right, 30 m left, 220 m right): 150 m before the first turn the next row becomes a green '이어서' row with a big arrow, '30m' and '› 220m' for the turn after; the 300 m voice adds '이어서 30미터 앞 왼쪽 방향, 다시 220미터 앞 오른쪽 방향'; a next turn 400 m away keeps the small row", fn: s161 },
+    { id: 'S162', name: "S162 Naver-style junction picture jx (2026-11-25, driver sent Naver's 성남IC junction view: '그냥 네이버지도처럼 만들어 달라니까, 자바스크립트로 그리지 말고 AI로 — 헷갈리고 사고 날 것 같아 방향 잘못 틀어서'): with jx AI pictures picked, 100 m before 판교분기점 '일산, 구리' the drawer slot is the 3:2 AI picture (day/night, no drawn svg, not mirrored), the route sign '일산' sits on the right board and the other branch '경부' on the left board, both inside the picture and not cut, and '일산' is painted under the green lanes on the right; at the same junction from 학의 ('구리, 성남', keep left on the main road) the 'stay' picture is used as is with the route sign on the left board; without jx pictures the old AI picture is used; the left fork '서울' (팔당→하남IC) mirrors the fork picture and swaps boards and the painted name", fn: s162 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -8198,6 +8199,91 @@
       b.calls === 4 && b.active && b.same && b.pill && !b.redToast && b.panel && b.turn && b.log.join(',') === 'failed:3' && b.moved &&
       !c.pill && c.active &&
       d.bad400 === 1 && d.naverNo === 1 && d.traffic === 1 && d.upstream.every(Boolean) && !d.pillAfterEnd;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S162: 네이버식 분기점 그림 jx (2026-11-25 운전자가 네이버 성남IC 확대 그림을 보내며 '그냥 네이버지도처럼 만들어 달라니까, 자바스크립트로
+  //   그리지 말고 AI로 — 헷갈리고 사고 날 것 같아 저렇게 그리면 방향 잘못 틀어서'). AI 그림 자리는 아무 그림으로 시험한다 (모양·자리만 본다)
+  //   (a) 서울TG→판교분기점 '일산, 구리'(오른쪽) 100m 앞: 서랍 칸이 jx (3:2), 그림 두 장(그 모양의 낮·밤), 그린 svg 없음, 뒤집지 않음.
+  //       표지판 둘이 그림 속 판 자리에: 경로 갈래(일산) 오른쪽 판, 다른 갈래(경부) 왼쪽 판 — 둘 다 그림 안, 글자 잘림 없음.
+  //       초록 차로 아래 노면 글자 '일산'이 경로 갈래 쪽(오른쪽 절반)에
+  //   (b) 학의→판교분기점 '구리, 성남'(본선 그대로 왼쪽): '본선 그대로' 그림(경로 차로가 왼쪽, 연결로가 오른쪽) 그대로, 경로 표지는 왼쪽 판,
+  //       노면 글자는 왼쪽 절반
+  //   (c) jx 그림을 고르지 않았으면 예전 AI 그림(junc_<종류>)
+  //   (d) 팔당→하남IC '서울' 방면 왼쪽 방향(왼쪽 갈림길): 갈림길 그림을 좌우로 뒤집고(jx-m), 경로 표지는 왼쪽 판, 노면 글자 '서울'은 왼쪽 절반
+  async function s162() {
+    const t = T(), r = {};
+    const fixture = async (f) => {
+      const fx = await (await realFetch(harnessDir + 'fixtures/' + f, { cache: 'no-store' })).json();
+      const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0]; for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + hav(P[k - 1], P[k]));
+      return { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '시험', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    };
+    const driveTo = async (R, re, before) => {
+      const g = R.route.guide.find((x) => re.test(x.s)), sg = R.cum[Math.min(g.i, R.cum.length - 1)];
+      for (let s = Math.max(0, sg - before - 800); s <= sg - before; s += 20) { const a = pointAt(R, s); feed(a.p, 20, a.h); }
+      const a = pointAt(R, sg - before); feed(a.p, 20, a.h); t.renderNav(); await sleep(60); t.renderNav(); await sleep(30);
+    };
+    const pick = 'junc_fork_day__flare26x__2.webp', pickN = 'junc_fork_night__sunburst26f__1.webp';
+    const keep = {};
+    const JX = ['exit', 'exit2', 'stay', 'fork'].flatMap((k) => ['jx_' + k + '_day', 'jx_' + k + '_night']);
+    const view = () => {
+      const el = document.getElementById('juncCard'), sv = document.getElementById('juncSvg'), cr = el.getBoundingClientRect();
+      const lab = document.getElementById('juncLabel'), oth = document.getElementById('juncLabel2');
+      const box = (x) => { const q = x.getBoundingClientRect(); return { l: +((q.left - cr.left) / cr.width).toFixed(3), r: +((q.right - cr.left) / cr.width).toFixed(3), t: +((q.top - cr.top) / cr.height).toFixed(3), b: +((q.bottom - cr.top) / cr.height).toFixed(3), w: Math.round(q.width) }; };
+      const img = sv.querySelector('img.jv-day') || sv.querySelector('img');
+      const road = [...sv.querySelectorAll('.jx-road')].map((x) => ({ c: x.classList.contains('go') ? 'go' : 'ot', t: x.textContent, x: +((x.getBoundingClientRect().left + x.getBoundingClientRect().width / 2 - cr.left) / cr.width).toFixed(3) }));
+      return { shown: visible('#juncCard'), jx: el.classList.contains('jx'), m: el.classList.contains('jx-m'), left: el.classList.contains('left'),
+        shape: t.jxShape(t.juncInfo(t.nav.next)), ratio: +(cr.width / cr.height).toFixed(2), w: Math.round(cr.width),
+        imgs: [...sv.querySelectorAll('img')].map((i) => (i.getAttribute('src') || '').replace(/^.*\/img\/ai\//, '').replace(/\?.*$/, '')).join(','),
+        flip: img ? getComputedStyle(img).transform : '', svg: sv.querySelectorAll('svg').length,
+        sign: lab.textContent.trim(), sb: box(lab), other: oth.textContent.trim(), ob: box(oth), road,
+        cut: [lab, oth].some((x) => x.scrollWidth > x.clientWidth + 1 || x.scrollHeight > x.clientHeight + 1 || [...x.querySelectorAll('.sg-row, .sg-names')].some((b) => b.scrollWidth > b.clientWidth + 1)),
+        // 이름끼리 겹치지 않는다 (줄이 줄어들어 글자가 옆 이름에 닿으면 안 된다)
+        overlap: [lab, oth].some((x) => { const q = [...x.querySelectorAll('.sg-row b')].map((b) => b.getBoundingClientRect()); return q.some((p, i) => q.some((o, k) => k > i && p.right > o.left + 1 && o.right > p.left + 1 && p.bottom > o.top + 1 && o.bottom > p.top + 1)); }) };
+    };
+    try {
+      for (const k of JX) { keep[k] = t.iconPicks[k]; t.iconPicks[k] = /_night$/.test(k) ? pickN : pick; }
+      await waitFor(() => t.clData.loaded, 10000, 100);
+      const B = await fixture('route-seoultg-n.json');
+      await resetApp(); softReset(); await planAndStart(B);
+      t.juncState.key = '';
+      await driveTo(B, /판교분기점에서 '일산, 구리'/, 100);
+      r.a = view();
+      t.endNav();
+      const C = await fixture('route-ring1-pangyo.json');
+      await resetApp(); softReset(); await planAndStart(C);
+      t.juncState.key = '';
+      await driveTo(C, /판교분기점에서 '구리, 성남'/, 120);
+      r.b = view();
+      // (c) jx 그림을 빼면 예전 AI 그림
+      for (const k of JX) delete t.iconPicks[k];
+      t.juncState.key = ''; t.renderNav(); await sleep(30); t.renderNav();
+      r.c = view();
+      t.endNav();
+      // (d) 왼쪽 갈림길 (팔당→하남IC '서울' 방면 왼쪽 방향): 갈림길 그림을 좌우로 뒤집는다
+      for (const k of JX) t.iconPicks[k] = /_night$/.test(k) ? pickN : pick;
+      const D = await fixture('route-paldang-hanamic-s.json');
+      await resetApp(); softReset(); await planAndStart(D);
+      t.juncState.key = '';
+      await driveTo(D, /^'서울' 방면으로 왼쪽 방향/, 120);
+      r.d = view();
+      t.endNav();
+    } finally {
+      for (const k of JX) { if (keep[k]) t.iconPicks[k] = keep[k]; else delete t.iconPicks[k]; }
+      await resetApp(); softReset();
+    }
+    const inside = (q) => q.l >= 0 && q.r <= 1 && q.t >= 0 && q.b <= 1;
+    const a = r.a || {}, b = r.b || {}, c = r.c || {}, d = r.d || {};
+    const goA = a.road && a.road.find((x) => x.c === 'go'), goB = b.road && b.road.find((x) => x.c === 'go'), goD = d.road && d.road.find((x) => x.c === 'go');
+    const ok = a.shown && a.jx && !a.m && !a.left && a.shape && a.ratio >= 1.45 && a.ratio <= 1.55 && a.imgs === pick + ',' + pickN && a.svg === 0 && a.flip === 'none' &&
+      /일산/.test(a.sign) && a.sb.l > 0.48 && inside(a.sb) && /경부/.test(a.other) && a.ob.r < 0.52 && inside(a.ob) && !a.cut && !a.overlap &&
+      goA && goA.t === '일산' && goA.x > 0.5 &&
+      b.shown && b.jx && !b.m && b.shape === 'stay' && b.flip === 'none' && /구리/.test(b.sign) && b.sb.r < 0.52 && inside(b.sb) && b.ob.l > 0.48 && inside(b.ob) && !b.cut &&
+      goB && goB.t === '구리' && goB.x < 0.5 &&
+      c.shown && !c.jx && !c.m && /^junc_main_day__/.test(c.imgs) && c.road.length === 0 &&
+      d.shown && d.jx && d.m && d.shape === 'fork' && /^matrix\(-1/.test(d.flip) && /서울/.test(d.sign) && d.sb.r < 0.52 && inside(d.sb) && d.ob.l > 0.48 && inside(d.ob) && !d.cut &&
+      goD && goD.t === '서울' && goD.x < 0.5;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

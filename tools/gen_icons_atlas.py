@@ -20,6 +20,8 @@ ef_car_app.png 로 저장해 두면 그 느낌을 따라 그린다 (저장소에
 - 2026-11-14 다시 그리기(나가기/들어가기·고가·지하차도·옆길 16가지 + 회전교차로 4가지, 디자이너 느낌): --icons redo --per 2
   그림 없이 글로만 그린다(GPT Image 2.6 Flare·Sunburst $0.007, Ideogram v4 $0.025): 120장 약 $1.56
   도로만: --icons roads   회전교차로만: --icons rb   구도 밑그림 다시 그리기: py -I tools\ref_roads.py
+- 네이버식 분기점 그림 (2026-11-25, 모양 4가지 × 낮·밤, 밑그림: py -X utf8 tools\jx_scene.py):
+    py -X utf8 tools\gen_icons_atlas.py --icons jx --models flare26e,sunburst26e --per 2   (32장 약 $0.26)
 - 옵션: --models flare,sunburst,gpt15   --per 2   --icons over_r,junc_fork_r   --dry (요청 없이 계획과 예상 비용만)
 """
 import argparse
@@ -713,6 +715,34 @@ JBG = {'junc_bg_day': ((), JBG_BASE, 'Daytime: clear light-blue sky gradient tha
        'junc_bg_night': ((), JBG_BASE, 'Night: deep navy sky gradient, a faint warm orange glow right on the horizon, a few tiny '
                          'stars, dark blue-grey silhouettes of distant hills and trees, very dark green-grey grass field.' + JBG_END)}
 PANO |= set(JBG)
+# 2026-11-25 운전자 (네이버 성남IC 확대 그림을 보내며) '이런거 말고 그냥 네이버지도처럼 만들어 달라니까, 자바스크립트로 그리지 말고
+# AI 로 — 헷갈리고 방향 잘못 틀어서 사고 날 것 같아': 네이버식 분기점 그림(jx). tools/jx_scene.py 가 그린 구도 밑그림(차로 수·갈래·
+# 초록 경로 차로·문형 표지판 두 장 자리)을 편집 모델이 입체 그림으로 다시 그린다. 표지판은 비워 두고 앱이 글자 표지를 얹는다.
+# 끝나면 build_ai_icons.py 가 초록이 경로 차로에만 있는지·표지판이 제자리인지 검사해 틀린 그림은 고를 수 없게 한다
+JX_EDIT = ('Redraw image 1 as a finished junction view for the guidance panel of a premium Korean car navigation app, in the polished '
+           '3D computer-graphics style of the Naver Map expressway junction view: a clean, realistic CG render seen from just above '
+           'the driver, not a photo and not flat vector art. Image 1 is a layout sketch. Keep its layout EXACTLY: the same camera '
+           'view and horizon height, the same number of lanes, the same place where the road splits, the same direction of every '
+           'branch, the overhead sign gantry, and the exact position and size of the two sign boards. '
+           'Route highlight: the lanes that are bright green in the sketch are the route. Keep exactly those lanes filled with solid '
+           'bright green (#00C853) all the way along their branch, with crisp white lane arrows on them. No other lane may be green: '
+           'every other lane stays dark grey asphalt with white arrows. '
+           'Sign boards: two plain dark-green Korean expressway direction boards (#0B7A43) with a thin white inner border, hanging '
+           'from the gantry exactly where the sketch has them, completely BLANK: no text, letters, numbers, arrows or symbols on '
+           'them (the app writes the text). '
+           'Add realism: fine asphalt texture, crisp white lane markings, white chevron hatching in the gore between the branches, '
+           'a concrete median barrier and metal guard rails, grassy embankments with a few trees, distant apartment blocks and '
+           'low hills on the horizon. Keep the bottom strip of the image (below the lane arrows) plain asphalt or plain green with '
+           'no painted words, because the app places the destination names there. No cars, no people, no text anywhere, no logos, '
+           'no route shields, no watermark. ')
+JX_DAY = 'Daytime: clear blue sky with a few soft clouds, bright even sunlight, vivid but natural colors.'
+JX_NIGHT = ('Night: deep navy sky, the road lit by warm street lights, apartment windows glowing, the white markings and the green '
+            'route lanes still bright and easy to read; the scene is dark but clear, not murky.')
+JX = {}
+for _k in ('exit', 'exit2', 'stay', 'fork'):
+    JX['jx_%s_day' % _k] = (('ref/jx_%s.png' % _k,), JX_EDIT, JX_DAY)
+    JX['jx_%s_night' % _k] = (('ref/jx_%s.png' % _k,), JX_EDIT, JX_NIGHT)
+WIDE_JX = set(JX)
 
 
 def _gpt25(model):
@@ -906,6 +936,8 @@ def main():
         JOBS.update(JCNAVER)   # 분기 후 합류 (v156)
     if 'jbg' in a.icons.split(','):
         JOBS.update(JBG)   # v197 분기점 장면 풍경
+    if 'jx' in a.icons.split(',') or any(i.startswith('jx_') for i in a.icons.split(',')):
+        JOBS.update(JX)   # 네이버식 분기점 그림 (2026-11-25)
     if 'junc3' in a.icons.split(','):
         JOBS.update(JUNC3)   # 분기점 그림 14장: 길게 이어진 화살표·은은한 파란 빛
     models = [m for m in (a.models or 'flare,sunburst,flare26,sunburst26').split(',') if m in MODELS]
@@ -915,7 +947,7 @@ def main():
     groups = {'cars': [k for k in JOBS if is_car(k)], 'signs': [k for k in JOBS if is_sign(k)],
               'guide': [k for k in JOBS if not is_car(k) and not is_sign(k)],
               'roads': ROADS, 'rb': RBS, 'redo': ROADS + RBS,
-              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s'], 'fix3': ['outs', 'ins', 'over_r', 'under_s', 'under_r', 'side_r', 'oside_r'], 'grass': RBS, 'junc': sorted(PANO), 'green': list(GREEN_KIND), 'junc2': JV2, 'soft': list(SOFT), 'rbdepth': list(RBDEPTH), 'junc3': list(JUNC3), 'clean': list(CLEAN), 'klbold': ['kl'], 'sharp': ['sharp_r'], 'slbold': ['sl'], 'fix4': list(FIX4), 'fix5': list(FIX5), 'fix6': list(FIX6), 'under3d': list(UNDER3D), 'grade3': list(GRADE3), 'grade4': list(GRADE4), 'mainline': list(MAINLINE), 'jc': ['jc'], 'cams': list(CAMS), 'camnum': list(CAMNUM), 'jbg': list(JBG)}
+              'fix': RBS + ['inr', 'outs', 'ins', 'under_s', 'side_l', 'side_r'], 'fix2': RBS + ['under_s'], 'fix3': ['outs', 'ins', 'over_r', 'under_s', 'under_r', 'side_r', 'oside_r'], 'grass': RBS, 'junc': sorted(PANO), 'green': list(GREEN_KIND), 'junc2': JV2, 'soft': list(SOFT), 'rbdepth': list(RBDEPTH), 'junc3': list(JUNC3), 'clean': list(CLEAN), 'klbold': ['kl'], 'sharp': ['sharp_r'], 'slbold': ['sl'], 'fix4': list(FIX4), 'fix5': list(FIX5), 'fix6': list(FIX6), 'under3d': list(UNDER3D), 'grade3': list(GRADE3), 'grade4': list(GRADE4), 'mainline': list(MAINLINE), 'jc': ['jc'], 'cams': list(CAMS), 'camnum': list(CAMNUM), 'jbg': list(JBG), 'jx': list(JX)}
     want = []
     for i in a.icons.split(','):
         want += groups.get(i, [i])
@@ -950,12 +982,12 @@ def main():
         try:
             ref, style, extra = JOBS[i]
             try:
-                pid = submit(key, mid, mk(style + extra, refs[i], 'pano' if i in PANO else i in WIDE))
+                pid = submit(key, mid, mk(style + extra, refs[i], 'pano' if i in PANO else i in WIDE or i in WIDE_JX))
             except RuntimeError as e:
                 if len(refs[i]) < 2:
                     raise
                 print('  (참고 그림 여러 장이 안 돼 밑그림 한 장으로 다시: %s)' % str(e)[:120])
-                pid = submit(key, mid, mk(style + extra, refs[i][:1], 'pano' if i in PANO else i in WIDE))
+                pid = submit(key, mid, mk(style + extra, refs[i][:1], 'pano' if i in PANO else i in WIDE or i in WIDE_JX))
             pending.append((i, m, n, pid))
             print('  보냄 %-5s %-5s #%d' % (i, m, n))
         except Exception as e:

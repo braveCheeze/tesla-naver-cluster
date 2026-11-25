@@ -16,6 +16,7 @@ from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import build_cars  # noqa: E402  (key, check_pink 같이 쓴다)
+import jx_scene  # noqa: E402  (네이버식 분기점 그림 검사)
 
 ROOT = build_cars.ROOT
 AI = build_cars.AI
@@ -63,10 +64,23 @@ def main():
         src = os.path.join(AI, fn)
         out = fn[:-4] + '.webp'
         path = os.path.join(OUT, out)
-        kind = 'car' if slot.startswith(('car_', 'cute_')) else 'scene' if slot.startswith('junc_') else 'sign' if slot.startswith('sign_') else 'icon'
+        kind = 'car' if slot.startswith(('car_', 'cute_')) else 'scene' if slot.startswith(('junc_', 'jx_')) else 'sign' if slot.startswith('sign_') else 'icon'
         pink = 0
         if out in old and os.path.exists(path) and os.path.getmtime(path) >= os.path.getmtime(src):
             items.append(old[out])
+            continue
+        if slot.startswith('jx_'):
+            # 네이버식 분기점 그림 (3:2): 서랍 폭 약 330px 를 DPR 2 로. 구도 검사 — 초록이 경로 차로에만, 표지판 두 장이 제자리
+            im = Image.open(src).convert('RGB')
+            im.thumbnail((720, 480), Image.LANCZOS)
+            im.save(path, 'WEBP', quality=86)
+            shape = slot[3:].rsplit('_', 1)[0]
+            ok, why, go, ot = jx_scene.check(src, shape)
+            it = {'slot': slot, 'kind': kind, 'file': out, 'model': m['model'], 'n': int(m['n']), 'pink': 0, 'jx': [go, ot]}
+            if not ok:
+                it['bad'] = why
+            items.append(it)
+            print('%-6s %-14s %-34s %s  %d KB' % (kind, slot, out, ('✗ ' + why) if why else '구도 OK', os.path.getsize(path) // 1024))
             continue
         if kind == 'scene':
             im = Image.open(src).convert('RGB')

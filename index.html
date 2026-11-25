@@ -1547,11 +1547,29 @@
   .sg-arrow svg { display: block; width: 17px; height: 22px; }
   .junccard.left .sg-arrow svg { transform: scaleX(-1); }
   /* v246: AI 그림 칸에서 가지 않는 갈래 표지 — 우리 표지 반대쪽 위, 흐리게 (운전자 '하남을 안 보여주는 건 아니야') */
-  .junccard:not(.nv):not(.plan) .jc-label.jc-other { right: auto; left: 8px; flex-direction: row; padding: 5px 7px 5px 10px; opacity: .78; filter: saturate(.5); box-shadow: none; max-width: 44%; }
-  .junccard.left:not(.nv):not(.plan) .jc-label.jc-other { left: auto; right: 8px; }
-  .junccard:not(.nv):not(.plan) .jc-label.jc-other .sg-arrow svg { transform: none; }
-  .junccard:not(.nv):not(.plan):has(.jc-other:not(:empty)) .jc-label:not(.jc-other) { max-width: 52%; }
+  .junccard:not(.nv):not(.plan):not(.jx) .jc-label.jc-other { right: auto; left: 8px; flex-direction: row; padding: 5px 7px 5px 10px; opacity: .78; filter: saturate(.5); box-shadow: none; max-width: 44%; }
+  .junccard.left:not(.nv):not(.plan):not(.jx) .jc-label.jc-other { left: auto; right: 8px; }
+  .junccard:not(.nv):not(.plan):not(.jx) .jc-label.jc-other .sg-arrow svg { transform: none; }
+  .junccard:not(.nv):not(.plan):not(.jx):has(.jc-other:not(:empty)) .jc-label:not(.jc-other) { max-width: 52%; }
   .jc-label.jc-other:empty { display: none; }
+  /* 2026-11-25 네이버식 분기점 그림 (jx, AI 그림 3:2): 운전자 '그냥 네이버지도처럼 — 자바스크립트로 그리지 말고 AI로'.
+     그림 속 빈 표지판 두 장 자리(app.js JX_BOARD)에 글자 표지를 얹는다: 판마다 같은 모양(네이버처럼), 화살표는 판의 바깥쪽.
+     초록 차로 아래에 방면 글자(네이버 '판교'), 다른 갈래 차로에는 지금 길 이름(옅게). 왼쪽으로 가면 그림만 좌우로 뒤집는다 */
+  .junccard.jx .jc-svg { position: relative; }
+  .junccard.jx .jc-svg .jv-img { aspect-ratio: 3 / 2; object-fit: cover; transform: none; }
+  .junccard.jx.jx-m .jc-svg .jv-img { transform: scaleX(-1); }
+  .junccard.jx .jc-label.jx-board { position: absolute; right: auto; bottom: auto; max-width: none; box-sizing: border-box; justify-content: center; gap: 6px;
+    padding: 3px 7px; border-radius: 5px; outline-offset: -3px; box-shadow: 0 1px 3px rgba(0, 0, 0, .3); flex-direction: row; overflow: hidden; opacity: 1; filter: none; }
+  .junccard.jx .jc-label.jx-board.jx-bl .sg-arrow { order: -1; }   /* 왼쪽 판: 화살표를 바깥(왼쪽)에, 방패·이름 순서는 그대로 */
+  .junccard.jx .jc-label.jx-board .sg-names.one { gap: .55em; }    /* 방면 이름 사이를 한 칸 띄운다 ('일산 구리') */
+  .junccard.jx .jc-label.jx-board .sg-arrow svg { transform: none; width: 19px; height: 25px; }
+  .junccard.jx .jc-label.jx-board.jx-bl .sg-arrow svg { transform: scaleX(-1); }
+  .junccard.jx .jc-label.jx-board .sg-names { align-items: center; }
+  .junccard.jx .jc-label.jc-other.jx-board > :not(.sg-arrow) { opacity: .88; }
+  .junccard.jx .jc-head { display: none; }
+  .jx-road { position: absolute; transform: translate(-50%, -50%) scaleY(.6); color: #fff; font-size: 24px; font-weight: 900; letter-spacing: 2px;
+    white-space: nowrap; pointer-events: none; line-height: 1; text-shadow: 0 0 1px rgba(0, 0, 0, .25); }
+  .jx-road.ot { color: rgba(255, 255, 255, .86); font-size: 21px; }
   .jc-head {
     position: absolute; left: 10px; bottom: 8px; display: flex; gap: 6px; align-items: baseline; max-width: 46%;
     padding: 3px 8px; border-radius: 7px; background: rgba(255, 255, 255, .88); color: #111; text-shadow: none;
@@ -2286,8 +2304,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-246"></script>
-<script src="img/ai/picks.js?v=2026.11.16-246"></script>
-<script src="app.js?v=2026.11.16-246"></script>
+<script src="icons.js?v=2026.11.16-247"></script>
+<script src="img/ai/picks.js?v=2026.11.16-247"></script>
+<script src="app.js?v=2026.11.16-247"></script>
 </body>
 </html>
