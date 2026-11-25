@@ -119,6 +119,9 @@
     flex: none; width: 56px; height: 56px; border-radius: 50%; background: #fff; border: 6px solid #e53935;
     display: grid; place-items: center; color: #111; font-weight: 800; font-size: 21px;
   }
+  /* v244 (운전자 '아무것도 위에 없는데 아직 밑에 있다' — v205 의 '110 너무 밑에 있는 느낌'도 이것): 표지 안의 빈 아이콘 칸(.cam-ico, 아무것도
+     그리지 않음)이 격자 한 줄을 차지해, AI 그림이 아닌 표지(구간단속·대체 그림)의 숫자 '110'·'?' 가 가운데보다 약 5px 아래에 앉았다 */
+  .cam-sign > .cam-ico { display: none; }
   .cam-info { flex: 1; min-width: 0; }
   .cam-type { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cam-dist { font-size: 28px; font-weight: 750; font-variant-numeric: tabular-nums; margin-top: 2px; }
@@ -161,10 +164,14 @@
   .cam-miss.sent, .cam-miss.sent:active { background: #1d4fb8; border-color: #fff; }
   .cam-miss.sending { opacity: .7; }
   .cam-miss.saved, .cam-miss.saved:active { background: #4b5563; border-color: #fff; }
+  /* v244: 오늘 내가 신고한 카드가 떠 있을 때 '↩ 신고 취소' — 흰 테두리로 평소 신고 버튼과 구별 */
+  .cam-miss.undo { background: rgba(20, 24, 30, .78); border: 2px solid #fff; }
+  .cam-miss.undo:active { background: #1d4fb8; }
   .cam-miss[hidden] { display: none; }
   /* v161: '틀림'으로 의심 표시한 카메라 — 흐리게, 제한속도 '?' */
   .camcard.doubt { opacity: .55; filter: saturate(.4); }
-  .camcard.doubt .cam-type::after { content: ' · 신고함'; font-weight: 600; opacity: .8; }
+  /* v244: '신고함'만으로는 누가 신고했는지 몰랐다 — 이 차에서 '잘못된 정보 신고'를 눌러 흐리게 한 카메라 (설정 '신고로 흐리게 한 카메라'에서 되돌림) */
+  .camcard.doubt .cam-type::after { content: ' · 내가 신고함'; font-weight: 600; opacity: .8; }
   /* v175: 운영자 확인 전, 여러 운전자 신고로 자동 반영된 고침이 바꾼 카메라 */
   .camcard.crowd .cam-type::after { content: ' · 사용자 제보'; font-weight: 600; opacity: .8; }
   .camflags ul { list-style: none; margin: 4px 0 8px; padding: 0; }
@@ -2261,8 +2268,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-243"></script>
-<script src="img/ai/picks.js?v=2026.11.16-243"></script>
-<script src="app.js?v=2026.11.16-243"></script>
+<script src="icons.js?v=2026.11.16-244"></script>
+<script src="img/ai/picks.js?v=2026.11.16-244"></script>
+<script src="app.js?v=2026.11.16-244"></script>
 </body>
 </html>

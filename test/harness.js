@@ -2898,7 +2898,7 @@
     { id: 'S133', name: "S133 one '잘못된 정보 신고' button and the live check (v202, driver '틀림 놓침에서 틀림 없애고 놓침을 잘못 된 정보 신고로', '신고 반영 완료 … 3초', '확인완료 … 신고 접수 완료'): one button, the old one hidden, no '놓침'/'틀림' on screen; pressed while a warning card has been up for a second it reports that camera (dimmed 14 days, no check request); pressed with no card it says '신고 접수 완료' and sends /check (spot, heading, speed, device; no trail off the operator car) keeping the id; a found result reads '신고 반영 완료 · 60 신호·과속단속 추가' and reloads shared fixes, a none result reads '확인 완료'", fn: s133 },
     { id: 'S134', name: "S134 voice feedback above the compass (v203, driver '그 나침반 위에 피드백 버튼 … 음성으로 텍스트 형태로 … 다시 음성을 누르거나 다른 곳을 누르면 취소', 'Ai 대화모드처럼'): with a fake speech recogniser — a 52 px round button right above the compass; a tap starts Korean listening with the green spinning ring and '듣는 중…'; 1.5 s after the words stop the text is sent at once (with place, heading, speed, guidance and the cards on screen) and '보냈어요' shows; a tap elsewhere or a second tap cancels without sending; a browser without speech recognition says so", fn: s134 },
     { id: 'S135', name: "S135 time-limited school zones (v204, driver '이것도 중요하긴 해'; Naver shows 50 at night after '표지판 확인') and the 경부 northbound mobile 110s: around the real child-zone camera 25719, a test school with 30 from 08–20 and 50 otherwise makes it 50 at 22:00 (the warning card too) and 30 at 10:00, cameras outside the radius stay; weekday-only rows give 50 on a Sunday; windows across midnight work; clearing the data restores 30; the 죽전 mobile 110 moved 71 m north to Naver's point and a 판교 northbound mobile 110 was added, both '운전자 신고 이동식 단속'", fn: s135 },
-    { id: 'S136', name: "S136 camera card sign alignment (v205, driver '가운데로 정렬 해서 보여줘야 되는 거 아니야 110 너무 밑에 있는 느낌이다'): in the Tesla drawer the round sign's top meets the label's top and its bottom meets the distance's bottom (the bar sits below), for section-end, fixed, mobile and child-zone cards alike", fn: s136 },
+    { id: 'S136', name: "S136 camera card sign alignment (v205, driver '가운데로 정렬 해서 보여줘야 되는 거 아니야 110 너무 밑에 있는 느낌이다'): in the Tesla drawer the round sign's top meets the label's top and its bottom meets the distance's bottom (the bar sits below), for section-end, fixed, mobile and child-zone cards alike; v244: the number in a non-picture sign (section cards) sits in the middle of the ring (an empty icon slot pushed it about 5 px down), and a card the driver reported reads '내가 신고함' with '?'", fn: s136 },
     { id: 'S137', name: "S137 voice feedback reachable and readable (v206, driver '피드백 음성 버튼이 일단 무슨 버튼인지 잘 모를 거 같고 눌러도 반응이 없어'): during guidance with a camera card, the mic sits in the glass card's compass row, a real tap lands on it and never on the '잘못된 정보 신고' pill (if the pill reaches the card, the card hides and the mic takes no taps); the card is opaque enough over map labels; every failure is shown and logged by stage: start() throwing, a 'network' error, and no onstart within 4 s; a good start logs tap, start, onstart, onaudiostart", fn: s137 },
     { id: 'S138', name: "S138 colour guide line as a split picture, first (v207, driver '이럴 때는 분홍색을 첫 번째 있는 걸로 보여 주고 … 그림을 알려 주는 게 훨씬 더 좋아', '굳이 그림이 표기돼 있으면은 분홍색 화살표로 안 바꿔도 돼', '우리가 가지 않는 방향이라고 해도 그림에서 표지판에 표기를 해 주는 게 좋아'): on the real 서울TG → 판교분기점 route, 990 m before the split the guide card starts with a small split picture: 경부 goes straight with a dim '① 경부' sign, our branch goes right with the pink line and a strong '[100] 일산 · 구리' sign; no pink arrow, the turn row keeps its green arrow and the distance; at 600 m the close-up takes over with pink lanes and both signs; at night the roads turn dark", fn: s138 },
     { id: 'S139', name: "S139 Naver-checked driver spots look like normal cameras (v208, driver: '운전자 신고 신호 과속 단속 이라고 파란 글씨로 나오는데 … 네이버 지도는 신호 과속 이라고만 표기 하는데'); route line and turn arrow thicker with zoom and a black outline (v208, '여기도 네이버지도처럼 약간 두껍게', '검정색 테두리로 통일하자'): rows with flag 2 read '신호·과속단속' / '이동식단속' with the red (or real-mobile blue) card, sign and voice of normal cameras, flag 4 makes a child zone, /check finds count as checked, unchecked rows keep '운전자 신고 …' in blue; in the data all 20 rows are checked (v210); the route width grows with zoom (9 → 14 → 17 px at 15/17/18) under a black casing 4 px wider, and the arrow's rim is black", fn: s139 },
@@ -2921,6 +2921,7 @@
     { id: 'S156', name: "S156 the intersection camera rule everywhere (v237, driver '그런 건 전국에 다 해당되는 건 알지?', '직진으로 오는 차였으면 저기에 50 단속이 있으면 감지해주는 게 맞고'): on seven synthetic junctions (4-way left and right, T-junction, 60 and 120 deg skewed lefts, a U-turn on a divided road, two-way cameras on a crossing road), guided and free: a camera at the stop line of the leg the car turns into (one-way or two-way) never alerts, a camera on the new road past the junction and on the car's own approach does, straight through on the camera's leg alerts with limit 50 at the normal 400 m; a two-way camera on a crossing road does not alert or record a pass for straight-through traffic; a left-turn pass of the stop-line camera is 'turned', the new-road camera is a normal pass", fn: s156 },
     { id: 'S157', name: "S157 riding out a route server blip (v239, 2026-11-25 Worker /route failed for minutes with Naver 530): the first search falls back from options= to one option= after an upstream 'no route' and retries a 502 after a short backoff, then shows the route card; a reroute that keeps failing retries 3 times and stops, keeping the current route and guidance (no red failure toast, a small status chip, a diag note) and guidance keeps advancing; the next good reroute clears the chip; a 400, Naver's own 'no route' (with a code) and the traffic refresh are not retried", fn: s157 },
     { id: 'S158', name: "S158 junction lane colours match Naver (v243, Naver comparison table cases 8 and 13): the ring road's southbound 성남IC exit to '성남, 광주' gets a green colour line from about 300 m before the split and the junction picture paints the lanes green (the separate colour row hides); 판교분기점 '일산, 구리' paints pink; an 일산-bound car now sees the first-split pink too (OSM shape), while going straight on 경부 (서울·양재) or straight past 성남IC southbound gets neither", fn: s158 },
+    { id: 'S159', name: "S159 taking back a mistaken report (v244, driver on 경부 상행 near 서울TG: '잘못된 정보 신고' on a section-end card left a lingering '?' card, then '근데 내가 잘못 신고 한거 같애'): after reporting, the dimmed '?' card reads '내가 신고함' and the button becomes '↩ 신고 취소'; pressing it brings back 110 and clears this car's mark and the settings list; a report from another day keeps the normal button; the release clears the mistaken 22040 mark made before its cut-off but keeps later ones", fn: s159 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -6729,19 +6730,26 @@
     const B = (el) => el.getBoundingClientRect();
     try {
       await waitFor(() => t.cams.loaded, 10000, 100);
-      for (const k of Object.keys(pick)) {
-        const i = t.cams.rows.findIndex((x, j) => j < t.cams.userBase && pick[k](x));
+      // v244: 'secDoubt' = 운전자가 '잘못된 정보 신고'를 누른 구간단속 끝 (흐리게, 제한속도 '?', 종류 글씨 뒤 '내가 신고함')
+      for (const k of Object.keys(pick).concat(['secDoubt'])) {
+        const i = t.cams.rows.findIndex((x, j) => j < t.cams.userBase && pick[k === 'secDoubt' ? 'sec' : k](x));
         if (i < 0) { r[k] = 'none'; continue; }
         const c = t.cams.rows[i];
-        t.camState.target = { i, c, d: 2000, r: 2000, minD: 2000, after: false, t0: Date.now(), first: 2600 };
+        t.camState.target = { i, c, d: 2000, r: 2000, minD: 2000, after: false, t0: Date.now(), first: 2600, flag: k === 'secDoubt' ? 'doubt' : undefined };
         t.renderCam();
         const sg = B(card.querySelector('.cam-sign')), lb = B(document.getElementById('camType')), ds = B(document.getElementById('camDist')), bar = B(card.querySelector('.cam-bar'));
-        r[k] = { inDrawer: !!card.closest('#camDrawer .cd-in'), top: Math.round(sg.top - lb.top), bottom: Math.round(sg.bottom - ds.bottom), barBelow: bar.top >= ds.bottom - 1, h: Math.round(sg.height) };
+        const lm = B(document.getElementById('camLimit'));
+        r[k] = { inDrawer: !!card.closest('#camDrawer .cd-in'), top: Math.round(sg.top - lb.top), bottom: Math.round(sg.bottom - ds.bottom), barBelow: bar.top >= ds.bottom - 1, h: Math.round(sg.height),
+          // v244: AI 그림이 아닌 표지(구간단속)의 숫자는 동그라미 한가운데 — 예전엔 빈 아이콘 칸 때문에 약 5px 아래였다 (AI 그림은 그림의 숫자 자리 57% 에 둔다)
+          ai: card.classList.contains('aisign'), num: Math.round(((lm.top + lm.bottom) / 2 - (sg.top + sg.bottom) / 2) * 10) / 10,
+          limit: text('#camLimit'), after: getComputedStyle(document.getElementById('camType'), '::after').content };
       }
     } finally {
       t.camState.target = null; t.renderCam();
     }
-    const ok = Object.values(r).every((x) => x && x.inDrawer && Math.abs(x.top) <= 1 && Math.abs(x.bottom) <= 2 && x.barBelow && x.h >= 50);
+    const sd = r.secDoubt || {};
+    const ok = Object.values(r).every((x) => x && x.inDrawer && Math.abs(x.top) <= 1 && Math.abs(x.bottom) <= 2 && x.barBelow && x.h >= 50 && (x.ai || Math.abs(x.num) <= 1.5)) &&
+      !r.sec.ai && sd.limit === '?' && /내가 신고함/.test(sd.after) && r.sec.limit === '110';
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
@@ -8184,6 +8192,68 @@
       b.calls === 4 && b.active && b.same && b.pill && !b.redToast && b.panel && b.turn && b.log.join(',') === 'failed:3' && b.moved &&
       !c.pill && c.active &&
       d.bad400 === 1 && d.naverNo === 1 && d.traffic === 1 && d.upstream.every(Boolean) && !d.pillAfterEnd;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S159: 잘못 누른 신고를 되돌림 (v244, 운전자: 서울TG 앞 구간단속 끝에서 '잘못된 정보 신고' → '?' 카드로 남음, '근데 내가 잘못 신고 한거 같애')
+  //   (a) 구간단속 끝 카드에서 신고 → 흐리게·'?'·'내가 신고함', 보냄 표시가 끝나면 아래 버튼이 '↩ 신고 취소'
+  //   (b) '↩ 신고 취소' → 카드가 원래대로(110, 흐리게 아님), 이 차의 신고 표시가 없어지고 설정 목록도 비고, 버튼은 다시 '잘못된 정보 신고'
+  //   (c) 다른 날 누른 신고로 흐려진 카드는 예전처럼 '잘못된 정보 신고' (또 누르면 숨김 — 되돌리기는 설정에서)
+  //   (d) 새 버전이 열릴 때 지우는 목록(CAM_FLAG_CLEAR): 그 시각 전 22040 신고 표시는 지우고, 그 뒤 누른 것은 남긴다
+  async function s159() {
+    const t = T(), r = {}, b = document.getElementById('camMissBtn'), card = document.getElementById('camCard');
+    const keepNo = t.store.get('camNo2'), keepMap = new Map([...t.camNoMap].map(([k, v]) => [k, v.map((e) => Object.assign({}, e, { days: e.days.slice() }))]));
+    const keepShare = t.prefs.share;
+    const settle = () => { clearTimeout(b._sentT); b.classList.remove('sent', 'saved', 'sending'); t.renderCam(); };
+    const view = () => ({ limit: text('#camLimit'), doubt: card.classList.contains('doubt'), after: getComputedStyle(document.getElementById('camType'), '::after').content,
+      btn: b.textContent, undo: b.classList.contains('undo'), flag: t.camState.target ? t.camState.target.flag || null : 'none',
+      mine: (t.camNoMap.get('37.3539,127.10339') || []).length, list: document.querySelectorAll('#camFlagList li').length });
+    try {
+      t.prefs.share = false;   // 시험 중에는 서버로 보내지 않는다
+      await waitFor(() => t.cams.loaded, 10000, 100);
+      const R = buildNavRoute();
+      softReset(); await planAndStart(R);
+      for (let s = 15; s <= 90; s += 15) { const a = pointAt(R, s); feed(a.p, 15, 0); }
+      t.camNoMap.delete('37.3539,127.10339');
+      const i = 22040, c = t.cams.rows[i];
+      const show = (flag) => { t.camState.target = { i, c, d: 670, r: 670, minD: 670, after: false, t0: Date.now(), first: 2600, flag }; t.renderCam(); card._camAt = Date.now() - 2000; };
+      show(undefined);
+      r.before = view();
+      // (a) 신고
+      b.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      r.sentBtn = b.textContent;
+      settle();
+      r.a = view();
+      // (b) 신고 취소
+      card._camAt = Date.now() - 2000;
+      b.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      r.undoBtn = b.textContent;
+      settle();
+      r.b = view();
+      // (c) 다른 날 누른 신고
+      const old = Date.now() - 3 * 86400e3, d = new Date(old);
+      t.camNoMap.set('37.3539,127.10339', [{ h: null, t0: old, t1: old, days: [d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate()], lim: 110, name: '구간단속 끝' }]);
+      show(t.camFlag(c, 0));
+      r.c = view();
+      // (d) 새 버전이 열릴 때 지우는 목록
+      const cut = Date.parse(t.CAM_FLAG_CLEAR['37.3539,127.10339']);
+      t.camNoMap.set('37.3539,127.10339', [{ h: 0, t0: cut - 3000e3, t1: cut - 1800e3, days: ['2026-11-25'], lim: 110, name: '구간단속 끝' },
+        { h: 180, t0: cut + 60e3, t1: cut + 60e3, days: ['2026-11-25'], lim: 110, name: '구간단속 끝' }]);
+      r.d = { removed: t.clearConfirmedFlags(), left: (t.camNoMap.get('37.3539,127.10339') || []).map((e) => e.h) };
+    } finally {
+      t.camState.target = null;
+      t.camNoMap.clear(); keepMap.forEach((v, k) => t.camNoMap.set(k, v));
+      t.store.set('camNo2', keepNo);
+      t.prefs.share = keepShare;
+      settle(); t.renderCamFlags();
+      await resetApp(); softReset();
+    }
+    const a = r.a || {}, bb = r.b || {}, c = r.c || {}, d = r.d || {};
+    const ok = r.before && r.before.limit === '110' && !r.before.doubt && r.before.btn === '잘못된 정보 신고' &&
+      r.sentBtn === '✓ 보냄' && a.limit === '?' && a.doubt && /내가 신고함/.test(a.after) && a.btn === '↩ 신고 취소' && a.undo && a.mine === 1 && a.list === 1 &&
+      r.undoBtn === '✓ 취소함' && bb.limit === '110' && !bb.doubt && bb.flag === null && bb.mine === 0 && bb.list === 0 && bb.btn === '잘못된 정보 신고' && !bb.undo &&
+      c.doubt && c.limit === '?' && c.btn === '잘못된 정보 신고' && !c.undo &&
+      d.removed === 1 && d.left.join(',') === '180';
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

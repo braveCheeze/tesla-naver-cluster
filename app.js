@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-243'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-244'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -3677,6 +3677,40 @@
     });
     store.set('camNo2', JSON.stringify(list.slice(-300)));
   }
+  // v244 (2026-11-25 운전자: 경부 상행 서울TG 앞 구간단속 끝에서 '잘못된 정보 신고'를 눌렀더니 '?' 카드로 바뀌어 안 사라짐 →
+  //   '근데 내가 잘못 신고 한거 같애 구간 단속이 맞는 거 같던데'): 잘못 누른 것으로 확인된 신고 표시는 새 버전이 열릴 때 지운다.
+  //   카메라 키 → 이 시각까지 누른 표시만 지운다(그 뒤에 다시 누른 것은 남긴다). 서버 고침(/fixes)은 생기지 않았다
+  const CAM_FLAG_CLEAR = {
+    '37.3539,127.10339': '2026-11-25T10:00:00+09:00',   // 경부 상행 죽전 북쪽 구간단속 끝 #22040 (110) — 11-25 09:29 두 번
+  };
+  function clearConfirmedFlags() {
+    let n = 0;
+    for (const [k, until] of Object.entries(CAM_FLAG_CLEAR)) {
+      const es = camNoMap.get(k), lim = Date.parse(until);
+      if (!es) continue;
+      const keep = es.filter((e) => e.t1 > lim);
+      n += es.length - keep.length;
+      if (keep.length) camNoMap.set(k, keep); else camNoMap.delete(k);
+    }
+    if (n) saveCamNo();
+    return n;
+  }
+  try { clearConfirmedFlags(); } catch (e) { /* 다음에 */ }
+  // v244 (운전자 '잘못 신고'): 오늘 내가 신고해 흐려진 카드가 떠 있으면 아래 버튼이 '↩ 신고 취소' — 누르면 그 방향 신고 표시를 지우고 카드가
+  //   원래대로(제한속도·소리) 돌아온다. 다른 날 누른 것은 예전처럼 '잘못된 정보 신고'(또 누르면 숨김), 되돌리기는 설정 목록에서
+  const flagMatch = (e, h) => e.h === null || h == null || angleDiff(e.h, h) <= 45;
+  function camFlagToday(c, h) {
+    const a = camNoMap.get(c[0] + ',' + c[1]), today = dayStr(Date.now());
+    return !!a && a.some((e) => flagMatch(e, h) && e.days[e.days.length - 1] === today);
+  }
+  function camFlagUndo(c, h) {
+    const k = c[0] + ',' + c[1], a = camNoMap.get(k);
+    if (!a) return 0;
+    const keep = a.filter((e) => !flagMatch(e, h));
+    if (keep.length) camNoMap.set(k, keep); else camNoMap.delete(k);
+    if (keep.length !== a.length) saveCamNo();
+    return a.length - keep.length;
+  }
   // v159: 자료를 고친 지점(mobile.json unflag: 제한속도·종류가 바뀐 자리)은 예전에 누른 '틀림'을 한 번 푼다.
   // 판교JC·송파IC 고속도로 부스가 옆 일반도로 값(60·50)이라 틀림을 눌렀고, 고친 뒤에도 숨어 있으면 그대로 놓친다 (2026-11-18 송파IC)
   function camNoUnflag(u) {
@@ -4031,6 +4065,7 @@
       }
     }
     if (card.hidden) $('#zoneBadge').hidden = true;
+    camMissLabel();   // v244: 오늘 내가 신고한 카드면 '↩ 신고 취소'
     renderSection();
     renderCamAvg();
     renderMySpeed();
@@ -9526,8 +9561,31 @@
     }
     renderCam();
     renderCamFlags();
-    toast(st === 'hide' ? '신고 접수 완료 · 이 방향에서는 숨길게요 (설정에서 되돌리기)' : '신고 접수 완료 · 14일 동안 흐리게, 소리 없이 (제한속도 ?)', '', 3000);
+    toast(st === 'hide' ? '신고 접수 완료 · 이 방향에서는 숨길게요 (설정에서 되돌리기)' : '신고 접수 완료 · 흐리게, 소리 없이 · 잘못 눌렀으면 ↩ 신고 취소', '', 3000);
     return true;
+  }
+  // v244: '↩ 신고 취소' — 떠 있는 카드의 내 신고 표시(이 방향)를 지우고 원래대로 알린다. 서버에도 취소를 남긴다(분석에서 그 신고를 뺀다)
+  function undoWrongCard() {
+    const tg = camState.target;
+    if (!tg) return false;
+    const h = state.heading === null ? null : Math.round(state.heading);
+    camFlagUndo(tg.c, h);
+    tg.flag = camFlag(tg.c, h);
+    camState.passed.delete(tg.i);
+    userReport('unwrong');
+    renderCam();
+    renderCamFlags();
+    toast('신고 취소 · 원래대로 알려요', '', 2500);
+    return true;
+  }
+  // 아래 신고 버튼 글자: 오늘 내가 신고해 흐려진 카드가 떠 있으면 '↩ 신고 취소', 아니면 '잘못된 정보 신고' (보냄·보내는 중 표시는 그대로 둔다)
+  function camMissLabel() {
+    const b = $('#camMissBtn'), tg = camState.target, card = $('#camCard');
+    if (!b || b.classList.contains('sent') || b.classList.contains('sending')) return;
+    const undo = !!(tg && tg.flag === 'doubt' && !card.hidden && card._camI === tg.i && camFlagToday(tg.c, state.heading === null ? null : Math.round(state.heading)));
+    const want = undo ? '↩ 신고 취소' : '잘못된 정보 신고';
+    b.classList.toggle('undo', undo);
+    if (b.textContent !== want) { b.textContent = want; b.setAttribute('aria-label', undo ? '신고 취소' : '잘못된 정보 신고'); }
   }
   function reportMissed(b) {
     // v171: 누르는 순간 차 안에서 원인을 찾아 고친다. 우리 자료에 후보가 없으면 '내가 신고한 단속 지점'으로 저장 (v169)
@@ -9555,8 +9613,12 @@
     const b = $('#camMissBtn'), tg = camState.target, card = $('#camCard');
     if (b.classList.contains('sent') || b.classList.contains('sending')) return;
     clearTimeout(b._sentT);
+    if (tg && !card.hidden && card._camI === tg.i && b.classList.contains('undo')) {   // v244: 오늘 내가 신고한 카드 → 신고 취소
+      if (undoWrongCard()) { b.classList.remove('undo'); b.classList.add('sent'); b.textContent = '✓ 취소함'; b._sentT = setTimeout(() => { b.classList.remove('sent'); camMissLabel(); }, MISS_SENT_MS); }
+      return;
+    }
     if (tg && !card.hidden && card._camI === tg.i) {   // 경고 카드가 떠 있음 → 그 카메라 신고
-      if (reportWrongCard()) { b.classList.add('sent'); b.textContent = '✓ 보냄'; b._sentT = setTimeout(() => { b.classList.remove('sent'); b.textContent = REPORT_LABEL; }, MISS_SENT_MS); }
+      if (reportWrongCard()) { b.classList.add('sent'); b.textContent = '✓ 보냄'; b._sentT = setTimeout(() => { b.classList.remove('sent'); b.textContent = REPORT_LABEL; camMissLabel(); }, MISS_SENT_MS); }
       return;
     }
     b.classList.add('sending'); b.textContent = '보내는 중…';
@@ -10559,7 +10621,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams, passWhy, pruneTurnCams, camDirOk, routeNet, routeUpstream, laneGuideM, planSignPlace, findBuilding, sunPosStored, eventBody, routeArrived, routeIdleCheck, routeStartup, routeHide, tripEndGap, routeHeading, startsReversed, ROUTE_AHEAD, fitSigns, nvSceneFits, planScene, routeTurnSum, renderJunction, juncState,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, camFlagUndo, camFlagToday, undoWrongCard, clearConfirmedFlags, CAM_FLAG_CLEAR, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams, passWhy, pruneTurnCams, camDirOk, routeNet, routeUpstream, laneGuideM, planSignPlace, findBuilding, sunPosStored, eventBody, routeArrived, routeIdleCheck, routeStartup, routeHide, tripEndGap, routeHeading, startsReversed, ROUTE_AHEAD, fitSigns, nvSceneFits, planScene, routeTurnSum, renderJunction, juncState,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,
