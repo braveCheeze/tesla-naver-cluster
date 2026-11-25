@@ -149,7 +149,7 @@ MANUAL = {
 
 
 def finish(res, shape):
-    """[가운데, 폭, 맞춤] → [가운데(그림 안 9~91% 로), 폭, 기울기°, 맞춤]. 폭은 이웃 가운데와의 거리, 기울기는 가운데에서 다시 셈"""
+    """[가운데, 폭, 맞춤] → [가운데, 폭, 기울기°, 맞춤]. 폭은 이웃 가운데와의 거리, 기울기는 가운데에서 다시 셈"""
     sh = S.SHAPES[shape]
     xs = [r[0] for r in res]
     out = []
@@ -162,7 +162,8 @@ def finish(res, shape):
         wm = sum(g) / len(g) if g else w
         X = (x - 0.5) * N * sh['lz'] / S.F
         ang = round(math.degrees(math.atan(X / S.CAM_H)), 1)
-        out.append([round(min(0.91, max(0.09, x)), 3), round(max(0.1, min(0.3, wm)), 3), ang, ok])   # 반쯤 그림 밖 차로도 글자가 잘리지 않게
+        # v267: 가운데는 그림 밖이어도 그대로 (앱이 글자 줄 높이에서 차로가 보이는 부분의 가운데에 글자를 둔다 — 예전엔 9~91% 로 당겨 옆 글자와 붙었다)
+        out.append([round(x, 3), round(max(0.1, min(0.3, wm)), 3), ang, ok])
     return out
 
 

@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-266'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-267'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -6728,33 +6728,70 @@
         // v256 (점검표 3·4): 모든 차로에 방면 글자 하나씩, 굵은 흰 글씨 + 검은 테, 차로 폭의 1/3 높이(--lw), 차로 기울기대로 비스듬히(--sk)
         // v263 (운전자 신갈 사진 — 둘째 '신갈'이 차선에 붙음): 2판 그림은 그림마다 잰 실제 차로 가운데·폭·기울기(img/ai/jx2_lanes.json,
         //   tools/jx_lanefit.py)로. 낮·밤 그림이 달라 글자도 두 벌 (jv-day·jv-night, 지금 보이는 그림 것만 보인다)
-        // v266 (부모 세션, 네이버 대조): 차로 글자를 28% 키운다(CSS). 글자 덩어리 폭 = 글자 수 × 크기 (글자는 차로 기울기대로 눕혀 가로로 재면 차로 안).
-        //   그 폭이 쓸 수 있는 폭(차로 폭, 옆 글자 가운데까지 거리, 그림 끝까지 거리의 두 배 중 가장 작은 것)의 86% 를 넘으면 그만큼만 줄인다 (--fk).
-        //   가장자리 차로는 그림 안 9~91% 로 당겨져 옆 차로와 가까워서 예전엔 '서울서울'·'기흥기흥'처럼 붙었다
+        // v266 (부모 세션, 네이버 대조): 차로 글자를 28% 키운다(CSS). 1판 그림은 글자 덩어리 폭(글자 수 × 크기)이 쓸 수 있는 폭(차로 폭, 옆 글자
+        //   가운데까지 거리, 그림 끝까지 거리의 두 배 중 가장 작은 것)의 86% 를 넘으면 그 글자만 줄인다 (--fk)
         const laneXs = (fit) => laneAt.map((p0, k) => (fit && fit[k] ? fit[k][0] : p0[0]));
         const laneFk = (p, k, xs, lines, nc) => {
           const x = p[0], aw = Math.min(p[3], k > 0 ? x - xs[k - 1] : 2 * x, k < xs.length - 1 ? xs[k + 1] - x : 2 * (1 - x));
           const base = lines > 1 ? 0.34 : 0.43;
           return Math.max(0.45, Math.min(1, 0.86 * aw / (base * p[3] * nc)));
         };
-        const lane = (p0, k, cls, fit) => {
+        // v267 (부모 세션, 네이버 대조 2차): 2판 그림은 네이버처럼 그림마다 글자 줄 하나·글자 크기 하나.
+        //   줄: 차로가 가장 넓은 아래쪽 — 0.92 부터 올라오며 모든 차로가 (예전 줄에서 보이던 만큼, 많아야 80%) 그림 안에 보이는 가장 낮은 줄.
+        //     차로 가운데·폭은 잰 자리에서 소실점(그림 가운데, 보이는 띠 42%)으로 이어 그 줄 높이로 옮긴다
+        //   글자는 그 줄에서 차로가 그림 안에 보이는 부분의 가운데. 크기 = 차로 폭 가운데값 × 0.43, 다만 어느 차로든 글자 덩어리 폭이
+        //     보이는 폭의 120%(네이버처럼 기운 글자가 차선에 조금 걸치는 정도)를 넘거나 옆 글자와 닿으면 그림 전체를 그만큼 줄인다.
+        //   두 줄 글자('구리 성남')는 한 줄의 86% (네이버 85% 넘게). 6차로 그림(서하남IC·하남JC)은 나란한 두 출구 차로의 '서하남'(세 글자)이
+        //   크기를 정한다 — 우리 AI 그림은 그 두 차로가 네이버보다 좁아 더 키우면 글자끼리 닿는다
+        const JX2_VY = 0.42;
+        const laneGeo = (p, y) => {
+          const w = p[3] * (y - JX2_VY) / (p[1] - JX2_VY), x = p[0] + (y - p[1]) * 0.75 * Math.tan(p[4] * Math.PI / 180);
+          const a = Math.max(0.015, x - w / 2), b = Math.min(0.985, x + w / 2);
+          return { x, w, c: (a + b) / 2, aw: Math.max(0, b - a), y };
+        };
+        const laneNames = laneAt.map((p0, k) => (p0[2] ? goName(k) : otLane));
+        const laneUnit = laneNames.map((nm) => (nm.length ? Math.max(2, ...nm.map((x) => x.length)) * (nm.length > 1 ? 0.86 : 1) : 1.2));
+        const labelSet = (fit) => {
+          const P = laneAt.map((p0, k) => (fit && fit[k] ? [fit[k][0], p0[1], p0[2], fit[k][1], fit[k][2]] : p0));
+          const row0 = P[0][1], vis = (p, y) => { const g = laneGeo(p, y); return g.aw / g.w; };
+          const v0 = P.map((p) => vis(p, row0));
+          let row = row0;
+          for (let y = 0.92; y > row0 + 0.004; y -= 0.01) if (P.every((p, k) => vis(p, y) >= Math.min(0.8, v0[k] - 0.02))) { row = y; break; }
+          const G = P.map((p) => laneGeo(p, row)), ws = G.map((g) => g.w).sort((a, b) => a - b), med = ws[ws.length >> 1];
+          let F = 0.43 * med;
+          G.forEach((g, k) => {
+            // 굵은 글자 한 자의 실제 폭은 글자 크기의 1.08 배쯤 (기흥IC '기흥기흥'이 붙었다)
+            F = Math.min(F, 1.25 * g.aw / (1.08 * laneUnit[k]));
+            if (k) F = Math.min(F, 2 * (g.c - G[k - 1].c - 0.01) / (1.08 * (laneUnit[k] + laneUnit[k - 1])));
+          });
+          return { P, G, F: Math.max(0.55 * 0.43 * med, F) };
+        };
+        const lane = (p0, k, cls, fit, set) => {
           const f = fit && fit[k];
-          const p = f ? [f[0], p0[1], p0[2], f[1], f[2]] : p0;
+          const p = set ? set.P[k] : f ? [f[0], p0[1], p0[2], f[1], f[2]] : p0;
           const bus = stay && goOrd[k] >= 0 && cols[goOrd[k]] === 'n';
-          const nm = p[2] ? goName(k) : otLane;
+          const nm = laneNames[k];
           const sk = Math.max(-38, Math.min(38, mir ? -p[4] : p[4]));
-          const xs = laneXs(fit), fk = laneFk(p, k, xs, Math.max(1, nm.length), nm.length ? Math.max(2, ...nm.map((x) => x.length)) : 1.2);
-          const pos = 'left:' + ((mir ? 1 - p[0] : p[0]) * 100).toFixed(1) + '%;top:' + (p[1] * 100).toFixed(1) + '%;--lw:' + p[3] + ';--sk:' + sk + 'deg;--fk:' + fk.toFixed(3);
+          let pos;
+          if (set) {
+            const g = set.G[k];
+            pos = 'left:' + ((mir ? 1 - g.c : g.c) * 100).toFixed(1) + '%;top:' + (g.y * 100).toFixed(1) + '%;--lw:' + g.w.toFixed(3) + ';--sk:' + sk + 'deg;--fs:' + (set.F * 100).toFixed(2);
+          } else {
+            const xs = laneXs(fit), fk = laneFk(p, k, xs, Math.max(1, nm.length), nm.length ? Math.max(2, ...nm.map((x) => x.length)) : 1.2);
+            pos = 'left:' + ((mir ? 1 - p[0] : p[0]) * 100).toFixed(1) + '%;top:' + (p[1] * 100).toFixed(1) + '%;--lw:' + p[3] + ';--sk:' + sk + 'deg;--fk:' + fk.toFixed(3);
+          }
+          const fs = set ? ' fs' : '';
           // v259: 이름이 없으면 비우지 않고 그 갈래의 노선 방패 (네 글자 넘는 길 이름에 짧은 이름도 없을 때)
           if (!nm.length) {
             const no = p[2] ? goNo : otNo;
-            return no ? '<span class="jx-lane jx-lane-sh' + (p[2] ? ' go' : '') + cls + '" style="' + pos + '"><i class="sg-shield">' + shieldSvg(no) + '</i></span>' : '';
+            return no ? '<span class="jx-lane jx-lane-sh' + fs + (p[2] ? ' go' : '') + cls + '" style="' + pos + '"><i class="sg-shield">' + shieldSvg(no) + '</i></span>' : '';
           }
-          return '<span class="jx-lane' + (p[2] && !bus ? ' go' : '') + (nm.length > 1 ? ' two' : '') + cls + '" style="' + pos + ';--nc:' + Math.max(2, ...nm.map((x) => x.length)) + '">' +
+          return '<span class="jx-lane' + fs + (p[2] && !bus ? ' go' : '') + (nm.length > 1 ? ' two' : '') + cls + '" style="' + pos + ';--nc:' + Math.max(2, ...nm.map((x) => x.length)) + '">' +
             nm.map((x) => '<b>' + esc(x) + '</b>').join('') + '</span>'; };
         const fD = v2 ? jx2Fit[ICON_PICKS[key2v + jxs + '_day']] : null, fN = v2 ? jx2Fit[ICON_PICKS[key2v + jxs + '_night']] : null;
-        const lanesHtml = fD || fN ? laneAt.map((p, k) => lane(p, k, ' jv-day', fD)).join('') + laneAt.map((p, k) => lane(p, k, ' jv-night', fN)).join('')
-          : laneAt.map((p, k) => lane(p, k, '', null)).join('');
+        const sD = v2 ? labelSet(fD) : null, sN = v2 ? labelSet(fN) : null;
+        const lanesHtml = fD || fN ? laneAt.map((p, k) => lane(p, k, ' jv-day', fD, sD)).join('') + laneAt.map((p, k) => lane(p, k, ' jv-night', fN, sN)).join('')
+          : laneAt.map((p, k) => lane(p, k, '', null, sD)).join('');
         // 나들목 번호 띠 (점검표 6, 네이버 '2B 성남'): 나가는 쪽 표지판 위에 (본선 그대로면 다른 갈래 = 출구 표지 위)
         const BD = v2 ? JX2_BOARD : JX_BOARD;
         // v259 (③): 같은 쪽으로 먼저 갈라진 출구가 있으면 네이버 성남IC 처럼 본선 표지 대신 출구 표지 두 장 — 경로 출구('2B 성남 광주')는 안쪽,
