@@ -7,8 +7,11 @@ OpenStreetMap(ODbL)의 연결로 destination 태그에서 가져온다. 네이�
 - 갈림점: 한 방향 motorway·motorway_link·trunk·trunk_link 길에서 한 점에서 두 갈래 이상으로 나뉘는 곳
 - 갈래마다: 갈림점에서 80·200·350m 간 자리(경로가 어느 갈래로 가는지 앱이 이 자리로 가른다 — 판교분기점은 80m 뒤에도 두 갈래가 9m 거리),
   방면(destination, 없으면 다음 길을 따라가 찾음), 노선 번호(ref)·길 이름(name)
-- 줄: [위도, 경도, 들어오는 방향(°), [[80m 위도, 경도, '방면1;방면2', 'ref', '이름', 200m 위도, 경도, 350m 위도, 경도], ...]]
+- 줄: [위도, 경도, 들어오는 방향(°), [[80m 위도, 경도, '방면1;방면2', 'ref', '이름', 200m 위도, 경도, 350m 위도, 경도], ...], [갈래마다 차로 수]]
   (길이 먼저 끝나면 뒤 자리는 없다). 방면을 아는 갈래가 하나 이상인 갈림점만
+- v3 (v255, 2026-11-25 부모 세션 'OSM lanes 대체'): 갈래마다 갈림 바로 뒤 길의 lanes 태그(차로 수, 없으면 0). 정밀도로지도 분기 단면
+  (data/forks.json, 경부만)이 없는 곳에서 앱이 분기점 그림 모양(4+2, 2+2, 4+1, 3+1)을 고른다. 네이버 확대 그림의 차로 수와 맞다:
+  하남분기점 중부 서행 본선 4 + '판교;서하남' 2. 연결로에 lanes 가 없는 곳은 LANES_FIX 로 채운다(서하남IC)
 - 사용:  set TMP=D:\\tmp & py -I tools\\osm_junc_dest.py D:\\osm\\south-korea-latest.osm.pbf data\\junc_dest.json
 """
 import json
@@ -36,6 +39,21 @@ def brg(a, b):
     return (math.atan2(y, x) / k + 360) % 360
 
 
+def lanes_of(v):
+    try:
+        return max(0, min(12, int(str(v).split(';')[0].strip())))
+    except ValueError:
+        return 0
+
+
+# OSM 연결로에 lanes 태그가 없어 차로 수를 모르는 갈래 (갈림점 위도, 경도, 갈래 방면에 든 글자, 차로 수, 까닭) — 갈림점 30m 안
+LANES_FIX = [
+    # 서하남IC 수도권제1순환 북행 출구 '강동;서하남': OSM 연결로(70986691)에 lanes 없음. 진출 차로 2 — 네이버 확대 그림·차로 줄
+    # (2026-11-25 jx 비교표: 본선 '구리 대전' 4 + '강동 서하남' 2, 차로 줄 '↑↑↑↑↱↱'), 부모 세션 확인
+    (37.511727, 127.150406, '서하남', 2, '서하남IC 북행 출구 진출 2차로 (jx 비교표)'),
+]
+
+
 class H(osmium.SimpleHandler):
     def __init__(self):
         super().__init__()
@@ -54,7 +72,7 @@ class H(osmium.SimpleHandler):
         except osmium.InvalidLocationError:
             return
         self.ways[w.id] = {'n': [n.ref for n in w.nodes], 'p': pts, 'd': w.tags.get('destination', ''), 'r': w.tags.get('ref', ''),
-                           'nm': w.tags.get('name', ''), 'hw': hw}
+                           'nm': w.tags.get('name', ''), 'hw': hw, 'ln': lanes_of(w.tags.get('lanes', ''))}
 
 
 h = H()
@@ -125,7 +143,7 @@ def follow(wid, k):
     return ats, dest, ref, nm
 
 
-rows = []
+rows, fixed = [], []
 for nid, outs in through.items():
     if len(outs) < 2:
         continue
@@ -145,8 +163,19 @@ for nid, outs in through.items():
     if not any(b[2] for b in br):
         continue
     here = W[outs[0][0]]['p'][outs[0][1]]
-    rows.append([here[0], here[1], inb, br])
+    lanes = [W[wid]['ln'] for wid, k in outs]
+    for la, lo, key, n, why in LANES_FIX:
+        if hav(here, (la, lo)) <= 30:
+            for i, b in enumerate(br):
+                if key in b[2]:
+                    lanes[i] = n
+                    fixed.append((why, here, b[2], n))
+    rows.append([here[0], here[1], inb, br, lanes])
 
-json.dump({'v': 2, 'src': 'OpenStreetMap contributors (ODbL), destination tags', 'ahead': AHEADS, 'rows': rows},
+json.dump({'v': 3, 'src': 'OpenStreetMap contributors (ODbL), destination·lanes tags', 'ahead': AHEADS, 'rows': rows},
           open(OUT, 'w', encoding='utf-8'), ensure_ascii=False, separators=(',', ':'))
-print('갈림점', len(rows))
+print('갈림점', len(rows), '· 갈래 차로 수를 다 아는 곳', sum(1 for r in rows if all(r[4])))
+for f in fixed:
+    print('  LANES_FIX', f)
+if len(fixed) != len(LANES_FIX):
+    sys.exit('LANES_FIX 중 맞는 갈림점이 없는 줄이 있습니다')

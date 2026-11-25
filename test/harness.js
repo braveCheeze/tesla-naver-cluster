@@ -2942,6 +2942,7 @@
     { id: 'S165', name: "S165 '비보호' badge and square lane boxes (v248, driver 2026-11-25: '우리는 비보호를 여기다가 써줘도 좋을 거 같아' at the top right of the guidance row, and '네이버지도 화살표 안내 쟤네는 정사각형인데 우린 약간 세로로 길잖아'): an unprotected left turn shows a blue '비보호' badge at the top right of the turn row and drops the word from the text ('좌회전 · …'), the next guide has no badge; the map lane tip draws every lane as its own 30×30 box with a 3 px gap", fn: s165 },
     { id: 'S166', name: "S166 the branch we do not take, lane names and lane colour (v249, driver 2026-11-25 with Naver's 판교분기점 '일산 안양 | 판교': '여기는 일산 안양 이렇게 알려주잖아 … 차선이랑 바닥에 있는 것도 저렇게 다르게', and 신갈분기점 '초록색 따라가게끔'): at 판교분기점 from 학의 ('구리, 성남', staying on the main road) the other sign shows the OSM ramp destinations '부산 대전'; with Naver-style pictures the other board says '부산 대전', the route lanes are painted '구리/성남' and the other lanes '부산/대전', and the picture is the sky-blue variant (no colour line); at 판교분기점 from 서울TG ('일산, 구리', pink colour line) the pink variant is used", fn: s166 },
     { id: 'S167', name: "S167 junction pictures matched to Naver (v253, jx comparison table): no picture for a main-road stay without lane data (판교JC from 학의) or an unnamed city fork (팔당 '서울'); a picture for 신갈JC '대전' (stay with lane data) naming the ramp '인천, 원주'; 서하남교차로 keeps Naver's '왼쪽 방향' and names 하남 on the other board; 기흥IC exit is 2+2 pink, 신갈JC '원주, 인천' 4+1 green, 판교IC 2+2 with both route lanes '분당/판교'", fn: s167 },
+    { id: 'S168', name: "S168 lane counts from OSM where there is no HD-map lane data (v255, parent session: Naver 하남분기점 4+2, 서하남IC 2-lane exit): at 하남분기점 (중부 westbound, '판교, 서하남') and 서하남IC ('강동, 서하남') OSM gives 2 route lanes + 4 other lanes, so the picture is 4+2 when one is picked and the closest existing shape (2+2) until then; 성남IC (ramp lanes not in OSM) stays 4+1; 판교IC (HD-map 'SB|S|S|S|S|R|R') becomes 4+2 too once picked", fn: s168 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -8224,6 +8225,68 @@
       b.calls === 4 && b.active && b.same && b.pill && !b.redToast && b.panel && b.turn && b.log.join(',') === 'failed:3' && b.moved &&
       !c.pill && c.active &&
       d.bad400 === 1 && d.naverNo === 1 && d.traffic === 1 && d.upstream.every(Boolean) && !d.pillAfterEnd;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S168: OSM 차로 수로 그림 모양 (v255, 부모 세션 'OSM lanes 대체' — 네이버 하남분기점 4+2, 서하남IC 출구 2차로)
+  //   (a) 하남분기점 중부 서행 '수도권제1순환선, 판교, 서하남': OSM 갈래 차로 수 경로 2 · 다른 4 → 4+2 그림이 아직 없으면 2+2(가까운 모양),
+  //       4+2 를 고르면 4+2 (차로 글자 여섯, 갈 차로 둘)
+  //   (b) 서하남IC 북행 '강동, 서하남': 연결로 차로 수는 LANES_FIX 2 · 본선 4 → (a) 와 같다
+  //   (c) 성남IC '성남, 광주': 연결로에 OSM lanes 가 없어 모름 → 예전처럼 4+1
+  //   (d) 판교IC '분당, 판교': 정밀도로지도 단면 'SB|S|S|S|S|R|R'(갈 차로 2, 다른 5) → 지금은 2+2, 4+2 를 고르면 4+2 (네이버도 버스 + 4 + 출구 2)
+  //   (e) 모양 고르기: 1+1 갈림길은 갈림길 그림, 출구 1 + 본선 3 은 3+1, 출구 1 + 본선 4 는 4+1
+  async function s168() {
+    const t = T(), r = {};
+    const fixture = async (f) => {
+      const fx = await (await realFetch(harnessDir + 'fixtures/' + f, { cache: 'no-store' })).json();
+      const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0]; for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + hav(P[k - 1], P[k]));
+      return { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '시험', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    };
+    const K42 = ['jx_exit42_day', 'jx_exit42_night'], keep = {};
+    for (const k of K42) keep[k] = t.iconPicks[k];
+    const set42 = (on) => { for (const k of K42) { if (on) t.iconPicks[k] = /_night$/.test(k) ? 'jxn__t__1.webp' : 'jxd__t__1.webp'; else delete t.iconPicks[k]; } t.juncState.key = ''; };
+    const view = () => {
+      const el = document.getElementById('juncCard'), sv = document.getElementById('juncSvg');
+      const ln = [...sv.querySelectorAll('.jx-lane')], shape = t.jxShape(t.juncInfo(t.nav.next), t.nav.next);
+      // 차로 칸 수는 그림 모양의 차로 자리 수 (이름을 모르는 차로에는 글자가 없다: 서하남IC 본선 '수도권제1순환'은 네 글자가 넘음)
+      return { shown: visible('#juncCard'), shape, osm: t.jxOsmLanes(t.nav.next),
+        lanes: shape ? t.JX_LANES[shape].length : 0, go: ln.filter((x) => x.classList.contains('go')).length, img: ((sv.querySelector('img.jv-day') || {}).getAttribute ? sv.querySelector('img.jv-day').getAttribute('src') : '').replace(/^.*\/img\/ai\//, '').replace(/\?.*$/, '') };
+    };
+    const at = async (f, re, before) => {
+      const R = await fixture(f);
+      await resetApp(); softReset(); await planAndStart(R);
+      const g = R.route.guide.find((x) => re.test(x.s)), sg = R.cum[Math.min(g.i, R.cum.length - 1)];
+      for (let s = Math.max(0, sg - before - 900); s <= sg - before; s += 20) { const a = pointAt(R, s); feed(a.p, 20, a.h); }
+      const a = pointAt(R, sg - before); feed(a.p, 20, a.h);
+      set42(false); t.renderNav(); await sleep(60); t.renderNav(); await sleep(30);
+      const now = view();
+      set42(true); t.renderNav(); await sleep(40);
+      const with42 = view();
+      set42(false); t.renderNav();
+      t.endNav();
+      return { now, with42 };
+    };
+    try {
+      await waitFor(() => t.jdData.loaded && t.forksData.loaded, 10000, 100);
+      r.a = await at('route-paldang-hanamic-s.json', /하남분기점에서 '수도권제1순환선, 판교, 서하남'/, 330);
+      r.b = await at('route-seohanam-ic-n.json', /서하남IC에서 '강동, 서하남'/, 330);
+      r.c = await at('route-paldang-hanamic-s.json', /성남IC에서 '성남, 광주'/, 330);
+      r.d = await at('route-pangyo-ic-s.json', /판교IC에서 '분당, 판교'/, 330);
+      // (e) 모양 고르기 (그림은 지금 고른 것: 4+2 없음)
+      r.e = [t.jxByLanes(1, 1, 'fork'), t.jxByLanes(1, 3, 'fork'), t.jxByLanes(1, 4, 'ramp'), t.jxByLanes(2, 2, 'fork'), t.jxByLanes(2, 5, 'ramp')].join(',');
+    } finally {
+      for (const k of K42) { if (keep[k]) t.iconPicks[k] = keep[k]; else delete t.iconPicks[k]; }
+      await resetApp(); softReset();
+    }
+    const { a = {}, b = {}, c = {}, d = {} } = r;
+    const four2 = (x) => x && x.now && x.now.shown && x.now.shape === 'exit2' && x.now.lanes === 4 && x.now.go === 2 && /^jx_exit2_day/.test(x.now.img) &&
+      x.with42.shown && x.with42.shape === 'exit42' && x.with42.lanes === 6 && x.with42.go === 2 && /^jxd__t__1_/.test(x.with42.img);
+    const ok = four2(a) && a.now.osm && a.now.osm.go === 2 && a.now.osm.other === 4 &&
+      four2(b) && b.now.osm && b.now.osm.go === 2 && b.now.osm.other === 4 &&
+      c.now && c.now.shown && c.now.shape === 'exit4' && !c.now.osm && c.with42.shape === 'exit4' &&
+      four2(d) &&
+      r.e === 'fork,exit,exit4,fork,exit2';
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
