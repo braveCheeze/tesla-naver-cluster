@@ -25,7 +25,7 @@ ef_car_app.png 로 저장해 두면 그 느낌을 따라 그린다 (저장소에
   4+2 만 (v255, 네이버 하남분기점·서하남IC·판교IC 본선 4 + 출구 2):
     py -X utf8 tools\gen_icons_atlas.py --icons jx_exit42_day,jx_exit42_night --models flare26e,sunburst26e --per 2   (8장)
 - 네이버식 분기점 그림 2판 (v256, 키 큰 4:3 · 실제 차로 수 8가지 × 낮·밤, 밑그림: py -X utf8 tools\jx_scene2.py):
-    py -X utf8 tools\gen_icons_atlas.py --icons jx2 --models flare26e,sunburst26e --per 2   (v258: 모양 10가지 × 낮·밤 = 80장)
+    py -X utf8 tools\gen_icons_atlas.py --icons jx2 --models flare26e,sunburst26e --per 2   (v260: 모양 11가지 × 낮·밤 = 88장)
 - 옵션: --models flare,sunburst,gpt15   --per 2   --icons over_r,junc_fork_r   --dry (요청 없이 계획과 예상 비용만)
 """
 import argparse
@@ -785,8 +785,13 @@ JX2_LANES_TXT = {
     'x43': 'the road has exactly 7 lanes: 4 lanes go straight on the left and 3 lanes (the green route) exit to the right far ahead; the outermost lanes may be cut by the image edge.',
     's31': 'the road has exactly 4 lanes: 3 lanes (the green route) go straight on the left and 1 grey lane exits to the right far ahead.',
     's41': 'the road has exactly 5 lanes: 4 lanes (the green route) go straight on the left and 1 grey lane exits to the right far ahead.',
-    'f22': ('the road has exactly 4 lanes that run straight in the foreground and split in the middle distance into two branches of 2 lanes '
-            'each: the left 2 grey lanes curve left and the right 2 green lanes (the route) curve right.'),
+    # v260 (부모 세션, 네이버 서하남교차로): 대칭 Y 가 아니다 — 왼쪽 둘은 지평선까지 곧게, 오른쪽 둘은 곧게 가다 멀리서 오른쪽으로
+    'f22': ('this is a city arterial road, not an expressway. It has exactly 4 lanes, divided in the middle by a dotted white line: the '
+            'left 2 grey lanes run straight all the way to the horizon, and the right 2 green lanes (the route) run straight beside them '
+            'and only veer off to the right in the distance, beyond the gore.'),
+    'f22k': ('this is a city arterial road, not an expressway. It has exactly 4 lanes, divided in the middle by a dotted white line: the '
+             'left 2 green lanes (the route) run straight all the way to the horizon, and the right 2 grey lanes run straight beside them '
+             'and only veer off to the right in the distance, beyond the gore.'),
 }
 JX2 = {}
 for _k, _t in JX2_LANES_TXT.items():

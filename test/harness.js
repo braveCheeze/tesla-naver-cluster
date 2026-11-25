@@ -8242,7 +8242,7 @@
       const cum = [0]; for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + hav(P[k - 1], P[k]));
       return { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '시험', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
     };
-    const K2 = ['x31', 'x41', 'x41s', 'x22', 'x42', 'x42s', 'x43', 's31', 's41', 'f22'].flatMap((k) => ['jx2_' + k + '_day', 'jx2_' + k + '_night']), keep = {};
+    const K2 = ['x31', 'x41', 'x41s', 'x22', 'x42', 'x42s', 'x43', 's31', 's41', 'f22', 'f22k'].flatMap((k) => ['jx2_' + k + '_day', 'jx2_' + k + '_night']), keep = {};
     // 그림 파일은 있는 것(1판 4+1 그림)을 빌려 쓴다 — 비율·폭을 재려면 그림이 실제로 떠야 한다 (색 바꾼 파일 이름은 없어도 됨)
     for (const k of K2) { keep[k] = t.iconPicks[k]; t.iconPicks[k] = /_night$/.test(k) ? 'jx_exit4_night__sunburst26e__1.webp' : 'jx_exit4_day__sunburst26e__1.webp'; }
     const view = () => {
@@ -8274,11 +8274,14 @@
       r.b = await at('route-seoultg-n.json', /판교분기점에서 '일산, 구리'/, 330);
       r.c = await at('route-paldang-hanamic-s.json', /하남분기점에서 '수도권제1순환선, 판교, 서하남'/, 330);
       r.d = await at('route-giheung-ic-s.json', /신갈분기점에서 '대전'/, 330);
+      // v260: 서하남교차로 '강동' — 네이버처럼 강동 두 차로는 곧게, 하남 두 차로가 멀리서 오른쪽으로 비킨다 (경로 = 곧게 가는 쪽 f22k, 뒤집지 않음)
+      r.e = await at('route-seohanam-ic-n.json', /서하남교차로에서 '강동'/, 330);
+      r.e.m = document.getElementById('juncCard').classList.contains('jx-m');
     } finally {
       for (const k of K2) { if (keep[k]) t.iconPicks[k] = keep[k]; else delete t.iconPicks[k]; }
       await resetApp(); softReset();
     }
-    const { a = {}, b = {}, c = {}, d = {} } = r;
+    const { a = {}, b = {}, c = {}, d = {}, e = {} } = r;
     // v257 (부모 세션 '틀린 도시는 안 된다'): 휴게소 방향 '부산'은 어디에도 없다. v259: 지시도시는 네이버와 맞춘 확인 표에서만 —
     //   성남IC '일산'(×4, 네이버 같음), 하남분기점 '구리 상일', 경부 하행 '대전'. 차로는 비우지 않는다
     const noCity = [a, b, c, d].every((x) => !/부산/.test(x.lanes || '') && !/부산/.test(x.other || ''));
@@ -8288,6 +8291,7 @@
       /^2B성남\|2A/.test(a.tab) && !/\d/.test(a.sign) && a.other === '판교' &&
       b.shown && b.shape === 'x43' && b.lc === 'gpp' && /_gpp\.webp/.test(b.img) && /서울/.test(b.other) &&
       c.shown && c.shape === 'x42' && c.lc === 'p' && /구리상일/.test(c.other) && /^구리\/상일 구리\/상일 구리\/상일 구리\/상일 /.test(c.lanes) &&
+      e.shown && e.shape === 'f22k' && !e.m && e.lanes === '*강동 *강동 하남 하남' &&
       d.shown && d.shape === 's41' && d.lc === 'nbbb' && /_nbbb\.webp/.test(d.img) && /^45A/.test(d.tab) && /대전/.test(d.sign);
     return { pass: !!ok, detail: JSON.stringify(r) };
   }

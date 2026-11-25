@@ -8,7 +8,7 @@
     x22 본선 2 + 출구 2          x42 본선 4 + 출구 2 (하남분기점·서하남IC·판교IC·기흥IC)
     x43 본선 4 + 출구 3 (출구 안에서 나중에 다시 갈림 — 차로 색은 앱이 차로마다: 판교분기점 서울TG 쪽 '일산 안양' 1 + '구리 성남' 2)
     s31 본선 3(경로) + 출구 1     s41 본선 4(경로) + 출구 1 (신갈분기점 '대전')
-    f22 갈림길 2 + 2 (오른쪽 갈래가 경로 — 서하남교차로처럼 일반도로 갈림)
+    f22 갈림길 2 + 2 (v260: 왼쪽 둘은 곧게, 오른쪽 둘이 멀리서 오른쪽으로 비킴 — 경로가 비키는 쪽) · f22k (같은 그림, 경로가 곧게 가는 쪽)
   모두 오른쪽으로 나가는 그림이고 왼쪽이면 앱이 좌우로 뒤집는다
 - v258 (운전자가 성남IC 미리보기에 '오른쪽이 이런 식으로 나오는데 우린 왜 오른쪽으로 빠지도록 나와 있어', 부모 세션): 네이버 330m 그림처럼
   앞쪽은 모든 차로가 곧게 나란히(출구 차로는 차선 하나로만 나뉜 감속 차로, 화살표도 곧게), 고어는 멀리(길 바닥 위쪽 1/4), 연결로는 고어
@@ -87,9 +87,10 @@ SHAPES = {
     'x43': _exit(4, 3, lz=9.6),
     's31': _exit(3, 1, go_exit=False),
     's41': _exit(4, 1, go_exit=False),
-    # 일반도로 갈림길 2 + 2: 네이버 서하남교차로처럼 갈림이 그림 가운데쯤
-    'f22': {'lanes': [(-7.2, -3.6, -1), (-3.6, 0, -1), (0, 3.6, 1), (3.6, 7.2, 1)], 'go': (1,),
-            'bend': {-1: [(-0.25, -0.010, 28.0)], 1: [(0.25, 0.010, 28.0)]}, 'lz': 8.0, 'paint_to': Z1, 'zs': 28.0},
+    # 일반도로 갈림길 2 + 2 (v260, 부모 세션 — 네이버 서하남교차로): 대칭 Y 가 아니다. 왼쪽 두 차로는 지평선까지 곧게, 오른쪽 두 차로는
+    #   곧게 가다가 멀리서야 오른쪽으로 비킨다. 두 무리 사이는 점선. 경로가 비키는 쪽이면 f22, 곧게 가는 쪽이면 f22k (왼쪽으로 비키면 앱이 뒤집는다)
+    'f22': {'lanes': [(-7.2, -3.6, 0), (-3.6, 0, 0), (0, 3.6, 1), (3.6, 7.2, 1)], 'go': (1,), 'bend': EXIT_BEND, 'lz': 8.0, 'paint_to': Z1, 'city': True},
+    'f22k': {'lanes': [(-7.2, -3.6, 0), (-3.6, 0, 0), (0, 3.6, 1), (3.6, 7.2, 1)], 'go': (0,), 'bend': EXIT_BEND, 'lz': 8.0, 'paint_to': Z1, 'city': True},
 }
 GO_N = {k: sum(1 for ln in v['lanes'] if ln[2] in v['go'] and len(ln) < 4) for k, v in SHAPES.items()}
 
@@ -183,9 +184,15 @@ def draw_base(name):
         if s in go and not lane_za(ln):
             d.polygon(strip(x0 + 0.15, x1 - 0.15, s, sh, Z0, sh['paint_to']), fill=green)
     # 차선: 길 가장자리·갈래 경계(고어 뒤)는 실선, 같은 갈래 안은 점선, 고어 앞 갈래 경계(본선 | 출구)는 굵은 점선
+    # v260: 두 갈래가 맞닿은 경계(본선 | 출구, 갈림길 두 무리 사이)는 고어 전까지 굵은 점선뿐 — 실선은 고어부터 (네이버 성남IC·서하남교차로)
+    shared = set()
+    for s1, (a0, a1, _za) in groups.items():
+        for s2, (b0, b1, _zb) in groups.items():
+            if s1 != s2 and abs(a1 - b0) < 0.01:
+                shared.add((s1, 'r')); shared.add((s2, 'l'))
     for s, (x0, x1, za) in groups.items():
-        lane_line(x0, s, sh, False, d, white, 0.16, za)
-        lane_line(x1, s, sh, False, d, white, 0.16, za)
+        lane_line(x0, s, sh, False, d, white, 0.16, zs0 if (s, 'l') in shared else za)
+        lane_line(x1, s, sh, False, d, white, 0.16, zs0 if (s, 'r') in shared else za)
     for i, ln in enumerate(sh['lanes'][1:], 1):
         x0, x1, s = ln[:3]
         ps = sh['lanes'][i - 1][2]
