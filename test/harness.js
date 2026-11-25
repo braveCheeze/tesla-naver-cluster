@@ -1348,12 +1348,14 @@
         bar = q('#rsBar'), alerts = q('.alerts'), np = q('#navPanel'), btn = q('#zin'), tc = q('.topctrls');
       r = {
         clockTopRight: clock.right > app.right - 40 && clock.top < app.top + 40,
-        roadBottomCenter: Math.abs((road.left + road.right) / 2 - (app.left + app.right) / 2) < 30 && road.bottom > app.bottom - 40,
+        // v263: 길안내 중 아래 띠(남은 거리·도착·안내 종료 + 지금 위치)는 왼쪽 칸(안내 카드)과 오른쪽 아래 주행 기록 카드 사이 가운데
+        roadBottomCenter: (() => { const tr = document.querySelector('.trip').getBoundingClientRect(), nb = document.getElementById('navBar').getBoundingClientRect();
+          return Math.abs((nb.left + nb.right) / 2 - (np.right + tr.left) / 2) < 4 && nb.bottom > app.bottom - 80 && road.bottom <= nb.bottom + 1; })(),
         gpsBottomRight: gps.right > app.right - 40 && gps.bottom > app.bottom - 60,
-        compassBottomLeft: head.left < app.left + 40 && head.bottom > app.bottom - 140, // 나침반은 맨 아래 주행 기록 바로 위
+        compassBottomLeft: head.right > app.right - 260 && head.bottom > app.bottom - 160, // v263: 나침반 줄은 오른쪽 아래 주행 기록 카드 맨 위
         // 주행 기록은 맨 아래지만 화면 테두리에서 띄워서(아래 24px 이상, 왼쪽 20px 이상), 나침반은 그 위
         tripAtBottom: (() => { const tr = document.querySelector('.trip').getBoundingClientRect();
-          return tr.bottom <= app.bottom - 24 && tr.bottom > app.bottom - 60 && tr.left >= app.left + 20 && head.top >= tr.top - 1 && head.bottom <= tr.top + 64; })(),   // v206: 나침반 줄은 카드 맨 위
+          return tr.bottom <= app.bottom - 24 && tr.bottom > app.bottom - 60 && tr.right <= app.right - 8 && tr.right > app.right - 40 && head.top >= tr.top - 1 && head.bottom <= tr.top + 64; })(),   // v263: 오른쪽 아래, GPS 줄 위
         // 오른쪽 끝의 가는 막대 (2026-11-14 요청으로 6 → 10px: 그래도 12px 이하)
         stripRight: strip.left > app.right - 80 && bar.width <= 12,
         // 경로 막대는 세로 가운데
@@ -1369,7 +1371,7 @@
         // 화면이 넓으면(1000px 이상, 테슬라 브라우저를 크게 펼친 1307×747) 왼쪽 나침반 위에 속도계, 보통 크기(804)에서는 숨김
         speedWhenWide: (() => { const sb = document.querySelector('.speedbox'), on = sb.getClientRects().length > 0 && getComputedStyle(sb).display !== 'none';
           if (innerWidth < 1000) return !on;
-          const r = sb.getBoundingClientRect(); return on && r.left < app.left + 60 && r.bottom <= head.top + 4; })(),
+          const r = sb.getBoundingClientRect(), fb = document.querySelector('.fbcorner').getBoundingClientRect(); return on && r.left < app.left + 60 && r.bottom <= fb.top + 4; })(),   // v263: '의견' 버튼 위
         // 야간·전체화면·설정 버튼은 길안내 패널 바로 오른쪽, 패널 위쪽 높이에
         topButtonsNextToNav: tc.left >= np.right && tc.left - np.right <= 16 && Math.abs(tc.top - np.top) <= 4,
       };
@@ -1708,7 +1710,8 @@
       t.upd.newer = '2026.11.14-99'; t.renderUpdBtn();
       // 작은 '업데이트' 버튼은 띠를 안 눌러도 오른쪽 위에 늘 보인다 (운전 중에도)
       const ub = document.getElementById('updBtn').getBoundingClientRect(), app = document.getElementById('app').getBoundingClientRect();
-      r.smallBtn = vis('#updBtn') && ub.height <= 34 && ub.right > app.right - 80 && ub.bottom > app.bottom - 90; // 오른쪽 아래 GPS 바로 위
+      const trb = document.querySelector('.trip').getBoundingClientRect();
+      r.smallBtn = vis('#updBtn') && ub.height <= 34 && ub.right > app.right - 80 && ub.bottom <= trb.top + 1 && ub.bottom > trb.top - 30; // v263: 오른쪽 아래 주행 기록 카드 바로 위
       t.openTray(); await wait(40);
       r.button = vis('#ntUpdate') && /새 버전 11\.14-99/.test(text('#ntVer'));
       t.closeTray(); await wait(220);
@@ -2951,6 +2954,7 @@
     { id: 'S167', name: "S167 junction pictures matched to Naver (v253, jx comparison table): no picture for a main-road stay without lane data (판교JC from 학의) or an unnamed city fork (팔당 '서울'); a picture for 신갈JC '대전' (stay with lane data) naming the ramp '인천, 원주'; 서하남교차로 keeps Naver's '왼쪽 방향' and names 하남 on the other board; 기흥IC exit is 2+2 pink, 신갈JC '원주, 인천' 4+1 green, 판교IC 2+2 with both route lanes '분당/판교'", fn: s167 },
     { id: 'S168', name: "S168 lane counts from OSM where there is no HD-map lane data (v255, parent session: Naver 하남분기점 4+2, 서하남IC 2-lane exit): at 하남분기점 (중부 westbound, '판교, 서하남') and 서하남IC ('강동, 서하남') OSM gives 2 route lanes + 4 other lanes, so the picture is 4+2 when one is picked and the closest existing shape (2+2) until then; 성남IC (ramp lanes not in OSM) stays 4+1; 판교IC (HD-map 'SB|S|S|S|S|R|R') becomes 4+2 too once picked", fn: s168 },
     { id: 'S169', name: "S169 Naver-style junction picture v2 (v256, parent session checklist after the driver's 성남IC complaint '봐바 이거 안돼 … 비슷하게 좀 만들어 줘'): with v2 pictures picked, the picture is 4:3 and as wide as the drawer; the shape follows the real lane counts (성남IC 4+1, 판교분기점 from 서울TG 4 + 1 + 2, 하남분기점 4+2, 신갈분기점 '대전' main road 4 + exit 1 with the bus lane not painted); every visible lane carries a bold label about a third of the lane width tall, the lanes not taken say the OSM destination at that split ('서울') or else the road name ('중부', board '수도권제1순환'; v257: never a rest-area direction city), the exit board has no route shield and an exit-number tab ('2B 성남'), and the route lanes at 판교분기점 are green 1 + pink 2", fn: s169 },
+    { id: 'S170', name: "S170 driver feedback after the v262 night drive (2026-11-26): with the turn 3.4 km away the '이어서' row leaves the card and becomes a chip beside it ('↱ 160m'), near the turn the row stays; a far rest area is a chip under the turn chips (closest first); remaining distance, time, ETA and '안내 종료' sit in the bottom-centre bar, not in the card; with a waypoint the top line is the waypoint with an orange '경유' tag and the destination below; the trip card is bottom right, the feedback button bottom left; lane labels follow each picture's measured lane centres (day and night sets)", fn: s170 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -4429,7 +4433,7 @@
         // v158: 카드 안 줄은 차에서부터 가까운 순서 — 휴게소(50m)가 그다음 칸(우회전, 차에서 550m)보다 위, 맨 밑은 '안내 종료' 줄
         r.order = [...document.getElementById('navPanel').children].filter((e) => !e.hidden && getComputedStyle(e).display !== 'none')
           .map((e) => e.id || e.className.split(' ')[0]).join('>');
-        r.place = el.parentElement.id === 'navPanel' && r.order === 'navdest>turn>restCard>nextTurn>navmeta';
+        r.place = el.parentElement.id === 'navPanel' && r.order === 'navdest>turn>restCard>nextTurn';   // v263: 남은 거리 줄(navmeta)은 아래 가운데 띠로
         r.blue = getComputedStyle(el).backgroundColor === 'rgb(29, 79, 184)';
         const sp = nx.querySelector('span'); const keep = sp.textContent; sp.textContent = '다음 서울하이패스센터쉼터아주아주긴이름';
         const pr = document.getElementById('navPanel').getBoundingClientRect(), db = nx.querySelector('b').getBoundingClientRect(), nb = document.getElementById('restDist').getBoundingClientRect();
@@ -6667,8 +6671,10 @@
       const hit = document.elementFromPoint((fbR.left + fbR.right) / 2, (fbR.top + fbR.bottom) / 2);
       if (hp) hp.style.display = hpd;
       // v206: 주행 기록 카드 안 나침반 줄 오른쪽 끝 (46px, 말풍선 속 마이크 + '의견'), 진짜 누름이 버튼에 닿는다
-      r.a = { w: Math.round(fbR.width), h: Math.round(fbR.height), right: fbR.left >= ht.right + 4, row: Math.abs((fbR.top + fbR.bottom) / 2 - (cp.top + cp.bottom) / 2) <= 4,
-        inCard: !!btn.closest('.trip'), cap: text('.fb-cap'), hit: !!(hit && hit.closest && hit.closest('#fbBtn')), shown: getComputedStyle(btn.parentElement).display !== 'none' };
+      // v263 (운전자: 주행 기록 카드는 오른쪽 아래, 왼쪽 아래에는 초록 '의견' 버튼만): 왼쪽 아래 모서리 50px, 진짜 누름이 버튼에 닿는다
+      const appR = document.getElementById('app').getBoundingClientRect();
+      r.a = { w: Math.round(fbR.width), h: Math.round(fbR.height), right: fbR.left < appR.left + 40, row: fbR.bottom > appR.bottom - 60,
+        inCard: !!btn.closest('.fbcorner'), cap: text('.fb-cap'), hit: !!(hit && hit.closest && hit.closest('#fbBtn')), shown: getComputedStyle(btn.parentElement).display !== 'none' };
       // (b)·(c)
       btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       const rec = recs[recs.length - 1];
@@ -6704,7 +6710,7 @@
       softReset();
     }
     const a = r.a || {}, b = r.b || {}, c = r.c || {}, d = r.d || {}, e = r.e || {}, f = r.f || {};
-    const ok = a.w === 46 && a.h === 46 && a.right && a.row && a.inCard && a.cap === '의견' && a.hit && a.shown &&
+    const ok = a.w === 50 && a.h === 50 && a.right && a.row && a.inCard && a.cap === '의견' && a.hit && a.shown &&
       b.listening && b.label === '듣는 중…' && b.started && b.lang === 'ko-KR' && b.ring === 'fbspin' &&
       c.text === '이 카메라 위치가 틀려요' && c.waited >= 1400 && c.navOn === true && c.hasPos && c.cards && c.toast === '보냈어요' && c.label && c.aborted &&
       !d.listening && d.aborted && d.toast === '취소했어요' && !d.sent &&
@@ -6799,7 +6805,8 @@
   //   (d) 잘 되면 단계 기록: tap → start → onstart → onaudiostart
   async function s137() {
     const t = T(), r = {}, keepSR = window.SpeechRecognition, keepW = window.webkitSpeechRecognition;
-    const btn = document.getElementById('fbBtn'), pill = document.getElementById('camMissBtn'), trip = document.querySelector('.trip');
+    // v263: '의견' 버튼은 왼쪽 아래 모서리(.fbcorner), 가림 표시는 fb-covered. 버튼 바탕은 유리(알파 ≥ .5)
+    const btn = document.getElementById('fbBtn'), pill = document.getElementById('camMissBtn'), trip = document.querySelector('.fbcorner');
     const R = buildNavRoute();
     const alpha = (c) => { const m = String(c).match(/rgba?\(([^)]+)\)/); if (!m) return 0; const p = m[1].split(',').map(Number); return p.length > 3 ? p[3] : 1; };
     // 시험 결과 칸(#harnessPanel)이 좁은 화면에서는 앱 위를 덮으므로 잴 때만 잠깐 치운다
@@ -6816,15 +6823,15 @@
       try { document.getAnimations().forEach((a) => { try { a.finish(); } catch (e) { /* 무한 */ } }); } catch (e) { /* 미지원 */ }
       await sleep(60); t.renderNav();
       const app = document.getElementById('app'), b = btn.getBoundingClientRect(), p = pill.getBoundingClientRect(), hit = tapAt();
-      const covered = app.classList.contains('trip-covered');
+      const covered = app.classList.contains('fb-covered');
       r.a = { pill: !pill.hidden, covered, hit: !!(hit && hit.closest && hit.closest('#fbBtn')), onPill: !!(hit && hit.closest && hit.closest('#camMissBtn')),
-        overlap: !pill.hidden && !(p.bottom <= b.top || p.top >= b.bottom || p.right <= b.left || p.left >= b.right), alpha: alpha(getComputedStyle(trip).backgroundColor) };
+        overlap: !pill.hidden && !(p.bottom <= b.top || p.top >= b.bottom || p.right <= b.left || p.left >= b.right), alpha: alpha(getComputedStyle(btn).backgroundColor) };
       // (b) 신고 버튼이 카드까지 내려온 경우
       const tr = trip.getBoundingClientRect();
       pill.style.marginTop = Math.max(0, Math.round(tr.top - p.bottom + 20)) + 'px';
       t.checkTripCover();
       const hit2 = tapAt();
-      r.b = { covered: app.classList.contains('trip-covered'), takes: !!(hit2 && hit2.closest && hit2.closest('#fbBtn')), pe: getComputedStyle(btn).pointerEvents };
+      r.b = { covered: app.classList.contains('fb-covered'), takes: !!(hit2 && hit2.closest && hit2.closest('#fbBtn')), pe: getComputedStyle(btn).pointerEvents };
       pill.style.marginTop = ''; t.checkTripCover();
       // (c) 실패는 늘 보인다
       const steps = () => t.fb.steps.slice();
@@ -6868,7 +6875,7 @@
     }
     const a = r.a || {}, b = r.b || {}, c1 = r.c1 || {}, c2 = r.c2 || {}, c3 = r.c3 || {}, d = r.d || {};
     const has = (arr, v) => Array.isArray(arr) && arr.includes(v);
-    const ok = a.pill && !a.onPill && !a.overlap && (a.covered ? !a.hit : a.hit) && a.alpha >= 0.7 &&
+    const ok = a.pill && !a.onPill && !a.overlap && (a.covered ? !a.hit : a.hit) && a.alpha >= 0.5 &&
       b.covered && !b.takes && b.pe === 'none' &&
       !c1.on && c1.toast === '음성 인식을 시작하지 못했어요 · 버튼으로 보내 주세요' && has(c1.steps, 'tap') && has(c1.steps, 'fail start InvalidStateError') && !c1.listening &&
       !c2.on && c2.toast === '음성 인식 서버에 연결하지 못했어요 · 버튼으로 보내 주세요' && has(c2.steps, 'onstart') && has(c2.steps, 'error network') && has(c2.steps, 'fail network') &&
@@ -7149,7 +7156,7 @@
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
-  // S142: 왼쪽 아래 카드 넓게 + 속도와 간격 (v212, 운전자 '너무 붙어있는 느낌이라 조금 와이드하게 UI 개선해주고 속도도 조금 갭을 줘').
+  // S142 (v263 에 맞춤): 왼쪽 아래 카드 넓게 + 속도와 간격 (v212, 운전자 '너무 붙어있는 느낌이라 조금 와이드하게 UI 개선해주고 속도도 조금 갭을 줘').
   //   (a) 카드: 칸 사이 36px, 칸 최소 84px(카드 폭 220px 넘게), 나침반 줄 밑 얇은 줄. 앱이 카드 높이를 --trip-h 로 잰다
   //   (b) 넓은 화면(1000px 넘게, 시험은 1280×800)의 큰 속도: 숫자 칸 밑과 카드 위 사이 18px (예전엔 바닥에서 172px 고정이라 카드에 붙었다)
   //   (c) 다른 칸이 속도 숫자까지만 내려오면 숫자만 숨기고(speed-covered) 카드는 그대로, 카드까지 오면 카드도(trip-covered)
@@ -7166,8 +7173,8 @@
       r.a = { colGap: cs.columnGap, w: Math.round(tr.width), line: getComputedStyle(head).borderBottomStyle, tripH: app.style.getPropertyValue('--trip-h'), h: Math.round(trip.offsetHeight) };
       r.wide = innerWidth >= 1000;
       if (r.wide) {
-        const sr = sb.getBoundingClientRect();
-        r.b = { gap: Math.round(tr.top - sr.bottom), shown: getComputedStyle(sb).display !== 'none' };
+        const sr = sb.getBoundingClientRect(), fbr = document.querySelector('.fbcorner').getBoundingClientRect();
+        r.b = { gap: Math.round(fbr.top - sr.bottom), shown: getComputedStyle(sb).display !== 'none' };   // v263: 속도 밑 = 왼쪽 아래 '의견' 버튼 위
         // (c) 주의 표지 칸을 속도 숫자 높이에만 걸치게
         // 제자리에서 보이게 한 뒤 위아래로만 옮긴다 (fixed 로 띄우면 offsetParent 가 없어 검사에서 빠진다)
         sign.hidden = false;
@@ -7175,18 +7182,19 @@
         moveTo(sr.top + 10);
         t.checkTripCover();
         r.signOn = sign.offsetParent !== null;
-        r.c1 = { speed: app.classList.contains('speed-covered'), trip: app.classList.contains('trip-covered') };
-        moveTo(tr.top + 20);
+        r.c1 = { speed: app.classList.contains('speed-covered'), trip: app.classList.contains('fb-covered') };
+        moveTo(fbr.top + 20);
         t.checkTripCover();
-        r.c2 = { speed: app.classList.contains('speed-covered'), trip: app.classList.contains('trip-covered'), op: getComputedStyle(sb).opacity };
+        r.c2 = { speed: app.classList.contains('speed-covered'), trip: app.classList.contains('fb-covered'), op: getComputedStyle(sb).opacity };
       }
     } finally {
       if (sign && keep) { sign.hidden = keep.hidden; if (keep.style == null) sign.removeAttribute('style'); else sign.setAttribute('style', keep.style); }
       t.checkTripCover();
     }
-    r.after = { speed: app.classList.contains('speed-covered'), trip: app.classList.contains('trip-covered') };
+    r.after = { speed: app.classList.contains('speed-covered'), trip: app.classList.contains('fb-covered') };
     const a = r.a || {}, b = r.b || {}, c1 = r.c1 || {}, c2 = r.c2 || {};
-    const ok = a.colGap === '36px' && a.w >= 220 && a.line === 'solid' && a.tripH === a.h + 'px' &&
+    // v263 (운전자 '표는 좀 작게, 조금 투명하게 blur'): 주행 기록 카드는 오른쪽 아래 작은 유리 (칸 사이 16px, 폭 140px 넘게), 가림 표시는 왼쪽 아래 '의견' 버튼(fb-covered)
+    const ok = a.colGap === '16px' && a.w >= 140 && a.line === 'solid' && a.tripH === a.h + 'px' &&
       (!r.wide || (b.shown && b.gap >= 16 && b.gap <= 20 && c1.speed && !c1.trip && c2.speed && c2.trip)) &&
       !r.after.speed && !r.after.trip;
     return { pass: !!ok, detail: JSON.stringify(r) };
@@ -8233,6 +8241,71 @@
       b.calls === 4 && b.active && b.same && b.pill && !b.redToast && b.panel && b.turn && b.log.join(',') === 'failed:3' && b.moved &&
       !c.pill && c.active &&
       d.bad400 === 1 && d.naverNo === 1 && d.traffic === 1 && d.upstream.every(Boolean) && !d.pillAfterEnd;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S170: v262 밤 주행 뒤 운전자 피드백 (2026-11-26)
+  //   (a) 가평 팔각정삼거리 좌회전 3.4km 앞: 카드 안 '이어서' 줄 없음, 카드 오른쪽 칩 '160m' (회전 아이콘)
+  //   (b) 같은 곳 600m 앞: '이어서' 줄이 카드 안에, 칩 없음
+  //   (c) 휴게소 21km (멀다): 카드 안 파란 줄 대신 칩, 회전 칩 밑 (가까운 순서)
+  //   (d) 남은 거리·시간·도착·안내 종료는 아래 가운데 띠 (카드 안 줄은 숨김), 띠와 왼쪽 칸·주행 기록 카드가 겹치지 않음
+  //   (e) 경유지: 맨 위 줄 = 경유지 + '경유' 표, 밑 줄 = '도착 <목적지>'
+  //   (f) 주행 기록 카드는 오른쪽 아래, '의견' 버튼은 왼쪽 아래 모서리 / GPS 는 카드 밖 오른쪽 아래
+  //   (g) 2판 그림 차로 글자: 낮·밤 두 벌, 그림마다 잰 자리 (jx2_lanes.json)
+  async function s170() {
+    const t = T(), r = {};
+    const fixture = async (f) => {
+      const fx = await (await realFetch(harnessDir + 'fixtures/' + f, { cache: 'no-store' })).json();
+      const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0]; for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + hav(P[k - 1], P[k]));
+      return { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '시험 목적지', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    };
+    const box = (sel) => { const e = document.querySelector(sel); if (!e || e.hidden || !e.getClientRects().length) return null; const q = e.getBoundingClientRect(); return [q.left, q.top, q.right, q.bottom]; };
+    const hit = (a, b) => !!(a && b && a[0] < b[2] - 1 && b[0] < a[2] - 1 && a[1] < b[3] - 1 && b[1] < a[3] - 1);
+    const chips = () => [...document.querySelectorAll('#navChips .nchip')].map((c) => (c.classList.contains('rest') ? 'R' : '') + c.textContent.trim());
+    try {
+      await waitFor(() => t.jdData.loaded, 10000, 100);
+      const R = await fixture('route-gapyeong-cheongpyeong.json');
+      // 휴게소 줄은 고속도로 위에서만 뜬다 — 이 시험에서는 구간 이름을 고속도로로 (칩 차례를 보려고)
+      R.route = Object.assign({}, R.route, { sections: [{ i: 0, n: R.P.length, name: '시험고속도로', speed: 80, cong: 1 }] });
+      await resetApp(); softReset(); await planAndStart(R);
+      const g = R.route.guide.find((x) => /팔각정삼거리에서/.test(x.s)), sg = R.cum[Math.min(g.i, R.cum.length - 1)];
+      for (let s = Math.max(0, sg - 4200); s <= sg - 3400; s += 40) { const a = pointAt(R, s); feed(a.p, 20, a.h); }
+      t.renderNav(); await sleep(60);
+      r.a = { row: visible('#nextTurn'), chips: chips(), meta: visible('#nbMeta') ? text('#nbMeta') : '', cardMeta: visible('#navPanel .navmeta') };
+      // (c) 먼 휴게소를 넣어 본다
+      t.nav.routeRest = [{ at: t.nav.along + 21000, name: '시험쉼터휴게소', lat: R.P[0].lat, lng: R.P[0].lng }]; t.nav.routeRestFor = t.nav.route;
+      t.renderNav(); await sleep(30);
+      r.c = { chips: chips(), restRow: visible('#restCard') };
+      for (let s = sg - 3400; s <= sg - 600; s += 40) { const a = pointAt(R, s); feed(a.p, 20, a.h); }
+      t.renderNav(); await sleep(60);
+      r.b = { row: visible('#nextTurn'), chips: chips(), lead: visible('#nextLead'), restRow: visible('#restCard') };
+      r.d = { bar: box('#navBar'), panel: box('#navPanel'), drawer: box('#camDrawer'), trip: box('.trip'), fb: box('.fbcorner') };
+      r.d.overlap = ['panel', 'drawer', 'trip'].filter((k) => hit(r.d.bar, r.d[k]));
+      r.f = { tripRight: r.d.trip ? Math.round(window.innerWidth - r.d.trip[2]) : -1, fbLeft: r.d.fb ? Math.round(r.d.fb[0]) : -1,
+        gpsInTrip: !!document.querySelector('.trip .gps'), gps: visible('.gps') };
+      t.endNav();
+      // (e) 경유지
+      await resetApp(); softReset(); await planAndStart(R);
+      t.nav.via = [{ name: '시험 경유지', lat: R.P[5].lat, lng: R.P[5].lng }];
+      t.renderNav(); await sleep(30);
+      r.e = { name: text('#navDestName'), tag: visible('#navDestTag'), sub: text('#navDestVia') };
+      t.nav.via = [];
+      t.endNav();
+      // (g)
+      const fit = await (await realFetch(harnessDir + '../img/ai/jx2_lanes.json', { cache: 'no-store' })).json();
+      r.g = { files: Object.keys(fit).length, x41sDay: (fit[t.iconPicks.jx2_x41s_day] || []).length };
+    } finally {
+      await resetApp(); softReset();
+    }
+    const { a = {}, b = {}, c = {}, d = {}, e = {}, f = {}, g = {} } = r;
+    const ok = !a.row && a.chips.length === 1 && /160m/.test(a.chips[0]) && /안내 종료/.test(a.meta) && !a.cardMeta &&
+      c.chips.length === 2 && /160m/.test(c.chips[0]) && /^R21km$/.test(c.chips[1]) && !c.restRow &&
+      b.row && b.lead && b.chips.length === 1 && /^R/.test(b.chips[0]) &&
+      d.bar && d.overlap.length === 0 &&
+      f.tripRight >= 0 && f.tripRight < 40 && f.fbLeft >= 0 && f.fbLeft < 40 && !f.gpsInTrip &&
+      e.name === '시험 경유지' && e.tag && e.sub === '도착 시험 목적지' &&
+      g.files >= 19 && g.x41sDay === 5;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
@@ -9919,10 +9992,12 @@
       }
     }
     const a = r.a || {}, c = r.c || {};
-    const ok = a.order === 'navdest>turn>tunnelRow>restCard>nextTurn>navmeta' && /^1\.2km 이배재사거리에서 좌회전/.test(a.main) &&
+    // v263 (운전자 '3.4km 남았는데 이어서 줄은 필요 없다'): 지금 안내가 1km 넘게 남으면 그다음 칸은 카드 오른쪽 칩 — 1.2km 앞에서는 카드에 없고
+    //   1km 안으로 들어오면 카드에 나타난다. 남은 거리 줄(navmeta)은 아래 가운데 띠로 옮겨 카드 줄 순서에 없다
+    const ok = a.order === 'navdest>turn>tunnelRow>restCard' && /^1\.2km 이배재사거리에서 좌회전/.test(a.main) &&
       /^3[6-8]0m 이배재터널 출구까지$/.test(a.tunnel) && /^테스트휴게소 1\.[23]km$/.test(a.rest) && a.next === '230m 오른쪽 방향' /* v246: 300m 안에 이어지는 회전은 '이어서' 줄 (동작 이름) */ &&
-      r.b.length === 2 && r.b[0] === 'navdest>turn>tunnelRow>restCard>nextTurn>navmeta' && r.b[1] === 'navdest>turn>restCard>nextTurn>navmeta' &&
-      c.order === 'navdest>turn>nextTurn>restCard>navmeta' && /^3[6-8]0m 이배재터널 출구까지$/.test(c.main) && /^8[2-4]0m 터널 지나$/.test(c.next) &&
+      r.b.length === 3 && r.b[0] === 'navdest>turn>tunnelRow>restCard' && r.b[1] === 'navdest>turn>tunnelRow>restCard>nextTurn' && r.b[2] === 'navdest>turn>restCard>nextTurn' &&
+      c.order === 'navdest>turn>nextTurn>restCard' && /^3[6-8]0m 이배재터널 출구까지$/.test(c.main) && /^8[2-4]0m 터널 지나$/.test(c.next) &&
       r.d.join(',') === 'ABC,ABC,ACB,ACB,CB-A,ACB' &&
       r.e1 === 'camCard>tollCard' && r.e2 === 'tollCard>camCard' && r.e3 === 'laneRow>juncCard>camCard>mySpeed>zoneBadge>secCard>tollCard';
     return { pass: !!ok, detail: JSON.stringify(r) };

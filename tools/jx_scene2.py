@@ -52,6 +52,10 @@ BEAM = (0.03, 0.300, 0.97, 0.330)
 #   3 = 이미 갈라져 오른쪽에 따로 가는 다른 연결로 (네이버 성남IC 오른쪽의 2A 판교 연결로) — 그림 가운데쯤에서 오른쪽으로 휜다
 RAMP = (0.15, 0.012, ZS)   # 고어 뒤 연결로가 그림 위쪽 가운데쯤에서 오른쪽으로 휘어 오른쪽 끝으로
 EXIT_BEND = {0: [], 1: [RAMP], 2: [RAMP, (0.40, 0.020, ZS2)], 3: [(0.9, 0.04, 20.0)]}
+# v263 (운전자 '성남IC 는 네이버지도를 봐 — 네이버대로'): 네이버 성남IC 330m 는 우리 출구 차로(2B)가 지평선까지 곧게 가고, 그 오른쪽에서
+#   먼저 갈라지는 다른 출구(2A 판교)가 빗금 고어를 지나 휘어 나간다. 옆 연결로 그림은 경로 출구가 휘지 않고(1s), 옆 연결로(3s)가
+#   출구 차로 바로 오른쪽에 붙어 있다가 고어(Z 20m)에서 갈라져 휜다
+SIDE_BEND = {0: [], 1: [], 3: [(0.20, 0.022, 20.0)]}
 
 
 def _exit(T, E, go_exit=True, lz=8.0, split=None):
@@ -71,8 +75,9 @@ def _exit(T, E, go_exit=True, lz=8.0, split=None):
         lanes += [(b + i * LW, b + (i + 1) * LW, 1) for i in range(E)]
         sh['go'] = (1,) if go_exit else (0,)
         if split == 'side':
-            x = b + E * LW + 5.0   # 가드레일 너머 (출구 차로와 떨어져)
-            lanes.append((x, x + LW, 3, 14.0))   # 앞쪽 차로 수·글자에 넣지 않는다 — 출구 연결로보다 먼저 오른쪽으로 빠진다
+            x = b + E * LW   # 출구 차로 바로 오른쪽 (고어 전에는 붙어 있다)
+            lanes.append((x, x + LW, 3, 9.0))   # 앞쪽 차로 수·글자에 넣지 않는다 — 고어(20m)에서 오른쪽으로 갈라진다
+            sh['bend'] = SIDE_BEND
     sh['lanes'] = lanes
     return sh
 
@@ -266,7 +271,7 @@ def masks(name):
     return a, b
 
 
-OUTER = 3.6   # v262: 바깥쪽(옆에 다른 차로가 없는 쪽)은 차로 하나 폭만큼 더 — AI 가 경로 차로를 밑그림보다 바깥으로 넓게 칠하는 일이 있다 (f22k 낮 왼쪽 초록 쐐기)
+OUTER = 7.2   # v262→v263: 바깥쪽(옆에 다른 차로가 없는 쪽)은 차로 둘 폭만큼 더 (v263: 갈림길 낮 그림 f22 의 오른쪽 초록 띠) — AI 가 경로 차로를 밑그림보다 바깥으로 넓게 칠하는 일이 있다 (f22k 낮 왼쪽 초록 쐐기)
 
 
 def _outer(sh, x0, x1):
@@ -320,7 +325,13 @@ def recolor(im, name, c):
     a = np.asarray(im.convert('RGB'))
     reg = Image.fromarray((route_region(name, im.size) * 255).astype(np.uint8), 'L')
     k = max(3, int(im.size[0] * 0.05) | 1)
+    far = np.array(reg.filter(ImageFilter.MaxFilter(max(3, int(im.size[0] * 0.15) | 1)))) > 0
     reg = np.array(reg.filter(ImageFilter.MaxFilter(k))) > 0
+    # v263: 지평선 가까이(고어 둘레)는 AI 가 연결로 휘는 자리를 밑그림과 다르게 그리기 쉬워 더 넓게 (갈림길 낮 그림 고어의 초록)
+    hz = int(HZ / H * im.size[1])
+    rows = np.zeros(reg.shape, bool)
+    rows[max(0, hz - 8):hz + int(0.12 * im.size[1])] = True
+    reg = reg | (far & rows)
     mask = reg & _paint(a)
     hsv = np.array(im.convert('RGB').convert('HSV'))
     _apply(hsv, mask, c, None)
@@ -347,7 +358,13 @@ def recolor_lanes(im, name, cols):
     paint = _paint(a)
     hsv = np.array(out.convert('HSV'))
     kk = max(3, int(im.size[0] * 0.05) | 1)
-    full = np.array(Image.fromarray((route_region(name, im.size) * 255).astype(np.uint8), 'L').filter(ImageFilter.MaxFilter(kk))) > 0
+    rimg = Image.fromarray((route_region(name, im.size) * 255).astype(np.uint8), 'L')
+    full = np.array(rimg.filter(ImageFilter.MaxFilter(kk))) > 0
+    far = np.array(rimg.filter(ImageFilter.MaxFilter(max(3, int(im.size[0] * 0.15) | 1)))) > 0   # v263: 지평선 둘레는 더 넓게 (recolor 와 같게)
+    hz = int(HZ / H * im.size[1])
+    rows = np.zeros(full.shape, bool)
+    rows[max(0, hz - 8):hz + int(0.12 * im.size[1])] = True
+    full = full | (far & rows)
     regs = [np.array(lane_region(name, k, im.size)) > 0 for k in range(len(cols))]
     xs = np.arange(im.size[0])[None, :].repeat(im.size[1], 0)
     cx = [xs[rg].mean() if rg.any() else 0 for rg in regs]

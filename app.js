@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-262'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-263'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -6655,6 +6655,7 @@
         const lc = clc === 'p' ? 'p' : clc === 'g' || clc === 'lg' ? 'g' : 'b';
         // v253: 갈 차로가 둘인 그림은 갈래가 다시 둘로 갈리면 차로마다 색·방면 (화면 왼쪽→오른쪽). 그림 파일은 뒤집기 전 차로 순서로 '_gp' 처럼
         const laneAt = v2 ? JX2_LANES[jxs] : JX_LANES[jxs].map((p) => p.concat(jxV1Lane(p)));
+        const key2v = v2 ? 'jx2_' : 'jx_';
         const nGo = v2 ? JX2_NGO[jxs] : laneAt.filter((p) => p[2]).length;
         const two = nGo >= 2 && !stay && (v2 || jxs === 'exit2' || jxs === 'exit42' || jxs === 'fork') ? jxSplit2(g, j.names) : null;
         // 경로 차로마다 색 (그림 파일 = 뒤집기 전 왼쪽부터): 갈래가 다시 갈리면 왼쪽 무리·오른쪽 무리 색(판교분기점 '일산' 녹색 1 + '구리' 분홍 2),
@@ -6684,26 +6685,36 @@
         const short = (arr) => { const a = arr.map(jxRoadName).filter(Boolean).slice(0, 2); return a.length === 2 && a[1].length > 3 ? a.slice(0, 1) : a; };
         const goLane = short(j.names), otLane = short(otNames);
         // 갈 차로 이름: 갈래가 다시 갈리면 왼쪽 차로는 왼쪽 갈래, 오른쪽 차로는 오른쪽 갈래 (그림에서 갈 차로는 뒤집기 전 왼쪽부터 k 번째)
-        const goIdx = laneAt.filter((p) => p[2]).map((p) => p[0]);
-        const goName = (p) => {
+        // 경로 차로 차례 (뒤집기 전 왼쪽부터 몇 번째 경로 차로인가)
+        const goOrd = []; let gk = 0;
+        laneAt.forEach((p, k) => { goOrd[k] = p[2] ? gk++ : -1; });
+        const goCount = gk;
+        const goName = (k) => {
           if (!two) return goLane;
-          const k = goIdx.indexOf(p[0]), disp = mir ? goIdx.length - 1 - k : k;
+          const disp = mir ? goCount - 1 - goOrd[k] : goOrd[k];
           const nm = short(two.names[disp < cnt[0] ? 0 : 1]);
           return nm.length ? nm : goLane;
         };
         // v256 (점검표 3·4): 모든 차로에 방면 글자 하나씩, 굵은 흰 글씨 + 검은 테, 차로 폭의 1/3 높이(--lw), 차로 기울기대로 비스듬히(--sk)
-        const lane = (p) => {
-          const bus = stay && cols[goIdx.indexOf(p[0])] === 'n';
-          const nm = p[2] ? goName(p) : otLane;
+        // v263 (운전자 신갈 사진 — 둘째 '신갈'이 차선에 붙음): 2판 그림은 그림마다 잰 실제 차로 가운데·폭·기울기(img/ai/jx2_lanes.json,
+        //   tools/jx_lanefit.py)로. 낮·밤 그림이 달라 글자도 두 벌 (jv-day·jv-night, 지금 보이는 그림 것만 보인다)
+        const lane = (p0, k, cls, fit) => {
+          const f = fit && fit[k];
+          const p = f ? [f[0], p0[1], p0[2], f[1], f[2]] : p0;
+          const bus = stay && goOrd[k] >= 0 && cols[goOrd[k]] === 'n';
+          const nm = p[2] ? goName(k) : otLane;
           const sk = Math.max(-38, Math.min(38, mir ? -p[4] : p[4]));
+          const pos = 'left:' + ((mir ? 1 - p[0] : p[0]) * 100).toFixed(1) + '%;top:' + (p[1] * 100).toFixed(1) + '%;--lw:' + p[3] + ';--sk:' + sk + 'deg';
           // v259: 이름이 없으면 비우지 않고 그 갈래의 노선 방패 (네 글자 넘는 길 이름에 짧은 이름도 없을 때)
           if (!nm.length) {
             const no = p[2] ? goNo : otNo;
-            return no ? '<span class="jx-lane jx-lane-sh' + (p[2] ? ' go' : '') + '" style="left:' + ((mir ? 1 - p[0] : p[0]) * 100).toFixed(1) + '%;top:' + (p[1] * 100).toFixed(1) +
-              '%;--lw:' + p[3] + ';--sk:' + sk + 'deg"><i class="sg-shield">' + shieldSvg(no) + '</i></span>' : '';
+            return no ? '<span class="jx-lane jx-lane-sh' + (p[2] ? ' go' : '') + cls + '" style="' + pos + '"><i class="sg-shield">' + shieldSvg(no) + '</i></span>' : '';
           }
-          return '<span class="jx-lane' + (p[2] && !bus ? ' go' : '') + (nm.length > 1 ? ' two' : '') + '" style="left:' + ((mir ? 1 - p[0] : p[0]) * 100).toFixed(1) + '%;top:' + (p[1] * 100).toFixed(1) +
-            '%;--lw:' + p[3] + ';--sk:' + sk + 'deg;--nc:' + Math.max(2, ...nm.map((x) => x.length)) + '">' + nm.map((x) => '<b>' + esc(x) + '</b>').join('') + '</span>'; };
+          return '<span class="jx-lane' + (p[2] && !bus ? ' go' : '') + (nm.length > 1 ? ' two' : '') + cls + '" style="' + pos + ';--nc:' + Math.max(2, ...nm.map((x) => x.length)) + '">' +
+            nm.map((x) => '<b>' + esc(x) + '</b>').join('') + '</span>'; };
+        const fD = v2 ? jx2Fit[ICON_PICKS[key2v + jxs + '_day']] : null, fN = v2 ? jx2Fit[ICON_PICKS[key2v + jxs + '_night']] : null;
+        const lanesHtml = fD || fN ? laneAt.map((p, k) => lane(p, k, ' jv-day', fD)).join('') + laneAt.map((p, k) => lane(p, k, ' jv-night', fN)).join('')
+          : laneAt.map((p, k) => lane(p, k, '', null)).join('');
         // 나들목 번호 띠 (점검표 6, 네이버 '2B 성남'): 나가는 쪽 표지판 위에 (본선 그대로면 다른 갈래 = 출구 표지 위)
         const BD = v2 ? JX2_BOARD : JX_BOARD;
         // v259 (③): 같은 쪽으로 먼저 갈라진 출구가 있으면 네이버 성남IC 처럼 본선 표지 대신 출구 표지 두 장 — 경로 출구('2B 성남 광주')는 안쪽,
@@ -6716,14 +6727,18 @@
           (nm && nm.length <= 6 ? '<i>' + esc(nm) + '</i>' : '') + '</span>';
         const tab = (ot && ot.xref && !forkPic ? tabAt(exitB, ot.xref, ot.xname) : '') + (sx && sx.xref ? tabAt(sxL ? BD.l : BD.r, sx.xref, sx.xname) : '');
         const key2 = v2 ? 'jx2_' : 'jx_';
-        $('#juncSvg').innerHTML = xi(ICON_PICKS[key2 + jxs + '_day'], 'jv-day') + xi(ICON_PICKS[key2 + jxs + '_night'], 'jv-night') + laneAt.map(lane).join('') + tab;
+        $('#juncSvg').innerHTML = xi(ICON_PICKS[key2 + jxs + '_day'], 'jv-day') + xi(ICON_PICKS[key2 + jxs + '_night'], 'jv-night') + lanesHtml + tab;
         $('#juncSvg').classList.remove('nv-has-bg');
         el.dataset.lc = lc2 || lc;
         // 다른 갈래 표지: 나가기면 곧게 가는 쪽, 갈림길이면 반대 갈래, 본선 그대로면 나가는 연결로. 이름을 모르면 화살표만
         const otStraight = !stay && !forkPic;
         // 방면도 지금 길 이름도 모르지만 OSM 에 그 갈래의 노선 번호가 있으면 방패 + 화살표 (성남IC: '↑ [100]')
         const otShield = !otNames.length && ot && /^\d+$/.test(ot.ref) ? +ot.ref : 0;
-        sg2.innerHTML = otNames.length ? juncSignHtml(otNames, otStraight, otNo) : otShield ? juncSignHtml([], otStraight, otShield)
+        // v263 (부모 세션 '표지판을 비워 두지 말 것', 서하남교차로 왼쪽 판 '↑' 만): 표지에는 긴 길 이름도 쓴다 → 지금 길 이름 → '직진' 같은 방향 글
+        const strip = (n) => String(n || '').replace(/고속도로$|고속국도$/, '').trim();
+        //   운전자 (2026-11-26) '다른 방향 X — 어디로 가는 건지': 지어낸 말('다른 방향'·'직진')은 쓰지 않는다. 그 갈래의 방면·길 이름을 모르면 화살표만
+        const boardNames = otNames.length ? otNames : ot && strip(ot.name) ? [strip(ot.name)] : strip(curRoad) && !stay ? [strip(curRoad)] : [];
+        sg2.innerHTML = boardNames.length ? juncSignHtml(boardNames, otStraight, otNames.length ? otNo : otShield) : otShield ? juncSignHtml([], otStraight, otShield)
           : '<span class="sg-arrow">' + (otStraight ? SIGN_ARROW_S : SIGN_ARROW) + '</span>';
         sg2.className = 'jc-label jc-other jx-board' + (goR ? ' jx-bl' : '');
         sg2.style.cssText = jxBoardStyle(goR ? BD.l : BD.r);
@@ -7480,6 +7495,14 @@
     jdData.loaded = true;
     juncState.key = '';   // 안내 중이면 분기점 칸을 다시 그린다
   }
+  // v263: 고른 2판 그림마다 잰 차로 가운데 (tools/jx_lanefit.py → img/ai/jx2_lanes.json). 없으면 밑그림 자리
+  const jx2Fit = {};
+  async function loadJx2Fit() {
+    try {
+      const r = await fetch('img/ai/jx2_lanes.json?v=' + APP_VERSION);
+      if (r.ok) { Object.assign(jx2Fit, await r.json()); juncState.key = ''; }
+    } catch (e) { /* 밑그림 자리 그대로 */ }
+  }
   async function loadJuncDest() {
     try {
       const r = await fetch('data/junc_dest.json?v=' + APP_VERSION);
@@ -8054,6 +8077,16 @@
       setVar('--tc-left', r.right - base.left + 8);
       setVar('--tc-top', r.top - base.top);
     }
+    if (!np.hidden) {   // v263 칩: 카드 오른쪽 8px, 위쪽 버튼 줄(30px) 밑
+      const r = np.getBoundingClientRect();
+      setVar('--chip-left', r.right - base.left + 8);
+      setVar('--chip-top', r.top - base.top);
+      // 아래 띠(남은 거리·도착·안내 종료): 왼쪽 칸(안내 카드·서랍)과 오른쪽 아래 주행 기록 카드 사이 가운데 — 서랍이 길어도(분기점 그림 + 하이패스) 겹치지 않게
+      const tr = $('.trip'), trl = tr && tr.offsetWidth ? tr.getBoundingClientRect().left - base.left : base.width;
+      const L = r.right - base.left + 10, R = trl - 10;
+      setVar('--nb-left', (L + R) / 2);
+      setVar('--nb-max', Math.max(180, R - L));
+    }
   }
 
   // 지도 왼쪽 세로 막대: 맨 아래 출발, 맨 위 도착으로 고정. 내 차 점이 올라가고, 지나온 만큼 막대가 줄어든다.
@@ -8117,25 +8150,33 @@
     const app = $('#app');
     tripHeight();
     if (!app.classList.contains('tesla')) { app.classList.remove('trip-covered', 'speed-covered'); return; }
-    const dr = $('#camDrawer'), tops = [$('.trip'), $('.heading')].filter(Boolean).map((e) => e.getBoundingClientRect().top).filter((v) => v > 0);
+    const dr = $('#camDrawer'), tops = [$('.fbcorner')].filter(Boolean).map((e) => e.getBoundingClientRect().top).filter((v) => v > 0);   // v263: 왼쪽 아래는 '의견' 버튼만
     // 서랍 밑에 붙는 다음 단속·과속방지턱·주의 표지 칸도 본다 (2026-11-14: 하이패스 차로 줄로 서랍이 길어지자 '100 14km'가 나침반에 겹침)
     const lows = [dr.classList.contains('open') ? dr : null, $('#camNext'), $('#bumpCard'), $('#signCard'), $('#parkCard'), $('#camMissBtn')]
       .filter((e) => e && !e.hidden && e.offsetParent !== null).map((e) => e.getBoundingClientRect().bottom);
     const covered = tops.length > 0 && lows.length > 0 && Math.max(...lows) > Math.min(...tops) - 6;
-    app.classList.toggle('trip-covered', covered);
+    app.classList.toggle('trip-covered', false);   // v263: 주행 기록 카드는 오른쪽 아래라 서랍에 가리지 않는다
+    app.classList.toggle('fb-covered', covered);
     // v212: 넓은 화면의 큰 속도(카드 위)까지 내려오면 숫자만 숨긴다
     const sb = $('.speedbox'), sbOn = !!(sb && getComputedStyle(sb).display !== 'none');
     app.classList.toggle('speed-covered', sbOn && lows.length > 0 && Math.max(...lows) > sb.getBoundingClientRect().top - 6);
   }
+  const NEXT_ROW_NEAR = 1000, REST_ROW_NEAR = 5000;   // v263: 이보다 멀면 카드 안 줄 대신 오른쪽 칩
   function renderNavPanel() {
     const p = $('#navPanel');
     renderStrip();
-    if (!nav.active) { p.hidden = true; $('#searchBtn').hidden = false; renderLanes(null); renderLaneTip(null); return; }
+    $('#nbMeta').hidden = !nav.active;
+    $('#navBar').classList.toggle('on', !!nav.active);
+    if (!nav.active) { p.hidden = true; $('#searchBtn').hidden = false; $('#navChips').hidden = true; renderLanes(null); renderLaneTip(null); return; }
     p.hidden = false;
     $('#searchBtn').hidden = true;
     // 맨 위 목적지 줄 (경유지가 있으면 오른쪽에 작게)
-    $('#navDestName').textContent = nav.dest ? nav.dest.name : '';
-    $('#navDestVia').textContent = nav.via && nav.via[0] ? '경유 ' + nav.via[0].name : '';
+    // v263 (운전자 '기흥역엘리시아트윈… 경유 경기도 성남시 수정…' 둘 다 잘림): 경유지가 있으면 맨 위 줄 = 경유지(주황 '경유' 표), 밑에 작게 최종 목적지
+    const via0 = nav.via && nav.via[0] ? nav.via[0].name : '';
+    $('#navDestName').textContent = via0 || (nav.dest ? nav.dest.name : '');
+    $('#navDestVia').textContent = via0 && nav.dest ? '도착 ' + nav.dest.name : '';
+    $('#navDestTag').hidden = !via0;
+    $('#navPanel .navdest').classList.toggle('has-via', !!via0);
     const g = nav.next;
     renderTurnArrow();
     renderRest();
@@ -8204,6 +8245,9 @@
     const g2 = restMain ? g : g ? nav.guides[nav.gi + 1] : null;
     const nn = $('#nextTurn');
     nn.hidden = !g2;
+    // v263 (운전자 '3.4km 남았는데 이어서 230m 우회전은 필요 없다'): 지금 안내가 NEXT_ROW_NEAR 보다 멀면 그다음 안내는 카드 오른쪽 칩으로
+    const nextChip = !!g2 && !restMain && !tnMain && nav.dg != null && nav.dg > NEXT_ROW_NEAR;
+    const chips = [];
     if (g2) {
       const last = nav.cum.length - 1;
       const g2at = nav.cum[Math.min(g2.i, last)] - nav.along;   // 차에서 그다음 안내 지점까지 (줄 순서에 쓴다)
@@ -8238,7 +8282,24 @@
         nc.innerHTML = c2 ? '<i class="nc-sep" aria-hidden="true">›</i><span class="nexticon">' + ico(iconKind(c2.g)) + '</span><b>' + fmtDist(c2.gap) + '</b>' : '';
         nn.setAttribute('aria-label', '이어서 ' + fmtDist(ch[0].gap) + ' ' + ch[0].act + (c2 ? ', 다시 ' + fmtDist(c2.gap) + ' ' + c2.act : ''));
       } else { nc.hidden = true; nc.innerHTML = ''; }
+      if (nextChip) {
+        // 운전자 (2026-11-26): '50m 우회전 그다음 150m 좌회전이면 50 이 첫째, 150 이 둘째, 휴게소 21km 가 셋째' — 가까운 순서대로 위에서부터,
+        //   하나가 지나가면 밑의 것이 올라온다
+        nn.hidden = true;
+        chips.push('<span class="nchip' + (isGoal ? ' goal' : '') + '"><span class="nexticon">' + $('#nextIcon').innerHTML + '</span>' + esc($('#nextDist').textContent) + '</span>');
+        const c2 = soon ? ch[1] : null;
+        if (c2) chips.push('<span class="nchip"><span class="nexticon">' + ico(iconKind(c2.g)) + '</span>' + esc(fmtDist(c2.gap)) + '</span>');
+      }
     }
+    // 휴게소: REST_ROW_NEAR 안이면 카드 안 파란 줄, 더 멀면 칩 (위 큰 줄이 휴게소일 때는 그대로)
+    if (rs && !restMain && rs.d > REST_ROW_NEAR) {
+      $('#restCard').hidden = true;
+      chips.push('<span class="nchip rest">' + REST_SIGN + esc(fmtDist(rs.d)) + '</span>');
+    }
+    const chipBox = $('#navChips');
+    const chipHtml = chips.join('');
+    if (chipBox.innerHTML !== chipHtml) chipBox.innerHTML = chipHtml;
+    chipBox.hidden = !chips.length;
     const remain = nav.remain != null ? nav.remain : nav.total;
     const remMs = nav.route.duration * (remain / Math.max(1, nav.total));
     renderTunnel();
@@ -8252,6 +8313,10 @@
     $('#navRemain').textContent = fmtDist(remain + (nav.leg || 0));   // v209: 건물까지
     $('#navTime').textContent = fmtMin(remMs);
     $('#navEta').textContent = hhmm(new Date(Date.now() + remMs)) + ' 도착';   // 오른쪽 막대·경로 카드와 같은 순서
+    // v263: 아래 가운데 띠에도 (테슬라 모드는 카드 안 줄을 숨기고 여기만)
+    $('#nbRemain').textContent = $('#navRemain').textContent;
+    $('#nbTime').textContent = $('#navTime').textContent;
+    $('#nbEta').textContent = $('#navEta').textContent;
   }
 
   // 주행 중 배율: 17 이 기본, 시속 100km 넘으면 16.
@@ -10164,6 +10229,17 @@
   $('#ntUpdate').onclick = () => { closeTray(); goUpdate(); };
   $('#updBtn').onclick = goUpdate;
   $('#navEnd').onclick = () => { endNav(); say('안내를 종료합니다.', 1); };
+  $('#nbEnd').onclick = (e) => { e.stopPropagation(); endNav(); say('안내를 종료합니다.', 1); };   // v263 아래 가운데 띠
+  // v263: '의견' 버튼은 왼쪽 아래 모서리로, GPS 는 오른쪽 아래 주행 기록 카드 맨 위 줄로 (테슬라 모드만 쓴다)
+  (() => {
+    const trip = $('.trip'), fw = $('.fbwrap'), fp = $('#fbPanel'), gps = $('.gps'), hd = $('.trip > .heading');
+    if (!trip || !fw) return;
+    const corner = document.createElement('div');
+    corner.className = 'fbcorner';
+    trip.parentNode.insertBefore(corner, trip);
+    corner.appendChild(fw);
+    if (fp) corner.appendChild(fp);
+  })();
   // ---------- v202 '잘못된 정보 신고' 하나로 (2026-11-24 운전자 '틀림 놓침에서 틀림 없애고 놓침을 잘못 된 정보 신고로 바꾸고') ----------
   // 버튼 하나. 누른 순간 단속 경고 카드가 1초 넘게 떠 있으면 그 카메라 신고(예전 '틀림': 14일 흐리게, 다른 날 또 누르면 숨김),
   // 카드가 없으면 놓친 단속 신고(예전 '놓침': 차 안 진단 v171 · 신고 지점 v169) + 네이버 확인 요청(/check). 서버 기록의 user 칸은 그대로 'wrong'·'missed'
@@ -11209,6 +11285,7 @@
   loadForks();
   loadColorLines();
   loadJuncDest();      // v249
+  loadJx2Fit();        // v263
   loadSchoolTimes();   // v204
   loadHipass();
   loadTunnels();

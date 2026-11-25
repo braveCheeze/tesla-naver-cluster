@@ -1591,6 +1591,10 @@
   .jx-lane b { font-size: 16px; font-size: calc(var(--lw, .17) * 34cqw * min(1, 2.6 / var(--nc, 2))); font-weight: 900; letter-spacing: .5px; white-space: nowrap;
     text-shadow: 0 0 2px rgba(0, 0, 0, .9), 1px 1px 0 rgba(0, 0, 0, .8), -1px -1px 0 rgba(0, 0, 0, .8), 1px -1px 0 rgba(0, 0, 0, .8), -1px 1px 0 rgba(0, 0, 0, .8); }
   .jx-lane.two b { font-size: 13px; font-size: calc(var(--lw, .17) * 27cqw * min(1, 3 / var(--nc, 2))); }   /* 세 글자 이름까지 같은 크기, 넷이면 줄인다 */
+  /* v263: 2판 차로 글자는 낮·밤 그림마다 따로 (그림마다 차로 자리가 조금 다르다) — 지금 보이는 그림의 것만 */
+  .jc-svg .jx-lane.jv-night { display: none; }
+  body:has(#map.night) .jc-svg .jx-lane.jv-night { display: flex; }
+  body:has(#map.night) .jc-svg .jx-lane.jv-day { display: none; }
   /* v259: 이름이 없는 차로는 노선 방패 (차로를 비워 두지 않는다) */
   .jx-lane-sh .sg-shield { display: block; filter: drop-shadow(0 0 2px rgba(0, 0, 0, .8)); }
   .jx-lane-sh .sg-shield svg { width: 22px; width: calc(var(--lw, .17) * 34cqw); height: auto; }
@@ -1970,6 +1974,100 @@
     #app.tesla .speedbox { bottom: calc(24px + var(--trip-h, 162px) + 18px); transition: opacity .25s ease; }
     #app.tesla.speed-covered .speedbox, #app.tesla.trip-covered .speedbox { opacity: 0; }
   }
+
+  /* ================= v263 운전자 피드백 (2026-11-26 밤 주행 v262, 부모 세션 정리) =================
+     - 안내 카드: 남은 거리·시간·도착·안내 종료는 아래 가운데 띠로 (왼쪽 칸이 짧아져 분기점 그림·단속 카드와 겹치지 않게)
+     - 경유지가 있으면 맨 위 줄은 경유지, 밑에 작게 최종 목적지 (예전엔 둘 다 '…' 로 잘렸다)
+     - 멀리 있는 그다음 안내·휴게소는 카드 오른쪽 옆 작은 칩, 가까우면 지금처럼 카드 안 줄
+     - 주행 기록 카드는 오른쪽 아래 반투명 유리 (GPS 표시도 그 안), 왼쪽 아래에는 초록 '의견' 버튼만
+     - 전체를 아주 조금 작게 (안내 카드·서랍 폭 330 → 314px, 큰 거리 숫자 28 → 26px) */
+  #app.tesla .navpanel { width: min(314px, calc(100% - 100px)); }
+  #app.tesla .alerts { width: min(314px, calc(100% - 100px)); }
+  #app.tesla .turndist { font-size: 26px; }
+  #app.tesla .turnicon, #app.tesla .turnicon svg { width: 42px; height: 42px; }
+  #app.tesla .navpanel .navmeta { display: none; }
+  /* 경유지: 맨 위 줄 = 경유지 이름 + 주황 '경유' 표, 밑 줄 = 최종 목적지 (작게) */
+  .navdest.has-via { flex-wrap: wrap; row-gap: 1px; }
+  .nd-tag { flex: none; font-size: 11px; font-weight: 800; color: #fff; background: #f08c00; border-radius: 4px; padding: 1px 5px; }
+  .nd-tag[hidden] { display: none; }
+  .navdest.has-via .nd-via { flex: 1 0 100%; max-width: none; margin: 0 0 0 30px; font-size: 12px; }
+  /* 아래 가운데 띠 */
+  .navbar { display: contents; }
+  .nb-meta { display: none; }
+  #app.tesla .navbar {
+    display: flex; flex-direction: column; align-items: stretch; position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%);
+    z-index: 990; max-width: min(56%, 420px); min-width: 0; pointer-events: none;
+  }
+  #app.tesla .navbar .road { position: static; transform: none; max-width: none; left: auto; bottom: auto; }
+  #app.tesla .navbar.on { left: var(--nb-left, 50%); max-width: var(--nb-max, 56%); }
+  #app.tesla .navbar.on {
+    background-color: var(--nv-glass); background-image: var(--nv-sheen); -webkit-backdrop-filter: var(--nv-blur); backdrop-filter: var(--nv-blur);
+    box-shadow: inset 0 1px 0 var(--nv-glass-hi), inset 0 0 0 1px var(--nv-glass-edge), var(--nv-shadow-lg); border-radius: 14px; overflow: hidden;
+  }
+  #app.tesla .navbar.on .road { background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; border-radius: 0; padding: 2px 30px 7px 14px; }
+  #app.tesla .navbar.on .road small { font-size: 12px; }
+  #app.tesla .nb-meta:not([hidden]) {
+    display: flex; align-items: center; gap: 7px; padding: 6px 4px 2px 12px; white-space: nowrap; pointer-events: auto;
+    color: var(--nv-fg); font-size: 14px; font-variant-numeric: tabular-nums; text-shadow: none;
+  }
+  #app.tesla .nb-meta b { font-weight: 800; }
+  #app.tesla .nb-meta span { color: var(--nv-sub); font-weight: 700; }
+  #app.tesla .nb-meta button { margin-left: auto; border: 0; background: rgba(240, 62, 62, .12); color: #f03e3e; font: inherit; font-size: 13px; font-weight: 800;
+    padding: 4px 9px; border-radius: 8px; cursor: pointer; }
+  #app.tesla .navbar.on .road::after { right: 12px; }
+  /* 멀리 있는 안내 칩: 안내 카드 오른쪽 옆 (위쪽 버튼 줄 밑) */
+  .navchips { display: none; }
+  #app.tesla .navchips:not([hidden]) {
+    position: absolute; left: var(--chip-left, 340px); top: var(--chip-top, 14px); z-index: 1040; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; pointer-events: none;
+    transition: transform .2s ease;
+  }
+  #app.tesla #map:not(.chrome-hidden) .navchips { transform: translateY(40px); }
+  .nchip { animation: nchipIn .22s ease-out; }
+  @keyframes nchipIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+  .nchip { display: flex; align-items: center; gap: 5px; padding: 4px 9px 4px 6px; border-radius: 10px; font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap;
+    background-color: var(--nv-glass); background-image: var(--nv-sheen); -webkit-backdrop-filter: var(--nv-blur); backdrop-filter: var(--nv-blur); color: var(--nv-fg);
+    box-shadow: inset 0 1px 0 var(--nv-glass-hi), inset 0 0 0 1px var(--nv-glass-edge), var(--nv-shadow); }
+  .nchip .nexticon, .nchip .nexticon svg { width: 20px; height: 20px; }
+  .nchip .nexticon svg { stroke: var(--nv-fg); }
+  .nchip .rest-sign { width: 20px; height: 20px; display: block; }
+  .nchip.rest { background: #1d4fb8; color: #fff; }
+  .nchip.goal { color: #e03131; }
+  /* 주행 기록 카드: 오른쪽 아래, 더 비치는 유리 + 흐림. GPS 는 카드 맨 위 줄 오른쪽 */
+  /* 운전자 (2026-11-26) 'GPS 는 그대로 밑에 두고, 저 표는 좀 작게 한 다음에 조금 투명하게 blur' */
+  #app.tesla .trip {
+    left: auto; right: 12px; bottom: 34px; padding: 6px 10px 6px 9px; gap: 3px 16px; border-radius: 13px; grid-template-columns: repeat(2, minmax(58px, max-content));
+    background: rgba(255, 255, 255, .42); -webkit-backdrop-filter: blur(16px) saturate(1.3); backdrop-filter: blur(16px) saturate(1.3);
+    box-shadow: inset 0 1px 0 var(--nv-glass-hi), 0 2px 10px rgba(0, 0, 0, .12);
+  }
+  body:has(#map.night) #app.tesla .trip { background: rgba(30, 33, 38, .42); }
+  #app.tesla .trip > .heading { font-size: 13px; padding-bottom: 4px; gap: 6px; }
+  #app.tesla .trip .compass { width: 22px; height: 22px; }
+  #app.tesla .trip .compass svg { width: 13px; height: 13px; }
+  #app.tesla .trip .stat .v { font-size: 15px; }
+  #app.tesla .trip .stat .k { font-size: 10.5px; }
+  #app.tesla .trip .stat small { font-size: 10.5px; }
+  #app.tesla .gps { right: 16px; bottom: 12px; }
+  #app.tesla.trip-covered .trip { opacity: 1; }
+  #app.tesla .updbtn { bottom: calc(34px + var(--trip-h, 110px) + 8px); right: 12px; }   /* 주행 기록 카드 바로 위 */
+  /* 왼쪽 아래 '의견' 버튼만 (주행 기록 카드에서 옮김). 버튼판은 그 오른쪽으로 열린다 */
+  .fbcorner { display: none; }
+  #app.tesla .fbcorner { display: block; position: absolute; left: 20px; bottom: 24px; z-index: 990; pointer-events: none; transition: opacity .25s ease; }
+  #app.tesla .fbcorner .fbwrap { position: relative; left: auto; bottom: auto; display: block; }
+  #app.tesla .fbcorner .fbbtn {
+    width: 50px; height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: auto;
+    background-color: var(--nv-glass); -webkit-backdrop-filter: var(--nv-blur); backdrop-filter: var(--nv-blur); color: var(--nv-green-ink);
+    box-shadow: inset 0 0 0 1.5px rgba(3, 199, 90, .55), var(--nv-shadow);
+  }
+  #app.tesla .fbcorner .fbbtn svg { width: 22px; height: 22px; }
+  #app.tesla .fbcorner .fbbtn.listening, #app.tesla .fbcorner .fbbtn.sending { background: #0b7a43; color: #fff; box-shadow: 0 0 0 5px rgba(3, 199, 90, .2); }
+  #app.tesla .fbcorner .fbbtn .fb-ring { -webkit-mask: radial-gradient(circle, transparent 26px, #000 27px); mask: radial-gradient(circle, transparent 26px, #000 27px); }
+  #app.tesla .fbcorner .fb-label { position: absolute; left: 0; bottom: calc(100% + 10px); box-shadow: var(--nv-shadow); }
+  #app.tesla.fb-open .fbcorner { z-index: 1120; }
+  #app.tesla.fb-covered .fbcorner { opacity: 0; }
+  #app.tesla.fb-covered .fbcorner .fbbtn { pointer-events: none; }
+  @media (min-width: 1000px) {
+    #app.tesla .speedbox { bottom: calc(24px + 50px + 18px); }
+  }
 </style>
 </head>
 <body>
@@ -1986,7 +2084,7 @@
         <div id="limitSign" class="limit" hidden><span id="limitVal">60</span></div>
       </div>
     </div>
-    <div id="roadName" class="road"></div>
+    <div id="navBar" class="navbar"><div id="nbMeta" class="nb-meta" hidden><b id="nbRemain">-</b><span id="nbTime">-</span><span id="nbEta">-</span><button id="nbEnd" type="button">안내 종료</button></div><div id="roadName" class="road"></div></div>
     <!-- 경고 묶음: 일반 화면에서는 그대로 풀어 놓고(display: contents), 테슬라 모드에서는 길안내 패널 바로 밑에 세로로 쌓는다 -->
     <div class="alerts">
     <!-- 단속 서랍: 테슬라 모드에서는 길안내 패널 밑에서 스르륵 내려온다 (일반 화면에서는 그대로 풀어 놓음) -->
@@ -2091,6 +2189,7 @@
       <div class="navdest">
         <span class="nd-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="12" fill="#03c75a"/><path d="M12 5.6a4.6 4.6 0 0 0-4.6 4.6c0 3.4 4.6 7.9 4.6 7.9s4.6-4.5 4.6-7.9A4.6 4.6 0 0 0 12 5.6z" fill="#fff"/><circle cx="12" cy="10.2" r="1.7" fill="#03c75a"/></svg></span>
         <span id="navDestName" class="nd-name">-</span>
+        <span id="navDestTag" class="nd-tag" hidden>경유</span>
         <span id="navDestVia" class="nd-via"></span>
       </div>
       <div class="turn">
@@ -2115,6 +2214,9 @@
         <button id="navEnd">안내 종료</button>
       </div>
     </div>
+
+    <!-- v263 (운전자 그림 '↱ 50m', '휴게소 9.8km'): 지금 안내가 멀면 그다음 안내, 휴게소가 멀면 휴게소를 카드 오른쪽 옆 작은 칩으로 -->
+    <div id="navChips" class="navchips" hidden></div>
 
     <div id="routeCard" class="routecard" hidden>
       <div id="rcTitle" class="rc-title"></div>
@@ -2335,8 +2437,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-262"></script>
-<script src="img/ai/picks.js?v=2026.11.16-262"></script>
-<script src="app.js?v=2026.11.16-262"></script>
+<script src="icons.js?v=2026.11.16-263"></script>
+<script src="img/ai/picks.js?v=2026.11.16-263"></script>
+<script src="app.js?v=2026.11.16-263"></script>
 </body>
 </html>

@@ -773,15 +773,19 @@ JX2_EDIT = ('Redraw image 1 as a finished junction view for the guidance panel o
             'Add realism: fine asphalt texture, a concrete median barrier and metal guard rails or sound walls, grassy embankments with a few '
             'trees, distant apartment blocks and low hills on the horizon. No cars, no people, no text anywhere, no logos, no route shields, '
             'no watermark. ')
-_SIDE = (' On the far right, beyond a guard rail, a separate one-lane ramp that has already left the expressway runs alongside and curves '
-         'away to the right in the middle distance, exactly where the sketch has the separate grey road; it stays grey.')
+# v263 (운전자 '성남IC 는 네이버지도대로'): 경로 출구 차로는 지평선까지 곧게, 그 오른쪽 다른 출구가 빗금 고어에서 갈라져 휜다
+_SIDE = (' IMPORTANT for this view: the green exit lane does NOT bend; it runs perfectly straight all the way to the horizon, parallel to the '
+         'through lanes. Directly to the right of the green lane there is one more grey lane (a different exit): it runs alongside the green '
+         'lane, then splits off at a white chevron-hatched gore in the middle distance and curves away to the right, exactly as in the '
+         'sketch. That grey ramp stays grey.')
 JX2_LANES_TXT = {
     'x31': 'the road has exactly 4 lanes: 3 lanes go straight on the left and 1 lane (the green route) exits to the right far ahead.',
     'x41': 'the road has exactly 5 lanes: 4 lanes go straight on the left and 1 lane (the green route) exits to the right far ahead.',
-    'x41s': 'the road has exactly 5 lanes: 4 lanes go straight on the left and 1 lane (the green route) exits to the right far ahead.' + _SIDE,
+    'x41s': 'the road has exactly 5 lanes in the foreground: 4 grey lanes go straight on the left and 1 green lane (the route) on their right.' + _SIDE,
     'x22': 'the road has exactly 4 lanes: 2 lanes go straight on the left and 2 lanes (the green route) exit to the right far ahead.',
     'x42': 'the road has exactly 6 lanes: 4 lanes go straight on the left and 2 lanes (the green route) exit to the right far ahead; the outermost lanes may be cut by the image edge.',
-    'x42s': 'the road has exactly 6 lanes: 4 lanes go straight on the left and 2 lanes (the green route) exit to the right far ahead; the outermost lanes may be cut by the image edge.' + _SIDE,
+    'x42s': ('the road has exactly 6 lanes in the foreground: 4 grey lanes go straight on the left and 2 green lanes (the route) on their right; '
+             'the outermost lanes may be cut by the image edge.' + _SIDE),
     'x43': 'the road has exactly 7 lanes: 4 lanes go straight on the left and 3 lanes (the green route) exit to the right far ahead; the outermost lanes may be cut by the image edge.',
     's31': 'the road has exactly 4 lanes: 3 lanes (the green route) go straight on the left and 1 grey lane exits to the right far ahead.',
     's41': 'the road has exactly 5 lanes: 4 lanes (the green route) go straight on the left and 1 grey lane exits to the right far ahead.',
