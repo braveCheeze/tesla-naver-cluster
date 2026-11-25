@@ -17,6 +17,7 @@ OpenStreetMap(ODbL)의 연결로 destination 태그에서 가져온다. 네이�
      아니다(경부 하행 '부산', 네이버 '대전'). 운전자 '이런거 실수나오면 안 된다'. 도시 이름은 그 갈림점의 OSM destination 이나 확인된 표만)
     x  나들목 번호 (OSM motorway_junction ref, 갈림점이나 들어오는 길 700m 안·연결로 900m 안의 가장 가까운 것: 서하남 '4', 성남 '2')
     xn 그 나들목 이름
+    m  1 = 들어오는 길이 motorway·motorway_link (v262, 초록 표지)
     s  갈래 안에서 다시 갈리는 차로 수 {갈래 번호: [왼쪽 차로 수, 오른쪽 차로 수]} (판교분기점 경부 북행 '일산;구리' 3 = 일산 1 + 구리 2)
 - 사용:  set TMP=D:\\tmp & py -I tools\\osm_junc_dest.py D:\\osm\\south-korea-latest.osm.pbf data\\junc_dest.json
 """
@@ -228,6 +229,8 @@ for nid, outs in through.items():
                         extra.setdefault('s', {})[str(i)] = fx[5]
                     fixed.append((why, here, b[2], n))
     # v4: 나들목 번호 (v257: 앞쪽 방면 'a' 는 뺐다)
+    if W[wi]['hw'].startswith('motorway'):
+        extra['m'] = 1   # v262: 고속도로·고속도로 연결로 위 갈림 (앱은 한국도로공사 초록 표지)
     xr = exit_ref(nid, wi, ki, [(wid, k) for (wid, k), b in zip(outs, br) if W[wid]['hw'].endswith('_link')])
     if xr:
         extra['x'], extra['xn'] = xr

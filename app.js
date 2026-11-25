@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-261'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-262'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -6371,17 +6371,18 @@
         return { T, E: Math.max(1, ex), stay: true, bus: L.slice(0, T).map((m, i) => (isBusLane(m) ? i : -1)).filter((i) => i >= 0), src: 'hd' };
       }
       const ex = L.filter((m) => m.indexOf(ln.M) >= 0 && m.indexOf('S') < 0).length, E = Math.max(1, ex || ln.ok.length);
-      return { T: L.length - E, E, stay: false, side: !!jxSideExit(g), src: 'hd' };
+      return { T: L.length - E, E, stay: false, side: jxSideBefore(g), src: 'hd' };
     }
     if (j.kind === 'main') return { T: 3, E: 1, stay: true, src: '' };
     const ol = jxOsmLanes(g);
     if (ol) {
       const fork = j.kind === 'fork' && ol.other <= 2 && ol.go <= 2;
-      return Object.assign({ T: ol.other, E: ol.go, stay: false, fork, sub: ol.sub, side: !!jxSideExit(g), src: 'osm' }, fork ? jxForkGeo(j, g) : {});
+      return Object.assign({ T: ol.other, E: ol.go, stay: false, fork, sub: ol.sub, side: jxSideBefore(g), src: 'osm' }, fork ? jxForkGeo(j, g) : {});
     }
     if (j.kind === 'fork') return Object.assign({ T: 2, E: 2, stay: false, fork: true, src: '' }, jxForkGeo(j, g));
-    return { T: j.hwy ? 4 : 3, E: 1, stay: false, side: !!jxSideExit(g), src: '' };
+    return { T: j.hwy ? 4 : 3, E: 1, stay: false, side: jxSideBefore(g), src: '' };
   }
+  const jxSideBefore = (g) => { const x = jxSideExit(g); return !!(x && x.before); };   // 옆 연결로 그림(x41s·x42s)은 이미 갈라진 출구만
   // v260 (부모 세션, 네이버 서하남교차로): 갈림길은 대칭 Y 가 아니다 — 한 무리는 곧게, 다른 무리가 멀리서 비킨다. OSM 갈래 끝이 들어오는
   //   방향에서 덜 꺾인 쪽이 곧게 가는 무리. 경로가 곧게 가는 쪽이면 f22k, 비키는 쪽이면 f22. 비키는 무리가 왼쪽이면 그림을 뒤집는다(forkMir).
   //   갈림점 자료가 없으면 경로가 안내 쪽으로 비키는 것으로 (예전 갈림길 그림과 같은 칠)
@@ -6598,7 +6599,7 @@
       // AI 분기점 장면(낮·밤, 오른쪽 그림. 왼쪽은 CSS 로 좌우 뒤집기)을 골라 두었으면 그것을, 아니면 그려 넣은 원근 그림 (2026-11-15 요청)
       const jd = ICON_PICKS['junc_' + j.kind + '_day'], jn = ICON_PICKS['junc_' + j.kind + '_night'];
       const jimg = (f, c) => '<img class="jv-img ' + c + ' jc-' + j.kind + '" src="' + APP_BASE + 'img/ai/' + f + '?v=' + APP_VERSION + '" alt="" draggable="false">';
-      let goSide = '', goStraight = j.kind === 'main', goAl = false, goNo = 0, jxLabBl = null;
+      let goSide = '', goStraight = j.kind === 'main', goAl = false, goNo = 0, jxLabBl = null, jxGreen = false;
       if (useNv) {
         const sc = nvScene(j, fl, clHere ? cla.c : '');
         const bd = ICON_PICKS.junc_bg_day, bn = ICON_PICKS.junc_bg_night;
@@ -6708,10 +6709,12 @@
         // v259 (③): 같은 쪽으로 먼저 갈라진 출구가 있으면 네이버 성남IC 처럼 본선 표지 대신 출구 표지 두 장 — 경로 출구('2B 성남 광주')는 안쪽,
         //   먼저 갈라진 출구('2A 판교')는 바깥쪽. 지나치는 본선 방면은 차로 글자에만
         const sx = !stay && !forkPic ? jxSideExit(g) : null;
-        const exitB = sx ? (mir ? BD.r : BD.l) : stay ? (goR ? BD.l : BD.r) : (goR ? BD.r : BD.l);
+        const sxL = sx ? sx.otherLeft : false;
+        jxGreen = !!(ot && ot.mw);   // v262: 고속도로·고속도로 연결로 위 갈림(OSM motorway·motorway_link)은 한국도로공사 초록 표지 (서하남교차로)   // 다른 출구 표지는 그 갈래가 가는 쪽 (성남IC 2A 오른쪽, 기흥IC 43B 동탄 왼쪽)
+        const exitB = sx ? (sxL ? BD.r : BD.l) : stay ? (goR ? BD.l : BD.r) : (goR ? BD.r : BD.l);
         const tabAt = (b, ref, nm) => '<span class="jx-tab" style="left:' + (b[0] * 100 + 1).toFixed(1) + '%;top:' + (b[1] * 100).toFixed(1) + '%"><b>' + esc(ref) + '</b>' +
           (nm && nm.length <= 6 ? '<i>' + esc(nm) + '</i>' : '') + '</span>';
-        const tab = (ot && ot.xref && !forkPic ? tabAt(exitB, ot.xref, ot.xname) : '') + (sx && sx.xref ? tabAt(mir ? BD.l : BD.r, sx.xref, sx.xname) : '');
+        const tab = (ot && ot.xref && !forkPic ? tabAt(exitB, ot.xref, ot.xname) : '') + (sx && sx.xref ? tabAt(sxL ? BD.l : BD.r, sx.xref, sx.xname) : '');
         const key2 = v2 ? 'jx2_' : 'jx_';
         $('#juncSvg').innerHTML = xi(ICON_PICKS[key2 + jxs + '_day'], 'jv-day') + xi(ICON_PICKS[key2 + jxs + '_night'], 'jv-night') + laneAt.map(lane).join('') + tab;
         $('#juncSvg').classList.remove('nv-has-bg');
@@ -6729,9 +6732,9 @@
         if (sx) {
           sg2.innerHTML = juncSignHtml(sx.names.slice(0, 2), false, 0);   // 출구 표지라 노선 방패 없이 (네이버 '2A 판교')
           sg2.className = 'jc-label jc-other jx-board' + (mir ? ' jx-bl' : '');
-          sg2.style.cssText = jxBoardStyle(mir ? BD.l : BD.r);
+          sg2.style.cssText = jxBoardStyle(sxL ? BD.l : BD.r);
           sg2.setAttribute('aria-label', sx.names.join(', ') + ' 방면');
-          goSide = mir ? 'r' : 'l'; jxLabBl = mir;
+          goSide = sxL ? 'r' : 'l'; jxLabBl = mir;
         }
       } else {
         $('#juncSvg').innerHTML = jd && jn ? jimg(jd, 'jv-day') + jimg(jn, 'jv-night') : JUNC_DRAWN ? juncSvg(j.kind === 'entry' ? Object.assign({}, j, { kind: 'ramp' }) : j) : '';
@@ -6773,7 +6776,7 @@
       el.dataset.fit = '';
       el.classList.toggle('left', !jxs && j.left);   // jx 는 좌우를 jx-m 으로만 (옛 그림의 뒤집기·표지 자리 규칙과 섞이지 않게)
       el.classList.toggle('main', !jxs && j.kind === 'main');
-      el.classList.toggle('hwy', j.hwy);
+      el.classList.toggle('hwy', j.hwy || jxGreen);
     }
     // 남은 거리는 위 길안내 패널에 크게 나오므로 그림에는 지점 이름만 (2026-11-14: 같은 거리를 또 보여 줄 필요 없음)
     el.hidden = false;
@@ -7537,18 +7540,33 @@
     const oi = s.r.br.findIndex((b, i) => i !== s.go), o = s.r.br[oi], ex = s.r.ex || {};
     return { names: jdNames(o.dest), ref: o.ref, name: o.name, main: !o.dest, go: jdNames(s.r.br[s.go].dest),
       city: o.dest ? [] : jxCity(o.ref, s.r),   // v259: OSM 방면이 없는 본선 갈래만 — 확인 표
+      mw: !!ex.m,   // v262: 갈림점이 고속도로·고속도로 연결로 위 (OSM motorway·motorway_link)
       xref: ex.x ? String(ex.x).replace(/;/g, ' ') : '', xname: ex.x ? String(ex.xn || '') : '' };
   }
   // v259 (부모 세션 ③, 네이버 성남IC: 본선 표지 없이 '2B 성남 광주' · '2A 판교' 두 장): 이 안내 갈림점 앞 450m 안에서 같은 쪽으로 먼저 갈라진
   //   출구(경로는 본선으로 지나감)가 있으면 그 출구 — { names, ref, xref, xname }. 갈래 자리로 경로의 갈래를 알 수 있을 때만
+  // v262 (부모 세션, 네이버 기흥IC '43B 기흥(동탄) | 동탄 ↗' 왼쪽 · '43A 기흥 | 기흥 ↗' 오른쪽, 본선 표지 없음): 안내 출구의 연결로가 고어 뒤에서
+  //   다시 갈리는 곳의 출구 표지 두 장은 네이버에서 확인한 표로만. OSM 은 기흥IC 에서 경로가 지나는 연결로 갈래에 '동탄'을 붙여 두어
+  //   (네이버는 그 길이 43A 기흥) 갈래 이름·좌우를 OSM 으로 정하면 틀린다. 안내 갈림점에서 300m 안·들어오는 방향 ±45°
+  const JX_SIGNS = [
+    { at: [37.2268, 127.1042], h: 212, other: { names: ['동탄'], xref: '43B', xname: '기흥', left: true },
+      why: '네이버 기흥IC(경부 하행) 330m: 43B 기흥(동탄) 318 동탄 ↗ · 43A 기흥 317 기흥 ↗' },
+  ];
   function jxSideExit(g) {
+    // 반환 { names, ref, xref, xname, before, otherLeft } — otherLeft: 다른 출구 표지를 경로 출구 표지의 왼쪽에
     const s = juncSplitAt(g), j = juncInfo(g);
     if (!s || !j) return null;
+    const t = JX_SIGNS.find((e) => angleDiff(e.h, s.r.h) <= 45 && haversine(s.r, { lat: e.at[0], lng: e.at[1] }) <= 300);
+    if (t) return { at: s.at, names: t.other.names.slice(), ref: '', xref: t.other.xref, xname: t.other.xname, before: false, otherLeft: !!t.other.left };
+    const gx = s.r.ex && s.r.ex.x ? String(s.r.ex.x) : '';
     let best = null;
     for (const r of jdNear(s.r)) {
       if (r === s.r) continue;
       const on = routeSegNear(r, 30);
-      if (!on || on.at >= s.at - 20 || on.at < s.at - 450) continue;
+      if (!on) continue;
+      // 같은 쪽으로 먼저 갈라진 출구 (OSM — 성남IC 2A 는 네이버와 같다)
+      const before = on.at < s.at - 20 && on.at >= s.at - 450;
+      if (!before) continue;
       const rb = routeBearingAt(Math.max(0, on.at - 30), on.at);
       if (rb === null || angleDiff(rb, r.h) > 40) continue;
       let go = -1;
@@ -7558,12 +7576,16 @@
         if (h.filter(Boolean).length === 1) go = h.indexOf(true);
       }
       if (go < 0) continue;
-      const o = r.br.find((b, i) => i !== go), names = jdNames(o.dest);
+      const oi = r.br.findIndex((b, i) => i !== go), o = r.br[oi], names = jdNames(o.dest);
       if (!names.length) continue;
-      const p = o.pts[o.pts.length - 1], ang = ((bearing(r, p) - rb + 540) % 360) - 180;
+      const angOf = (b) => { const p = b.pts[b.pts.length - 1]; return ((bearing(r, p) - rb + 540) % 360) - 180; };
+      const ang = angOf(o), otherLeft = ang < angOf(r.br[go]);
       if (j.left ? ang > -5 : ang < 5) continue;   // 경로 출구와 같은 쪽
       const ex = r.ex || {};
-      if (!best || on.at > best.at) best = { at: on.at, names, ref: o.ref, xref: ex.x ? String(ex.x).replace(/;/g, ' ') : '', xname: ex.x ? String(ex.xn || '') : '' };
+      let xref = '', xname = '';
+      if (ex.x && String(ex.x) !== gx) { xref = String(ex.x).replace(/;/g, ' '); xname = String(ex.xn || ''); }
+      const c = { at: on.at, names, ref: o.ref, xref, xname, before: true, otherLeft };
+      if (!best || on.at > best.at) best = c;
     }
     return best;
   }

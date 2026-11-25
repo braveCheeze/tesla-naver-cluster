@@ -8262,6 +8262,7 @@
         lanes: lanes.map((x) => (x.classList.contains('go') ? '*' : '') + [...x.querySelectorAll('b')].map((b) => b.textContent).join('/')).join(' '),
         minK: sizes.length ? +Math.min(...sizes).toFixed(2) : 0, tab: [...sv.querySelectorAll('.jx-tab')].map((x) => x.textContent).join('|'),
         sign: document.getElementById('juncLabel').textContent.trim(), other: document.getElementById('juncLabel2').textContent.trim(),
+        hwy: el.classList.contains('hwy'), otherLeft: document.getElementById('juncLabel2').getBoundingClientRect().left < document.getElementById('juncLabel').getBoundingClientRect().left,
         img: sv.querySelector('img.jv-day') ? sv.querySelector('img.jv-day').getAttribute('src').replace(/^.*\/img\/ai\//, '').replace(/\?.*$/, '') : '' };
     };
     const at = async (f, re, before) => {
@@ -8284,11 +8285,13 @@
       // v260: 서하남교차로 '강동' — 네이버처럼 강동 두 차로는 곧게, 하남 두 차로가 멀리서 오른쪽으로 비킨다 (경로 = 곧게 가는 쪽 f22k, 뒤집지 않음)
       r.e = await at('route-seohanam-ic-n.json', /서하남교차로에서 '강동'/, 330);
       r.e.m = document.getElementById('juncCard').classList.contains('jx-m');
+      // v262: 서하남교차로는 고속도로 연결로 위 갈림 — 초록(도로공사) 표지. 기흥IC 는 연결로가 다시 갈려 출구 표지 두 장(43A 기흥 · 43B 동탄), 본선 표지 없음
+      r.f = await at('route-giheung-ic-s.json', /기흥IC에서 '기흥'/, 330);
     } finally {
       for (const k of K2) { if (keep[k]) t.iconPicks[k] = keep[k]; else delete t.iconPicks[k]; }
       await resetApp(); softReset();
     }
-    const { a = {}, b = {}, c = {}, d = {}, e = {} } = r;
+    const { a = {}, b = {}, c = {}, d = {}, e = {}, f = {} } = r;
     // v257 (부모 세션 '틀린 도시는 안 된다'): 휴게소 방향 '부산'은 어디에도 없다. v259: 지시도시는 네이버와 맞춘 확인 표에서만 —
     //   성남IC '일산'(×4, 네이버 같음), 하남분기점 '구리 상일', 경부 하행 '대전'. 차로는 비우지 않는다
     const noCity = [a, b, c, d].every((x) => !/부산/.test(x.lanes || '') && !/부산/.test(x.other || ''));
@@ -8298,7 +8301,8 @@
       /^2B성남\|2A/.test(a.tab) && !/\d/.test(a.sign) && a.other === '판교' &&
       b.shown && b.shape === 'x43' && b.lc === 'gpp' && /_gpp\.webp/.test(b.img) && /서울/.test(b.other) &&
       c.shown && c.shape === 'x42' && c.lc === 'p' && /구리상일/.test(c.other) && /^구리\/상일 구리\/상일 구리\/상일 구리\/상일 /.test(c.lanes) &&
-      e.shown && e.shape === 'f22k' && !e.m && e.lanes === '*강동 *강동 하남 하남' &&
+      e.shown && e.shape === 'f22k' && !e.m && e.lanes === '*강동 *강동 하남 하남' && e.hwy &&
+      f.shown && f.shape === 'x42' && f.other === '동탄' && f.otherLeft && /^43A기흥\|43B/.test(f.tab) && /^대전 대전 대전 대전 \*기흥 \*기흥$/.test(f.lanes) &&
       d.shown && d.shape === 's41' && d.lc === 'nbbb' && /_nbbb\.webp/.test(d.img) && /^45A/.test(d.tab) && /대전/.test(d.sign);
     return { pass: !!ok, detail: JSON.stringify(r) };
   }

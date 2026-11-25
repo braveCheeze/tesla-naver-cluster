@@ -266,6 +266,17 @@ def masks(name):
     return a, b
 
 
+OUTER = 3.6   # v262: 바깥쪽(옆에 다른 차로가 없는 쪽)은 차로 하나 폭만큼 더 — AI 가 경로 차로를 밑그림보다 바깥으로 넓게 칠하는 일이 있다 (f22k 낮 왼쪽 초록 쐐기)
+
+
+def _outer(sh, x0, x1):
+    """이 차로 왼쪽·오른쪽에 다른 차로(앞쪽)가 있는가 → 바깥으로 넓힐 폭 (왼쪽, 오른쪽)"""
+    fg = [ln for ln in sh['lanes'] if not lane_za(ln)]
+    left = any(ln[1] <= x0 + 0.01 for ln in fg if ln[0] < x0 - 0.01)
+    right = any(ln[0] >= x1 - 0.01 for ln in fg if ln[1] > x1 + 0.01)
+    return (0.35 if left else OUTER), (0.35 if right else OUTER)
+
+
 def route_region(name, size=(W, H)):
     sh = SHAPES[name]
     m = Image.new('L', (W, H))
@@ -273,7 +284,8 @@ def route_region(name, size=(W, H)):
     for ln in sh['lanes']:
         x0, x1, s = ln[:3]
         if s in sh['go'] and not lane_za(ln):
-            d.polygon(strip(x0 - 0.35, x1 + 0.35, s, sh, Z0, sh['paint_to']), fill=255)
+            el, er = _outer(sh, x0, x1)
+            d.polygon(strip(x0 - el, x1 + er, s, sh, Z0, sh['paint_to']), fill=255)
     if size != (W, H):
         m = m.resize(size, Image.NEAREST)
     return np.array(m) > 0
@@ -321,7 +333,8 @@ def lane_region(name, k, size=(W, H)):
     x0, x1, s = go[k][:3]
     m = Image.new('L', (W, H))
     d = ImageDraw.Draw(m)
-    d.polygon(strip(x0 - (0.35 if k == 0 else 0.0), x1 + (0.35 if k == len(go) - 1 else 0.0), s, sh, Z0, sh['paint_to']), fill=255)
+    el, er = _outer(sh, x0, x1)
+    d.polygon(strip(x0 - (el if k == 0 else 0.0), x1 + (er if k == len(go) - 1 else 0.0), s, sh, Z0, sh['paint_to']), fill=255)
     if size != (W, H):
         m = m.resize(size, Image.NEAREST)
     return m
