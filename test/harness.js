@@ -2958,6 +2958,7 @@
     { id: 'S170', name: "S170 driver feedback after the v262 night drive (2026-11-26): with the turn 3.4 km away the '이어서' row leaves the card and becomes a chip beside it ('↱ 160m'), near the turn the row stays; a far rest area is a chip under the turn chips (closest first); remaining distance, time, ETA and '안내 종료' sit in the bottom-centre bar, not in the card; with a waypoint the top line is the waypoint with an orange '경유' tag and the destination below; the trip card is bottom right, the feedback button bottom left; lane labels follow each picture's measured lane centres (day and night sets)", fn: s170 },
     { id: 'S171', name: "S171 camera fixes from the Naver check of the night-drive reports (2026-11-26): rear cameras look like Naver's '60 후면단속' — black band '후면단속', voice '후면단속 카메라', after passing '후면단속 중' with the speed warning for about 100 m (마북 삼거리 #21024 southbound); the 분당수서로 signal camera #22322 above 백현지하도로 is not given to a car in the underpass below (Naver's 백현지하차도 entry guide 1.24 km before; the same route driven on the surface — section 분당수서로, entry guides turned into straight guides — still gets it); 탄천 80 #22931/#22952 sit on Naver's pole and the warning distance matches it; the four Naver rear cameras carry the rear flag", fn: s171 },
     { id: 'S172', name: "S172 junction-picture lane labels like Naver (v267–v268, parent session side by side with Naver's 330 m pictures): one label size per picture (two-line labels 86% of it), the label row low in the picture with no label below the picture's bottom edge, no two labels overlapping (2 px apart at most), labels centred inside the picture; through lanes say what Naver says at the checked spots — 서하남IC '구리 대전' (board still '구리'), 판교IC '대전 부산'", fn: s172 },
+    { id: 'S173', name: "S173 chips do not blink (v269, driver on the road: '오른쪽 휴게소가 되게 깜빡깜빡'): driving past the 5 km rest-area and 1 km next-turn thresholds at 1 fix a second with ±15 m GPS noise, each chip changes between chip and card row at most once per crossing, the same chip element stays while its text counts down (no rebuild, the enter animation runs once), and a rest area that loses the highway check for a few fixes stays shown", fn: s173 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -8245,6 +8246,67 @@
       b.calls === 4 && b.active && b.same && b.pill && !b.redToast && b.panel && b.turn && b.log.join(',') === 'failed:3' && b.moved &&
       !c.pill && c.active &&
       d.bad400 === 1 && d.naverNo === 1 && d.traffic === 1 && d.upstream.every(Boolean) && !d.pillAfterEnd;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S173: 칩 깜빡임 (v269) — GPS 흔들림 ±15m, 1초에 한 번
+  async function s173() {
+    const t = T(), r = {};
+    let seed = 7;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+    const noisy = (p) => dest(dest(p, 0, (rnd() - 0.5) * 30), 90, (rnd() - 0.5) * 30);   // 남북·동서 ±15m
+    const fx = await (await realFetch(harnessDir + 'fixtures/route-gapyeong-cheongpyeong.json', { cache: 'no-store' })).json();
+    const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+    const cum = [0]; for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + hav(P[k - 1], P[k]));
+    const R = { route: Object.assign({}, fx, { sections: [{ i: 0, n: P.length, name: '시험고속도로', speed: 80, cong: 1 }] }), P, cum, total: cum[cum.length - 1],
+      dest: { name: '시험 목적지', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    const watch = (sel) => { const o = { flips: 0, last: null, nodes: new Set(), ins: 0 }; return { o, tick() {
+      const el = document.querySelector(sel), on = !!el && !document.getElementById('navChips').hidden;
+      if (o.last !== null && on !== o.last) o.flips++;
+      o.last = on;
+      if (el) { if (!o.nodes.has(el) && el.classList.contains('in')) o.ins++; o.nodes.add(el); }
+    } }; };
+    try {
+      await waitFor(() => t.jdData.loaded, 10000, 100);
+      await resetApp(); softReset(); await planAndStart(R);
+      const g = R.route.guide.find((x) => /팔각정삼거리에서/.test(x.s)), sg = R.cum[Math.min(g.i, R.cum.length - 1)];
+      // (a) 다음 회전 칩: 회전 1.6km 앞 → 0.6km 앞 (1km 문턱을 한 번 지난다), 시속 72km(20m/s), 1초에 한 번, ±15m
+      for (let s = Math.max(0, sg - 2000); s <= sg - 1600; s += 20) { const a = pointAt(R, s); feed(a.p, 20, a.h); }
+      t.renderNav();
+      const wn = watch('#navChips .nchip:not(.rest)'), wr0 = { rowFlips: 0, last: null };
+      for (let s = sg - 1600; s <= sg - 600; s += 20) {
+        const a = pointAt(R, s); feed(noisy(a.p), 20, a.h + (rnd() - 0.5) * 10); t.renderNav();
+        wn.tick();
+        const row = visible('#nextTurn'); if (wr0.last !== null && row !== wr0.last) wr0.rowFlips++; wr0.last = row;
+      }
+      r.a = Object.assign({}, wn.o, { nodes: wn.o.nodes.size, rowFlips: wr0.rowFlips, endRow: wr0.last });
+      t.endNav();
+      // (b) 휴게소 칩: 휴게소 6.2km 앞 → 4.2km 앞 (5km 문턱), 거리 글자는 100m 마다 바뀐다
+      await resetApp(); softReset(); await planAndStart(R);
+      for (let s = 0; s <= 400; s += 20) { const a = pointAt(R, s); feed(a.p, 20, a.h); }
+      t.nav.routeRest = [{ at: t.nav.along + 6200, name: '시험쉼터휴게소', lat: R.P[0].lat, lng: R.P[0].lng }]; t.nav.routeRestFor = t.nav.route;
+      t.renderNav();
+      const wr = watch('#navChips .nchip.rest'), texts = new Set();
+      let rowFlips = 0, lastRow = null;
+      const s0 = 400;
+      for (let s = s0; s <= s0 + 2000; s += 20) {
+        const a = pointAt(R, s); feed(noisy(a.p), 20, a.h + (rnd() - 0.5) * 10);
+        // (c) 고속도로 판정이 몇 초 꺼져도(구간 이름이 잠깐 비는 것처럼) 같은 휴게소는 그대로
+        if (s > s0 + 300 && s < s0 + 380) t.nav.route.sections = []; else t.nav.route.sections = R.route.sections;
+        t.nav.hwSpansFor = null;
+        t.renderNav();
+        wr.tick();
+        const el = document.querySelector('#navChips .nchip.rest'); if (el) texts.add(el.textContent.trim());
+        const row = visible('#restCard'); if (lastRow !== null && row !== lastRow) rowFlips++; lastRow = row;
+      }
+      r.b = Object.assign({}, wr.o, { nodes: wr.o.nodes.size, texts: texts.size, rowFlips, endRow: lastRow });
+      t.endNav();
+    } finally {
+      await resetApp(); softReset();
+    }
+    const { a = {}, b = {} } = r;
+    const ok = a.flips <= 1 && a.nodes <= 1 && a.ins <= 1 && a.rowFlips <= 1 && a.endRow === true &&
+      b.flips <= 1 && b.nodes === 1 && b.ins <= 1 && b.texts >= 5 && b.rowFlips <= 1 && b.endRow === true;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

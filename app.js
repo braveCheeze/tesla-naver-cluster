@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-268'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-269'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -2101,6 +2101,7 @@
     return merged;
   }
   const restState = { key: '', next: null };
+  const CHIP_HOLD_MS = 10000;   // v269: 칩·휴게소 보이기를 바꾼 뒤 그대로 두는 시간 (깜빡임 막기)
   const REST_HW_LEAD = 2000;
   function restRoadNear() {
     if (highwaySpans().some(([a, b]) => nav.along >= a - REST_HW_LEAD && nav.along <= b)) return true;
@@ -2119,7 +2120,11 @@
     const next = ahead[0];
     // v140 (2026-11-16 잠실→기흥역, 석촌호수사거리에서 '서울하이패스센터쉼터 19km' 파란 줄 — 네이버는 시내에서는 휴게소를 띄우지 않는다):
     // 고속도로 위이거나 고속도로 진입이 REST_HW_LEAD 안으로 다가왔을 때만 보여 준다 (지도 표지는 그대로)
-    const show = !!next && next.at - nav.along <= REST_SHOW && restRoadNear();
+    let show = !!next && next.at - nav.along <= REST_SHOW && restRoadNear();
+    // v269 (운전자 '오른쪽 휴게소가 되게 깜빡깜빡'): 고속도로 위인지(구간 이름·진입 안내 자리)가 GPS 흔들림에 잠깐 바뀌어도 같은 휴게소는 10초 더 보인다
+    const nowT = state.fix ? state.fix.t : Date.now();
+    if (show) { restState.shownName = next.name; restState.shownT = nowT; }
+    else if (next && restState.shownName === next.name && nowT - (restState.shownT || 0) < CHIP_HOLD_MS && next.at - nav.along <= REST_SHOW) show = true;
     el.hidden = !show;
     restState.next = show ? { name: next.name.replace(/쉼터휴게소$/, '쉼터'), d: next.at - nav.along } : null;   // 가까우면 안내 줄로 (renderNavPanel)
     if (show) {
@@ -8251,6 +8256,38 @@
     app.classList.toggle('speed-covered', sbOn && lows.length > 0 && Math.max(...lows) > sb.getBoundingClientRect().top - 6);
   }
   const NEXT_ROW_NEAR = 1000, REST_ROW_NEAR = 5000;   // v263: 이보다 멀면 카드 안 줄 대신 오른쪽 칩
+  // v269 (운전자 '오른쪽 휴게소가 되게 깜빡깜빡'): 칩 ↔ 카드 줄 바꿈에 문턱을 둔다 — 칩이 되는 것은 문턱 + 10%(1.1km · 5.5km) 넘을 때,
+  //   줄로 돌아가는 것은 문턱 밑일 때. 한 번 바뀌면 10초는 그대로. 같은 안내(안내 차례)·같은 휴게소(이름) 안에서만 — 바뀌면 새로 정한다
+  const chipHyst = {};
+  function chipState(key, ctx, v, down, up) {
+    const now = state.fix ? state.fix.t : Date.now();
+    let st = chipHyst[key];
+    if (!st || st.ctx !== ctx) { st = chipHyst[key] = { ctx, on: v > (down + up) / 2, t: now }; return st.on; }
+    if (now - st.t < CHIP_HOLD_MS) return st.on;
+    if (st.on && v < down) { st.on = false; st.t = now; } else if (!st.on && v > up) { st.on = true; st.t = now; }
+    return st.on;
+  }
+  // v269: 칩은 한 번 만들면 그 자리에서 글자만 바꾼다 (예전엔 거리 글자가 바뀔 때마다 칩을 모두 새로 만들어 나타나는 움직임이 매번 다시 돌았다 —
+  //   5~10km 휴게소는 100m 마다 '9.8km → 9.7km'). 나타나는 움직임(in)은 처음 만들 때 한 번만
+  function setChips(box, list) {
+    const have = new Map([...box.children].map((el) => [el.dataset.k, el]));
+    list.forEach((c, i) => {
+      let el = have.get(c.k);
+      if (!el) {
+        el = document.createElement('span');
+        el.dataset.k = c.k;
+        el.className = 'nchip in' + c.cls;
+        el.addEventListener('animationend', () => el.classList.remove('in'), { once: true });
+      } else {
+        have.delete(c.k);
+        const cls = 'nchip' + c.cls + (el.classList.contains('in') ? ' in' : '');
+        if (el.className !== cls) el.className = cls;
+      }
+      if (el._h !== c.html) { el.innerHTML = c.html; el._h = c.html; }
+      if (box.children[i] !== el) box.insertBefore(el, box.children[i] || null);
+    });
+    have.forEach((el) => el.remove());
+  }
   function renderNavPanel() {
     const p = $('#navPanel');
     renderStrip();
@@ -8335,7 +8372,7 @@
     const nn = $('#nextTurn');
     nn.hidden = !g2;
     // v263 (운전자 '3.4km 남았는데 이어서 230m 우회전은 필요 없다'): 지금 안내가 NEXT_ROW_NEAR 보다 멀면 그다음 안내는 카드 오른쪽 칩으로
-    const nextChip = !!g2 && !restMain && !tnMain && nav.dg != null && nav.dg > NEXT_ROW_NEAR;
+    const nextChip = !!g2 && !restMain && !tnMain && nav.dg != null && chipState('next', String(nav.gi) + '|' + (nav.route && nav.route.distance), nav.dg, NEXT_ROW_NEAR, NEXT_ROW_NEAR * 1.1);
     const chips = [];
     if (g2) {
       const last = nav.cum.length - 1;
@@ -8375,19 +8412,18 @@
         // 운전자 (2026-11-26): '50m 우회전 그다음 150m 좌회전이면 50 이 첫째, 150 이 둘째, 휴게소 21km 가 셋째' — 가까운 순서대로 위에서부터,
         //   하나가 지나가면 밑의 것이 올라온다
         nn.hidden = true;
-        chips.push('<span class="nchip' + (isGoal ? ' goal' : '') + '"><span class="nexticon">' + $('#nextIcon').innerHTML + '</span>' + esc($('#nextDist').textContent) + '</span>');
+        chips.push({ k: 'n:' + g2.i, cls: isGoal ? ' goal' : '', html: '<span class="nexticon">' + $('#nextIcon').innerHTML + '</span>' + esc($('#nextDist').textContent) });
         const c2 = soon ? ch[1] : null;
-        if (c2) chips.push('<span class="nchip"><span class="nexticon">' + ico(iconKind(c2.g)) + '</span>' + esc(fmtDist(c2.gap)) + '</span>');
+        if (c2) chips.push({ k: 'n:' + c2.g.i, cls: '', html: '<span class="nexticon">' + ico(iconKind(c2.g)) + '</span>' + esc(fmtDist(c2.gap)) });
       }
     }
     // 휴게소: REST_ROW_NEAR 안이면 카드 안 파란 줄, 더 멀면 칩 (위 큰 줄이 휴게소일 때는 그대로)
-    if (rs && !restMain && rs.d > REST_ROW_NEAR) {
+    if (rs && !restMain && chipState('rest', rs.name, rs.d, REST_ROW_NEAR, REST_ROW_NEAR * 1.1)) {
       $('#restCard').hidden = true;
-      chips.push('<span class="nchip rest">' + REST_SIGN + esc(fmtDist(rs.d)) + '</span>');
+      chips.push({ k: 'r:' + rs.name, cls: ' rest', html: REST_SIGN + esc(fmtDist(rs.d)) });
     }
     const chipBox = $('#navChips');
-    const chipHtml = chips.join('');
-    if (chipBox.innerHTML !== chipHtml) chipBox.innerHTML = chipHtml;
+    setChips(chipBox, chips);
     chipBox.hidden = !chips.length;
     const remain = nav.remain != null ? nav.remain : nav.total;
     const remMs = nav.route.duration * (remain / Math.max(1, nav.total));

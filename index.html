@@ -2038,7 +2038,7 @@
     transition: transform .2s ease;
   }
   #app.tesla #map:not(.chrome-hidden) .navchips { transform: translateY(40px); }
-  .nchip { animation: nchipIn .22s ease-out; }
+  .nchip.in { animation: nchipIn .22s ease-out; }   /* v269: 처음 나타날 때 한 번만 (글자만 바뀔 때 다시 돌지 않게) */
   @keyframes nchipIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
   .nchip { display: flex; align-items: center; gap: 5px; padding: 4px 9px 4px 6px; border-radius: 10px; font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap;
     background-color: var(--nv-glass); background-image: var(--nv-sheen); -webkit-backdrop-filter: var(--nv-blur); backdrop-filter: var(--nv-blur); color: var(--nv-fg);
@@ -2453,8 +2453,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-268"></script>
-<script src="img/ai/picks.js?v=2026.11.16-268"></script>
-<script src="app.js?v=2026.11.16-268"></script>
+<script src="icons.js?v=2026.11.16-269"></script>
+<script src="img/ai/picks.js?v=2026.11.16-269"></script>
+<script src="app.js?v=2026.11.16-269"></script>
 </body>
 </html>
