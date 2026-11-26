@@ -2934,7 +2934,7 @@
     { id: 'S146', name: "S146 test runs never reach the real server (v219: synthetic passes reached production when a non-test page on the same origin — the S67 catalog frame or a hand-opened index.html — read the harness's saved queue): on the test page the send queues are stored under their own '@test' names, records made here carry x: 1, and pass records dated after today (a fake clock) are dropped before sending", fn: s146 },
     { id: 'S147', name: "S147 Naver verdicts on zone pairs and duplicate poles (v220-v223): labels, limits and rear flags follow Naver's badges, and duplicate records Naver does not show are switched off (kept in the data, left out of lookups) — 평인일주로 138° is a school-zone speed camera, 신재로 is school zone both ways, 해안로 is a school-zone signal-and-speed camera both ways, 적중로 is 50 (253° rear), 17755 moves to Naver's point without its place text", fn: s147 },
     { id: 'S148', name: "S148 Naver verdicts on the 18 single cameras (v224): wrong directions turned to Naver's, two-way cameras lose their one-way place text, records Naver does not show (and 30 duplicates of 40 or signal cameras) are switched off, 예술공원로 is a rear camera 35 m on", fn: s148 },
-    { id: 'S149', name: "S149 feedback button panel (v225): when speech recognition fails like on the Tesla (network), the panel opens with a record button and five picture buttons, later taps open it directly, one tap sends with the cards from the moment 의견 was tapped, a recording is queued until the server takes it, and a denied microphone leaves the picture buttons", fn: s149 },
+    { id: 'S149', name: "S149 feedback button panel (v225; v272: recording starts by itself when the panel opens, stops unsent after 8 s of silence, a picture button sends the recording only if speech was heard): when speech recognition fails like on the Tesla (network), the panel opens with a record button and five picture buttons, later taps open it directly, one tap sends with the cards from the moment 의견 was tapped, a recording is queued until the server takes it, and a denied microphone leaves the picture buttons", fn: s149 },
     { id: 'S150', name: "S150 heading-aware routing (v227): stopped at a light heading north with the destination behind, every route request starts ahead of the car; a route that starts by reversing is asked again further ahead (first route and reroute), a reversing traffic update is dropped, and a car parked over 3 minutes is not given a heading", fn: s150 },
     // S151 (그린 분기 그림 시험) — v245 고정 규칙(운전자 AI 그림만)으로 빠짐, S160 이 대신 확인
     { id: 'S152', name: "S152 arrival pin on the building (v228): a destination that is a building's entrance puts the 도착 pin on that building (its N동, else the complex), the route still ends at the parking entrance or the chosen entrance, the dotted walk and the arrival arrow go to the building, and plain places or far namesakes are left alone", fn: s152 },
@@ -7416,6 +7416,10 @@
     try {
       t.fb.inTest = true;
       t.store.set('fbMode', null); t.fb.micDenied = false; t.fbA.save([]);
+      // v272: 버튼판이 열리면 바로 녹음 — 조용한 가짜 마이크 (말소리 없음)
+      ac = new AudioContext();
+      const quiet = ac.createMediaStreamDestination();
+      md.getUserMedia = async () => quiet.stream.clone();
       softReset();
       await planAndStart(R);
       for (let s = 15; s <= 150; s += 15) { const a = pointAt(R, s); feed(a.p, 15, a.h); }
@@ -7443,6 +7447,9 @@
       r.a = { open: t.fbP.open, toast: text('#fbPanel .fbp-cap'), toastBox: !document.getElementById('toast').hidden, mode: t.store.get('fbMode'), labels: bs.map((x) => x.textContent), minW: Math.round(Math.min(...bs.map((x) => B(x).width))), minH: Math.round(Math.min(...bs.map((x) => B(x).height))),
         hits: hits.every(Boolean), who, overNav: !np.hidden && over(pb, nb), overCam: !!cd && !cd.hidden && cd.getClientRects().length > 0 && over(pb, B(cd)), overBtn: over(pb, fbb),
         inView: pb.left >= 0 && pb.right <= innerWidth && pb.top >= 0 && pb.bottom <= innerHeight, camShown: !!cd && cd.getClientRects().length > 0, pressed: btn.classList.contains('open') };
+      // v272: 음성 인식이 실패하면 버튼판과 함께 바로 녹음 ('말하면 녹음돼요')
+      await waitFor(() => !!t.fbP.rec, 2000, 20);
+      r.a.auto = !!t.fbP.rec && t.fbP.rec.auto === true; r.a.autoCap = text('#fbPanel .fbp-cap');
       // (c) 카드가 사라진 뒤 눌러도 '의견'을 누른 때의 카드
       t.camState.target = null; t.renderCam();
       t.fb.last = null;
@@ -7463,8 +7470,14 @@
       const o1 = t.fbP.open;
       btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       r.e = { opened: o1, open: t.fbP.open };
-      // (f) 녹음 — 진짜 MediaRecorder 에 소리 나는 가짜 마이크
-      ac = new AudioContext();
+      // (h) v272: 바로 녹음인데 8초 동안 말소리가 없으면 보내지 않고 멈춘다 (버튼판은 그대로)
+      const qh0 = t.fbA.load().length;
+      btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await waitFor(() => !!t.fbP.rec, 2000, 20);
+      await sleep(8700);
+      r.h = { rec: !!t.fbP.rec, open: t.fbP.open, cap: text('#fbPanel .fbp-cap'), queued: t.fbA.load().length - qh0, label: P().querySelector('.fbp-btn.rec').textContent };
+      t.fbPanelClose();
+      // (f) 녹음 — 진짜 MediaRecorder 에 소리 나는 가짜 마이크 (v272: 버튼판이 열리면 바로 녹음, 다시 누르면 끝내고 보냄)
       const dst = ac.createMediaStreamDestination(), osc = ac.createOscillator();
       osc.frequency.value = 220; osc.connect(dst); osc.start();
       md.getUserMedia = async () => dst.stream.clone();
@@ -7474,8 +7487,8 @@
       btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       const recBtn = P().querySelector('.fbp-btn.rec');
       r.f = { recShown: !recBtn.hidden };
-      recBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await waitFor(() => !!t.fbP.rec, 2000, 20);
+      r.f.auto = !!t.fbP.rec && t.fbP.rec.auto === true;
       r.f.recording = !!t.fbP.rec && recBtn.classList.contains('on') && /^보내기 \d+$/.test(recBtn.textContent);
       await sleep(1200);
       t.fb.lastAudio = null;
@@ -7490,6 +7503,17 @@
       const fr = await t.fbAudioFlush();
       const la = t.fb.lastAudio || {};
       r.f.flushed = { r: fr, left: t.fbA.load().length, audio: la.audio, qid: la.qid === (q1[0] && q1[0].qid), msg: la.msg, via: la.audioVia, pos: la.lat != null };
+      // (i) v272 운전자 경우: 바로 녹음 중에 말하고 '소리' 버튼 → 그 의견과 녹음을 둘 다 보낸다
+      const p0 = posts.length;
+      t.fb.last = null; t.fb.lastAudio = null;
+      btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await waitFor(() => !!t.fbP.rec, 2000, 20);
+      await sleep(900);
+      P().querySelector('.fbp-btn[data-k="sound"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      const pre = t.fb.last || {};
+      await waitFor(() => posts.length > p0, 3000, 20);
+      await waitFor(() => !!t.fb.lastAudio, 2000, 20).catch(() => {});
+      r.i = { preset: pre.text, posted: posts.length - p0, audio: !!t.fb.lastAudio, closed: !t.fbP.open };
       // (g) 마이크 권한 거부
       md.getUserMedia = async () => { throw new DOMException('denied', 'NotAllowedError'); };
       btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -7512,7 +7536,11 @@
     }
     const a = r.a || {}, b = r.b || {}, c = r.c || {}, d = r.d || {}, e = r.e || {}, f = r.f || {}, g = r.g || {};
     const q = f.queued || {}, fl = f.flushed || {};
+    const h = r.h || {}, ii = r.i || {};
     const ok = a.open && a.toast === '음성 인식 서버에 연결하지 못했어요 · 버튼으로 보내 주세요' && !a.toastBox && a.mode === 'panel' &&
+      a.auto && a.autoCap === '음성 인식 서버에 연결하지 못했어요 · 말하면 녹음돼요' && f.auto &&
+      !h.rec && h.open && h.cap === '말소리가 없어 녹음을 멈췄어요 · 버튼으로 보내 주세요' && h.queued === 0 && h.label === '녹음' &&
+      ii.preset === '[소리 이상]' && ii.posted === 1 && ii.audio && ii.closed &&
       a.labels.join() === '녹음,카메라,길안내,화면,소리,좋아요' && a.minW >= 68 && a.minH >= 72 && a.hits && !a.overNav && !a.overCam && a.camShown && !a.overBtn && a.inView && a.pressed &&
       c.text === '[카메라 이상]' && c.preset === 'cam' && c.navOn === true && c.cam === 60 && c.hasPos && c.closed && c.toast === '보냈어요' &&
       b.open && b.made === 0 && !d.open && !d.sent && e.opened && !e.open &&

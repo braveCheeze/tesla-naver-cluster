@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-271'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-272'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -10589,7 +10589,9 @@
     fbCancel(true);
     // v225: 다시 해도 같은 실패(서버·권한·응답 없음)면 그 자리에서 버튼판을 열고(까닭은 판 위 글로 — 아래 알림은 버튼을 덮는다),
     // 이 기기는 다음부터 바로 버튼판
-    if (FB_HARD.test(name)) { store.set('fbMode', 'panel'); fbPanelOpen(text || '음성 인식을 쓸 수 없어요'); return; }
+    // v272 (2026-11-26 운전자 '네, 바로 녹음' — 01:37 음성 인식이 0.6초 만에 network 로 끝난 뒤 20초 말하고 '소리' 버튼을 눌러 말이 남지 않았다):
+    //   버튼판을 열면서 녹음을 바로 시작한다 (음성 인식이 마이크를 놓을 틈 0.3초 뒤)
+    if (FB_HARD.test(name)) { store.set('fbMode', 'panel'); fbPanelOpen(text || '음성 인식을 쓸 수 없어요', true); return; }
     toast(text || '음성 인식을 쓸 수 없어요', 'warn', 3500);
   }
   const fbSupport = () => ({ sr: !!speechRec(), gum: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia), mr: typeof window.MediaRecorder === 'function' });
@@ -10640,10 +10642,10 @@
     if (fb.on) return;
     fb.t0 = Date.now();
     fbStep('tap');
-    if (store.get('fbMode') === 'panel') { fbPanelOpen(); return; }   // v225: 음성 인식이 안 되는 기기
+    if (store.get('fbMode') === 'panel') { fbPanelOpen('', true); return; }   // v225: 음성 인식이 안 되는 기기 (v272: 바로 녹음)
     if (!speechRec()) {
       fbStep('fail unsupported');
-      fbPanelOpen('이 브라우저는 음성 인식을 지원하지 않아요');
+      fbPanelOpen('이 브라우저는 음성 인식을 지원하지 않아요', true);
       return;
     }
     Object.assign(fb, { on: true, text: '', interim: '', t0: Date.now(), lastAt: Date.now(), heard: false, paused: false, started: false });
@@ -10739,7 +10741,7 @@
     good: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 10.5V20h-3v-9.5zM7.5 10.5L11 3.8a1.9 1.9 0 0 1 3.4 1.4L13.6 9h5a2 2 0 0 1 2 2.4l-1.4 6.8a2.2 2.2 0 0 1-2.2 1.8H7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
   };
   const FB_PRESETS = [['cam', '카메라 이상', '카메라'], ['route', '길안내 이상', '길안내'], ['screen', '화면 이상', '화면'], ['sound', '소리 이상', '소리'], ['good', '좋아요', '좋아요']];   // [열쇠, 보내는 글, 버튼 글]
-  const FB_REC_MAX_MS = 20000, FB_REC_QUIET_MS = 2500, FB_AUDIO_MAX = 4;
+  const FB_REC_MAX_MS = 20000, FB_REC_QUIET_MS = 2500, FB_AUDIO_MAX = 4, FB_AUTO_SILENT_MS = 8000;
   const fbP = { open: false, snap: null, rec: null };
   const fbA = {
     busy: false, mem: null,   // mem: 저장소가 막힌 기기에서도 이 세션 동안은 잃지 않게
@@ -10784,11 +10786,12 @@
     const c = $('#fbPanel .fbp-cap');
     if (c) c.textContent = why ? why + ' · 버튼으로 보내 주세요' : '누르면 바로 보내요';
   }
-  function fbPanelOpen(why) {
+  function fbPanelOpen(why, autoRec) {
     fbPanelRender();
     const el = $('#fbPanel');
     if (!el) return;
     fbCap(why);
+    fbP.why = why || '';
     clearTimeout(toastTimer); $('#toast').hidden = true;   // 아래 가운데 알림이 버튼 줄을 덮지 않게
     fbP.snap = fbPayload('');   // '의견'을 누른 순간의 카드·위치
     fbP.open = true;
@@ -10798,8 +10801,14 @@
     $('#fbBtn').classList.add('open');
     $('#app').classList.add('fb-open');   // 버튼판이 열린 동안은 지도 위 아래쪽 카드(고른 곳·경로 카드·알림)보다 위
     fbStep('panel');
+    // v272: 바로 녹음 (마이크·녹음기가 있을 때). 음성 인식이 방금 실패했으면 마이크를 놓을 틈을 준다
+    if (autoRec && fbRecOk()) {
+      clearTimeout(fbP.autoT);
+      fbP.autoT = setTimeout(() => { if (fbP.open && !fbP.rec && !fbP.starting) fbRecToggle(true); }, why ? 300 : 0);
+    }
   }
   function fbPanelClose() {
+    clearTimeout(fbP.autoT);
     if (fbP.rec) fbRecStop(false);
     fbP.open = false;
     const el = $('#fbPanel');
@@ -10819,15 +10828,18 @@
     const pr = FB_PRESETS.find((x) => x[0] === k);
     if (!pr) return;
     const body = Object.assign({}, fbP.snap || fbPayload(''), { text: '[' + pr[1] + ']', preset: k, how: 'button', ms: Date.now() - fb.t0 });
+    // v272: 바로 녹음 중에 그림 버튼을 누르면 말소리가 들렸을 때만 그 녹음도 보낸다 (말한 것이 사라지지 않게, 빈 녹음은 보내지 않는다)
+    if (fbP.rec) fbRecStop(!!fbP.rec.heard);
     fb.last = body;
     fbStep('preset ' + k);
     fbPanelClose();
     fbSent(fb.inTest ? true : reportSure('feedback', body));
   }
-  async function fbRecToggle() {
+  async function fbRecToggle(auto) {
     if (fbP.rec) { fbRecStop(true); return; }   // 다시 누르면 끝내고 보낸다
     if (fbP.starting) return;
-    fbStep('rec tap');
+    auto = auto === true;
+    fbStep(auto ? 'rec auto' : 'rec tap');
     fbP.starting = true;
     let stream;
     try {
@@ -10851,7 +10863,7 @@
       fbCap('녹음을 시작하지 못했어요');
       return;
     }
-    const rec = { mr, stream, chunks: [], t0: Date.now(), heard: false, loudAt: Date.now(), send: false, ac: null, an: null, tick: null };
+    const rec = { mr, stream, chunks: [], t0: Date.now(), heard: false, loudAt: Date.now(), send: false, ac: null, an: null, tick: null, auto };
     fbP.rec = rec;
     mr.ondataavailable = (e) => { if (e.data && e.data.size) rec.chunks.push(e.data); };
     mr.onstop = () => {
@@ -10880,6 +10892,15 @@
       }
       const rs = $('#fbPanel .fbp-btn.rec span');
       if (rs) rs.textContent = '보내기 ' + Math.max(0, Math.ceil((FB_REC_MAX_MS - (now - rec.t0)) / 1000));
+      // v272: 바로 녹음인데 8초 동안 말소리가 없으면 보내지 않고 멈춘다 (버튼판은 그대로 — 그림 버튼으로 보낼 수 있다)
+      if (rec.auto && rec.an && !rec.heard && now - rec.t0 >= FB_AUTO_SILENT_MS) {
+        fbRecStop(false);
+        const rb2 = $('#fbPanel .fbp-btn.rec');
+        if (rb2) { rb2.classList.remove('on'); rb2.querySelector('span').textContent = '녹음'; }
+        fbCap('말소리가 없어 녹음을 멈췄어요');
+        fbStep('rec auto quiet');
+        return;
+      }
       if (now - rec.t0 >= FB_REC_MAX_MS || (rec.heard && now - rec.loudAt >= FB_REC_QUIET_MS)) fbRecStop(true);
     }, 200);
     try { mr.start(1000); } catch (e) {
@@ -10890,6 +10911,7 @@
     }
     const rb = $('#fbPanel .fbp-btn.rec');
     if (rb) { rb.classList.add('on'); rb.querySelector('span').textContent = '보내기 ' + Math.round(FB_REC_MAX_MS / 1000); }
+    if (auto) { const c = $('#fbPanel .fbp-cap'); if (c) c.textContent = (fbP.why ? fbP.why + ' · ' : '') + '말하면 녹음돼요'; }
     fbStep('rec start');
   }
   function fbRecStop(send) {
