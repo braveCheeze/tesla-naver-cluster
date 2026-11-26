@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-269'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-270'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -2990,7 +2990,8 @@
   const CAM_HOLD = 30;
   // 후면 단속 카메라는 지나간 차의 뒤를 찍으므로 기둥을 지난 뒤가 단속 지점이다: 더 길게 경고를 유지한다
   // v264 (keys 2026-11-26 네이버 확인, 올림픽로·용구대로 '60 후면단속'): 네이버는 지난 뒤 '후면단속 중'을 약 80~120m 더 보인다 → 60 → 100m
-  const REAR_HOLD = 100;
+  // v270 (keys 마북 남행 25m 마다 낮·밤 80장): 네이버는 기둥에서 +125m 까지 '후면단속 중', +150m 에는 다음 카메라 → 130m
+  const REAR_HOLD = 130;
   // 11번째 값(flags): 1 후면 단속, 2 박스형 (둘 다 원본에 없어 직접 확인한 것만)
   const isRear = (c) => ((c[10] | 0) & 1) === 1;
   const isBox = (c) => ((c[10] | 0) & 2) === 2;
@@ -4107,6 +4108,10 @@
       if (sgEl.dataset.img !== sgUrl) { sgEl.style.backgroundImage = sgUrl; sgEl.dataset.img = sgUrl; }
       // v112: 지나친 뒤 '0m' 대신 '통과'. v194: 후면단속은 지난 뒤가 단속 자리라 네이버처럼 '후면단속 중'
       $('#camDist').textContent = tg.after ? (isRear(tg.c) ? '후면단속 중' : '통과') : fmtDist(camShownDist(tg));
+      // v270 (네이버 마북 '후면단속 중'): 지난 뒤에는 거리 띠 없이 표지 밑 검은 둥근 띠 '후면단속 중' 하나만 — 종류 줄이 그 띠가 되고 거리·막대는 숨긴다
+      const rearAfter = !!tg.after && isRear(tg.c) && !spotUnchecked(tg.c);
+      card.classList.toggle('rear-after', rearAfter);
+      if (rearAfter) $('#camType').textContent = '후면단속 중';
       const sd = camShownDist(tg);
       card._d = tg.after ? 0 : Math.max(0, sd);   // 서랍 칸 순서 (v158)
       const span = Math.max(Number.isFinite(tg.first) ? tg.first : sd, 300);

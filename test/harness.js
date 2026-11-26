@@ -1467,7 +1467,7 @@
   }
 
   // S36: 후면 단속 — 가평읍 경춘로 포회촌마을입구교차로, 서울 방향(남서행) 제한 70 신호·과속 후면단속 (원본에 없어 직접 추가한 카메라).
-  //      남서행이면 '신호·과속 후면단속'으로 잡히고, 기둥을 지난 뒤에도 60m 까지 경고(과속이면 빨갛게)를 유지했다가 내린다.
+  //      남서행이면 '후면단속'(v264)으로 잡히고, 기둥을 지난 뒤에도 130m(v270, 네이버 마북) 까지 경고(과속이면 빨갛게)를 유지했다가 내린다.
   //      반대 방향(북동행, 실제 경로는 9m 남동쪽)에서는 잡히지 않는다.
   //      길안내 중에도 실제 네이버 경로(test/fixtures/route-gapyeong-sw|ne.json, 2026-11-14)로: 남서행은 이 카메라를,
   //      북동행은 원본의 반대 방향 카메라(H7738, 60)만 알린다
@@ -1477,7 +1477,7 @@
       softReset();
       const from = dest(FOOT, 53, 700);
       const o = { label: null, at: null, past45: null, past45over: null, clearedAt: null };
-      for (let s = 0; s <= 800; s += 5) {
+      for (let s = 0; s <= 900; s += 5) {   // v270: 130m 유지라 기둥 뒤 200m 까지
         const p = dest(from, 233, s), past = s - 700;
         feed(p, 80 / 3.6, 233);
         const tg = t.camState.target, mine = !!tg && sameCam(tg.c, CAM);
@@ -1513,7 +1513,7 @@
         const a = pointAt(R, s);
         feed(a.p, 80 / 3.6, a.h);
         const tg = t.camState.target;
-        if (tg && sameCam(tg.c, CAM)) { o.rear = true; o.rearLabel = text('#camType'); }
+        if (tg && sameCam(tg.c, CAM)) { o.rear = true; if (o.rearLabel === null) o.rearLabel = text('#camType'); }   // 처음 잡힐 때 (지난 뒤는 '후면단속 중')
         if (tg && sameCam(tg.c, H7738)) o.h7738 = true;
       }
       t.endNav();
@@ -1523,7 +1523,7 @@
     softReset();
     // v264: 후면 카메라는 네이버 배지처럼 '후면단속'(신호·과속이어도), 지난 뒤 100m 까지 '후면단속 중'
     const okNav = navSw.rear && navSw.rearLabel === '후면단속' && !navSw.h7738 && !navNe.rear && navNe.h7738;
-    const okSw = sw.label === '후면단속' && sw.limit === 70 && sw.past45 === true && sw.past45over === true && sw.clearedAt !== null && sw.clearedAt >= 95 && sw.clearedAt <= 115;
+    const okSw = sw.label === '후면단속' && sw.limit === 70 && sw.past45 === true && sw.past45over === true && sw.clearedAt !== null && sw.clearedAt >= 125 && sw.clearedAt <= 145;   // v270: 130m
     return {
       pass: okSw && !ne && okNav,
       detail: '서울 방향 80 km/h: ' + JSON.stringify(sw) + (okSw ? '✓' : '✗') + ' | 반대 방향: ' + (ne ? 'ALERTED✗' : 'not alerted✓') +
@@ -8387,7 +8387,7 @@
         feed(dest(from, 168, s), 72 / 3.6, 168);
         const past = s - 600, tg = t.camState.target, mine = !!tg && sameCam(tg.c, MABUK);
         if (mine && a.label === null) { a.label = text('#camType'); a.kind = text('#camKind'); a.rear = hasCls('#camCard', 'rear'); }
-        if (past >= 60 && a.past60 === null) { a.past60 = mine ? text('#camDist') : ''; a.past60over = hasCls('#camCard', 'over'); }
+        if (past >= 60 && a.past60 === null) { a.past60 = mine ? text('#camDist') : ''; a.past60over = hasCls('#camCard', 'over'); a.after = { type: text('#camType'), cls: hasCls('#camCard', 'rear-after'), distShown: document.getElementById('camDist').getClientRects().length > 0, barShown: document.querySelector('#camCard .cam-bar').getClientRects().length > 0 }; }
         if (a.label !== null && !mine && a.clearedAt === null && past > 0) a.clearedAt = past;
       }
       a.said = [t.camSpoken(t.cams.rows[21024]), t.camSpoken(t.cams.rows[22313])];
@@ -8427,7 +8427,8 @@
     const { a = {}, b = {}, b2 = {}, d = {} } = r;
     const tan = parseInt(String(b.tanDist || '').replace(/[^0-9]/g, ''), 10);
     const ok = a.label === '후면단속' && a.kind === '후면단속' && a.rear === true && a.past60 === '후면단속 중' && a.past60over === true &&
-      a.clearedAt !== null && a.clearedAt >= 95 && a.clearedAt <= 115 && a.said.every((x) => x === '후면단속 카메라') &&
+      a.clearedAt !== null && a.clearedAt >= 125 && a.clearedAt <= 145 && a.said.every((x) => x === '후면단속 카메라') &&
+      a.after && a.after.type === '후면단속 중' && a.after.cls && !a.after.distShown && !a.after.barShown &&
       b.c22322 === false && b2.c22322 === true && tan >= 80 && tan <= 120 &&
       d[22931] && d[22931][0] === 37.409916 && d[22931][1] === 127.118459 && d[22952][0] === 37.409804 && d[22952][1] === 127.11862 &&
       d.rear.every((x) => x === 1);

@@ -2026,6 +2026,9 @@
     padding: 4px 11px; border-radius: 9px; cursor: pointer; }
   #app.tesla .nb-meta #nbEta { margin-right: 12px; }
   #app.tesla .navbar.on .road::after { right: 16px; }
+  /* v270: 지난 뒤는 네이버처럼 검은 띠 '후면단속 중' 하나만 (거리·막대 숨김, 띠는 조금 크게) */
+  #app .camcard.rear-after .cam-row, #app .camcard.rear-after .cam-bar { display: none; }
+  #app .camcard.rear-after .cam-type { font-size: 16px; padding: 3px 10px 4px; margin-top: 6px; }
   /* v264: 후면단속 — 네이버 배지처럼 검은 띠 흰 글씨 (노란 띠 신호과속·과속단속과 색으로 갈림) */
   #app .camcard.rear .cam-type {
     display: inline-block; max-width: 100%; color: #fff !important; background: #121418 !important; border-radius: 6px; padding: 1px 8px 2px;
@@ -2453,8 +2456,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-269"></script>
-<script src="img/ai/picks.js?v=2026.11.16-269"></script>
-<script src="app.js?v=2026.11.16-269"></script>
+<script src="icons.js?v=2026.11.16-270"></script>
+<script src="img/ai/picks.js?v=2026.11.16-270"></script>
+<script src="app.js?v=2026.11.16-270"></script>
 </body>
 </html>
