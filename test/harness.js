@@ -2959,6 +2959,7 @@
     { id: 'S171', name: "S171 camera fixes from the Naver check of the night-drive reports (2026-11-26): rear cameras look like Naver's '60 후면단속' — black band '후면단속', voice '후면단속 카메라', after passing '후면단속 중' with the speed warning for about 100 m (마북 삼거리 #21024 southbound); the 분당수서로 signal camera #22322 above 백현지하도로 is not given to a car in the underpass below (Naver's 백현지하차도 entry guide 1.24 km before; the same route driven on the surface — section 분당수서로, entry guides turned into straight guides — still gets it); 탄천 80 #22931/#22952 sit on Naver's pole and the warning distance matches it; the four Naver rear cameras carry the rear flag", fn: s171 },
     { id: 'S172', name: "S172 junction-picture lane labels like Naver (v267–v268, parent session side by side with Naver's 330 m pictures): one label size per picture (two-line labels 86% of it), the label row low in the picture with no label below the picture's bottom edge, no two labels overlapping (2 px apart at most), labels centred inside the picture; through lanes say what Naver says at the checked spots — 서하남IC '구리 대전' (board still '구리'), 판교IC '대전 부산'", fn: s172 },
     { id: 'S173', name: "S173 chips do not blink (v269, driver on the road: '오른쪽 휴게소가 되게 깜빡깜빡'): driving past the 5 km rest-area and 1 km next-turn thresholds at 1 fix a second with ±15 m GPS noise, each chip changes between chip and card row at most once per crossing, the same chip element stays while its text counts down (no rebuild, the enter animation runs once), and a rest area that loses the highway check for a few fixes stays shown", fn: s173 },
+    { id: 'S174', name: "S174 section start passed (v271, driver: '구간 단속 시작할 때 통과 말고 시작으로'): 30 m before the 수도권제1순환 100 section start (#22907, route from 서울TG) the card shows the distance, right after it shows '시작' instead of '통과' with the section card open, it stays to about 60 m like Naver's start badge (+55 m shown, +97 m gone), and is gone by 80 m; the section card stays", fn: s174 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -8246,6 +8247,34 @@
       b.calls === 4 && b.active && b.same && b.pill && !b.redToast && b.panel && b.turn && b.log.join(',') === 'failed:3' && b.moved &&
       !c.pill && c.active &&
       d.bad400 === 1 && d.naverNo === 1 && d.traffic === 1 && d.upstream.every(Boolean) && !d.pillAfterEnd;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S174: 구간단속 시작을 지난 뒤 '시작' (v271)
+  async function s174() {
+    const t = T(), r = {};
+    const START = { lat: 37.40725, lng: 127.1038 };
+    try {
+      await waitFor(() => t.cams.loaded, 10000, 100);
+      const fx = await (await realFetch(harnessDir + 'fixtures/route-seoultg-n.json', { cache: 'no-store' })).json();
+      const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0]; for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + hav(P[k - 1], P[k]));
+      const R = { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '시험', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+      let sc = 0, bd = 1e9; for (let s = 0; s < R.total; s += 2) { const d = hav(pointAt(R, s).p, START); if (d < bd) { bd = d; sc = s; } }
+      await resetApp(); softReset(); await planAndStart(R);
+      let s = sc - 900;
+      const go = (to) => { while (s < to) { s = Math.min(to, s + 20); const a = pointAt(R, s); feed(a.p, 25, a.h); } t.renderNav(); };
+      const look = () => { const tg = t.camState.target, mine = !!tg && sameCam(tg.c, START); return { mine, type: mine ? text('#camType') : '', dist: mine ? text('#camDist') : '', sec: !!t.camState.section }; };   // 구간이 열렸는지 (구간 칸은 화면 배치에 따라 카드 밑에 뜬다)
+      go(sc - 30); r.m30 = look();
+      go(sc + 12); r.p12 = look();
+      go(sc + 50); r.p50 = look();
+      go(sc + 80); r.p80 = look();
+    } finally {
+      await resetApp(); softReset();
+    }
+    const { m30 = {}, p12 = {}, p50 = {}, p80 = {} } = r;
+    const ok = m30.mine && /^\d+m$/.test(m30.dist) && m30.type === '구간단속 시작' &&
+      p12.mine && p12.dist === '시작' && p12.sec && p50.mine && p50.dist === '시작' && !p80.mine && p80.sec;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

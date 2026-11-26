@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-270'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-271'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -3002,7 +3002,11 @@
   // v121: 경로 위 거리(길안내 중) 또는 진행 방향으로 잰 앞뒤 거리로 판정하고, 다음 위치가 오기 전에 지나갈 거리면 그 시각에 끈다
   const SIGNAL_PAST = 2;
   const isSignalCam = (c) => (c[3] === 2 || c[3] === 3) && !isRear(c);
-  const camHold = (c) => (isRear(c) ? REAR_HOLD : isSignalCam(c) ? 0 : CAM_HOLD);
+  // v271 (운전자 '구간 단속 시작할 때 통과 말고 시작으로'): 구간단속 시작 카메라는 지난 뒤 '시작', 60m 동안 (네이버 수도권제1순환 판교 100 구간 시작:
+  //   +55m 까지 시작 배지, +97m 에는 없음 — keys 판교JC_외곽북행_구간)
+  const SEC_START_HOLD = 60;
+  const isSecStart = (c) => c[4] === 1 && !spotUnchecked(c);
+  const camHold = (c) => (isRear(c) ? REAR_HOLD : isSignalCam(c) ? 0 : isSecStart(c) ? SEC_START_HOLD : CAM_HOLD);
   // 카메라 행: [lat, lng, limit, kind, sec, len, zone, road, rtype, dir(, flags)]
   // kind: 1 과속, 2 신호 전용, 3 과속+신호, 9 구간/기타 · rtype: 1 고속국도, 3 일반국도, 4 지방도, 5 시도, 6 기타
   // 8 이동식: 경찰청 공개 데이터는 고정식만 담고 있어 지금은 없다. 이동식 위치 데이터가 생기면 kind 8 로 넣으면 파란색으로 뜬다
@@ -4107,7 +4111,7 @@
       card.classList.toggle('ainum', !!(sgImg && sgImg.num));   // 숫자까지 그린 그림이면 얹은 숫자는 숨긴다 (글은 화면 읽기·시험용으로 남김)
       if (sgEl.dataset.img !== sgUrl) { sgEl.style.backgroundImage = sgUrl; sgEl.dataset.img = sgUrl; }
       // v112: 지나친 뒤 '0m' 대신 '통과'. v194: 후면단속은 지난 뒤가 단속 자리라 네이버처럼 '후면단속 중'
-      $('#camDist').textContent = tg.after ? (isRear(tg.c) ? '후면단속 중' : '통과') : fmtDist(camShownDist(tg));
+      $('#camDist').textContent = tg.after ? (isRear(tg.c) ? '후면단속 중' : isSecStart(tg.c) ? '시작' : '통과') : fmtDist(camShownDist(tg));
       // v270 (네이버 마북 '후면단속 중'): 지난 뒤에는 거리 띠 없이 표지 밑 검은 둥근 띠 '후면단속 중' 하나만 — 종류 줄이 그 띠가 되고 거리·막대는 숨긴다
       const rearAfter = !!tg.after && isRear(tg.c) && !spotUnchecked(tg.c);
       card.classList.toggle('rear-after', rearAfter);
