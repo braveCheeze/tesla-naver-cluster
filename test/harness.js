@@ -2965,7 +2965,7 @@
     { id: 'S175', name: "S175 route-first camera matching while guiding (v274, driver: '설정한 길안내가 있는데 한번씩 과속단속이 다른 일반길·밑길로 튀어'): (a) a place text 'A→B' that agrees with the guidance no longer lets an opposite-direction camera through when neighbouring cameras with the same or reversed text back its stored direction (아암대로 #23244 171°, #23148 '송도3교4→정비단지입구3' 350° 900 m south; driven northbound it stays quiet, southbound it still alerts — a camera whose neighbours contradict its direction still follows the text, S47 하남 J2735); (b) briefly off the route (GPS drift, rerouting), a camera on the road the car is really on is not picked by straight-line matching for 15 s, after 15 s off the route it is (탄천 80 #22931 with a route 150 m away); (c) v276: the 60 box camera Naver shows on 아암대로 northbound 268 m north of #23244 (data/driver_spots.json, Naver-confirmed + box flag 8) alerts northbound as '박스형 과속단속' 60 and not southbound", fn: s175 },
     { id: 'S176', name: "S176 nothing in the left column is cut off (v275, driver photo 2026-11-27 수원신갈IC 160 m: '이렇게 나와 버려 제일 좋은 방법 조금 변경해봐'): at 804×560 and 804×600 on the real 경부 → 수원신갈IC route, 900 m before the exit (card + next row + rest row + 40 camera + speed strip + hi-pass + report button) folds report → hi-pass chip → camera to the right badge → speed strip so the column ends above the attribution line; 160 m before (junction picture) the card is one line with the picture right under it, next guide / rest / hi-pass are chips, the right badge shows speed 79 (red over 40), the 40 sign, 370m and the kind band 8 px left of the route strip, no report button; restoring the size unfolds", fn: s176 },
     { id: 'S177', name: "S177 approach leg then turn (v277, keys Naver check of the crossing cameras v274 removed): a guided car coming in on the camera's own approach and turning at the junction is still alerted — 인항로 #23586 turning left, 안남로 #25184 turning right, 군왕로 #3564 turning toward 270° — while going straight through the junction on the crossing road either way is not; the two 30 school-zone cameras on one pole on 마장로324번길 190 m west of 안남로 follow Naver: westbound (after the right turn) #25199 at 274°, eastbound #25191 at 94°, each only for its own direction", fn: s177 },
-    { id: 'S178', name: "S178 recorded voice clips (v278, driver '걍 MeloTTS로 다 가자' — the Tesla browser has no speech engine: 0 voices, speak() → synthesis-failed): every sentence the app speaks, built by the same functions (camSpeech for all kinds/zones/rear/box/distances/limits — box booths now say '박스형 단속 카메라' like Naver, section start, fixed sentences, ETA change, route start with the destination name left out, 이어서/다시 chains, and every Naver guide text in the test routes incl. toll gates) maps fully onto data/voice_clips.json; numbers read 12 · 110 · 1600 · 23000 as clips; with the flag on and no working speech the clips are fetched, decoded and played back to back (onEnd), one missing clip falls back to the beep (onFail), an uncovered sentence returns false; with the flag off speechSynthesis stays", fn: s178 },
+    { id: 'S178', name: "S178 recorded voice clips (v278, driver '걍 MeloTTS로 다 가자' — the Tesla browser has no speech engine: 0 voices, speak() → synthesis-failed): every sentence the app speaks, built by the same functions (camSpeech for all kinds/zones/rear/box/distances/limits — box booths now say '박스형 단속 카메라' like Naver, section start, fixed sentences, ETA change, route start with the destination name left out, 이어서/다시 chains, and every Naver guide text in the test routes incl. toll gates) maps fully onto data/voice_clips.json; numbers read 12 · 110 · 1600 · 23000 as clips; with the flag on and no working speech the clips are fetched, decoded and played back to back (onEnd), one missing clip falls back to the beep (onFail), an uncovered sentence returns false; with the flag off speechSynthesis stays; v279: fetched clips land in Cache Storage and play with the network gone", fn: s178 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -8523,6 +8523,21 @@
       fail.add('lim_60'); vc.bufs.delete('lim_60');
       r.play.missing = await run(t.camSpeech([37.5, 127, 60, 1, 0, 0, 0, -1, 5, 1, 0], 500));
       r.play.uncovered = await run('알 수 없는 문장입니다');
+      // (g) v279: 받은 조각은 Cache Storage 에 남아 네트워크 없이도 말한다 (v278 은 본문을 읽은 뒤 복사해 저장이 말없이 빠졌다)
+      if (window.caches) {
+        vc.testCache = true; vc.cacheP = null; vc.bufs.clear(); vc.loading.clear(); fail.clear();
+        vc.fetch = async (u) => (/voice_clips\.json/.test(String(u)) ? realFetch(u) : new Response(new Uint8Array(64), { headers: { 'Content-Type': 'audio/mpeg' } }));
+        const cam = t.camSpeech([37.5, 127, 60, 1, 0, 0, 0, -1, 5, 1, 0], 500);
+        r.play.first = await run(cam);
+        let n = 0;
+        for (let k = 0; k < 40 && n < 3; k++) { await new Promise((res) => setTimeout(res, 50)); const cc = await caches.open('tnc-voice-test-' + vc.ver); n = (await cc.keys()).length; }
+        let calls = 0;
+        vc.fetch = async () => { calls++; throw new TypeError('offline'); };
+        vc.bufs.clear(); vc.loading.clear();
+        r.play.offline = await run(cam);
+        r.play.cache = { stored: n >= 3, netCalls: calls };
+        await caches.delete('tnc-voice-test-' + vc.ver); vc.testCache = false; vc.cacheP = null;
+      }
       vc.force = false; t.store.set('voiceClips', '0');
       r.off = { use: t.vcUse() };
     } finally {
@@ -8534,7 +8549,8 @@
       r.num.join('|') === 'n_12|n_100 n_10|n_1000 n_600|n_2 n_man n_3000' &&
       r.plan === 'd_500 c_kid c_cam lim_60' && /^d_300 m_\d+ f_then d_30 m_\d+$/.test(r.planTurn) &&
       r.box.text === '500미터 앞, 박스형 단속 카메라. 제한속도 60입니다.' && r.box.plan === 'd_500 c_box lim_60' &&
-      p.use === true && p.ok === 'end' && /^d_500 c_cam lim_60$/.test(p.plan) && p.missing === 'fail' && p.uncovered === 'no' && r.off.use === false;
+      p.use === true && p.ok === 'end' && /^d_500 c_cam lim_60$/.test(p.plan) && p.missing === 'fail' && p.uncovered === 'no' && r.off.use === false &&
+      (!window.caches || (p.first === 'end' && p.offline === 'end' && p.cache && p.cache.stored && p.cache.netCalls === 0));
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

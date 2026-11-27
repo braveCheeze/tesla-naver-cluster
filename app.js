@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-278'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-279'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -788,10 +788,12 @@
   const VC_KEEP = 140;
   const vcUrl = (id) => vc.base + id + '.mp3?v=' + (vc.ver || APP_VERSION);
   function vcCache() {
-    if (vc.noCache || testPage || !window.caches || !vc.ver) return Promise.resolve(null);
+    if (vc.noCache || (testPage && !vc.testCache) || !window.caches || !vc.ver) return Promise.resolve(null);
     if (!vc.cacheP) {
-      const name = 'tnc-voice-' + vc.ver;
-      vc.cacheP = caches.keys().then((ks) => Promise.all(ks.filter((k) => /^tnc-voice-/.test(k) && k !== name).map((k) => caches.delete(k))))
+      // 시험 페이지는 따로 ('tnc-voice-test-…') — 같은 주소의 앱 저장소를 건드리지 않게
+      const pre = testPage ? 'tnc-voice-test-' : 'tnc-voice-', name = pre + vc.ver;
+      const mine = (k) => (testPage ? k.indexOf('tnc-voice-test-') === 0 : k.indexOf('tnc-voice-') === 0 && k.indexOf('tnc-voice-test-') !== 0);
+      vc.cacheP = caches.keys().then((ks) => Promise.all(ks.filter((k) => mine(k) && k !== name).map((k) => caches.delete(k))))
         .then(() => caches.open(name)).catch(() => null);
     }
     return vc.cacheP;
@@ -802,7 +804,9 @@
       if (hit) return hit.arrayBuffer();
       return (vc.fetch || fetch)(url).then((r) => {
         if (!r.ok) return null;
-        vcCache().then((c) => { if (c) c.put(url, r.clone()).catch(() => {}); });
+        // 본문을 읽기 전에 복사해 둔다 (읽기 시작한 뒤 clone 하면 'body already used' 로 저장이 말없이 빠졌다)
+        const copy = r.clone();
+        vcCache().then((c) => { if (c) return c.put(url, copy); }).catch(() => {});
         return r.arrayBuffer();
       });
     }).catch(() => null);
