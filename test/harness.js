@@ -2964,6 +2964,7 @@
     { id: 'S174', name: "S174 section start passed (v271, driver: '구간 단속 시작할 때 통과 말고 시작으로'): 30 m before the 수도권제1순환 100 section start (#22907, route from 서울TG) the card shows the distance, right after it shows '시작' instead of '통과' with the section card open, it stays to about 60 m like Naver's start badge (+55 m shown, +97 m gone), and is gone by 80 m; the section card stays", fn: s174 },
     { id: 'S175', name: "S175 route-first camera matching while guiding (v274, driver: '설정한 길안내가 있는데 한번씩 과속단속이 다른 일반길·밑길로 튀어'): (a) a place text 'A→B' that agrees with the guidance no longer lets an opposite-direction camera through when neighbouring cameras with the same or reversed text back its stored direction (아암대로 #23244 171°, #23148 '송도3교4→정비단지입구3' 350° 900 m south; driven northbound it stays quiet, southbound it still alerts — a camera whose neighbours contradict its direction still follows the text, S47 하남 J2735); (b) briefly off the route (GPS drift, rerouting), a camera on the road the car is really on is not picked by straight-line matching for 15 s, after 15 s off the route it is (탄천 80 #22931 with a route 150 m away); (c) v276: the 60 box camera Naver shows on 아암대로 northbound 268 m north of #23244 (data/driver_spots.json, Naver-confirmed + box flag 8) alerts northbound as '박스형 과속단속' 60 and not southbound", fn: s175 },
     { id: 'S176', name: "S176 nothing in the left column is cut off (v275, driver photo 2026-11-27 수원신갈IC 160 m: '이렇게 나와 버려 제일 좋은 방법 조금 변경해봐'): at 804×560 and 804×600 on the real 경부 → 수원신갈IC route, 900 m before the exit (card + next row + rest row + 40 camera + speed strip + hi-pass + report button) folds report → hi-pass chip → camera to the right badge → speed strip so the column ends above the attribution line; 160 m before (junction picture) the card is one line with the picture right under it, next guide / rest / hi-pass are chips, the right badge shows speed 79 (red over 40), the 40 sign, 370m and the kind band 8 px left of the route strip, no report button; restoring the size unfolds", fn: s176 },
+    { id: 'S177', name: "S177 approach leg then turn (v277, keys Naver check of the crossing cameras v274 removed): a guided car coming in on the camera's own approach and turning at the junction is still alerted — 인항로 #23586 turning left, 안남로 #25184 turning right, 군왕로 #3564 turning toward 270° — while going straight through the junction on the crossing road either way is not; the two 30 school-zone cameras on one pole on 마장로324번길 190 m west of 안남로 follow Naver: westbound (after the right turn) #25199 at 274°, eastbound #25191 at 94°, each only for its own direction", fn: s177 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -8378,6 +8379,75 @@
       }
     }
     return { pass: bad.length === 0, detail: (bad.length ? bad.join(' | ') + ' || ' : '') + JSON.stringify(out) };
+  }
+
+  // S177 (v277, keys 네이버 확인 2026-11-27 — v274 가 뺀 가로 카메라 3건): 카메라가 찍는 접근로로 들어와 교차로에서 꺾는 길안내는 여전히 알린다
+  //   (정지선이 접근로에 있으니 네이버도 알린다: #23586 인항로 좌회전, #25184 안남로 우회전, #3564 군왕로 270° 쪽). 경로가 꺾는 것은 정지선 뒤라
+  //   방향 검사는 카메라 자리 구간(접근로)으로 한다. 같은 교차로를 가로지르는 길로 곧게 지나면 알리지 않는다(v274, 네이버도 안 알림).
+  //   그리고 안남로에서 우회전해 서쪽 190m 마장로324번길 한 기둥의 두 대(네이버 서행 274°·동행 94°)는 v277 에서 네이버 자리·방향으로 고쳤다:
+  //   서행 차는 #25199(274°), 동행 차는 #25191(94°)만
+  async function s177() {
+    const t = T(), r = {};
+    const mk = (pts, turnAt, turnT, road) => {
+      const path = pts.map((p) => [round6(p.lng), round6(p.lat)]);
+      const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0]; for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+      const total = cum[cum.length - 1], last = P.length - 1;
+      const guide = [];
+      if (turnAt != null) guide.push({ i: turnAt, t: turnT, s: '시험교차로에서 ' + (turnT === 2 ? '좌회전' : '우회전'), d: r0(cum[turnAt]), ms: 30000 });
+      guide.push({ i: last, t: 88, s: '목적지', d: r0(total - (turnAt != null ? cum[turnAt] : 0)), ms: 30000 });
+      const cut = turnAt != null ? turnAt : last;
+      const sections = [{ i: 0, n: cut + 1, name: road, speed: 40, cong: 1 }];
+      if (turnAt != null) sections.push({ i: cut, n: last - cut + 1, name: '시험로', speed: 40, cong: 1 });
+      const route = { distance: r0(total), duration: r0(total / 10 * 1000), tollFare: 0, fuelPrice: 0, path, guide, sections };
+      return { route, P, cum, total, dest: { name: '시험', addr: '', lat: P[last].lat, lng: P[last].lng } };
+    };
+    const drive = async (R, upto) => {
+      await resetApp(); softReset(); await planAndStart(R);
+      const seen = [];
+      for (let s = 0; s <= Math.min(upto, R.total - 20); s += 20) {
+        const a = pointAt(R, s); feed(a.p, 10, a.h);
+        const tg = t.camState.target;
+        if (tg && !seen.includes(tg.i)) seen.push(tg.i);
+      }
+      t.endNav();
+      return seen;
+    };
+    try {
+      await waitFor(() => t.cams.loaded, 10000, 100);
+      const rows = t.cams.rows;
+      const cases = [[23586, -90, 2, '인항로'], [25184, 90, 3, '안남로'], [3564, 90, 3, '군왕로']];
+      for (const [i, turn, tt, road] of cases) {
+        const c = rows[i], lane = { lat: c.sl, lng: c.sg }, J = { lat: c[0], lng: c[1] }, out = (c.eb + turn + 360) % 360;
+        // (a) 접근로(찍는 방향)로 700m 와서 정지선 · 교차로 가운데를 지나 꺾는다
+        const pts = []; for (let k = 7; k >= 1; k--) pts.push(dest(lane, (c.eb + 180) % 360, 100 * k));
+        pts.push(lane, J);
+        const turnAt = pts.length - 1;
+        if (i === 25184) pts.push({ lat: 37.506619, lng: 126.706692 });   // 네이버 서행 카메라 자리를 지나는 서쪽 길
+        for (let k = 1; k <= 4; k++) pts.push(dest(pts[pts.length - 1], out, 100));
+        const seenTurn = await drive(mk(pts, turnAt, tt, road), 700 + 400);
+        // (b) 가로지르는 길로 곧게 (양쪽 방향)
+        const cross = [];
+        for (const h of [(c.eb + 90) % 360, (c.eb + 270) % 360]) {
+          const q = []; for (let k = 7; k >= 1; k--) q.push(dest(J, (h + 180) % 360, 100 * k));
+          q.push(J); for (let k = 1; k <= 4; k++) q.push(dest(J, h, 100 * k));
+          cross.push((await drive(mk(q, null, 0, '시험가로'), 1100)).includes(i));
+        }
+        r[i] = { out, turn: seenTurn.includes(i), cross, after: seenTurn.filter((x) => x !== i) };
+      }
+      // (c) 마장로324번길 동행: 서쪽 마장로 쪽에서 94° 로 네이버 동행 자리를 지나 안남로까지
+      const E = { lat: 37.506615, lng: 126.706762 }, qe = [];
+      for (let k = 6; k >= 1; k--) qe.push(dest(E, 274, 50 * k));
+      qe.push(E); qe.push({ lat: 37.5064, lng: 126.70883 });
+      const seenE = await drive(mk(qe, null, 0, '마장로324번길'), 600);
+      r.east = { s25191: seenE.includes(25191), s25199: seenE.includes(25199) };
+    } finally {
+      await resetApp(); softReset();
+    }
+    const a = r[23586] || {}, b = r[25184] || {}, c = r[3564] || {}, e = r.east || {};
+    const ok = a.turn && b.turn && c.turn && [a, b, c].every((x) => x.cross && !x.cross[0] && !x.cross[1]) &&
+      (b.after || []).includes(25199) && !(b.after || []).includes(25191) && e.s25191 && !e.s25199;
+    return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
   async function s175() {
