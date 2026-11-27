@@ -2052,6 +2052,54 @@
   .nchip .rest-sign { width: 28px; height: 28px; display: block; }
   .nchip.rest { background: #1d4fb8; color: #fff; }
   .nchip.goal { color: #e03131; }
+  /* ===== v275 (운전자 사진 2026-11-27 수원신갈IC: 왼쪽 칸이 화면 밑으로 넘쳐 하이패스 차로 번호가 잘림) =====
+     분기 그림 때(jx-time)는 네이버식: 안내 카드 한 줄 + 바로 밑 그림, 그다음 안내·휴게소·하이패스는 칩, 속도·단속은 오른쪽 배지, 신고 버튼 숨김.
+     어느 때든 넘치면 fo-* 차례로 접는다 (app.js fitColumn) */
+  #app.tesla.jx-time .navdest, #app.tesla.fo-dest .navdest { display: none; }
+  #app.tesla.jx-time #turnText { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #app.tesla.jx-time #laneRow, #app.tesla.jx-time #colorRow, #app.tesla.jx-time #nextTurn, #app.tesla.jx-time #restCard { display: none !important; }
+  #app.tesla.jx-time #camMissBtn, #app.tesla.fo-report #camMissBtn { display: none !important; }
+  #app.tesla.jx-time #tollCard, #app.tesla.fo-toll #tollCard { display: none !important; }
+  #app.tesla.jx-time #camCard, #app.tesla.jx-time #zoneBadge, #app.tesla.fo-cam #camCard, #app.tesla.fo-cam #zoneBadge { display: none !important; }
+  #app.tesla.jx-time #mySpeed, #app.tesla.fo-speed #mySpeed { display: none !important; }
+  #app.tesla.jx-time #camNext, #app.tesla.fo-small #camNext, #app.tesla.fo-small #bumpCard, #app.tesla.fo-small #parkCard, #app.tesla.fo-small #signCard { display: none !important; }
+  #app.tesla.fo-sec #secCard { display: none !important; }
+  /* 하이패스 칩: 파란 'hi-pass' + 거리 + (들어가면) 하이패스 차로 번호 */
+  .nchip.toll { gap: 8px; padding: 6px 10px 6px 7px; }
+  .nchip .tc-hp { font-style: italic; font-weight: 900; font-size: 15px; letter-spacing: -.02em; font-family: 'Arial Black', 'Pretendard', sans-serif;
+    color: #fff; background: #1565c0; border-radius: 8px; padding: 3px 7px 4px; line-height: 1.1; }
+  .nchip .tc-ln { display: flex; gap: 3px; margin-left: 2px; }
+  .nchip .tc-ln b { min-width: 24px; height: 26px; padding: 0 5px; border-radius: 6px; background: #1565c0; color: #fff; font-size: 16px; font-weight: 800;
+    display: flex; align-items: center; justify-content: center; }
+  /* 오른쪽 배지: 시계·날씨 밑, 오른쪽 경로 막대 왼쪽 8px (app.js 가 --sbg-top·--sbg-right 를 잰다) */
+  .sidebadge { display: none; }
+  #app.tesla .sidebadge:not([hidden]) {
+    position: absolute; z-index: 1030; top: var(--sbg-top, 120px); right: var(--sbg-right, 50px); width: 88px;
+    display: flex; flex-direction: column; align-items: center; pointer-events: none; font-variant-numeric: tabular-nums;
+  }
+  .sbg-speed { display: flex; flex-direction: column; align-items: center; line-height: 1; margin-bottom: 5px; color: #111;
+    text-shadow: 0 0 3px #fff, 0 0 2px #fff, 0 0 1px #fff, 0 0 1px #fff; }
+  .sbg-speed b { font-size: 42px; font-weight: 900; letter-spacing: -.03em; }
+  .sbg-speed i { font-size: 12px; font-style: normal; font-weight: 800; margin-top: 1px; opacity: .85; }
+  body:has(#map.night) .sbg-speed { color: #fff; text-shadow: 0 0 3px #000, 0 0 2px #000, 0 0 1px #000, 0 0 1px #000; }
+  .sidebadge.over .sbg-speed, body:has(#map.night) .sidebadge.over .sbg-speed { color: #ff3b3b; }
+  .sbg-sign { position: relative; z-index: 1; width: 76px; height: 76px; border-radius: 50%; background: #fff center / contain no-repeat; color: #111;
+    box-shadow: inset 0 0 0 7px #e8202a, 0 3px 10px rgba(0, 0, 0, .35); display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .sbg-sign b { font-size: 31px; font-weight: 900; letter-spacing: -.05em; line-height: 1; }
+  .sidebadge.c-mobile .sbg-sign { box-shadow: inset 0 0 0 7px #2979ff, 0 3px 10px rgba(0, 0, 0, .35); }
+  .sidebadge.c-signal .sbg-sign b { font-size: 22px; }
+  .sidebadge.c-aisign .sbg-sign { box-shadow: 0 3px 10px rgba(0, 0, 0, .35); }
+  .sidebadge.c-aisign .sbg-sign b { margin-top: 10px; }
+  .sidebadge.c-ainum .sbg-sign b { visibility: hidden; }
+  .sbg-ico { width: 24px; height: 12px; margin: -2px 0 1px; border-radius: 3px; background: #111; position: relative; }
+  .sbg-ico::after { content: ''; position: absolute; left: 7px; top: 2px; width: 8px; height: 8px; border-radius: 50%; background: #fff; box-shadow: inset 0 0 0 2px #111; }
+  .sbg-dist, .sbg-kind { width: 100%; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 900; line-height: 1.2; }
+  .sbg-dist { margin-top: -8px; padding: 9px 4px 2px; border-radius: 7px 7px 0 0; background: #e03131; color: #fff; font-size: 19px; letter-spacing: -.02em; }
+  .sidebadge.c-mobile .sbg-dist { background: #1c6dd0; }
+  .sbg-kind { padding: 3px 4px 4px; border-radius: 0 0 7px 7px; background: #ffd43b; color: #111; font-size: 13px; box-shadow: 0 3px 10px rgba(0, 0, 0, .3); }
+  .sbg-kind[data-band="black"] { background: #121418; color: #fff; }
+  .sbg-kind[data-band="white"] { background: #fff; color: #111; }
+  .sidebadge.c-rear-after .sbg-kind { margin-top: -8px; padding-top: 11px; border-radius: 7px; }
   /* 주행 기록 카드: 오른쪽 아래, 더 비치는 유리 + 흐림. GPS 는 카드 맨 위 줄 오른쪽 */
   /* 운전자 (2026-11-26) 'GPS 는 그대로 밑에 두고, 저 표는 좀 작게 한 다음에 조금 투명하게 blur' */
   #app.tesla .trip {
@@ -2237,6 +2285,8 @@
 
     <!-- v263 (운전자 그림 '↱ 50m', '휴게소 9.8km'): 지금 안내가 멀면 그다음 안내, 휴게소가 멀면 휴게소를 카드 오른쪽 옆 작은 칩으로 -->
     <div id="navChips" class="navchips" hidden></div>
+    <!-- v275: 오른쪽 배지 (네이버 길안내 배지처럼) — 분기 그림 때, 또는 왼쪽 칸이 넘쳐 단속 카드·속도 띠를 접었을 때: 지금 속도 + 제한 원 + 거리 띠 + 종류 띠 -->
+    <div id="sideBadge" class="sidebadge" role="status" hidden></div>
 
     <div id="routeCard" class="routecard" hidden>
       <div id="rcTitle" class="rc-title"></div>
@@ -2457,8 +2507,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-274"></script>
-<script src="img/ai/picks.js?v=2026.11.16-274"></script>
-<script src="app.js?v=2026.11.16-274"></script>
+<script src="icons.js?v=2026.11.16-275"></script>
+<script src="img/ai/picks.js?v=2026.11.16-275"></script>
+<script src="app.js?v=2026.11.16-275"></script>
 </body>
 </html>

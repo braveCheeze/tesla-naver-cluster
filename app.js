@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-274'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-275'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -4197,6 +4197,7 @@
     renderMySpeed();
     renderLimit();
     syncDrawer();
+    fitColumn();   // v275: 단속 카드가 생기거나 없어지면 왼쪽 칸 높이를 다시 본다
   }
   // ---------- 단속 서랍 (테슬라 모드: 길안내 패널 밑에서 스르륵) ----------
   // 안의 것(단속 카드·내 속도·보호구역 표지·구간단속 카드·하이패스) 중 하나라도 보이면 열고, 다 숨으면 접는다
@@ -4210,7 +4211,7 @@
     const dr = $('#camDrawer');
     orderAlerts();   // v158: 서랍 칸·작은 칸을 가까운 순서로
     if (drawer.closing) return;
-    const any = DRAWER_ITEMS.some((q) => !$(q).hidden);
+    const any = DRAWER_ITEMS.some(drawerShows);   // v275: 접혀서 CSS 로 숨은 칸(분기 그림 때 단속 카드 등)은 빼고
     if (any === dr.classList.contains('open')) return;
     clearTimeout(drawer.t);
     // 처음 보일 때 접힌 상태에서 한 번 그린 뒤 열어야 내려오는 움직임이 보인다
@@ -8280,10 +8281,153 @@
   function renderNav() {
     renderToll();
     renderJunction();
+    setJxTime();   // v275: 분기 그림이 뜬 동안은 네이버식 배치 (그다음 안내·휴게소를 칩으로 돌리기 전에 정한다)
     renderNavPanel();
     orderAlerts();
     placeAlerts(); // 안내 패널 높이가 바뀌면 그 밑의 단속 경고도 따라 움직인다
     checkTripCover();
+    fitColumn();
+  }
+  // ---------- v275: 왼쪽 칸은 화면 밑으로 넘치지 않는다 + 분기 그림 때 네이버식 배치 ----------
+  // 운전자 사진 (2026-11-27 수원신갈IC 160m, '이렇게 나와 버려 제일 좋은 방법 조금 변경해봐'): 테슬라 브라우저는 주소창·차 화면 때문에 638px 보다
+  //   짧아서, 안내 카드 + 분기 그림 + 속도 띠 + 단속 카드 + 하이패스 칸이 화면 밑으로 넘쳐 하이패스 차로 번호가 출처 글자 밑에 잘렸다.
+  // (1) 분기 그림이 뜬 동안(jx-time): 네이버처럼 안내 카드는 한 줄(목적지 줄 숨김), 그다음 안내·휴게소·하이패스는 카드 옆 칩,
+  //     그림은 카드 바로 밑, 지금 속도·단속은 오른쪽 배지, '잘못된 정보 신고' 숨김
+  // (2) 어느 때든 왼쪽 칸이 화면(innerHeight) 밑 출처 줄에 닿으면 차례로 접는다: 신고 버튼 → 하이패스 칸을 칩으로 → 단속 카드를 오른쪽 배지로
+  //     → 속도 띠를 오른쪽 배지로 → 다음 단속·과속방지턱·주의 표지 줄 → 목적지 줄 → 구간단속 칸(속도 배지에 구간 제한). 넉넉해지면(16px) 거꾸로 편다
+  const FOLD_STEPS = ['fo-report', 'fo-toll', 'fo-cam', 'fo-speed', 'fo-small', 'fo-dest', 'fo-sec'];
+  const FOLD_SLACK = 16, COL_FLOOR = 24;   // 화면 맨 밑 출처 줄(지도 저작권 글자) 높이만큼 비운다
+  const lay = { k: 0, busy: false, chipBase: [], tollNoLanes: '' };
+  function setJxTime() {
+    const app = $('#app');
+    const on = app.classList.contains('tesla') && !!nav.active && !$('#juncCard').hidden;
+    if (app.classList.contains('jx-time') !== on) app.classList.toggle('jx-time', on);
+  }
+  const jxTime = () => $('#app').classList.contains('jx-time');
+  // 왼쪽 칸의 원래 바닥 (서랍이 내려오는 중이어도 다 내려온 높이로 잰다)
+  function colBottom() {
+    const al = $('.alerts'), np = $('#navPanel');
+    let y = al.getBoundingClientRect().top, n = 0, pend = 0;
+    for (const el of al.children) {
+      let h = 0, mb = 0;
+      if (el.id === 'camDrawer') { if (DRAWER_ITEMS.some(drawerShows)) { h = el.querySelector('.cd-in').offsetHeight; mb = 14; } }
+      else if (el.getClientRects().length) h = el.offsetHeight;
+      if (h > 0) { y += pend + (n ? 8 : 0) + h; pend = mb; n++; }
+    }
+    return Math.max(y, np.hidden ? 0 : np.getBoundingClientRect().bottom);
+  }
+  function applyFold(k) {
+    const app = $('#app');
+    FOLD_STEPS.forEach((c, i) => { if (app.classList.contains(c) !== i < k) app.classList.toggle(c, i < k); });
+  }
+  function fitColumn() {
+    const app = $('#app');
+    if (lay.busy) return;
+    lay.busy = true;
+    try {
+      if (!app.classList.contains('tesla')) { applyFold(0); lay.k = 0; app.classList.remove('jx-time'); $('#sideBadge').hidden = true; return; }
+      // 보이는 화면 바닥 (테슬라 브라우저의 innerHeight; 앱 칸이 더 짧으면 앱 칸) − 출처 줄
+      const limit = Math.min(window.innerHeight, app.getBoundingClientRect().bottom) - COL_FLOOR;
+      let k = Math.min(lay.k, FOLD_STEPS.length);
+      applyFold(k);
+      if (colBottom() > limit) { while (k < FOLD_STEPS.length && colBottom() > limit) applyFold(++k); }
+      else {
+        while (k > 0) { applyFold(k - 1); if (colBottom() <= limit - FOLD_SLACK) k--; else { applyFold(k); break; } }
+      }
+      lay.k = k;
+      syncDrawer();
+      applyChips();
+      renderSideBadge();
+    } finally { lay.busy = false; }
+  }
+  window.addEventListener('resize', () => { if (nav.active || camState.target) setTimeout(() => fitColumn(), 0); });
+  // 서랍 칸이 지금 보이는지 (접힘 칸은 CSS 가 숨긴다)
+  function drawerShows(q) { const e = $(q); return !!e && !e.hidden && getComputedStyle(e).display !== 'none'; }
+  // 칩: 그다음 안내·휴게소(renderNavPanel) + 접힌 하이패스 칸. 차에서 가까운 것이 위
+  function applyChips() {
+    const box = $('#navChips');
+    if (!nav.active) { box.hidden = true; return; }
+    const tc = tollChip();
+    const list = lay.chipBase.concat(tc ? [tc] : []).map((c, i) => [c, i])
+      .sort((a, b) => ((Number.isFinite(a[0].d) ? a[0].d : 1e9) - (Number.isFinite(b[0].d) ? b[0].d : 1e9)) || a[1] - b[1]).map((x) => x[0]);
+    setChips(box, list);
+    box.hidden = !list.length;
+    // 하이패스 칩의 차로 번호는 들어갈 때만 (오른쪽 배지·경로 막대에 닿으면 번호 없이)
+    const te = tc && box.querySelector('.nchip.toll');
+    if (te && tc.lanes && te.getBoundingClientRect().right > chipRightEdge()) { lay.tollNoLanes = tc.lk; applyChips(); }
+  }
+  function chipRightEdge() {
+    const b = $('#sideBadge'), rs = $('#routeStrip');
+    if (!b.hidden && b.getClientRects().length) return b.getBoundingClientRect().left - 8;
+    if (!rs.hidden && rs.getClientRects().length && getComputedStyle(rs).display !== 'none') return rs.getBoundingClientRect().left - 8;
+    return window.innerWidth - 8;
+  }
+  function tollChip() {
+    const app = $('#app'), g = tollState.g, card = $('#tollCard');
+    if (!g || card.hidden || !(app.classList.contains('jx-time') || app.classList.contains('fo-toll'))) return null;
+    const nums = tollState.nums || [], lk = g.i + ':' + nums.join(','), d = Number.isFinite(card._d) ? card._d : 0;
+    const lanes = nums.length > 0 && lay.tollNoLanes !== lk;
+    return { k: 't:' + g.i, cls: ' toll', d, lanes, lk,
+      html: '<i class="tc-hp">hi-pass</i>' + esc(fmtDist(d)) + (lanes ? '<span class="tc-ln">' + nums.map((n) => '<b>' + esc(String(n)) + '</b>').join('') + '</span>' : '') };
+  }
+  // 도로 제한속도: 지금 단속·구간 제한, 없으면 같은 도로(경로 구간 이름)에서 마지막으로 본 제한을 3km 까지 (이름을 모르면 1km). 보호구역·의심 카메라는 빼고
+  const roadLim = { lim: 0, road: '', odo: 0 };
+  function roadLimit() {
+    const cur = currentLimit(), tg = camState.target;
+    const road = nav.active && nav.pts ? routeRoadAt(nav.seg || 0) : '';
+    if (cur && !(tg && (tg.c[6] || tg.flag === 'doubt'))) Object.assign(roadLim, { lim: cur, road, odo: state.odo });
+    if (cur) return cur;
+    if (roadLim.lim && road === roadLim.road && state.odo - roadLim.odo <= (road ? 3000 : 1000)) return roadLim.lim;
+    // 길안내 중이면 같은 경로 구간(도로 이름)에서 앞뒤 3km 안 가장 가까운 과속 카메라의 제한 (카메라는 그 도로의 제한을 지킨다)
+    if (road && nav.routeCamList) {
+      let best = null;
+      for (const x of nav.routeCamList) {
+        const gap = Math.abs(x.at - nav.along);
+        if (gap > 3000 || (best && gap >= best.gap)) continue;
+        const c = x.c;
+        if (!isSpeedCam(c) || c[6] || !(c[2] > 0) || camFlag(c)) continue;
+        let k = 0;
+        while (k < nav.cum.length - 2 && nav.cum[k + 1] < x.at) k++;
+        if (routeRoadAt(k) === road) best = { gap, lim: c[2] };
+      }
+      if (best) return best.lim;
+    }
+    return null;
+  }
+  // 오른쪽 배지 (네이버 길안내의 왼쪽 위 배지처럼): 지금 속도 + 제한 원, 단속이 있으면 원은 그 카메라 표지 + 빨간 거리 띠 + 종류 띠.
+  // 분기 그림 때는 늘, 접힘으로 단속 카드·속도 띠가 오른쪽으로 오면 그것만
+  function renderSideBadge() {
+    const app = $('#app'), el = $('#sideBadge');
+    if (!el) return;
+    const jx = app.classList.contains('jx-time'), card = $('#camCard');
+    const camOn = !card.hidden && (jx || app.classList.contains('fo-cam'));
+    const spdOn = jx || (app.classList.contains('fo-speed') && !$('#mySpeed').hidden) || (app.classList.contains('fo-sec') && !!camState.section);
+    if (!app.classList.contains('tesla') || (!camOn && !spdOn)) { if (!el.hidden) el.hidden = true; return; }
+    const lim = roadLimit();
+    const sp = Math.round(state.speedKmh || 0);
+    const sign = card.querySelector('.cam-sign');
+    const cls = 'sidebadge' + (spdOn ? ' spd' : '') + (camOn ? ' cam' : lim ? ' lim' : '') + (lim && state.speedKmh > lim + 1 ? ' over' : '') +
+      (camOn ? ['mobile', 'signal', 'sigspeed', 'aisign', 'ainum', 'doubt', 'rear', 'rear-after', 'seccam'].filter((c) => card.classList.contains(c)).map((c) => ' c-' + c).join('') : '');
+    const img = camOn && sign.dataset.img ? sign.dataset.img : '';
+    const num = camOn ? $('#camLimit').textContent : lim ? String(lim) : '';
+    const rearAfter = camOn && card.classList.contains('rear-after');
+    const html = (spdOn ? '<div class="sbg-speed"><b>' + sp + '</b><i>km/h</i></div>' : '') +
+      (num ? '<div class="sbg-sign"' + (img ? ' style=\'background-image:' + img.replace(/'/g, '&#39;') + '\'' : '') + '>' + (camOn && !img ? '<i class="sbg-ico" aria-hidden="true"></i>' : '') + '<b>' + esc(num) + '</b></div>' : '') +
+      (camOn && !rearAfter ? '<div class="sbg-dist">' + esc($('#camDist').textContent) + '</div>' : '') +
+      (camOn ? '<div class="sbg-kind" data-band="' + esc(rearAfter ? 'black' : card.dataset.band || '') + '">' + esc(rearAfter ? '후면단속 중' : $('#camKind').textContent || $('#camType').textContent) + '</div>' : '');
+    if (el.className !== cls) el.className = cls;
+    if (el._h !== html) { el.innerHTML = html; el._h = html; }
+    el.setAttribute('aria-label', (spdOn ? '지금 ' + sp + 'km/h' : '') + (num ? ' 제한 ' + num : '') + (camOn ? ' ' + $('#camType').textContent + ' ' + $('#camDist').textContent : ''));
+    el.hidden = false;
+    // 자리: 시계·날씨 밑, 오른쪽 경로 막대 왼쪽 8px (막대가 없으면 화면 오른쪽 12px)
+    const base = app.getBoundingClientRect(), rs = $('#routeStrip');
+    const stripOn = !rs.hidden && rs.getClientRects().length && getComputedStyle(rs).display !== 'none';
+    const right = stripOn ? base.right - rs.getBoundingClientRect().left + 8 : 12;
+    const tops = ['.timebox', '#weather'].map((q) => $(q)).filter((e) => e && !e.hidden && e.getClientRects().length).map((e) => e.getBoundingClientRect().bottom - base.top);
+    const top = Math.max(60, ...tops) + 10;
+    const setVar = (k, px) => { const v = Math.round(px) + 'px'; if (app.style.getPropertyValue(k) !== v) app.style.setProperty(k, v); };
+    setVar('--sbg-right', right);
+    setVar('--sbg-top', top);
   }
   // 테슬라 모드: 서랍(분기점 그림·단속·하이패스)이 길어져 왼쪽 아래 주행 기록·나침반에 닿으면 그동안 그 둘을 숨긴다 (글자가 겹치지 않게)
   // v212: 넓은 화면의 큰 속도는 카드 높이(--trip-h) + 18px 위에 둔다 — 카드가 높아져도 숫자가 붙지 않게
@@ -8425,7 +8569,8 @@
     const nn = $('#nextTurn');
     nn.hidden = !g2;
     // v263 (운전자 '3.4km 남았는데 이어서 230m 우회전은 필요 없다'): 지금 안내가 NEXT_ROW_NEAR 보다 멀면 그다음 안내는 카드 오른쪽 칩으로
-    const nextChip = !!g2 && !restMain && !tnMain && nav.dg != null && chipState('next', String(nav.gi) + '|' + (nav.route && nav.route.distance), nav.dg, NEXT_ROW_NEAR, NEXT_ROW_NEAR * 1.1);
+    // v275: 분기 그림이 뜬 동안은 가까워도 칩 (안내 카드는 한 줄)
+    const nextChip = !!g2 && !restMain && !tnMain && nav.dg != null && (chipState('next', String(nav.gi) + '|' + (nav.route && nav.route.distance), nav.dg, NEXT_ROW_NEAR, NEXT_ROW_NEAR * 1.1) || jxTime());
     const chips = [];
     if (g2) {
       const last = nav.cum.length - 1;
@@ -8465,19 +8610,18 @@
         // 운전자 (2026-11-26): '50m 우회전 그다음 150m 좌회전이면 50 이 첫째, 150 이 둘째, 휴게소 21km 가 셋째' — 가까운 순서대로 위에서부터,
         //   하나가 지나가면 밑의 것이 올라온다
         nn.hidden = true;
-        chips.push({ k: 'n:' + g2.i, cls: isGoal ? ' goal' : '', html: '<span class="nexticon">' + $('#nextIcon').innerHTML + '</span>' + esc($('#nextDist').textContent) });
+        chips.push({ k: 'n:' + g2.i, cls: isGoal ? ' goal' : '', d: nn._d, html: '<span class="nexticon">' + $('#nextIcon').innerHTML + '</span>' + esc($('#nextDist').textContent) });
         const c2 = soon ? ch[1] : null;
-        if (c2) chips.push({ k: 'n:' + c2.g.i, cls: '', html: '<span class="nexticon">' + ico(iconKind(c2.g)) + '</span>' + esc(fmtDist(c2.gap)) });
+        if (c2) chips.push({ k: 'n:' + c2.g.i, cls: '', d: nn._d + c2.gap, html: '<span class="nexticon">' + ico(iconKind(c2.g)) + '</span>' + esc(fmtDist(c2.gap)) });
       }
     }
-    // 휴게소: REST_ROW_NEAR 안이면 카드 안 파란 줄, 더 멀면 칩 (위 큰 줄이 휴게소일 때는 그대로)
-    if (rs && !restMain && chipState('rest', rs.name, rs.d, REST_ROW_NEAR, REST_ROW_NEAR * 1.1)) {
+    // 휴게소: REST_ROW_NEAR 안이면 카드 안 파란 줄, 더 멀면 칩 (위 큰 줄이 휴게소일 때는 그대로). v275: 분기 그림 때는 칩
+    if (rs && !restMain && (chipState('rest', rs.name, rs.d, REST_ROW_NEAR, REST_ROW_NEAR * 1.1) || jxTime())) {
       $('#restCard').hidden = true;
-      chips.push({ k: 'r:' + rs.name, cls: ' rest', html: REST_SIGN + esc(fmtDist(rs.d)) });
+      chips.push({ k: 'r:' + rs.name, cls: ' rest', d: rs.d, html: REST_SIGN + esc(fmtDist(rs.d)) });
     }
-    const chipBox = $('#navChips');
-    setChips(chipBox, chips);
-    chipBox.hidden = !chips.length;
+    lay.chipBase = chips;
+    applyChips();   // v275: 접힌 하이패스 칩과 함께, 가까운 순서로
     const remain = nav.remain != null ? nav.remain : nav.total;
     const remMs = nav.route.duration * (remain / Math.max(1, nav.total));
     renderTunnel();
@@ -11546,7 +11690,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, soonChain, soonSpeech, SOON_M, exitedBefore, juncSplitAt, jxLaneAt, juncWanted, jxSplit2, mainKeep, jxOsmLanes, jxByLanes, jxShape2, jxConfig, jx2ShapeOf, JX2_LANES, JX2_BOARD, jxSideExit, jxCity, jxRoadShort, jxForkGeo, SEC_JOIN_RULE, loneSecEnd, quietSecEnd, jxShape, jxMirror, JX_BOARD, JX_TEXT, JX_LANES, juncOther, jdData, setJuncDest, loadJuncDest, camFlagUndo, camFlagToday, undoWrongCard, clearConfirmedFlags, CAM_FLAG_CLEAR, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams, passWhy, pruneTurnCams, camDirOk, routeNet, routeUpstream, laneGuideM, planSignPlace, findBuilding, sunPosStored, eventBody, routeArrived, routeIdleCheck, routeStartup, routeHide, tripEndGap, routeHeading, startsReversed, ROUTE_AHEAD, fitSigns, nvSceneFits, planScene, routeTurnSum, renderJunction, juncState,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, soonChain, soonSpeech, SOON_M, exitedBefore, juncSplitAt, jxLaneAt, juncWanted, jxSplit2, mainKeep, jxOsmLanes, jxByLanes, jxShape2, jxConfig, jx2ShapeOf, JX2_LANES, JX2_BOARD, jxSideExit, jxCity, jxRoadShort, jxForkGeo, SEC_JOIN_RULE, loneSecEnd, quietSecEnd, jxShape, jxMirror, JX_BOARD, JX_TEXT, JX_LANES, juncOther, jdData, setJuncDest, loadJuncDest, camFlagUndo, camFlagToday, undoWrongCard, clearConfirmedFlags, CAM_FLAG_CLEAR, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams, passWhy, pruneTurnCams, camDirOk, routeNet, routeUpstream, laneGuideM, planSignPlace, findBuilding, sunPosStored, eventBody, routeArrived, routeIdleCheck, routeStartup, routeHide, tripEndGap, routeHeading, startsReversed, ROUTE_AHEAD, fitSigns, nvSceneFits, planScene, routeTurnSum, renderJunction, juncState, fitColumn, colBottom, renderSideBadge, roadLimit, setJxTime, foldState: lay, FOLD_STEPS, applyChips,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,

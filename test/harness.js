@@ -2233,8 +2233,10 @@
     const toll = (name) => ({ i: 25, t: 121, s: name + '톨게이트 (통행료 800원)' });
     // lanes: '하이패스 번호/그린 차로 수' (차로 줄이면 전체 차로 수, 방향을 몰라 번호만이면 0)
     const laneInfo = () => { const e = document.getElementById('tollLanes'); return e.dataset.hp + '/' + e.dataset.n; };
-    const snap = () => ({ card: visible('#tollCard'), lanes: visible('#tollLanes') ? laneInfo() : '', dist: visible('#tollDist') ? text('#tollDist') : '',
-      boxes: document.querySelectorAll('#tollLanes .ln').length, blue: document.querySelectorAll('#tollLanes .ln.hp').length });
+    // v275: 분기 그림이 뜬 동안 하이패스 칸은 안내 카드 옆 칩 ('hi-pass 500m' + 차로 번호) — 칩이어도 하이패스가 보이는 것으로 센다
+    const snap = () => { const chip = !!document.querySelector('#navChips .nchip.toll'), le = document.getElementById('tollLanes');
+      return { card: visible('#tollCard') || chip, chip, lanes: visible('#tollLanes') || (chip && !le.hidden) ? laneInfo() : '', dist: visible('#tollDist') ? text('#tollDist') : '',
+        boxes: document.querySelectorAll('#tollLanes .ln').length, blue: document.querySelectorAll('#tollLanes .ln.hp').length }; };
     const drive = async (R, upto) => {
       await planAndStart(R);
       for (let s = 25; s <= upto; s += 25) { const a = pointAt(R, s); feed(a.p, 25, brg(R.P[0], R.P[40])); t.renderNav(); }
@@ -2961,6 +2963,7 @@
     { id: 'S173', name: "S173 chips do not blink (v269, driver on the road: '오른쪽 휴게소가 되게 깜빡깜빡'): driving past the 5 km rest-area and 1 km next-turn thresholds at 1 fix a second with ±15 m GPS noise, each chip changes between chip and card row at most once per crossing, the same chip element stays while its text counts down (no rebuild, the enter animation runs once), and a rest area that loses the highway check for a few fixes stays shown", fn: s173 },
     { id: 'S174', name: "S174 section start passed (v271, driver: '구간 단속 시작할 때 통과 말고 시작으로'): 30 m before the 수도권제1순환 100 section start (#22907, route from 서울TG) the card shows the distance, right after it shows '시작' instead of '통과' with the section card open, it stays to about 60 m like Naver's start badge (+55 m shown, +97 m gone), and is gone by 80 m; the section card stays", fn: s174 },
     { id: 'S175', name: "S175 route-first camera matching while guiding (v274, driver: '설정한 길안내가 있는데 한번씩 과속단속이 다른 일반길·밑길로 튀어'): (a) a place text 'A→B' that agrees with the guidance no longer lets an opposite-direction camera through when neighbouring cameras with the same or reversed text back its stored direction (아암대로 #23244 171°, #23148 '송도3교4→정비단지입구3' 350° 900 m south; driven northbound it stays quiet, southbound it still alerts — a camera whose neighbours contradict its direction still follows the text, S47 하남 J2735); (b) briefly off the route (GPS drift, rerouting), a camera on the road the car is really on is not picked by straight-line matching for 15 s, after 15 s off the route it is (탄천 80 #22931 with a route 150 m away)", fn: s175 },
+    { id: 'S176', name: "S176 nothing in the left column is cut off (v275, driver photo 2026-11-27 수원신갈IC 160 m: '이렇게 나와 버려 제일 좋은 방법 조금 변경해봐'): at 804×560 and 804×600 on the real 경부 → 수원신갈IC route, 900 m before the exit (card + next row + rest row + 40 camera + speed strip + hi-pass + report button) folds report → hi-pass chip → camera to the right badge → speed strip so the column ends above the attribution line; 160 m before (junction picture) the card is one line with the picture right under it, next guide / rest / hi-pass are chips, the right badge shows speed 79 (red over 40), the 40 sign, 370m and the kind band 8 px left of the route strip, no report button; restoring the size unfolds", fn: s176 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -8280,6 +8283,103 @@
   }
 
   // S175: 길안내 중 경로 먼저 (v274) — 공개 카메라 좌표 + 합성 경로만 (운전자 궤적은 쓰지 않는다)
+  // S176 (v275, 운전자 사진 2026-11-27 수원신갈IC 160m — 테슬라 브라우저는 주소창 때문에 638px 보다 짧아 왼쪽 칸이 넘쳐 하이패스 차로 번호가 잘렸다,
+  //   '이렇게 나와 버려 제일 좋은 방법 조금 변경해봐'): 앱 칸을 804×560·804×600 으로 줄이고 실제 경부 남행 → 수원신갈IC 출구 경로에서
+  //   (a) 출구 900m 앞(그림 전): 안내 카드 + 이어서 줄 + 휴게소 줄 + 40 단속 카드·속도 띠 + 하이패스 칸 + 신고 버튼 — 넘치면 신고 버튼 → 하이패스 칩
+  //       → 단속 카드 오른쪽 배지 → 속도 띠 순서로 접혀 왼쪽 칸이 화면 밑(출처 줄 위)을 넘지 않는다. 단속·하이패스 정보는 어딘가에 남는다
+  //   (b) 출구 160m 앞(분기 그림): 안내 카드 한 줄(목적지 줄 없음) 바로 밑 그림, 그다음 안내·휴게소·하이패스는 칩, 오른쪽 배지에 지금 속도 79 ·
+  //       40 원 · 370m · 종류 띠, 신고 버튼 없음, 배지는 경로 막대 왼쪽 8px, 오른쪽 아래 주행 기록 카드와 안 겹침
+  //   (c) 앱 칸을 되돌리면 접힘이 풀린다
+  async function s176() {
+    const t = T(), app = document.getElementById('app'), keepStyle = app.getAttribute('style');
+    const fx = await (await realFetch(harnessDir + 'fixtures/route-suwonsingal-s.json', { cache: 'no-store' })).json();
+    const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const R = { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '기흥역', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    const gx = fx.guide.find((g) => g.t === 67), gs = cum[gx.i];
+    const rows = t.cams.rows;
+    const ci = rows.findIndex((x, j) => j < (t.cams.userBase || rows.length) && x[2] === 40 && x[3] === 1 && x[4] === 0 && !x[6] && !((x[10] | 0) & 1));
+    const box = (el) => {
+      if (!el || el.hidden || !el.getClientRects().length || getComputedStyle(el).display === 'none') return null;
+      const q = el.getBoundingClientRect();
+      return { l: Math.round(q.left), t: Math.round(q.top), r: Math.round(q.right), b: Math.round(q.bottom) };
+    };
+    const out = {};
+    const scene = async (H, dist) => {
+      app.style.height = H + 'px'; app.style.width = '804px';
+      window.dispatchEvent(new Event('resize'));
+      softReset();
+      await planAndStart(R);
+      const s0 = Math.max(0, gs - dist - 1000);
+      for (let s = s0; s <= gs - dist; s += 20) { const a = pointAt(R, s); feed(a.p, 22, a.h, { dt: 900 }); }
+      t.nav.routeRest = [{ at: t.nav.along + 3000, name: '시험휴게소', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng }]; t.nav.routeRestFor = t.nav.route;
+      t.camState.target = { i: ci, c: rows[ci], d: 370, r: 370, minD: 370, after: false, t0: Date.now(), first: 600 };
+      t.renderCam(); t.renderNav();
+      await new Promise((res) => setTimeout(res, 450));   // 서랍이 다 내려온 뒤
+      t.renderNav();
+      const ab = app.getBoundingClientRect(), floor = ab.top + H - 24;
+      const left = ['#navPanel', '#camDrawer', '#camNext', '#bumpCard', '#signCard', '#parkCard', '#camMissBtn'].map((q) => [q, box($(q))]).filter((x) => x[1]);
+      const lowest = left.reduce((m, x) => Math.max(m, x[1].b), 0);
+      const chips = [...document.querySelectorAll('#navChips .nchip')].map((c) => ({ k: c.dataset.k, cls: c.className, txt: c.textContent.trim(), b: box(c) }));
+      const badge = box($('#sideBadge')), strip = box($('#routeStrip')), trip = box($('.trip')), np = box($('#navPanel')), jc = box($('#juncCard'));
+      const tt = box($('#turnText'));
+      return {
+        H, dist, jx: app.classList.contains('jx-time'), folds: t.FOLD_STEPS.filter((c) => app.classList.contains(c)), over: lowest - floor, lowest: lowest - ab.top,
+        dest: !!box(document.querySelector('#navPanel .navdest')), turnH: tt ? tt.b - tt.t : 0,
+        picGap: jc && np ? jc.t - np.b : null, cam: !!box($('#camCard')), spd: !!box($('#mySpeed')), toll: !!box($('#tollCard')), miss: !!box($('#camMissBtn')), next: !!box($('#nextTurn')),
+        rest: !!box($('#restCard')), chips: chips.map((c) => c.k + '|' + c.txt.replace(/\s+/g, ' ')),
+        chipOver: chips.filter((c) => c.b && c.b.r > (badge ? badge.l - 4 : strip ? strip.l - 4 : ab.right)).map((c) => c.k),
+        badge: badge ? { txt: [...$('#sideBadge').children].map((c) => c.textContent.trim()).join(' '), cls: $('#sideBadge').className, gap: strip ? strip.l - badge.r : null, inView: badge.b <= floor,
+          tripHit: !!(trip && badge.b > trip.t && badge.r > trip.l && badge.l < trip.r) } : null,
+      };
+    };
+    // 서랍이 내려오는 움직임은 숨은 창에서 멈춰 있으니 이 시험 동안은 끈다 (다 내려온 자리를 잰다)
+    const still = document.createElement('style');
+    still.textContent = '#app *, #app *::before, #app *::after { transition: none !important; animation: none !important; }';
+    document.head.appendChild(still);
+    try {
+      if (ci < 0) return { pass: false, detail: 'no 40 camera row' };
+      for (const H of [560, 600]) for (const d of [900, 160]) out[H + '_' + d] = await scene(H, d);
+      if (keepStyle == null) app.removeAttribute('style'); else app.setAttribute('style', keepStyle);
+      window.dispatchEvent(new Event('resize'));
+      t.fitColumn();
+      out.back = { folds: t.FOLD_STEPS.filter((c) => app.classList.contains(c)), k: t.foldState.k };
+    } finally {
+      if (keepStyle == null) app.removeAttribute('style'); else app.setAttribute('style', keepStyle);
+      t.endNav(); t.camState.target = null; t.renderCam(); t.fitColumn();
+      still.remove();
+    }
+    const bad = [];
+    for (const k of Object.keys(out)) {
+      const o = out[k];
+      if (k === 'back') { if (o.folds.length) bad.push('back: still folded ' + o.folds.join(',')); continue; }
+      if (o.over > 0) bad.push(k + ': left column ' + o.over + 'px below the screen');
+      if (o.chipOver.length) bad.push(k + ': chip runs into the badge ' + o.chipOver.join(','));
+      if (o.dist === 900) {
+        if (o.jx) bad.push(k + ': picture already at 900 m');
+        if (!o.cam && !(o.badge && /370m/.test(o.badge.txt))) bad.push(k + ': camera lost');
+        if (!o.toll && !o.chips.some((c) => /^t:.*hi-pass/.test(c))) bad.push(k + ': hi-pass lost');
+        if (o.miss && o.folds.length) bad.push(k + ': report button kept while folding ' + o.folds.join(','));
+        if (o.folds.length && o.folds[0] !== 'fo-report') bad.push(k + ': fold order ' + o.folds.join(','));
+      } else {
+        if (!o.jx) bad.push(k + ': no picture time');
+        if (o.dest) bad.push(k + ': destination line shown');
+        if (o.turnH > 26) bad.push(k + ': turn text ' + o.turnH + 'px (not one line)');
+        if (!(o.picGap !== null && o.picGap >= 0 && o.picGap <= 16)) bad.push(k + ': picture not under the card (' + o.picGap + ')');
+        if (o.cam || o.spd || o.toll || o.miss || o.next || o.rest) bad.push(k + ': left column still has ' + ['cam', 'spd', 'toll', 'miss', 'next', 'rest'].filter((x) => o[x]).join(','));
+        if (!o.badge || !/^79km\/h 40 370m \S/.test(o.badge.txt)) bad.push(k + ': badge ' + JSON.stringify(o.badge));
+        if (o.badge && !/\bover\b/.test(o.badge.cls)) bad.push(k + ': 79 over 40 not red');
+        if (o.badge && o.badge.gap !== null && (o.badge.gap < 6 || o.badge.gap > 10)) bad.push(k + ': badge gap to the route strip ' + o.badge.gap);
+        if (o.badge && (!o.badge.inView || o.badge.tripHit)) bad.push(k + ': badge off screen or over the trip card');
+        if (!o.chips.some((c) => /^n:/.test(c))) bad.push(k + ': next guide chip missing');
+        if (!o.chips.some((c) => /^r:/.test(c))) bad.push(k + ': rest chip missing');
+        if (!o.chips.some((c) => /^t:.*hi-pass\s*\d/.test(c))) bad.push(k + ': hi-pass chip missing');
+      }
+    }
+    return { pass: bad.length === 0, detail: (bad.length ? bad.join(' | ') + ' || ' : '') + JSON.stringify(out) };
+  }
+
   async function s175() {
     const t = T(), r = {};
     const mk = (pts, guide, name) => {
@@ -10480,7 +10580,7 @@
         r[k + '옆'] = await drive(mkRoute([toll('시험' + k), end]), 2200);           // 톨게이트가 다음 안내 (배지 옆 자리)
         if (hold === k + '옆') await new Promise((res) => setTimeout(res, 6000));
         t.endNav(); softReset();
-        r[k + '줄'] = await drive(mkRoute([enter, toll('시험' + k), end]), 1700);    // 그다음 안내 (따로 한 줄)
+        r[k + '줄'] = await drive(mkRoute([enter, toll('시험' + k), end]), 1350);    // 그다음 안내 (따로 한 줄). v275: 진입 그림(600m 앞부터)이 뜨기 전 — 그림 때는 하이패스가 칩
         if (hold === k + '줄') await new Promise((res) => setTimeout(res, 6000));
         t.endNav();
       }
