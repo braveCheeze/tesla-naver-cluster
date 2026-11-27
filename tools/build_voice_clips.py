@@ -103,7 +103,8 @@ for n in range(20, 130, 10):
     add('limq_%d' % n, '제한속도 %d.' % n, 'limit')
 
 # 4. 거리 '… 앞' (카메라 dd · 회전 2km/1km/100~300m · 이어서 10~300m 10 단위)
-DIST = sorted(set(list(range(10, 310, 10)) + list(range(400, 1000, 100))))
+# 운전자 (2026-11-28) '1km 앞까지 10미터 20미터 30미터 이런식으로 따로따로 분리하고 이어붙이는 것도 좋을 듯': 10m 단위 전부
+DIST = list(range(10, 1000, 10))
 for m in DIST:
     add('d_%d' % m, '%d미터 앞' % m, 'distance')
 for k in (1, 2):
