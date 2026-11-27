@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-275'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-276'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -2708,7 +2708,8 @@
   // v208: flags 2 = 네이버 길안내로 확인(보통 카메라처럼 보임), 4 = 어린이보호구역
   function userSpotRow(lat, lng, h, kmh, who, lim, kind, flags) {
     const f = flags | 0;
-    const r = [lat, lng, lim > 0 ? lim : 0, kind === 3 || kind === 8 ? kind : 1, 0, 0, f & 4 ? 2 : 0, -1, kmh >= 70 ? 1 : 4, 1, USER_FLAG | (f & 1)];   // v204: 8 이동식 (네이버 '이동식')
+    // v276: 표시 8 = 박스형 (네이버 '박스형', 카메라 줄의 박스형 표시 2) — 아암대로 북행 60 (keys 네이버 확인 2026-11-27)
+    const r = [lat, lng, lim > 0 ? lim : 0, kind === 3 || kind === 8 ? kind : 1, 0, 0, f & 4 ? 2 : 0, -1, kmh >= 70 ? 1 : 4, 1, USER_FLAG | (f & 1) | (f & 8 ? 2 : 0)];   // v204: 8 이동식 (네이버 '이동식')
     r.eb = h == null ? -1 : h; r.e2 = 0; r.lv = 0; r.sl = lat; r.sg = lng; r.on = ''; r.who = who;
     if (f & 2) r.nv = true;
     return r;

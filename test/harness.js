@@ -2962,7 +2962,7 @@
     { id: 'S172', name: "S172 junction-picture lane labels like Naver (v267–v268, parent session side by side with Naver's 330 m pictures): one label size per picture (two-line labels 86% of it), the label row low in the picture with no label below the picture's bottom edge, no two labels overlapping (2 px apart at most), labels centred inside the picture; through lanes say what Naver says at the checked spots — 서하남IC '구리 대전' (board still '구리'), 판교IC '대전 부산'", fn: s172 },
     { id: 'S173', name: "S173 chips do not blink (v269, driver on the road: '오른쪽 휴게소가 되게 깜빡깜빡'): driving past the 5 km rest-area and 1 km next-turn thresholds at 1 fix a second with ±15 m GPS noise, each chip changes between chip and card row at most once per crossing, the same chip element stays while its text counts down (no rebuild, the enter animation runs once), and a rest area that loses the highway check for a few fixes stays shown", fn: s173 },
     { id: 'S174', name: "S174 section start passed (v271, driver: '구간 단속 시작할 때 통과 말고 시작으로'): 30 m before the 수도권제1순환 100 section start (#22907, route from 서울TG) the card shows the distance, right after it shows '시작' instead of '통과' with the section card open, it stays to about 60 m like Naver's start badge (+55 m shown, +97 m gone), and is gone by 80 m; the section card stays", fn: s174 },
-    { id: 'S175', name: "S175 route-first camera matching while guiding (v274, driver: '설정한 길안내가 있는데 한번씩 과속단속이 다른 일반길·밑길로 튀어'): (a) a place text 'A→B' that agrees with the guidance no longer lets an opposite-direction camera through when neighbouring cameras with the same or reversed text back its stored direction (아암대로 #23244 171°, #23148 '송도3교4→정비단지입구3' 350° 900 m south; driven northbound it stays quiet, southbound it still alerts — a camera whose neighbours contradict its direction still follows the text, S47 하남 J2735); (b) briefly off the route (GPS drift, rerouting), a camera on the road the car is really on is not picked by straight-line matching for 15 s, after 15 s off the route it is (탄천 80 #22931 with a route 150 m away)", fn: s175 },
+    { id: 'S175', name: "S175 route-first camera matching while guiding (v274, driver: '설정한 길안내가 있는데 한번씩 과속단속이 다른 일반길·밑길로 튀어'): (a) a place text 'A→B' that agrees with the guidance no longer lets an opposite-direction camera through when neighbouring cameras with the same or reversed text back its stored direction (아암대로 #23244 171°, #23148 '송도3교4→정비단지입구3' 350° 900 m south; driven northbound it stays quiet, southbound it still alerts — a camera whose neighbours contradict its direction still follows the text, S47 하남 J2735); (b) briefly off the route (GPS drift, rerouting), a camera on the road the car is really on is not picked by straight-line matching for 15 s, after 15 s off the route it is (탄천 80 #22931 with a route 150 m away); (c) v276: the 60 box camera Naver shows on 아암대로 northbound 268 m north of #23244 (data/driver_spots.json, Naver-confirmed + box flag 8) alerts northbound as '박스형 과속단속' 60 and not southbound", fn: s175 },
     { id: 'S176', name: "S176 nothing in the left column is cut off (v275, driver photo 2026-11-27 수원신갈IC 160 m: '이렇게 나와 버려 제일 좋은 방법 조금 변경해봐'): at 804×560 and 804×600 on the real 경부 → 수원신갈IC route, 900 m before the exit (card + next row + rest row + 40 camera + speed strip + hi-pass + report button) folds report → hi-pass chip → camera to the right badge → speed strip so the column ends above the attribution line; 160 m before (junction picture) the card is one line with the picture right under it, next guide / rest / hi-pass are chips, the right badge shows speed 79 (red over 40), the 40 sign, 370m and the kind band 8 px left of the route strip, no report button; restoring the size unfolds", fn: s176 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
@@ -6996,7 +6996,7 @@
       c.label === '어린이보호구역 신호·과속단속' && c.zone === 2 && !c.blue &&
       d.label === '운전자 신고 신호·과속단속' && d.blue && d.short === '신고 지점' && d.voice === '신고된 단속 지점' &&
       e.label === '과속단속' && !e.blue &&
-      f.rows === 26 && f.checked === 26 && f.zone === 3 &&   // v210: keys 네이버 확인 — 구갈·삼가 남동 확인(네이버 자리로), 판교JC 하행 합류는 없음(뺌). v213: 비룡로 신호·과속 50 더함. v233: 동해대로 80 174° 더함
+      f.rows === 27 && f.checked === 27 && f.zone === 3 &&   // v276: 아암대로 북행 60 박스형 더함. v210: keys 네이버 확인 — 구갈·삼가 남동 확인(네이버 자리로), 판교JC 하행 합류는 없음(뺌). v213: 비룡로 신호·과속 50 더함. v233: 동해대로 80 174° 더함
       g.w15 === 9 && g.w17 === 14 && g.w18 === 16 && g.w165 === 12.5 && g.casing17 === 18 && g.dots === 3.4 && g.casingColor === '#141414' &&
       g.arrow17 && g.arrow17.inner === 14 && g.arrow17.shaft === 18;
     return { pass: !!ok, detail: JSON.stringify(r) };
@@ -8419,11 +8419,28 @@
       }
       r.b = { firstAt, offAt: t.nav.offAt ? 1 : 0 };
       t.endNav();
+      // (c) v276 (keys 네이버 확인 2026-11-27): 아암대로 북행에는 #23244 북쪽 268m 에 60 박스형(352°)이 있다 — 우리 자료에 없어 v274 뒤 북행 차는
+      //     아무 경고도 못 받았다. data/driver_spots.json 의 네이버 확인·박스형 줄: 북행은 '박스형 과속단속' 60, 남행은 없음
+      const N3 = { lat: 37.436609, lng: 126.633919 };
+      const run3 = async (h) => {
+        const from = dest(N3, (h + 180) % 360, 900), pts = []; for (let k = 0; k <= 12; k++) pts.push(dest(from, h, 125 * k));
+        const R = mk(pts, (last, total) => [{ i: last, t: 88, s: '목적지', d: r0(total), ms: 60000 }], '아암대로');
+        await resetApp(); softReset(); await planAndStart(R);
+        let hit = null;
+        for (let s2 = 0; s2 <= 1100; s2 += 20) {
+          const a = pointAt(R, s2); feed(a.p, 15, a.h); const tg = t.camState.target;
+          if (!hit && tg && sameCam(tg.c, N3)) hit = { label: text('#camType'), kind: text('#camKind'), lim: text('#camLimit'), box: hasCls('#camCard', 'box'), at: s2 };
+        }
+        t.endNav();
+        return hit;
+      };
+      r.c = { north: await run3(352), south: await run3(172) };
     } finally {
       await resetApp(); softReset();
     }
-    const { a = {}, b = {} } = r;
-    const ok = a.north === false && a.south === true && b.firstAt !== null && b.firstAt >= 15;
+    const { a = {}, b = {}, c = {} } = r;
+    const ok = a.north === false && a.south === true && b.firstAt !== null && b.firstAt >= 15 &&
+      !!c.north && c.north.lim === '60' && /박스형/.test(c.north.label) && c.north.kind === '박스형' && c.north.box && c.north.at <= 500 && !c.south;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
