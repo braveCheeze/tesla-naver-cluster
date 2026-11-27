@@ -3,6 +3,5 @@ tools/icon-src/ref/ref_car_app.png
 tools/icon-src/ai/
 __pycache__/
 
-# v278 음성 조각: 운전자가 견본을 듣고 고르기 전에는 소리 파일을 올리지 않는다 (고른 뒤 이 줄을 뺀다)
-audio/voice/*.mp3
+# v278 음성 조각: 만들다 만 파일만 뺀다 (운전자가 견본을 듣고 '오케이')
 audio/voice/*.part
