@@ -589,7 +589,10 @@
   function renderVoiceState() {
     const el = document.getElementById('voiceState');
     if (!el) return;
-    const why = TTS_WHY[ttsStatus()];
+    // v278: 음성이 안 되는 브라우저(테슬라)는 녹음해 둔 안내 음성으로 말한다 (장소·방면 이름은 화면에만)
+    let clips = false;
+    try { clips = vcUse(); } catch (e) { clips = false; }   // 초기화 전
+    const why = clips ? '이 브라우저는 녹음해 둔 안내 음성으로 말해요 (장소·방면 이름은 화면에만).' : TTS_WHY[ttsStatus()];
     el.hidden = !why;
     el.textContent = why || '';
   }
@@ -708,10 +711,11 @@
   const unmark = (s) => String(s || '').split(NM_MARK).join('');
   const vc = { list: null, keys: null, bufs: new Map(), loading: new Map(), sources: [], misses: [], decode: null, fetch: null,
     base: APP_BASE + 'audio/voice/', listP: null, preload: false, lastPlan: null, lastText: '', played: 0, endT: 0 };
-  // ?vc=2: 음성이 되는 컴퓨터에서도 조각으로 (만든 소리를 미리 들어 볼 때)
-  if (params.get('vc') === '1' || params.get('vc') === '2') store.set('voiceClips', params.get('vc'));
-  else if (params.get('vc') === '0') store.set('voiceClips', null);
-  const vcOn = () => store.get('voiceClips') === '1' || store.get('voiceClips') === '2';
+  // 기본 켬 (음성이 안 되는 브라우저에서만 조각). ?vc=0 끔 · ?vc=1 기본으로 · ?vc=2 음성이 되는 컴퓨터에서도 조각 (만든 소리 미리 듣기)
+  if (params.get('vc') === '0' || params.get('vc') === '2') store.set('voiceClips', params.get('vc'));
+  else if (params.get('vc') === '1') store.set('voiceClips', null);
+  // 시험 페이지는 시험이 켤 때만 ('1'·'2') — 다른 음성 시험(S117 가짜 음성 엔진 등)이 그대로 speechSynthesis 를 보게
+  const vcOn = () => { const v = store.get('voiceClips'); return testPage ? v === '1' || v === '2' : v !== '0'; };
   // 말 문장 → 조각 열쇠 (빈칸은 무시, 쉼표·마침표는 쉼). 모자라면 null
   const vcNorm = (t) => String(t).replace(/[\s,.]+/g, '');
   function vcLoadList() {
@@ -719,6 +723,7 @@
     vc.listP = (vc.fetch || fetch)('data/voice_clips.json?v=' + APP_VERSION).then((r) => (r.ok ? r.json() : null)).then((j) => {
       if (!j || !Array.isArray(j.clips)) { vc.listP = null; return null; }
       vc.list = new Map(j.clips.map((c) => [c.id, c.text]));
+      vc.ver = String(j.v || 1) + '-' + String(j.date || '').replace(/[^0-9]/g, '') + '-' + String(j.audio || '');   // 소리 묶음 판 (앱 판과 따로)
       // 같은 글이 둘이면 앞의 것 (예: '300미터 앞' 은 거리 조각 하나)
       const keys = new Map();
       for (const c of j.clips) { const k = vcNorm(c.text); if (k && !keys.has(k)) keys.set(k, c.id); }
@@ -778,23 +783,52 @@
     }
     return plan.length && plan.every((p) => vc.list.has(p.id)) ? plan : null;
   }
+  // 조각 소리: 한 번 받으면 Cache Storage(조각 묶음 판마다 'tnc-voice-<판>')에 두고 다음부터는 거기서 (터널·통신 끊김에도).
+  //   풀어 둔 소리(AudioBuffer)는 최근 VC_KEEP 개만 메모리에 (전부 풀면 48kHz 에서 약 50MB)
+  const VC_KEEP = 140;
+  const vcUrl = (id) => vc.base + id + '.mp3?v=' + (vc.ver || APP_VERSION);
+  function vcCache() {
+    if (vc.noCache || testPage || !window.caches || !vc.ver) return Promise.resolve(null);
+    if (!vc.cacheP) {
+      const name = 'tnc-voice-' + vc.ver;
+      vc.cacheP = caches.keys().then((ks) => Promise.all(ks.filter((k) => /^tnc-voice-/.test(k) && k !== name).map((k) => caches.delete(k))))
+        .then(() => caches.open(name)).catch(() => null);
+    }
+    return vc.cacheP;
+  }
+  function vcBytes(id) {
+    const url = vcUrl(id);
+    return vcCache().then((c) => (c ? c.match(url) : null)).then((hit) => {
+      if (hit) return hit.arrayBuffer();
+      return (vc.fetch || fetch)(url).then((r) => {
+        if (!r.ok) return null;
+        vcCache().then((c) => { if (c) c.put(url, r.clone()).catch(() => {}); });
+        return r.arrayBuffer();
+      });
+    }).catch(() => null);
+  }
   function vcBuf(id) {
-    if (vc.bufs.has(id)) return Promise.resolve(vc.bufs.get(id));
+    if (vc.bufs.has(id)) { const b = vc.bufs.get(id); vc.bufs.delete(id); vc.bufs.set(id, b); return Promise.resolve(b); }   // 최근 쓴 것을 뒤로
     if (vc.loading.has(id)) return vc.loading.get(id);
-    const p = (vc.fetch || fetch)(vc.base + id + '.mp3?v=' + APP_VERSION).then((r) => (r.ok ? r.arrayBuffer() : null))
+    const p = vcBytes(id)
       .then((ab) => (ab ? (vc.decode ? vc.decode(ab, id) : new Promise((res, rej) => actx.decodeAudioData(ab, res, rej))) : null))
-      .then((b) => { vc.loading.delete(id); if (b) vc.bufs.set(id, b); return b || null; })
+      .then((b) => {
+        vc.loading.delete(id);
+        if (b) { vc.bufs.set(id, b); while (vc.bufs.size > VC_KEEP) vc.bufs.delete(vc.bufs.keys().next().value); }
+        return b || null;
+      })
       .catch(() => { vc.loading.delete(id); return null; });
     vc.loading.set(id, p);
     return p;
   }
-  // 처음 쓸 때 나머지 조각도 미리 받아 풀어 둔다 (한 번에 4개씩)
+  // 처음 쓸 때 나머지 조각도 미리 받아 Cache Storage 에 둔다 (한 번에 4개씩, 풀지는 않음 — 카메라·제한·거리만 미리 풀어 둔다)
   function vcPreload() {
     if (vc.preload || !vc.list || !actx) return;
     vc.preload = true;
     const ids = [...vc.list.keys()];
+    const hot = new Set(ids.filter((id) => /^(c_|lim_|limq_|d_|f_)/.test(id)));
     let k = 0;
-    const next = () => { if (k >= ids.length) return; const id = ids[k++]; vcBuf(id).then(next, next); };
+    const next = () => { if (k >= ids.length) return; const id = ids[k++]; (hot.has(id) ? vcBuf(id) : vcBytes(id)).then(next, next); };
     for (let n = 0; n < 4; n++) next();
   }
   function vcStop() {
@@ -11793,7 +11827,7 @@
   updateSoundPill();
   renderHupBtn();
   showChrome(); // 처음 3초 동안 버튼을 보여 준 뒤 숨긴다
-  setTimeout(() => report('session', { msg: 'open', tts: ttsStatus(), debug: params.has('debug'), autoplay: autoplayState, resumed: !!live.pending || nav.active, fbSupport: fbSupport(), scheme: (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light', night: nightMode() }), 6000); // 지도·GPS 상태가 잡힌 뒤 접속 기록
+  setTimeout(() => report('session', { msg: 'open', tts: ttsStatus(), vc: (() => { try { return vcUse(); } catch (e) { return null; } })(), debug: params.has('debug'), autoplay: autoplayState, resumed: !!live.pending || nav.active, fbSupport: fbSupport(), scheme: (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light', night: nightMode() }), 6000); // 지도·GPS 상태가 잡힌 뒤 접속 기록
   render();
   tickClock();
   setInterval(tickClock, 1000);

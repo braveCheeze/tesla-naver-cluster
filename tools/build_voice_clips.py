@@ -10,6 +10,7 @@
 """
 import json
 import os
+import re
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, 'data', 'voice_clips.json')
@@ -29,12 +30,24 @@ def ko_num(n):
     return ''.join(parts)
 
 
+NATIVE_HOUR = ['', '한', '두', '세', '네', '다섯', '여섯', '일곱', '여덟', '아홉', '열', '열한', '열두']
+
+
+def reading(text):
+    """소리 만들 때 읽을 글: 숫자를 한글로 (g2pkk 는 '미터'·'시' 같은 단위 앞 숫자만 바꾸고 '제한속도 110입니다'의 110 은
+    '일일영'으로 읽었다). 시계 방향은 고유어 ('12시 방향' → '열두 시 방향'), 나머지는 한자어 ('110' → '백십')"""
+    t = re.sub(r'(\d+)시 방향', lambda m: NATIVE_HOUR[int(m.group(1))] + ' 시 방향', text)
+    return re.sub(r'\d+', lambda m: ko_num(int(m.group(0))), t)
+
+
 clips = []
 
 
 def add(cid, text, group, note=''):
     assert all(c['id'] != cid for c in clips), cid
     e = {'id': cid, 'text': text, 'g': group}
+    if re.search(r'\d', text):
+        e['say'] = reading(text)   # 소리 만들 때만 (앱은 text 로 맞춘다)
     if note:
         e['note'] = note
     clips.append(e)
@@ -125,7 +138,8 @@ for cid, t in (('u_km', '킬로미터'), ('u_m', '미터'), ('u_min', '분'), ('
     add(cid, t, 'unit')
 
 doc = {
-    'v': 1, 'date': '2026-11-28', 'count': len(clips), 'chars': sum(len(c['text']) for c in clips),
+    'v': 1, 'date': '2026-11-28', 'audio': 'melotts-kr-s1.1-1',   # 소리 묶음 판: 소리를 다시 만들면 올린다 (앱 Cache Storage 이름)
+    'count': len(clips), 'chars': sum(len(c['text']) for c in clips),
     'note': "앱 음성 조각 (app.js vcPlan 이 말 문장을 이 조각들로 바꾼다). 이름(장소·방면·목적지·톨게이트 이름)은 음성에서 뺀다. "
             "소리 파일: audio/voice/<id>.* (MeloTTS 로 이 PC 에서 한 번 만듦). 숫자 조각은 한글 읽기.",
     'clips': clips,

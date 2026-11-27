@@ -8523,7 +8523,7 @@
       fail.add('lim_60'); vc.bufs.delete('lim_60');
       r.play.missing = await run(t.camSpeech([37.5, 127, 60, 1, 0, 0, 0, -1, 5, 1, 0], 500));
       r.play.uncovered = await run('알 수 없는 문장입니다');
-      vc.force = false; t.store.set('voiceClips', null);
+      vc.force = false; t.store.set('voiceClips', '0');
       r.off = { use: t.vcUse() };
     } finally {
       vc.fetch = keep.fetch; vc.decode = keep.decode; vc.force = keep.force; vc.bufs.clear(); vc.loading.clear();
