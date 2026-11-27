@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-273'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-274'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -3163,7 +3163,7 @@
   //   CAM_DIR_TOL 안이면 내 카메라. 지하차도·고가로 교차로를 넘어가는 곳의 지상 카메라는 뺀다(camLevelOk).
   // 없앤 것: 한 방향 8m·양방향 10m 왼쪽 규칙, 넓은 길 40m·같은 이름 45m 허용, 11-14 '교차로는 양방향' 변환.
   // 허용 거리 40m → 15m (요청 '신호 25m만 더 오차범위 줄이고'. 경로선과 카메라 차로 위 점 사이 거리)
-  const CAM_TOL = 15, CAM_DIR_TOL = 50;
+  const CAM_TOL = 15, CAM_DIR_TOL = 50, ROUTE_DIR_TOL = 35;   // v274: 길안내 경로 판정은 35°
   const camPt = (c) => ({ lat: c.sl != null ? c.sl : c[0], lng: c.sg != null ? c.sg : c[1] });
   const camHasDir = (c) => c.eb != null && c.eb >= 0 && !c.e2;
   // v237 (운전자 '그런 건 전국에 다 해당되는 건 알지?' — 교차로 카메라는 그 접근로를 달린 차에만): 양방향 카메라(e2)도 찍는 길의 축이 있다
@@ -3226,7 +3226,7 @@
   }
 
   // 길안내 경로를 카메라 판단에 믿고 써도 되는지: 경로 위이거나, 벗어난 지 2.5초가 안 됐을 때
-  const ROUTE_OFF_MS = 2500;
+  const ROUTE_OFF_MS = 2500, OFF_ROUTE_FREE_MS = 15000;
   function routeTrusted() {
     if (!(nav.active && nav.pts)) return false;
     if (nav.onRoute) return true;
@@ -3244,6 +3244,10 @@
       // v165 (2차 점검): 다시 찾은 경로는 차보다 최대 60m 앞에서 시작한다 — 그 사이 카메라는 새 경로에도 없으니 진행 방향으로 본다
       return !!nav.rerouted && nav.along < 80 && freeAhead(f, c, keep);
     }
+    // v274 (운전자 '설정한 길안내가 있는데 한번씩 과속단속이 다른 일반길·밑길로 튀어'): 길안내 중 경로를 잠깐 못 믿는 때(출발해 경로에 오르기 전,
+    //   재탐색·GPS 흔들림)는 직선 판정(freeAhead)으로 새 카메라를 잡지 않는다 — 보관함 주행 다시 돌리기에서 경로 290m 밖 신고 지점·130m 밖
+    //   30 카메라가 이 틈에 떴다. 이미 경로로 잡은 카메라는 그대로 둔다. 경로 밖이 OFF_ROUTE_FREE_MS 넘게 이어지면 다른 길로 들어선 것으로 본다
+    if (nav.active && nav.pts && !(nav.offAt && f.t - nav.offAt >= OFF_ROUTE_FREE_MS)) return !!keep && camOnRouteAhead(c);
     return freeAhead(f, c, keep);
   }
   // 길안내 없이: 진행 방향 앞(굽은 길이면 휘는 대로 예측한 앞길)의 내 도로 카메라
@@ -3441,8 +3445,48 @@
     // 안내 문구의 '둔촌오륜역'과 맞아 남남서(196°)로 곧게 지나는 경로에서 떴다. 글로 가르는 것은 같은 길의 앞·뒤(0°·180°)를 가를 때만 —
     // 카메라가 경로를 가로지르는 방향(60~120°)이면 다른 접근로이니 기하 판단을 따른다
     if (arrow > 0 && camHasDir(c)) { const cx = angleDiff(c.eb, bearing(a, b)); if (cx > 60 && cx < 120) arrow = 0; }
-    if (arrow <= 0 && !camDirOk(c, bearing(a, b)) && !camDirOk(c, routeBearingAt(at - 30, at)) && !camDirOk(c, routeBearingAt(at, at + 30))) return null;
+    // v274 (운전자 '내가 가던 길이 어떤 길인지는 방향이나 내비로 추측이 가능하지 않아'): 경로 판정은 찍는 방향이 경로 방향과 35° 안이어야 한다
+    //   (예전 50°, 꺾는 곳 앞뒤 30m 방향도 35°). 설치장소 글 'A→B' 가 내 방향이라고 나와도, 같은 길의 이웃 카메라들(같은 글은 같은 방향,
+    //   뒤집은 글 'B→A' 는 반대 방향)이 이 카메라의 찍는 방향을 받쳐 주면 자료가 맞는 것이니 글 판정을 쓰지 않는다 — 보관함 주행에서
+    //   아암대로 #23244('정비단지입구3→송도3교4' 171°, 900m 남쪽 #23148 '송도3교4→정비단지입구3' 350°)·용구대로 #20962 를 반대 방향(179°)으로
+    //   지나며 경고했다. 하남 창우로 J2735(#26002 '하남ic→팔당대교' 225°)는 이웃 #25860 같은 글 16°·#25873 뒤집은 글 203° 와 어긋나니
+    //   찍는 방향 자료가 거꾸로이고, 글이 이긴다(2026-11-14 놓침, S47)
+    if (arrow > 0 && camHasDir(c) && arrowDirBacked(c) > 0) arrow = 0;
+    const dirOk = (brg) => { const ds = camDirs(c); return !ds || brg == null || ds.some((d) => angleDiff(d, brg) <= ROUTE_DIR_TOL); };
+    //   차로 위 점이 경로 통로(15m) 밖인데 원래 좌표로 들어온 카메라는 꺾는 곳 앞뒤 방향을 보지 않는다 — 그 자리 경로 방향과 35° 안이어야 한다
+    //   (보관함 다시 돌리기: 교차로 한가운데 원래 좌표 + 가로지르는 길 정지선의 차로 위 점(40m 밖) 카메라 #23586·#3564·#25184 가 꺾은 뒤 방향으로 떴다)
+    const viaRaw = pr.dist > CAM_TOL;
+    if (arrow <= 0 && !dirOk(bearing(a, b)) && (viaRaw || (!dirOk(routeBearingAt(at - 30, at)) && !dirOk(routeBearingAt(at, at + 30))))) return null;
+    //   그리고 그 차로 위 점(정지선)이 경로에서 30m 안이고, 그 점 가까운 경로 방향과도 35° 안이어야 한다 (가로지르는 길 정지선이면 아니다)
+    if (viaRaw) {
+      const ln = routeSegNear(camPt(c), 2 * CAM_TOL);
+      if (!ln || (arrow <= 0 && !dirOk(bearing(nav.pts[ln.i], nav.pts[ln.i + 1])))) return null;
+    }
     return at;
+  }
+  // v274: 'A→B' 글을 단 한 방향 카메라의 찍는 방향(eb)을 같은 길 이웃 카메라가 받쳐 주는지. 1.5km 안에서 같은 글('A→B')을 단 카메라는
+  //   방향이 60° 안이면 +1·120° 넘게 다르면 −1, 뒤집은 글('B→A')은 그 반대. 합이 + 면 자료가 맞다(1), − 면 거꾸로 같다(−1), 이웃이 없으면 0
+  const arrowDirMemo = new WeakMap();
+  function arrowDirBacked(c) {
+    if (arrowDirMemo.has(c)) return arrowDirMemo.get(c);
+    const ar = cams.arrows && cams.arrows.get(c);
+    let v = 0;
+    if (ar && camHasDir(c)) {
+      for (const n of camsNear(c[0], c[1], 1500)) {
+        const o = n.c;
+        if (o === c || !camHasDir(o)) continue;
+        const oa = cams.arrows.get(o);
+        if (!oa) continue;
+        const same = oa[0] === ar[0] && oa[1] === ar[1], rev = oa[0] === ar[1] && oa[1] === ar[0];
+        if (!same && !rev) continue;
+        const dd = angleDiff(c.eb, o.eb);
+        if (dd <= 60) v += same ? 1 : -1;
+        else if (dd >= 120) v += same ? -1 : 1;
+      }
+    }
+    v = Math.sign(v);
+    arrowDirMemo.set(c, v);
+    return v;
   }
   // 경로 위 카메라 목록: 카메라 행 → 경로 위 거리들, 그리고 거리순 목록.
   // 긴 경로를 한 번에 훑으면 그 순간 화면이 멈칫하므로, 차 앞 21km 까지만 찾아 두고 달리면서 조금씩 늘린다.

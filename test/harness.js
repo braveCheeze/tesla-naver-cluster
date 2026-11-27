@@ -2960,6 +2960,7 @@
     { id: 'S172', name: "S172 junction-picture lane labels like Naver (v267–v268, parent session side by side with Naver's 330 m pictures): one label size per picture (two-line labels 86% of it), the label row low in the picture with no label below the picture's bottom edge, no two labels overlapping (2 px apart at most), labels centred inside the picture; through lanes say what Naver says at the checked spots — 서하남IC '구리 대전' (board still '구리'), 판교IC '대전 부산'", fn: s172 },
     { id: 'S173', name: "S173 chips do not blink (v269, driver on the road: '오른쪽 휴게소가 되게 깜빡깜빡'): driving past the 5 km rest-area and 1 km next-turn thresholds at 1 fix a second with ±15 m GPS noise, each chip changes between chip and card row at most once per crossing, the same chip element stays while its text counts down (no rebuild, the enter animation runs once), and a rest area that loses the highway check for a few fixes stays shown", fn: s173 },
     { id: 'S174', name: "S174 section start passed (v271, driver: '구간 단속 시작할 때 통과 말고 시작으로'): 30 m before the 수도권제1순환 100 section start (#22907, route from 서울TG) the card shows the distance, right after it shows '시작' instead of '통과' with the section card open, it stays to about 60 m like Naver's start badge (+55 m shown, +97 m gone), and is gone by 80 m; the section card stays", fn: s174 },
+    { id: 'S175', name: "S175 route-first camera matching while guiding (v274, driver: '설정한 길안내가 있는데 한번씩 과속단속이 다른 일반길·밑길로 튀어'): (a) a place text 'A→B' that agrees with the guidance no longer lets an opposite-direction camera through when neighbouring cameras with the same or reversed text back its stored direction (아암대로 #23244 171°, #23148 '송도3교4→정비단지입구3' 350° 900 m south; driven northbound it stays quiet, southbound it still alerts — a camera whose neighbours contradict its direction still follows the text, S47 하남 J2735); (b) briefly off the route (GPS drift, rerouting), a camera on the road the car is really on is not picked by straight-line matching for 15 s, after 15 s off the route it is (탄천 80 #22931 with a route 150 m away)", fn: s175 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -8275,6 +8276,54 @@
       b.calls === 4 && b.active && b.same && b.pill && !b.redToast && b.panel && b.turn && b.log.join(',') === 'failed:3' && b.moved &&
       !c.pill && c.active &&
       d.bad400 === 1 && d.naverNo === 1 && d.traffic === 1 && d.upstream.every(Boolean) && !d.pillAfterEnd;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S175: 길안내 중 경로 먼저 (v274) — 공개 카메라 좌표 + 합성 경로만 (운전자 궤적은 쓰지 않는다)
+  async function s175() {
+    const t = T(), r = {};
+    const mk = (pts, guide, name) => {
+      const path = pts.map((p) => [round6(p.lng), round6(p.lat)]);
+      const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0]; for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+      const total = cum[cum.length - 1];
+      const route = { distance: r0(total), duration: r0(total / 15 * 1000), tollFare: 0, fuelPrice: 0, path,
+        guide: guide(P.length - 1, total), sections: [{ i: 0, n: P.length, name, speed: 60, cong: 1 }] };
+      return { route, P, cum, total, dest: { name: '시험', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    };
+    try {
+      await waitFor(() => t.cams.loaded, 10000, 100);
+      // (a) 아암대로 #23244 (60, 찍는 방향 171°, 설치장소 '정비단지입구3→송도3교4'). 차로 위 점을 지나는 곧은 경로
+      const c1 = t.cams.rows[23244], P1 = { lat: c1.sl, lng: c1.sg }, A1 = { lat: c1[0], lng: c1[1] };
+      const run1 = async (h) => {
+        const from = dest(P1, (h + 180) % 360, 900), pts = []; for (let k = 0; k <= 12; k++) pts.push(dest(from, h, 125 * k));
+        const R = mk(pts, (last, total) => [{ i: last, t: 88, s: '송도3교4에서 목적지', d: r0(total), ms: 60000 }], '아암대로');
+        await resetApp(); softReset(); await planAndStart(R);
+        let hit = false;
+        for (let s2 = 0; s2 <= 1100; s2 += 20) { const a = pointAt(R, s2); feed(a.p, 15, a.h); const tg = t.camState.target; if (tg && sameCam(tg.c, A1)) hit = true; }
+        t.endNav();
+        return hit;
+      };
+      r.a = { north: await run1(351), south: await run1(171) };
+      // (b) 탄천 80 남행 #22931 (176°). 경로는 150m 서쪽에 나란히, 차는 카메라 길(차로 위 점)을 남쪽으로 — 경로 밖
+      const c2 = t.cams.rows[22931], P2 = { lat: c2.sl, lng: c2.sg }, A2 = { lat: c2[0], lng: c2[1] };
+      const rs = dest(dest(P2, 0, 1500), 270, 150), pts2 = []; for (let k = 0; k <= 12; k++) pts2.push(dest(rs, 176, 250 * k));
+      const R2 = mk(pts2, (last, total) => [{ i: last, t: 88, s: '목적지', d: r0(total), ms: 60000 }], '시험로');
+      await resetApp(); softReset(); await planAndStart(R2);
+      const car0 = dest(P2, 356, 560);
+      let firstAt = null;
+      for (let k = 0; k <= 26; k++) {   // 1초에 한 번, 시속 72km
+        feed(dest(car0, 176, 20 * k), 20, 176);
+        const tg = t.camState.target;
+        if (firstAt === null && tg && sameCam(tg.c, A2)) firstAt = k;
+      }
+      r.b = { firstAt, offAt: t.nav.offAt ? 1 : 0 };
+      t.endNav();
+    } finally {
+      await resetApp(); softReset();
+    }
+    const { a = {}, b = {} } = r;
+    const ok = a.north === false && a.south === true && b.firstAt !== null && b.firstAt >= 15;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
