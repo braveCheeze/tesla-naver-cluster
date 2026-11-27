@@ -2877,7 +2877,7 @@
     { id: 'S105', name: "S105 after the v165 sweep (v167): rows passed together are judged by lane points — a point 50 is not passed with a signal 50 whose stop line is 51 m earlier (보개원삼로), a 60 sharing the 50's lane point does not show after it (복합물류로); with no route section name an elevated/underground camera on a fast road parallel to the route stays (a street-named section still drops it)", fn: s105 },
     { id: 'S104', name: "S104 camera pick, 2nd audit (v165): road names match across notation (분당-수서간고속화도로 = 분당수서로, 동부간선도로 = 동부간선로; 중앙로 ≠ 중앙고속도로); a route within 15 m of the raw position (stop-line-moved lane point 18.8 m) or within 20 m with the same road name keeps the camera (25 m still dropped, S14); expressway booths typed as ordinary roads stay on an expressway route; an entry-only highway span ends where the section name becomes a street; elevated/underground cameras stay on fast roads; opposite rows aren't passed; curve tangent", fn: s104 },
     { id: 'S103', name: "S103 tunnel cameras (v163 audit 8): on the route, a camera 3.6 km inside a tunnel is alerted from 300 m before the entrance (beyond the 3 km scan), and with GPS lost inside, a 1 s dead-reckoning tick along the route at the last speed counts the distance down and passes it", fn: s103 },
-    { id: 'S102', name: "S102 report outbox & camera data retry (v163 audit 9/10): a '놓침' the server did not take reads '저장함' and stays queued, is resent later, '✓ 보냄' only on 200; with no camera data a '단속 카메라 자료 없음 · 다시 받는 중' pill shows while driving and goes once the data loads again", fn: s102 },
+    { id: 'S102', name: "S102 report outbox & camera data retry (v163 audit 9/10): a '놓침' the server did not take reads '저장함' and stays queued, is resent later, '✓ 보냄' only on 200; v278: a qid the caller gives (a feedback and its 'feedback audio' upload record) is kept, the outbox uses its own key so both are sent; with no camera data a '단속 카메라 자료 없음 · 다시 받는 중' pill shows while driving and goes once the data loads again", fn: s102 },
     { id: 'S100', name: "S100 road colour guide lines (v162, 운전자 '녹색 분홍색 안내선'): within 1 km of a highway fork whose painted line the route really follows, the card shows '분홍색 유도선 따라가기' in that colour; the main line, both branches or neither → nothing; gone after the branch end; real data keeps 경부 북행 신갈분기점 (녹색 인천·분홍 원주) but drops 하행 (좌우가 실제 갈래와 반대); real routes 서울TG→판교분기점(구리) and 팔당→하남분기점(판교·서하남) show 분홍색; v245: the colour row and its split picture are never drawn (driver's hard rule) — which colour line is followed is still worked out (data only)", fn: s100 },
     { id: 'S99', name: "S99 '틀림' (v161 audit + driver 'wrong may be a wrong limit'): a press within 1 s of the card changing is ignored; one press keeps the camera dimmed with limit '?' and no sound (miss button still there); a second press on another day hides it, except child/elder zone cameras; one-time flags expire after 14 days; settings list undoes them", fn: s99 },
     { id: 'S98', name: "S98 speed sections (v161 audit): a section end that is the next section's start (중부내륙 110) closes and reopens; a new start 56 m before the old end (세종포천/구리포천) is not closed by that end; a stale open section (50) is replaced at the next start (서해안 100); section lengths 1,000× too big are scaled back, 0 = unknown", fn: s98 },
@@ -5144,6 +5144,13 @@
       btn.click();
       await waitFor(() => !btn.classList.contains('sending'), 2000, 20);
       r.b.label = btn.textContent; r.b.saved = btn.classList.contains('saved');
+      // (d) v278: 부른 쪽이 준 qid 는 그대로 (의견과 그 녹음 올림이 같은 qid — 관리 화면이 짝을 짓는다). 보낼 함 번호(oq)는 따로라 둘 다 간다
+      const bodies = [];
+      ob.post = async (b) => { bodies.push(b); return { ok: true }; };
+      const s1 = await t.reportSure('feedback', { text: '(녹음 3초)', how: 'audio', qid: 'q-test-1', audio: 'q-test-1' });
+      const s2 = await t.reportSure('feedback', { msg: 'feedback audio', qid: 'q-test-1', audio: 'q-test-1' });
+      const s3 = await t.reportSure('warn', { msg: 'x' });
+      r.d = { sent: [s1, s2, s3], qids: bodies.map((b) => b.qid), oqs: new Set(bodies.map((b) => b.oq)).size, own: !!bodies[2] && bodies[2].qid === bodies[2].oq, box: JSON.parse(t.store.get('outbox') || '[]').length };
       // (c) 자료 못 받음 → 표시 → 다시 받음 (놓침으로 저장된 신고 지점은 먼저 되돌려 행 수를 맞춘다)
       t.mySpots.length = 0; keepSpots.forEach((x) => t.mySpots.push(x)); t.applyUserSpots();
       keep = { loaded: t.cams.loaded, mobile: t.cams.mobile, n: t.cams.rows.length };
@@ -5169,7 +5176,7 @@
       await resetApp(); softReset();
     }
     const ok = r.a.label === '저장함' && r.a.saved && r.a.box === 1 && r.b.flush === true && r.b.box === 0 && r.b.posted === 1 &&
-      r.b.label === '✓ 보냄' && !r.b.saved && r.c.failed && /자료 없음/.test(r.c.pill) && r.c.timer &&
+      r.b.label === '✓ 보냄' && !r.b.saved && !!r.d && r.d.sent.every((x) => x === true) && r.d.qids[0] === 'q-test-1' && r.d.qids[1] === 'q-test-1' && r.d.oqs === 3 && r.d.own && r.d.box === 0 && r.c.failed && /자료 없음/.test(r.c.pill) && r.c.timer &&
       !r.c.after.failed && r.c.after.loaded && r.c.after.pill === '' && r.c.after.rows && r.c.after.tries === 0;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
@@ -7503,7 +7510,7 @@
       const q1 = t.fbA.load();
       const ev = t.fb.last || {};
       r.f.queued = { n: q1.length, mime: q1[0] && q1[0].mime, b64: !!(q1[0] && q1[0].b64 && q1[0].b64.length > 100), sec: q1[0] && q1[0].sec, x: q1[0] && q1[0].x, closed: !t.fbP.open, toast: text('#toast'), sent: !!t.fb.lastAudio,
-        ev: { text: ev.text, how: ev.how, qid: ev.qid === (q1[0] && q1[0].qid), navOn: ev.navOn, pos: ev.lat != null } };
+        ev: { text: ev.text, how: ev.how, qid: ev.qid === (q1[0] && q1[0].qid), audio: !!ev.audio && ev.audio === (q1[0] && q1[0].qid), navOn: ev.navOn, pos: ev.lat != null } };
       fail = false;
       const fr = await t.fbAudioFlush();
       const la = t.fb.lastAudio || {};
@@ -7550,7 +7557,7 @@
       c.text === '[카메라 이상]' && c.preset === 'cam' && c.navOn === true && c.cam === 60 && c.hasPos && c.closed && c.toast === '보냈어요' &&
       b.open && b.made === 0 && !d.open && !d.sent && e.opened && !e.open &&
       f.recShown && f.recording && q.n === 1 && /^audio\//.test(q.mime || '') && q.b64 && q.sec >= 1 && q.x === 1 && q.closed && q.toast === '저장했어요 · 연결되면 보내요' && !q.sent &&
-      q.ev && /^\(녹음 [\d.]+초\)$/.test(q.ev.text || '') && q.ev.how === 'audio' && q.ev.qid && q.ev.navOn === true && q.ev.pos &&
+      q.ev && /^\(녹음 [\d.]+초\)$/.test(q.ev.text || '') && q.ev.how === 'audio' && q.ev.qid && q.ev.audio && q.ev.navOn === true && q.ev.pos &&
       fl.r === true && fl.left === 0 && fl.audio === 'A2' && fl.qid && fl.msg === 'feedback audio' && fl.via === 'fb' && !fl.pos &&
       g.toast === '마이크 권한이 꺼져 있어요 · 버튼으로 보내 주세요' && g.recHidden && g.presets === 5 && g.open;
     return { pass: !!ok, detail: JSON.stringify(r) };

@@ -133,7 +133,8 @@
         let ok = false;
         try { const r = await outbox.post(body); ok = !!(r && r.ok); } catch (e) { ok = false; }
         if (!ok) { last = false; break; }
-        outbox.save(outbox.load().filter((x) => x.qid !== body.qid));
+        const k = body.oq || body.qid;
+        outbox.save(outbox.load().filter((x) => (x.oq || x.qid) !== k));
         last = true;
       }
     } finally { outbox.busy = false; }
@@ -143,10 +144,13 @@
   async function reportSure(type, data) {
     if (sendOff(outbox.inTest)) return null;
     const body = eventBody(type, data);
-    body.qid = tele.sid + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    // v278 (관리 화면: 녹음 올림 기록이 의견과 다른 qid 를 받아 짝이 안 맞았다): 보낼 함 번호(oq)는 따로 두고, 부른 쪽이 qid 를 주면
+    //   (의견과 그 녹음 올림은 같은 qid) 그대로 둔다. 없으면 예전처럼 보낼 함 번호가 qid
+    body.oq = tele.sid + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    if (!body.qid) body.qid = body.oq;
     const a = outbox.load(); a.push(body); outbox.save(a);
     const r = await outboxFlush();
-    return outbox.load().some((x) => x.qid === body.qid) ? false : r !== false;
+    return outbox.load().some((x) => (x.oq || x.qid) === body.oq) ? false : r !== false;
   }
   window.addEventListener('online', () => { outboxFlush(); });
   function report(type, data) {
@@ -11127,7 +11131,8 @@
     if (!b64) { fbUi(''); toast('녹음을 저장하지 못했어요 · 버튼으로 보내 주세요', 'warn', 3500); return; }
     const qid = tele.sid + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
     // 의견(언제·어디·카드, qid)은 바로 보낼 함으로 — 녹음이 아직 못 올라가도 운영자가 의견이 있다는 것을 안다. 녹음은 같은 qid 로 따로 올린다
-    const payload = Object.assign({}, fbP.snap || fbPayload(''), { text: '(녹음 ' + sec + '초)', how: 'audio', sec, mime: blob.type, qid, ms: Date.now() - fb.t0 });
+    // v278: 녹음 번호(audio)도 의견에 — 서버는 녹음을 이 qid 로 둔다(/fb?id=qid)
+    const payload = Object.assign({}, fbP.snap || fbPayload(''), { text: '(녹음 ' + sec + '초)', how: 'audio', sec, mime: blob.type, qid, audio: qid, ms: Date.now() - fb.t0 });
     const item = { qid, at: Date.now(), v: APP_VERSION, sid: tele.sid, mime: blob.type || 'audio/webm', sec, b64 };
     if (IS_TEST_PAGE) item.x = 1;
     const q = fbA.load();
