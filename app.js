@@ -598,6 +598,8 @@
   const camVoice = { text: '', i: null, at: 0, done: true, retried: false };
   function speak(text, urgent, onFail, onEnd, force) {
     if (!prefs.voice || !audioUnlocked) return false;
+    if (vcUse()) return vcSpeak(text, urgent, onFail, onEnd);   // v278: 음성이 안 되는 브라우저(테슬라)는 녹음 조각
+    text = unmark(text);
     if (!hasTTS || (tts.broken && !force)) { ttsNotice(); return false; }   // force: 소리 테스트는 늘 말해 본다
     // 한국어 음성이 없는 기기(다른 말 음성만 있음)에서 외국어 음성으로 읽으면 알아들을 수 없으므로 경고음으로 대신한다.
     // v176: 음성 목록이 비어 있으면(테슬라) 막지 않고 기본 음성으로 말해 본다
@@ -680,7 +682,7 @@
     camVoice.text = text; camVoice.i = tg.i; camVoice.at = Date.now(); camVoice.done = false; camVoice.retried = false;
     const spoke = speak(text, false, () => beep(beeps || 1), () => { camVoice.done = true; });
     if (!spoke) camVoice.done = true;
-    logAlert(spoke ? 'voice' : 'beep', text);
+    logAlert(spoke ? 'voice' : 'beep', unmark(text));
     if (!spoke) beep(beeps || 1);
   }
   // 최근 안내 기록 (진단·테스트용): 어떤 음성/경고음이 언제 나갔는지
@@ -691,9 +693,147 @@
   }
   function say(text, beeps, urgent) {
     const spoke = speak(text, urgent, () => beep(beeps || 1));
-    logAlert(spoke ? 'voice' : 'beep', text);
+    logAlert(spoke ? 'voice' : 'beep', unmark(text));
     if (!spoke) beep(beeps || 1);
   }
+
+  // ---------- v278 음성 조각 (운전자 '걍 MeloTTS로 다 가자', 기능 깃발 — 기본 끔) ----------
+  // 테슬라 브라우저에는 음성 엔진이 없다 (/events 7일: 리눅스 UA probe 97건 모두 목소리 0개 · speak() → synthesis-failed, 운전자 차도 14건 모두).
+  // 그래서 말 문장은 지금 함수들이 만드는 그대로 두고, 그 문장을 미리 녹음한 조각(data/voice_clips.json → audio/voice/<id>.mp3,
+  // MeloTTS 로 이 PC 에서 한 번 만든 소리)으로 나눠 경고음과 같은 AudioContext 로 잇달아 튼다. 이름(장소·방면·목적지·톨게이트 이름)은 NM() 으로
+  // 표시해 두고 조각 말에서는 뺀다(운전자 선택 ①, 화면에는 그대로). 조각이 모자라거나 못 받으면 지금처럼 경고음.
+  // 음성이 되는 브라우저(윈도·아이폰 — 한국어 목소리가 있음)는 그대로 speechSynthesis. 깃발: ?vc=1 (켬) · ?vc=0 (끔), localStorage tnc.voiceClips
+  const NM_MARK = '⁣';
+  const NM = (s) => (s ? NM_MARK + s + NM_MARK : '');
+  const unmark = (s) => String(s || '').split(NM_MARK).join('');
+  const vc = { list: null, keys: null, bufs: new Map(), loading: new Map(), sources: [], misses: [], decode: null, fetch: null,
+    base: APP_BASE + 'audio/voice/', listP: null, preload: false, lastPlan: null, lastText: '', played: 0, endT: 0 };
+  // ?vc=2: 음성이 되는 컴퓨터에서도 조각으로 (만든 소리를 미리 들어 볼 때)
+  if (params.get('vc') === '1' || params.get('vc') === '2') store.set('voiceClips', params.get('vc'));
+  else if (params.get('vc') === '0') store.set('voiceClips', null);
+  const vcOn = () => store.get('voiceClips') === '1' || store.get('voiceClips') === '2';
+  // 말 문장 → 조각 열쇠 (빈칸은 무시, 쉼표·마침표는 쉼). 모자라면 null
+  const vcNorm = (t) => String(t).replace(/[\s,.]+/g, '');
+  function vcLoadList() {
+    if (vc.list || vc.listP) return vc.listP;
+    vc.listP = (vc.fetch || fetch)('data/voice_clips.json?v=' + APP_VERSION).then((r) => (r.ok ? r.json() : null)).then((j) => {
+      if (!j || !Array.isArray(j.clips)) { vc.listP = null; return null; }
+      vc.list = new Map(j.clips.map((c) => [c.id, c.text]));
+      // 같은 글이 둘이면 앞의 것 (예: '300미터 앞' 은 거리 조각 하나)
+      const keys = new Map();
+      for (const c of j.clips) { const k = vcNorm(c.text); if (k && !keys.has(k)) keys.set(k, c.id); }
+      vc.keys = keys;
+      vc.maxLen = Math.max(...[...keys.keys()].map((k) => k.length));
+      return vc.list;
+    }).catch(() => { vc.listP = null; return null; });
+    return vc.listP;
+  }
+  // 한자어 수 조각: 12 → n_12, 110 → n_100 n_10, 1600 → n_1000 n_600, 23000 → n_2 n_man n_3000
+  function vcNum(n) {
+    if (!(n > 0) || n >= 1e8) return null;
+    const out = [];
+    const man = Math.floor(n / 10000); n %= 10000;
+    if (man) { if (man > 1) { const m = vcNum(man); if (!m) return null; out.push(...m); } out.push('n_man'); }
+    const th = Math.floor(n / 1000) * 1000; n %= 1000;
+    if (th) out.push('n_' + th);
+    const hu = Math.floor(n / 100) * 100; n %= 100;
+    if (hu) out.push('n_' + hu);
+    if (n) out.push('n_' + n);
+    return out;
+  }
+  function vcPlan(text) {
+    if (!vc.keys) return null;
+    // 이름 빼기: 표시한 이름과 바로 뒤 '까지'·'에서'
+    let t = String(text).replace(new RegExp(NM_MARK + '[^' + NM_MARK + ']*' + NM_MARK + '\\s*(?:까지|에서)?', 'g'), '');
+    t = t.replace(/\s+/g, '');
+    const plan = [];
+    let i = 0;
+    const pause = (ms) => { if (plan.length) plan[plan.length - 1].gap = Math.max(plan[plan.length - 1].gap || 0, ms); };
+    while (i < t.length) {
+      const ch = t[i];
+      if (ch === ',') { pause(160); i++; continue; }
+      if (ch === '.') { pause(280); i++; continue; }
+      // 가장 긴 조각 (쉼표·마침표는 조각 글에서 빠져 있다 — 문장 안 쉼표를 건너뛰며 맞춘다)
+      let best = null, bestEnd = i;
+      let k = '', j = i;
+      while (j < t.length && k.length < vc.maxLen) {
+        if (t[j] === ',' || t[j] === '.') { j++; continue; }
+        k += t[j]; j++;
+        const id = vc.keys.get(k);
+        if (id) { best = id; bestEnd = j; }
+      }
+      if (best) { plan.push({ id: best, gap: 0 }); i = bestEnd; continue; }
+      // 숫자 (1,600 · 12.5)
+      const m = /^\d[\d,]*(?:\.\d+)?/.exec(t.slice(i));
+      if (m) {
+        const [a, b] = m[0].replace(/,/g, '').split('.');
+        const ids = vcNum(Number(a));
+        if (!ids) return null;
+        ids.forEach((id) => plan.push({ id, gap: 0 }));
+        if (b) { plan.push({ id: 'n_dot', gap: 0 }); for (const d of b) { if (d === '0') return null; plan.push({ id: 'n_' + d, gap: 0 }); } }
+        i += m[0].length;
+        continue;
+      }
+      return null;
+    }
+    return plan.length && plan.every((p) => vc.list.has(p.id)) ? plan : null;
+  }
+  function vcBuf(id) {
+    if (vc.bufs.has(id)) return Promise.resolve(vc.bufs.get(id));
+    if (vc.loading.has(id)) return vc.loading.get(id);
+    const p = (vc.fetch || fetch)(vc.base + id + '.mp3?v=' + APP_VERSION).then((r) => (r.ok ? r.arrayBuffer() : null))
+      .then((ab) => (ab ? (vc.decode ? vc.decode(ab, id) : new Promise((res, rej) => actx.decodeAudioData(ab, res, rej))) : null))
+      .then((b) => { vc.loading.delete(id); if (b) vc.bufs.set(id, b); return b || null; })
+      .catch(() => { vc.loading.delete(id); return null; });
+    vc.loading.set(id, p);
+    return p;
+  }
+  // 처음 쓸 때 나머지 조각도 미리 받아 풀어 둔다 (한 번에 4개씩)
+  function vcPreload() {
+    if (vc.preload || !vc.list || !actx) return;
+    vc.preload = true;
+    const ids = [...vc.list.keys()];
+    let k = 0;
+    const next = () => { if (k >= ids.length) return; const id = ids[k++]; vcBuf(id).then(next, next); };
+    for (let n = 0; n < 4; n++) next();
+  }
+  function vcStop() {
+    for (const s of vc.sources) { try { s.stop(); } catch (e) { /* 이미 끝 */ } }
+    vc.sources = [];
+    clearTimeout(vc.endT);
+  }
+  // 음성 조각을 쓸 때인가: 깃발이 켜져 있고 이 브라우저의 음성이 안 될 때 (목소리 없음·고장·기다리는 중·외국어만)
+  const vcUse = () => vcOn() && !!actx && (vc.force || store.get('voiceClips') === '2' || ttsStatus() !== 'ok');   // vc.force: 시험용 (음성이 되는 창에서도 조각 길로)
+  // speak 와 같은 약속: 바로 true(말하러 감)/false(못 함), 나중에 못 틀면 onFail, 다 틀면 onEnd
+  function vcSpeak(text, urgent, onFail, onEnd) {
+    if (!vc.keys) { vcLoadList(); return false; }   // 목록을 받는 중: 이번 안내는 경고음
+    const plan = vcPlan(text);
+    vc.lastText = unmark(text);
+    if (!plan) { vc.misses.push(unmark(text)); if (vc.misses.length > 20) vc.misses.shift(); return false; }
+    vc.lastPlan = plan.map((p) => p.id);
+    vcPreload();
+    if (urgent) vcStop();
+    Promise.all(plan.map((p) => vcBuf(p.id))).then((bufs) => {
+      if (bufs.some((b) => !b) || !actx) { if (onFail) onFail(); return; }
+      if (actx.state === 'suspended') { try { actx.resume(); } catch (e) { /* 잠김 */ } }
+      let t = Math.max(actx.currentTime + 0.03, vc.busyUntil || 0);   // 앞 말이 아직 나오는 중이면 그 뒤에
+      for (let k = 0; k < bufs.length; k++) {
+        const s = actx.createBufferSource();
+        s.buffer = bufs[k];
+        s.connect(actx.destination);
+        s.start(t);
+        vc.sources.push(s);
+        s.onended = () => { const at = vc.sources.indexOf(s); if (at >= 0) vc.sources.splice(at, 1); };
+        t += bufs[k].duration + (plan[k].gap || 40) / 1000;
+      }
+      vc.busyUntil = t;
+      vc.played++;
+      const ms = Math.max(0, (t - actx.currentTime) * 1000);
+      if (onEnd) vc.endT = setTimeout(onEnd, ms);
+    });
+    return true;
+  }
+  if (vcOn()) vcLoadList();
 
   // ---------- 마커 요소 ----------
   // 내 차 아이콘 (2026-11-14 요청: 네이버 지도처럼 고를 수 있게, 우리 차 모양도). 모두 앞쪽이 위, viewBox 40×56
@@ -3039,7 +3179,8 @@
     const zone = c[6] === 2 ? '어린이보호구역 ' : c[6] === 1 ? '노인보호구역 ' : '';
     // v264: 후면 카메라는 종류(신호·과속이어도)와 상관없이 '후면단속 카메라' (네이버 배지 '60 후면단속')
     if (isRear(c)) return zone + '후면단속 카메라';
-    const what = c[3] === 2 || c[3] === 3 ? '신호 단속 카메라' : c[3] === 8 ? '이동식 단속' : c[3] === 9 ? '구간단속' : '단속 카메라';
+    // v278 (부모 세션: 네이버는 '박스형'이라고 말한다): 박스형 부스는 '박스형 단속 카메라'
+    const what = c[3] === 2 || c[3] === 3 ? '신호 단속 카메라' : c[3] === 8 ? '이동식 단속' : c[3] === 9 ? '구간단속' : isBox(c) ? '박스형 단속 카메라' : '단속 카메라';
     return zone + what;
   }
   function camLabel(c) {
@@ -4041,6 +4182,13 @@
   //   구간이 열려 있을 때 그 구간의 끝 카메라는 화면 카드·음성('2킬로미터 앞, 구간단속 끝')·250m 알림음 없이 속으로만 쫓는다
   //   (지나면 구간을 닫고 '구간단속이 끝났습니다'). 남은 거리·남은 시간·구간평균은 구간 칸(secCard)과 속도 줄이 보여 준다
   const quietSecEnd = (c) => c[4] === 2 && !!camState.section;
+  // 카메라 경고 문장 (v278: 녹음 조각 시험이 같은 함수로 모든 경우를 만들어 본다)
+  function camSpeech(c, d) {
+    const limit = c[2];
+    // v161: 100m 안쪽에서 잡힌 카메라를 '100미터 앞'이라 하지 않고 실제 거리(10m 단위)로
+    const dd = d >= 950 ? Math.round(d / 1000) + '킬로미터' : d >= 100 ? Math.round(d / 100) * 100 + '미터' : Math.max(10, Math.round(d / 10) * 10) + '미터';
+    return dd + ' 앞, ' + camSpoken(c) + (limit > 0 ? '. 제한속도 ' + limit + '입니다.' : '입니다.');
+  }
   function announceCam(tg, f) {
     if (tg.flag === 'doubt') return;   // v161: '틀림'으로 의심 표시한 카메라는 화면에만 (음성·경고음·과속 기록 없음)
     if (quietSecEnd(tg.c)) return;
@@ -4059,9 +4207,7 @@
     const far = voiceRange(c); // 고속도로 2km · 고속화도로 1km · 일반도로 400m
     if (!tg.said.far && d <= far + 30) {
       tg.said.far = true;
-      // v161: 100m 안쪽에서 잡힌 카메라를 '100미터 앞'이라 하지 않고 실제 거리(10m 단위)로
-      const dd = d >= 950 ? Math.round(d / 1000) + '킬로미터' : d >= 100 ? Math.round(d / 100) * 100 + '미터' : Math.max(10, Math.round(d / 10) * 10) + '미터';
-      sayCam(tg, dd + ' 앞, ' + camSpoken(c) + (limit > 0 ? '. 제한속도 ' + limit + '입니다.' : '입니다.'), 2);
+      sayCam(tg, camSpeech(c, d), 2);
     }
     const over = limit > 0 && state.speedKmh > limit + 1;
     if (!tg.said.near && d <= 250) {
@@ -5565,7 +5711,7 @@
     setFollowing(true);
     if (mapA) { mapA.setZoom(speedZoom(state.speedKmh)); zoomCtl.manualUntil = 0; }
     if (state.fix) navUpdate(state.fix);
-    if (!quiet) say('경로 안내를 시작합니다. ' + nav.dest.name + '까지 ' + spokenDist(nav.total) + ', 약 ' + fmtMin(nav.route.duration) + ' 걸립니다.', 1);
+    if (!quiet) say(routeStartSpeech(nav.dest.name, nav.total, nav.route.duration), 1);
     liveRouteSave(); liveSave(true);   // v200: 새로 열려도 이어 가게
     renderNav();
   }
@@ -6105,11 +6251,24 @@
     const name = ((m ? m[1].trim() : g.s) || '').replace(/\s*\([^()]*\)\s*$/, '').trim();
     return { name: name || '톨게이트', fare: m ? m[2].trim() : '' };
   }
+  // v278: 음성 문장의 이름(목적지·장소·방면·톨게이트 이름)은 NM() 으로 표시 — speechSynthesis 는 그대로 읽고, 녹음 조각 말은 뺀다
+  const routeStartSpeech = (name, total, ms) => '경로 안내를 시작합니다. ' + NM(name) + '까지 ' + spokenDist(total) + ', 약 ' + fmtMin(ms) + ' 걸립니다.';
+  function markGuide(s) {
+    let t = String(s || '').replace(/'[^']*'\s*방면으로\s*/g, (m) => NM(m.trim()) + ' ');
+    const m = /^(.+?)에서\s+/.exec(t);
+    if (m && !/^(회전교차로|로터리)$/.test(m[1]) && m[1].indexOf(NM_MARK) < 0) t = NM(m[1]) + '에서 ' + t.slice(m[0].length);
+    return t;
+  }
+  function turnSpeech(g) {
+    if (g.t !== 121) return markGuide(g.s);
+    const p = tollParts(g), f = fareText(p.fare), tg = /톨게이트$/.test(p.name);
+    return (tg ? NM(p.name.replace(/톨게이트$/, '')) + '톨게이트' : NM(p.name)) + (f ? ', ' + (f === '무료' ? '통행료 무료' : '통행료 ' + f) : '') + '. 하이패스 차로를 이용하세요';
+  }
   function announceTurn(g, dg) {
     const said = nav.said[g.i] || (nav.said[g.i] = {});
     const fast = state.speedKmh > 60;
     const toll = g.t === 121;
-    const text = toll ? (() => { const p = tollParts(g), f = fareText(p.fare); return p.name + (f ? ', ' + (f === '무료' ? '통행료 무료' : '통행료 ' + f) : '') + '. 하이패스 차로를 이용하세요'; })() : g.s;
+    const text = turnSpeech(g);
     if (toll && dg <= 2050 && dg > 1500 && !said.k2) {
       said.k2 = true;
       say('2킬로미터 앞, ' + text, 1);
@@ -6121,7 +6280,7 @@
       say(spokenDist(Math.round(dg / 100) * 100 || 100) + ' 앞, ' + text + soonSpeech(g), 1);
     } else if (dg <= (fast ? 160 : 90) && !said.now) {
       said.now = true; said.m300 = true;
-      if (!toll) say(g.s + soonSpeech(g), 1, true); // 톨게이트는 바로 앞에서 다시 말하지 않는다
+      if (!toll) say(text + soonSpeech(g), 1, true); // 톨게이트는 바로 앞에서 다시 말하지 않는다
     }
   }
   // v246: 이번 안내 뒤 300m 안에 이어지는 회전을 음성에 붙인다 — ', 이어서 30미터 앞 왼쪽 방향' (10m 단위, 둘째까지)
@@ -11696,7 +11855,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, soonChain, soonSpeech, SOON_M, exitedBefore, juncSplitAt, jxLaneAt, juncWanted, jxSplit2, mainKeep, jxOsmLanes, jxByLanes, jxShape2, jxConfig, jx2ShapeOf, JX2_LANES, JX2_BOARD, jxSideExit, jxCity, jxRoadShort, jxForkGeo, SEC_JOIN_RULE, loneSecEnd, quietSecEnd, jxShape, jxMirror, JX_BOARD, JX_TEXT, JX_LANES, juncOther, jdData, setJuncDest, loadJuncDest, camFlagUndo, camFlagToday, undoWrongCard, clearConfirmedFlags, CAM_FLAG_CLEAR, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams, passWhy, pruneTurnCams, camDirOk, routeNet, routeUpstream, laneGuideM, planSignPlace, findBuilding, sunPosStored, eventBody, routeArrived, routeIdleCheck, routeStartup, routeHide, tripEndGap, routeHeading, startsReversed, ROUTE_AHEAD, fitSigns, nvSceneFits, planScene, routeTurnSum, renderJunction, juncState, fitColumn, colBottom, renderSideBadge, roadLimit, setJxTime, foldState: lay, FOLD_STEPS, applyChips,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, soonChain, soonSpeech, SOON_M, exitedBefore, juncSplitAt, jxLaneAt, juncWanted, jxSplit2, mainKeep, jxOsmLanes, jxByLanes, jxShape2, jxConfig, jx2ShapeOf, JX2_LANES, JX2_BOARD, jxSideExit, jxCity, jxRoadShort, jxForkGeo, SEC_JOIN_RULE, loneSecEnd, quietSecEnd, jxShape, jxMirror, JX_BOARD, JX_TEXT, JX_LANES, juncOther, jdData, setJuncDest, loadJuncDest, camFlagUndo, camFlagToday, undoWrongCard, clearConfirmedFlags, CAM_FLAG_CLEAR, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams, passWhy, pruneTurnCams, camDirOk, routeNet, routeUpstream, laneGuideM, planSignPlace, findBuilding, sunPosStored, eventBody, routeArrived, routeIdleCheck, routeStartup, routeHide, tripEndGap, routeHeading, startsReversed, ROUTE_AHEAD, fitSigns, nvSceneFits, planScene, routeTurnSum, renderJunction, juncState, fitColumn, colBottom, renderSideBadge, roadLimit, setJxTime, foldState: lay, FOLD_STEPS, applyChips, vc, vcPlan, vcLoadList, vcSpeak, vcUse, vcNum, NM, unmark, markGuide, turnSpeech, camSpeech, routeStartSpeech, soonSpeech, SOON_ACT,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,

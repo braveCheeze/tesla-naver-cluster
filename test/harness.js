@@ -2965,6 +2965,7 @@
     { id: 'S175', name: "S175 route-first camera matching while guiding (v274, driver: '설정한 길안내가 있는데 한번씩 과속단속이 다른 일반길·밑길로 튀어'): (a) a place text 'A→B' that agrees with the guidance no longer lets an opposite-direction camera through when neighbouring cameras with the same or reversed text back its stored direction (아암대로 #23244 171°, #23148 '송도3교4→정비단지입구3' 350° 900 m south; driven northbound it stays quiet, southbound it still alerts — a camera whose neighbours contradict its direction still follows the text, S47 하남 J2735); (b) briefly off the route (GPS drift, rerouting), a camera on the road the car is really on is not picked by straight-line matching for 15 s, after 15 s off the route it is (탄천 80 #22931 with a route 150 m away); (c) v276: the 60 box camera Naver shows on 아암대로 northbound 268 m north of #23244 (data/driver_spots.json, Naver-confirmed + box flag 8) alerts northbound as '박스형 과속단속' 60 and not southbound", fn: s175 },
     { id: 'S176', name: "S176 nothing in the left column is cut off (v275, driver photo 2026-11-27 수원신갈IC 160 m: '이렇게 나와 버려 제일 좋은 방법 조금 변경해봐'): at 804×560 and 804×600 on the real 경부 → 수원신갈IC route, 900 m before the exit (card + next row + rest row + 40 camera + speed strip + hi-pass + report button) folds report → hi-pass chip → camera to the right badge → speed strip so the column ends above the attribution line; 160 m before (junction picture) the card is one line with the picture right under it, next guide / rest / hi-pass are chips, the right badge shows speed 79 (red over 40), the 40 sign, 370m and the kind band 8 px left of the route strip, no report button; restoring the size unfolds", fn: s176 },
     { id: 'S177', name: "S177 approach leg then turn (v277, keys Naver check of the crossing cameras v274 removed): a guided car coming in on the camera's own approach and turning at the junction is still alerted — 인항로 #23586 turning left, 안남로 #25184 turning right, 군왕로 #3564 turning toward 270° — while going straight through the junction on the crossing road either way is not; the two 30 school-zone cameras on one pole on 마장로324번길 190 m west of 안남로 follow Naver: westbound (after the right turn) #25199 at 274°, eastbound #25191 at 94°, each only for its own direction", fn: s177 },
+    { id: 'S178', name: "S178 recorded voice clips (v278, driver '걍 MeloTTS로 다 가자' — the Tesla browser has no speech engine: 0 voices, speak() → synthesis-failed): every sentence the app speaks, built by the same functions (camSpeech for all kinds/zones/rear/box/distances/limits — box booths now say '박스형 단속 카메라' like Naver, section start, fixed sentences, ETA change, route start with the destination name left out, 이어서/다시 chains, and every Naver guide text in the test routes incl. toll gates) maps fully onto data/voice_clips.json; numbers read 12 · 110 · 1600 · 23000 as clips; with the flag on and no working speech the clips are fetched, decoded and played back to back (onEnd), one missing clip falls back to the beep (onFail), an uncovered sentence returns false; with the flag off speechSynthesis stays", fn: s178 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -8454,6 +8455,86 @@
     const a = r[23586] || {}, b = r[25184] || {}, c = r[3564] || {}, e = r.east || {};
     const ok = a.turn && b.turn && c.turn && [a, b, c].every((x) => x.cross && !x.cross[0] && !x.cross[1]) &&
       (b.after || []).includes(25199) && !(b.after || []).includes(25191) && e.s25191 && !e.s25199;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S178 (v278, 운전자 '걍 MeloTTS로 다 가자'): 테슬라 브라우저는 음성 엔진이 없다(목소리 0개 · synthesis-failed). 음성 조각(data/voice_clips.json)이
+  //   앱이 하는 모든 말을 덮는지 — 지금 말을 만드는 함수(camSpeech · turnSpeech · routeStartSpeech · soonSpeech 와 고정 문장)로 만든 문장을
+  //   vcPlan 이 조각 열쇠로 다 바꾼다(이름은 빼고). 시험 경로 모든 안내 글도. 그리고 깃발이 켜지면 조각을 받아 이어 틀고(onEnd),
+  //   조각 하나라도 못 받으면 경고음(onFail), 깃발이 꺼져 있거나 음성이 되는 브라우저는 speechSynthesis 그대로
+  async function s178() {
+    const t = T(), r = {}, vc = t.vc, keepFlag = t.store.get('voiceClips'), keepUnlock = t.sound.unlocked, keepVoice = t.prefs.voice;
+    const keep = { fetch: vc.fetch, decode: vc.decode, force: vc.force };
+    try {
+      vc.list = null; vc.keys = null; vc.listP = null; vc.fetch = null;
+      await t.vcLoadList();
+      r.list = vc.list ? vc.list.size : 0;
+      const bad = new Set(), seen = { n: 0 };
+      const chk = (s, fam) => { seen.n++; if (!t.vcPlan(s)) bad.add(fam + ': ' + t.unmark(s)); };
+      // (a) 카메라: 종류 × 보호구역 × 후면 × 거리 × 제한
+      const kinds = [[1, 0], [2, 0], [3, 0], [8, 0], [9, 0], [1, 1], [1, 2]];
+      for (const [k, sec] of kinds) for (const zone of [0, 1, 2]) for (const fl of [0, 1, 2]) for (const lim of [0, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120]) {
+        const c = [37.5, 127.0, lim, k, sec, 0, zone, -1, 5, 1, fl];
+        for (const d of [5, 10, 37, 60, 95, 100, 149, 150, 380, 400, 520, 880, 949, 950, 1400, 1600, 2000, 2400]) chk(t.camSpeech(c, d), 'cam');
+      }
+      chk('300미터 앞, 신호 단속 카메라입니다.', 'cam');
+      for (let n = 20; n <= 120; n += 10) chk('구간단속 시작. 제한속도 ' + n + '.', 'sec');
+      // (b) 고정 문장
+      for (const s of ['구간단속이 끝났습니다.', '경유지를 거쳐 가는 경로로 안내합니다.', '새 경로로 안내합니다.', '다른 경로로 안내합니다.', '선택한 경로로 안내합니다.',
+        '경로를 벗어났습니다. 다시 탐색합니다.', '목적지에 도착했습니다. 안내를 종료합니다.', '안내를 종료합니다.', '음성 안내 테스트입니다. 500미터 앞, 단속 카메라. 제한속도 60입니다.']) chk(s, 'fixed');
+      for (let n = 1; n <= 90; n++) for (const w of ['늦어졌습니다.', '빨라졌습니다.']) chk('교통 상황을 반영했습니다. 도착 예정이 ' + n + '분 ' + w, 'eta');
+      // (c) 길안내 시작 (목적지 이름은 빠진다)
+      for (const m of [10, 350, 1000, 1250, 9999, 12500, 45000, 123400, 450000]) for (const min of [1, 25, 59, 60, 65, 125, 359]) chk(t.routeStartSpeech('기흥역 시험 목적지', m, min * 60000), 'start');
+      // (d) 이어서 · 다시
+      const acts = [...new Set(Object.values(t.SOON_ACT))];
+      for (const a of acts) for (let g = 10; g <= 300; g += 10) { chk('300미터 앞, 좌회전, 이어서 ' + g + '미터 앞 ' + a, 'soon'); chk('우회전, 이어서 ' + g + '미터 앞 ' + a + ', 다시 ' + g + '미터 앞 ' + a, 'soon'); }
+      // (e) 시험 경로의 모든 네이버 안내 글 (톨게이트는 이름을 빼고 '톨게이트, 통행료 …')
+      const files = ['route-bokjeong-n', 'route-bundang-suseo-n', 'route-daejeon-yuseong', 'route-gapyeong-cheongpyeong', 'route-gapyeong-ne', 'route-gapyeong-sw', 'route-gapyeong-town',
+        'route-giheung-ic-s', 'route-gildong-left', 'route-gyeongbu-jukjeon-n', 'route-gyeongbu-secfull-n', 'route-gyeongbu-secjoin-n', 'route-hanam-paldang-n', 'route-night-seongnam-giheung',
+        'route-paldang-east', 'route-paldang-hanamic-s', 'route-paldang-west', 'route-pangyo-ic-s', 'route-ring1-pangyo', 'route-seohanam-ic-n', 'route-seoultg-n', 'route-singal-jc-s',
+        'route-songpa-n', 'route-songpa-seongnam-s', 'route-songpaic-uturn', 'route-suwonsingal-s', 'route-yangseo-bukhangang-n', 'route-yangseo-bukhangang-s', 'route-yatap-straight', 'route-yatap-uturn'];
+      const turnBad = new Set(); let turns = 0;
+      for (const f of files) {
+        let fx = null;
+        try { fx = await (await realFetch(harnessDir + 'fixtures/' + f + '.json', { cache: 'no-store' })).json(); } catch (e) { continue; }
+        fx = fx.route || fx;
+        for (const g of fx.guide || []) {
+          const s = t.turnSpeech(g); turns++;
+          for (const pre of ['', '1킬로미터 앞, ', '300미터 앞, ', g.t === 121 ? '2킬로미터 앞, ' : '']) if (!t.vcPlan(pre + s)) turnBad.add(t.unmark(pre + s).replace(/^\d+(킬로)?미터 앞, /, ''));
+        }
+      }
+      r.cover = { checked: seen.n, missed: [...bad].slice(0, 12), turns, turnMissed: [...turnBad] };
+      // 수 읽기: 12 · 110 · 1600 · 23000
+      r.num = [12, 110, 1600, 23000].map((n) => (t.vcNum(n) || []).join(' '));
+      r.plan = t.vcPlan(t.camSpeech([37.5, 127, 60, 1, 0, 0, 2, -1, 5, 1, 0], 500));
+      r.plan = r.plan && r.plan.map((p) => p.id).join(' ');
+      // 박스형 부스는 네이버처럼 '박스형 단속 카메라' (c[10] 의 박스형 표시 2)
+      const box = t.camSpeech([37.5, 127, 60, 1, 0, 0, 0, -1, 5, 1, 2], 500);
+      r.box = { text: box, plan: (t.vcPlan(box) || []).map((p) => p.id).join(' ') };
+      r.planTurn = (t.vcPlan('300미터 앞, ' + t.markGuide("수원신갈IC에서 '수원, 신갈' 방면으로 오른쪽 고속도로 출구") + ', 이어서 30미터 앞 왼쪽 방향') || []).map((p) => p.id).join(' ');
+      // (f) 틀기: 깃발 켬 + 시험용 소리(짧은 무음 버퍼), 조각 하나 못 받으면 경고음
+      t.store.set('voiceClips', '1'); t.sound.unlocked = true; t.prefs.voice = true; vc.force = true;
+      const fail = new Set();
+      vc.fetch = async (u) => { const id = (String(u).match(/voice\/([^.?]+)\.mp3/) || [])[1]; if (/voice_clips\.json/.test(String(u))) return realFetch(u); return id && !fail.has(id) ? new Response(new ArrayBuffer(16)) : new Response('', { status: 404 }); };
+      vc.decode = async () => new AudioBuffer({ length: 240, sampleRate: 24000, numberOfChannels: 1 });   // 0.01초 무음
+      vc.bufs.clear(); vc.loading.clear();
+      const run = (text) => new Promise((res) => { let done = false; const ok = t.speak(text, false, () => { if (!done) { done = true; res('fail'); } }, () => { if (!done) { done = true; res('end'); } }); if (!ok) res('no'); setTimeout(() => { if (!done) res('timeout'); }, 3000); });
+      r.play = { use: t.vcUse(), ok: await run(t.camSpeech([37.5, 127, 60, 1, 0, 0, 0, -1, 5, 1, 0], 500)), plan: (vc.lastPlan || []).join(' ') };
+      fail.add('lim_60'); vc.bufs.delete('lim_60');
+      r.play.missing = await run(t.camSpeech([37.5, 127, 60, 1, 0, 0, 0, -1, 5, 1, 0], 500));
+      r.play.uncovered = await run('알 수 없는 문장입니다');
+      vc.force = false; t.store.set('voiceClips', null);
+      r.off = { use: t.vcUse() };
+    } finally {
+      vc.fetch = keep.fetch; vc.decode = keep.decode; vc.force = keep.force; vc.bufs.clear(); vc.loading.clear();
+      t.store.set('voiceClips', keepFlag); t.sound.unlocked = keepUnlock; t.prefs.voice = keepVoice;
+    }
+    const c = r.cover || {}, p = r.play || {};
+    const ok = r.list >= 290 && c.missed && c.missed.length === 0 && c.turns > 150 &&
+      r.num.join('|') === 'n_12|n_100 n_10|n_1000 n_600|n_2 n_man n_3000' &&
+      r.plan === 'd_500 c_kid c_cam lim_60' && /^d_300 m_\d+ f_then d_30 m_\d+$/.test(r.planTurn) &&
+      r.box.text === '500미터 앞, 박스형 단속 카메라. 제한속도 60입니다.' && r.box.plan === 'd_500 c_box lim_60' &&
+      p.use === true && p.ok === 'end' && /^d_500 c_cam lim_60$/.test(p.plan) && p.missing === 'fail' && p.uncovered === 'no' && r.off.use === false;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
