@@ -2966,6 +2966,7 @@
     { id: 'S176', name: "S176 nothing in the left column is cut off (v275, driver photo 2026-11-27 수원신갈IC 160 m: '이렇게 나와 버려 제일 좋은 방법 조금 변경해봐'): at 804×560 and 804×600 on the real 경부 → 수원신갈IC route, 900 m before the exit (card + next row + rest row + 40 camera + speed strip + hi-pass + report button) folds report → hi-pass chip → camera to the right badge → speed strip so the column ends above the attribution line; 160 m before (junction picture) the card is one line with the picture right under it, next guide / rest / hi-pass are chips, the right badge shows speed 79 (red over 40), the 40 sign, 370m and the kind band 8 px left of the route strip, no report button; restoring the size unfolds", fn: s176 },
     { id: 'S177', name: "S177 approach leg then turn (v277, keys Naver check of the crossing cameras v274 removed): a guided car coming in on the camera's own approach and turning at the junction is still alerted — 인항로 #23586 turning left, 안남로 #25184 turning right, 군왕로 #3564 turning toward 270° — while going straight through the junction on the crossing road either way is not; the two 30 school-zone cameras on one pole on 마장로324번길 190 m west of 안남로 follow Naver: westbound (after the right turn) #25199 at 274°, eastbound #25191 at 94°, each only for its own direction", fn: s177 },
     { id: 'S178', name: "S178 recorded voice clips (v278, driver '걍 MeloTTS로 다 가자' — the Tesla browser has no speech engine: 0 voices, speak() → synthesis-failed): every sentence the app speaks, built by the same functions (camSpeech for all kinds/zones/rear/box/distances/limits — box booths now say '박스형 단속 카메라' like Naver, section start, fixed sentences, ETA change, route start with the destination name left out, 이어서/다시 chains, and every Naver guide text in the test routes incl. toll gates) maps fully onto data/voice_clips.json; numbers read 12 · 110 · 1600 · 23000 as clips; with the flag on and no working speech the clips are fetched, decoded and played back to back (onEnd), one missing clip falls back to the beep (onFail), an uncovered sentence returns false; with the flag off speechSynthesis stays; v279: fetched clips land in Cache Storage and play with the network gone", fn: s178 },
+    { id: 'S179', name: "S179 cameras only Naver had in the daily Naver checks of 2026-11-24..27 (v280): the 19 spots in data/driver_spots.json (Naver-checked; rear, box and child flags as Naver's badge) alert along a straight route in their direction with Naver's limit and kind band (박스형 · 후면단속 · 신호과속 · 과속단속) by 520 m before, not the other way; 광주 필문대로 southbound #3183 and #3102 alert 60 (police data 50)", fn: s179 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -7005,7 +7006,7 @@
       c.label === '어린이보호구역 신호·과속단속' && c.zone === 2 && !c.blue &&
       d.label === '운전자 신고 신호·과속단속' && d.blue && d.short === '신고 지점' && d.voice === '신고된 단속 지점' &&
       e.label === '과속단속' && !e.blue &&
-      f.rows === 27 && f.checked === 27 && f.zone === 3 &&   // v276: 아암대로 북행 60 박스형 더함. v210: keys 네이버 확인 — 구갈·삼가 남동 확인(네이버 자리로), 판교JC 하행 합류는 없음(뺌). v213: 비룡로 신호·과속 50 더함. v233: 동해대로 80 174° 더함
+      f.rows === 46 && f.checked === 46 && f.zone === 5 &&   // v280: 네이버 하루 점검 11-24~27 에서 19곳 더함(어린이 30 둘). v276: 아암대로 북행 60 박스형 더함. v210: keys 네이버 확인 — 구갈·삼가 남동 확인(네이버 자리로), 판교JC 하행 합류는 없음(뺌). v213: 비룡로 신호·과속 50 더함. v233: 동해대로 80 174° 더함
       g.w15 === 9 && g.w17 === 14 && g.w18 === 16 && g.w165 === 12.5 && g.casing17 === 18 && g.dots === 3.4 && g.casingColor === '#141414' &&
       g.arrow17 && g.arrow17.inner === 14 && g.arrow17.shaft === 18;
     return { pass: !!ok, detail: JSON.stringify(r) };
@@ -8455,6 +8456,68 @@
     const a = r[23586] || {}, b = r[25184] || {}, c = r[3564] || {}, e = r.east || {};
     const ok = a.turn && b.turn && c.turn && [a, b, c].every((x) => x.cross && !x.cross[0] && !x.cross[1]) &&
       (b.after || []).includes(25199) && !(b.after || []).includes(25191) && e.s25191 && !e.s25199;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S179 (v280): 네이버 하루 점검(2026-11-24 ~ 27)에서 네이버에만 있던 카메라 19곳을 data/driver_spots.json 에 넣었다(네이버 확인 표시 2,
+  //   후면 1 · 박스형 8 · 어린이 4). 자리는 네이버 배지 거리가 실제로 줄어드는 프레임(멈춘 거리는 뺌) 가운데 가장 가까운 것들로 잡았다.
+  //   각 자리를 그 방향으로 곧게 지나면 네이버와 같은 제한·종류 띠로 뜨고, 반대 방향으로는 안 뜬다. 광주 필문대로 남행 #3183·#3102 는 60 (경찰 50)
+  async function s179() {
+    const t = T(), r = { miss: [], bad: [], back: [] };
+    const SPOTS = [
+      [35.508016, 129.343963, 27, 60, '박스형'], [35.517729, 129.304202, 91, 70, '과속단속'], [35.511738, 129.327994, 114, 60, '과속단속'],
+      [37.512548, 127.151855, 248, 100, '박스형'], [37.433287, 127.12687, 257, 60, '신호과속'], [37.376351, 127.106342, 56, 60, '과속단속'],
+      [37.3862, 127.102163, 172, 60, '과속단속'], [37.290407, 127.090256, 106, 100, '박스형'], [37.301167, 126.966131, 98, 50, '신호과속'],
+      [37.300237, 126.979257, 74, 30, '신호과속'], [37.300808, 126.981712, 75, 30, '신호과속'], [37.495441, 127.092209, 113, 60, '과속단속'],
+      [37.398842, 127.099423, 176, 60, '박스형'], [37.504347, 126.703244, 274, 50, '후면단속'], [37.481942, 126.674631, 183, 50, '과속단속'],
+      [35.154749, 126.931848, 183, 60, '신호과속'], [37.401285, 126.664829, 124, 50, '신호과속'], [37.38793, 126.641814, 40, 50, '후면단속'],
+      [37.396148, 126.65071, 41, 50, '후면단속']];
+    const mk = (pts) => {
+      const path = pts.map((p) => [round6(p.lng), round6(p.lat)]);
+      const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0]; for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+      const total = cum[cum.length - 1];
+      const route = { distance: r0(total), duration: r0(total / 15 * 1000), tollFare: 0, fuelPrice: 0, path,
+        guide: [{ i: P.length - 1, t: 88, s: '목적지', d: r0(total), ms: 60000 }], sections: [{ i: 0, n: P.length, name: '시험로', speed: 60, cong: 1 }] };
+      return { route, P, cum, total, dest: { name: '시험', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    };
+    // 자리 at 를 h 방향으로 900m 앞에서 와서 지나간다. 그 카메라가 처음 목표가 된 때의 카드
+    const pass = async (at, ref, h) => {
+      const from = dest(at, (h + 180) % 360, 900), pts = []; for (let k = 0; k <= 10; k++) pts.push(dest(from, h, 110 * k));
+      const R = mk(pts);
+      await resetApp(); softReset(); await planAndStart(R);
+      let hit = null;
+      for (let s = 0; s <= 1000; s += 20) {
+        const a = pointAt(R, s); feed(a.p, 15, a.h); const tg = t.camState.target;
+        if (!hit && tg && sameCam(tg.c, ref)) hit = { lim: text('#camLimit'), kind: text('#camKind'), type: text('#camType'), at: s };
+      }
+      t.endNav();
+      return hit;
+    };
+    try {
+      await waitFor(() => t.cams.loaded && t.driverSpots.rows.length > 0, 10000, 100);
+      for (const [lat, lng, h, lim, kind] of SPOTS) {
+        const ref = { lat, lng };
+        const row = t.driverSpots.rows.find((x) => x[0] === lat && x[1] === lng);
+        if (!row || row[2] !== h || row[4] !== lim || !((row[6] | 0) & 2)) { r.miss.push([lat, lng]); continue; }
+        const on = await pass(ref, ref, h);
+        // 같은 길 같은 방향 400m 안에 앞 카메라가 있으면(어린이 30 둘, 230m 사이) 그것을 지난 뒤에 뜬다 — 그래도 150m 넘게 앞에서
+        const lead = SPOTS.some((o) => o[0] !== lat && hav({ lat: o[0], lng: o[1] }, ref) < 400 && Math.abs(((o[2] - h + 540) % 360) - 180) <= 30) ? 150 : 380;
+        if (!on || on.lim !== String(lim) || on.kind !== kind || 900 - on.at < lead) r.bad.push([lat, lng, on]);
+        if (await pass(ref, ref, (h + 180) % 360)) r.back.push([lat, lng]);
+      }
+      const lim60 = {};
+      for (const i of [3183, 3102]) {
+        const c = t.cams.rows[i];
+        const on = await pass({ lat: c.sl, lng: c.sg }, { lat: c[0], lng: c[1] }, c.eb);
+        lim60[i] = on && on.lim;
+      }
+      r.lim60 = lim60;
+      r.n = SPOTS.length;
+    } finally {
+      await resetApp(); softReset();
+    }
+    const ok = r.n === 19 && !r.miss.length && !r.bad.length && !r.back.length && r.lim60 && r.lim60[3183] === '60' && r.lim60[3102] === '60';
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
