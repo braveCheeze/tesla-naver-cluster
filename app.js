@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-283'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-284'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -965,9 +965,17 @@
     const W = routeW(z);
     return { shaft: W + 4, inner: W, len: W * 1.3 + 6, half: W * 0.75 + 4, rim: 2 };
   }
+  // v282 (운전자 사진 2026-11-28 — 확대하면 회전 화살표가 길게 커져 '이상해지는데 확대를 해도 이정도 느낌으로만'): 최소 35m·25m 는
+  //   배율 17 까지만. 그보다 가까이 보면 배율 17 때의 화면 길이(앞 약 40px · 뒤 약 26px)를 그대로 둔다 — 미터는 배율만큼 줄어든다
+  const ARROW_REF_Z = 17;
   function arrowSpan(lat, zoom) {
-    const mpp = 156543.03392 * Math.cos(toRad(lat)) / Math.pow(2, zoom);
-    return { before: Math.min(150, Math.max(35, 40 * mpp)), after: Math.min(100, Math.max(25, 26 * mpp)) };
+    const at = (z) => {
+      const mpp = 156543.03392 * Math.cos(toRad(lat)) / Math.pow(2, z);
+      return { before: Math.min(150, Math.max(35, 40 * mpp)), after: Math.min(100, Math.max(25, 26 * mpp)) };
+    };
+    if (!(zoom > ARROW_REF_Z)) return at(zoom);
+    const s = at(ARROW_REF_Z), k = Math.pow(2, ARROW_REF_Z - zoom);
+    return { before: s.before * k, after: s.after * k };
   }
   // v211: zPx — 화면 픽셀을 미터로 바꿀 때 쓰는 배율. 네이버 GL 지도는 같은 배율 숫자에서 그림(래스터) 지도의 두 배로 크게 그려서
   // (타일 512px) 화살촉·화살 끝을 래스터 식으로 미터로 바꾸면 화면에서 두 배가 됐다 — 몸통(선 굵기, 픽셀)은 그대로인데 화살촉만 커져
@@ -8622,7 +8630,9 @@
     try {
       if (!app.classList.contains('tesla')) { applyFold(0); lay.k = 0; app.classList.remove('jx-time'); $('#sideBadge').hidden = true; return; }
       // 보이는 화면 바닥 (테슬라 브라우저의 innerHeight; 앱 칸이 더 짧으면 앱 칸) − 출처 줄
-      const limit = Math.min(window.innerHeight, app.getBoundingClientRect().bottom) - COL_FLOOR;
+      // v282: 길안내 중에는 맨 밑에 붙은 아래 띠(--dock-h) 위에서 끝난다
+      const nb = $('#navBar'), dock = app.classList.contains('docked') && nb && nb.offsetHeight ? nb.offsetHeight : 0;
+      const limit = Math.min(window.innerHeight, app.getBoundingClientRect().bottom) - COL_FLOOR - dock;
       let k = Math.min(lay.k, FOLD_STEPS.length);
       applyFold(k);
       if (colBottom() > limit) { while (k < FOLD_STEPS.length && colBottom() > limit) applyFold(++k); }
@@ -8730,17 +8740,21 @@
     const tr = $('.trip');
     const h = tr ? Math.round(tr.offsetHeight) : 0;
     if (h > 0 && h !== tripHeight.h) { tripHeight.h = h; $('#app').style.setProperty('--trip-h', h + 'px'); }
+    const w = tr ? Math.round(tr.offsetWidth) : 0;   // v282: '의견' 버튼은 카드 왼쪽 10px
+    if (w > 0 && w !== tripHeight.w) { tripHeight.w = w; $('#app').style.setProperty('--trip-w', w + 'px'); }
   }
   if (window.ResizeObserver && $('.trip')) new ResizeObserver(() => tripHeight()).observe($('.trip'));
   function checkTripCover() {
     const app = $('#app');
     tripHeight();
     if (!app.classList.contains('tesla')) { app.classList.remove('trip-covered', 'speed-covered'); return; }
-    const dr = $('#camDrawer'), tops = [$('.fbcorner')].filter(Boolean).map((e) => e.getBoundingClientRect().top).filter((v) => v > 0);   // v263: 왼쪽 아래는 '의견' 버튼만
+    const dr = $('#camDrawer'), fc = $('.fbcorner'), fr = fc ? fc.getBoundingClientRect() : null;   // v263: '의견' 버튼 (v282: 오른쪽 아래, 주행 기록 카드 왼쪽)
     // 서랍 밑에 붙는 다음 단속·과속방지턱·주의 표지 칸도 본다 (2026-11-14: 하이패스 차로 줄로 서랍이 길어지자 '100 14km'가 나침반에 겹침)
-    const lows = [dr.classList.contains('open') ? dr : null, $('#camNext'), $('#bumpCard'), $('#signCard'), $('#parkCard'), $('#camMissBtn')]
-      .filter((e) => e && !e.hidden && e.offsetParent !== null).map((e) => e.getBoundingClientRect().bottom);
-    const covered = tops.length > 0 && lows.length > 0 && Math.max(...lows) > Math.min(...tops) - 6;
+    // v282: 가로로 겹치는 것만 (버튼이 오른쪽으로 옮겨 왼쪽 칸과는 보통 겹치지 않는다)
+    const lowEls = [dr.classList.contains('open') ? dr : null, $('#camNext'), $('#bumpCard'), $('#signCard'), $('#parkCard'), $('#camMissBtn')]
+      .filter((e) => e && !e.hidden && e.offsetParent !== null).map((e) => e.getBoundingClientRect());
+    const lows = lowEls.map((q) => q.bottom);
+    const covered = !!(fr && fr.top > 0) && lowEls.some((q) => q.right > fr.left && q.left < fr.right && q.bottom > fr.top - 6);
     app.classList.toggle('trip-covered', false);   // v263: 주행 기록 카드는 오른쪽 아래라 서랍에 가리지 않는다
     app.classList.toggle('fb-covered', covered);
     // v212: 넓은 화면의 큰 속도(카드 위)까지 내려오면 숫자만 숨긴다
@@ -8785,6 +8799,8 @@
     renderStrip();
     $('#nbMeta').hidden = !nav.active;
     $('#navBar').classList.toggle('on', !!nav.active);
+    // v282 (운전자 '가운데 떠있는걸 독바처럼 좀 내리는게'): 길안내 중 아래 띠는 화면 맨 밑에 붙은 한 줄 — 출처·주행 기록·의견·왼쪽 칸 바닥이 그 위로
+    if ($('#app').classList.contains('docked') !== !!nav.active) { $('#app').classList.toggle('docked', !!nav.active); placeBackMe(); }
     if (!nav.active) { p.hidden = true; $('#searchBtn').hidden = false; $('#navChips').hidden = true; renderLanes(null); renderLaneTip(null); return; }
     p.hidden = false;
     $('#searchBtn').hidden = true;
@@ -10173,7 +10189,8 @@
   // 차 앞길을 가렸다). 왼쪽 아래 주행 기록과 겹치면 버튼이 떠 있는 동안(손 떼고 5초)만 주행 기록을 숨긴다
   function placeBackMe() {
     const b = $('#backMe'), app = $('#app'), road = $('#roadName');
-    const side = !b.hidden && app.classList.contains('tesla') && !!road && road.offsetWidth > 0;
+    // v282: 길안내 중 아래 띠가 맨 밑에 붙으면(docked) 띠 위 가운데 (띠 안 지금 위치 왼쪽은 남은 거리 글자 자리)
+    const side = !b.hidden && app.classList.contains('tesla') && !app.classList.contains('docked') && !!road && road.offsetWidth > 0;
     b.classList.toggle('side', side);
     if (!side) { app.classList.remove('bm-trip'); return; }
     const mr = $('#map').getBoundingClientRect(), rr = road.getBoundingClientRect();
@@ -10873,7 +10890,8 @@
   // ---------- v202 '잘못된 정보 신고' 하나로 (2026-11-24 운전자 '틀림 놓침에서 틀림 없애고 놓침을 잘못 된 정보 신고로 바꾸고') ----------
   // 버튼 하나. 누른 순간 단속 경고 카드가 1초 넘게 떠 있으면 그 카메라 신고(예전 '틀림': 14일 흐리게, 다른 날 또 누르면 숨김),
   // 카드가 없으면 놓친 단속 신고(예전 '놓침': 차 안 진단 v171 · 신고 지점 v169) + 네이버 확인 요청(/check). 서버 기록의 user 칸은 그대로 'wrong'·'missed'
-  const REPORT_LABEL = '잘못된 정보 신고';
+  // v282 (운전자 '잘못된 정보 신고를 제보로 빨간색 넣어주고'): 버튼 글자는 '제보', 빨간 바탕 (읽어 주는 이름은 '잘못된 정보 제보')
+  const REPORT_LABEL = '제보', REPORT_ARIA = '잘못된 정보 제보';
   function reportWrongCard() {
     const tg = camState.target, card = $('#camCard');
     // v161: 화면에 그려진 카메라에만. 카드가 방금(1초 안) 다른 카메라로 바뀌었으면 누름을 무시한다(엉뚱한 카메라가 표시되지 않게)
@@ -10923,9 +10941,9 @@
     const b = $('#camMissBtn'), tg = camState.target, card = $('#camCard');
     if (!b || b.classList.contains('sent') || b.classList.contains('sending')) return;
     const undo = !!(tg && tg.flag === 'doubt' && !card.hidden && card._camI === tg.i && camFlagToday(tg.c, state.heading === null ? null : Math.round(state.heading)));
-    const want = undo ? '↩ 신고 취소' : '잘못된 정보 신고';
+    const want = undo ? '↩ 신고 취소' : REPORT_LABEL;
     b.classList.toggle('undo', undo);
-    if (b.textContent !== want) { b.textContent = want; b.setAttribute('aria-label', undo ? '신고 취소' : '잘못된 정보 신고'); }
+    if (b.textContent !== want) { b.textContent = want; b.setAttribute('aria-label', undo ? '신고 취소' : REPORT_ARIA); }
   }
   function reportMissed(b) {
     // v171: 누르는 순간 차 안에서 원인을 찾아 고친다. 우리 자료에 후보가 없으면 '내가 신고한 단속 지점'으로 저장 (v169)
@@ -11074,7 +11092,7 @@
     // 이 기기는 다음부터 바로 버튼판
     // v272 (2026-11-26 운전자 '네, 바로 녹음' — 01:37 음성 인식이 0.6초 만에 network 로 끝난 뒤 20초 말하고 '소리' 버튼을 눌러 말이 남지 않았다):
     //   버튼판을 열면서 녹음을 바로 시작한다 (음성 인식이 마이크를 놓을 틈 0.3초 뒤)
-    if (FB_HARD.test(name)) { store.set('fbMode', 'panel'); fbPanelOpen(text || '음성 인식을 쓸 수 없어요', true); return; }
+    if (FB_HARD.test(name)) { store.set('fbMode', 'panel'); fbPanelOpen(text || '음성 인식을 쓸 수 없어요', fbAutoRec()); return; }
     toast(text || '음성 인식을 쓸 수 없어요', 'warn', 3500);
   }
   const fbSupport = () => ({ sr: !!speechRec(), gum: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia), mr: typeof window.MediaRecorder === 'function' });
@@ -11125,10 +11143,10 @@
     if (fb.on) return;
     fb.t0 = Date.now();
     fbStep('tap');
-    if (store.get('fbMode') === 'panel') { fbPanelOpen('', true); return; }   // v225: 음성 인식이 안 되는 기기 (v272: 바로 녹음)
+    if (store.get('fbMode') === 'panel') { fbPanelOpen('', fbAutoRec()); return; }   // v225: 음성 인식이 안 되는 기기 (v272: 바로 녹음 — v282: 운영자 차만)
     if (!speechRec()) {
       fbStep('fail unsupported');
-      fbPanelOpen('이 브라우저는 음성 인식을 지원하지 않아요', true);
+      fbPanelOpen('이 브라우저는 음성 인식을 지원하지 않아요', fbAutoRec());
       return;
     }
     Object.assign(fb, { on: true, text: '', interim: '', t0: Date.now(), lastAt: Date.now(), heard: false, paused: false, started: false });
@@ -11215,6 +11233,10 @@
   // 서버(/fb, 아직 없으면 운영자 차는 /log)가 받을 때까지 1분마다·연결이 돌아오면 다시 보낸다. 의견은 모두 보낼 함을 거쳐 연결이 없어도 사라지지 않는다.
   // 판 밖을 누르거나 '의견'을 다시 누르면 닫는다(녹음 중이면 버린다).
   const FB_HARD = /^(network|not-allowed|service-not-allowed|audio-capture|language-not-supported|nostart|start\b)/;
+  // v282 (운전자 '사람들이 음성으로 하면 사생활 침해당했다 생각할 수 있으니 텍스트로 남길 수 있는? 알 만하게'): 버튼판을 열 때 바로 녹음(v272)은
+  //   운영자 차(운전자 본인)만. 다른 사람은 '녹음'을 누를 때만 녹음하고, 판에 그 사실과 보관 기간(서버 /fb 30일)을 적고, '글로' 칸으로 글만 남길 수도 있다
+  const fbAutoRec = () => isOp();
+  const FB_NOTE = "녹음은 '녹음'을 누를 때만 해요 · 확인에만 쓰고 30일 뒤 지워요";
   const FB_ICON = {
     rec: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2.8" width="6" height="11.4" rx="3" fill="currentColor"/><path d="M5.6 11a6.4 6.4 0 0 0 12.8 0M12 17.4V21M8.6 21h6.8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
     cam: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l1.6-2.4h6.8L17 8h3a1.5 1.5 0 0 1 1.5 1.5v8A1.5 1.5 0 0 1 20 19H4a1.5 1.5 0 0 1-1.5-1.5v-8A1.5 1.5 0 0 1 4 8z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13.3" r="3.3" fill="none" stroke="currentColor" stroke-width="2"/></svg>',
@@ -11222,6 +11244,7 @@
     screen: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 20.5h6M12 16.5v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
     sound: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a7.8 7.8 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
     good: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 10.5V20h-3v-9.5zM7.5 10.5L11 3.8a1.9 1.9 0 0 1 3.4 1.4L13.6 9h5a2 2 0 0 1 2 2.4l-1.4 6.8a2.2 2.2 0 0 1-2.2 1.8H7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
+    text: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2.2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6 10h1.5M9.5 10H11M13 10h1.5M16.5 10H18M8 14h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',   // v282 글로
   };
   const FB_PRESETS = [['cam', '카메라 이상', '카메라'], ['route', '길안내 이상', '길안내'], ['screen', '화면 이상', '화면'], ['sound', '소리 이상', '소리'], ['good', '좋아요', '좋아요']];   // [열쇠, 보내는 글, 버튼 글]
   const FB_REC_MAX_MS = 20000, FB_REC_QUIET_MS = 2500, FB_AUDIO_MAX = 4, FB_AUTO_SILENT_MS = 8000;
@@ -11255,12 +11278,13 @@
     if (!el || el.dataset.built) return;
     el.dataset.built = '1';
     const btn = (k, label, cls) => '<button type="button" class="fbp-btn' + (cls ? ' ' + cls : '') + '" data-k="' + k + '">' + FB_ICON[k] + '<span>' + label + '</span></button>';
-    el.innerHTML = '<div class="fbp-cap">누르면 바로 보내요</div><div class="fbp-row">' + btn('rec', '녹음', 'rec') + FB_PRESETS.map(([k, , b]) => btn(k, b)).join('') + '</div>';
+    el.innerHTML = '<div class="fbp-cap">누르면 바로 보내요</div><div class="fbp-row">' + btn('rec', '녹음', 'rec') + btn('text', '글로', 'text') + FB_PRESETS.map(([k, , b]) => btn(k, b)).join('') + '</div>' +
+      '<div class="fbp-note">' + esc(FB_NOTE) + '</div>';
     el.addEventListener('click', (ev) => {
       const b = ev.target.closest && ev.target.closest('.fbp-btn');
       ev.stopPropagation();
       if (!b) return;
-      if (b.dataset.k === 'rec') fbRecToggle(); else fbPreset(b.dataset.k);
+      if (b.dataset.k === 'rec') fbRecToggle(); else if (b.dataset.k === 'text') fbTextOpen(); else fbPreset(b.dataset.k);
     });
   }
   const fbRecOk = () => !fb.micDenied && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && typeof window.MediaRecorder === 'function';
@@ -11317,6 +11341,34 @@
     fbStep('preset ' + k);
     fbPanelClose();
     fbSent(fb.inTest ? true : reportSure('feedback', body));
+  }
+  // v282 글로 의견: 판을 닫고(녹음 중이면 버린다) 글 칸을 연다. 보내는 카드·위치는 '의견'을 누른 때의 것
+  function fbTextOpen() {
+    const snap = fbP.snap || fbPayload('');
+    fbStep('text open');
+    fbPanelClose();
+    fbP.textSnap = snap;
+    const sh = $('#fbTextSheet'), ta = $('#fbText');
+    if (!sh || !ta) return;
+    ta.value = '';
+    sh.hidden = false;
+    setTimeout(() => { try { ta.focus(); } catch (e) { /* 없음 */ } }, 50);
+  }
+  function fbTextClose() { const sh = $('#fbTextSheet'); if (sh) sh.hidden = true; fbP.textSnap = null; }
+  function fbTextSend() {
+    const ta = $('#fbText'), text = ta ? String(ta.value || '').trim() : '';
+    if (!text) { toast('글을 써 주세요', '', 1800); return false; }
+    const body = Object.assign({}, fbP.textSnap || fbPayload(''), { text: text.slice(0, 500), how: 'text', ms: Date.now() - fb.t0 });
+    fb.last = body;
+    fbStep('text send');
+    fbTextClose();
+    fbSent(fb.inTest ? true : reportSure('feedback', body));
+    return true;
+  }
+  if ($('#fbTextSend')) {
+    $('#fbTextSend').addEventListener('click', (ev) => { ev.stopPropagation(); fbTextSend(); });
+    $('#fbTextCancel').addEventListener('click', (ev) => { ev.stopPropagation(); fbTextClose(); });
+    $('#fbTextSheet').addEventListener('click', (ev) => { if (ev.target === $('#fbTextSheet')) fbTextClose(); });
   }
   async function fbRecToggle(auto) {
     if (fbP.rec) { fbRecStop(true); return; }   // 다시 누르면 끝내고 보낸다
@@ -11986,7 +12038,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, soonChain, soonSpeech, SOON_M, exitedBefore, juncSplitAt, jxLaneAt, juncWanted, jxSplit2, mainKeep, jxOsmLanes, jxByLanes, jxShape2, jxConfig, jx2ShapeOf, JX2_LANES, JX2_BOARD, jxSideExit, jxCity, jxRoadShort, jxForkGeo, SEC_JOIN_RULE, loneSecEnd, quietSecEnd, jxShape, jxMirror, JX_BOARD, JX_TEXT, JX_LANES, juncOther, jdData, setJuncDest, loadJuncDest, camFlagUndo, camFlagToday, undoWrongCard, clearConfirmedFlags, CAM_FLAG_CLEAR, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams, passWhy, pruneTurnCams, camDirOk, routeNet, routeUpstream, laneGuideM, planSignPlace, findBuilding, sunPosStored, eventBody, routeArrived, routeIdleCheck, routeStartup, routeHide, tripEndGap, routeHeading, startsReversed, ROUTE_AHEAD, fitSigns, nvSceneFits, planScene, routeTurnSum, renderJunction, juncState, fitColumn, colBottom, renderSideBadge, roadLimit, setJxTime, foldState: lay, FOLD_STEPS, applyChips, vc, vcPlan, vcLoadList, vcSpeak, vcUse, vcNum, NM, unmark, markGuide, turnSpeech, camSpeech, routeStartSpeech, soonSpeech, SOON_ACT,
+      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, fbTextOpen, fbTextSend, fbTextClose, fbAutoRec, arrowSpan, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, soonChain, soonSpeech, SOON_M, exitedBefore, juncSplitAt, jxLaneAt, juncWanted, jxSplit2, mainKeep, jxOsmLanes, jxByLanes, jxShape2, jxConfig, jx2ShapeOf, JX2_LANES, JX2_BOARD, jxSideExit, jxCity, jxRoadShort, jxForkGeo, SEC_JOIN_RULE, loneSecEnd, quietSecEnd, jxShape, jxMirror, JX_BOARD, JX_TEXT, JX_LANES, juncOther, jdData, setJuncDest, loadJuncDest, camFlagUndo, camFlagToday, undoWrongCard, clearConfirmedFlags, CAM_FLAG_CLEAR, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams, passWhy, pruneTurnCams, camDirOk, routeNet, routeUpstream, laneGuideM, planSignPlace, findBuilding, sunPosStored, eventBody, routeArrived, routeIdleCheck, routeStartup, routeHide, tripEndGap, routeHeading, startsReversed, ROUTE_AHEAD, fitSigns, nvSceneFits, planScene, routeTurnSum, renderJunction, juncState, fitColumn, colBottom, renderSideBadge, roadLimit, setJxTime, foldState: lay, FOLD_STEPS, applyChips, vc, vcPlan, vcLoadList, vcSpeak, vcUse, vcNum, NM, unmark, markGuide, turnSpeech, camSpeech, routeStartSpeech, soonSpeech, SOON_ACT,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,

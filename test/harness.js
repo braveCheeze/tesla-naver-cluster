@@ -1349,13 +1349,14 @@
       r = {
         clockTopRight: clock.right > app.right - 40 && clock.top < app.top + 40,
         // v263: 길안내 중 아래 띠(남은 거리·도착·안내 종료 + 지금 위치)는 왼쪽 칸(안내 카드)과 오른쪽 아래 주행 기록 카드 사이 가운데
-        roadBottomCenter: (() => { const tr = document.querySelector('.trip').getBoundingClientRect(), nb = document.getElementById('navBar').getBoundingClientRect();
-          return Math.abs((nb.left + nb.right) / 2 - (np.right + tr.left) / 2) < 4 && nb.bottom > app.bottom - 80 && road.bottom <= nb.bottom + 1; })(),
+        // v282 (운전자 '독바처럼 좀 내리는게'): 길안내 중 아래 띠는 화면 맨 밑에 붙은 한 줄(가로 전체), 지금 위치는 그 안
+        roadBottomCenter: (() => { const nb = document.getElementById('navBar').getBoundingClientRect();
+          return Math.abs(nb.left - app.left) < 1 && Math.abs(nb.right - app.right) < 1 && Math.abs(nb.bottom - app.bottom) < 1 && road.top >= nb.top - 1 && road.bottom <= nb.bottom + 1; })(),
         gpsBottomRight: gps.right > app.right - 40 && gps.bottom > app.bottom - 60,
         compassBottomLeft: head.right > app.right - 260 && head.bottom > app.bottom - 160, // v263: 나침반 줄은 오른쪽 아래 주행 기록 카드 맨 위
         // 주행 기록은 맨 아래지만 화면 테두리에서 띄워서(아래 24px 이상, 왼쪽 20px 이상), 나침반은 그 위
-        tripAtBottom: (() => { const tr = document.querySelector('.trip').getBoundingClientRect();
-          return tr.bottom <= app.bottom - 24 && tr.bottom > app.bottom - 60 && tr.right <= app.right - 8 && tr.right > app.right - 40 && head.top >= tr.top - 1 && head.bottom <= tr.top + 64; })(),   // v263: 오른쪽 아래, GPS 줄 위
+        tripAtBottom: (() => { const tr = document.querySelector('.trip').getBoundingClientRect(), nb = document.getElementById('navBar').getBoundingClientRect();
+          return tr.bottom <= nb.top - 8 && tr.bottom > nb.top - 40 && tr.right <= app.right - 8 && tr.right > app.right - 40 && head.top >= tr.top - 1 && head.bottom <= tr.top + 64; })(),   // v263: 오른쪽 아래, GPS 줄 위 (v282: 맨 밑 띠 위)
         // 오른쪽 끝의 가는 막대 (2026-11-14 요청으로 6 → 10px: 그래도 12px 이하)
         stripRight: strip.left > app.right - 80 && bar.width <= 12,
         // 경로 막대는 세로 가운데
@@ -1371,7 +1372,9 @@
         // 화면이 넓으면(1000px 이상, 테슬라 브라우저를 크게 펼친 1307×747) 왼쪽 나침반 위에 속도계, 보통 크기(804)에서는 숨김
         speedWhenWide: (() => { const sb = document.querySelector('.speedbox'), on = sb.getClientRects().length > 0 && getComputedStyle(sb).display !== 'none';
           if (innerWidth < 1000) return !on;
-          const r = sb.getBoundingClientRect(), fb = document.querySelector('.fbcorner').getBoundingClientRect(); return on && r.left < app.left + 60 && r.bottom <= fb.top + 4; })(),   // v263: '의견' 버튼 위
+          // v284: '의견'이 오른쪽(주행 기록 카드 왼쪽)으로 옮겨 — 속도계는 왼쪽 아래, 맨 밑 아래 띠 위, '의견'과 가로로 겹치지 않게
+          const r = sb.getBoundingClientRect(), fb = document.querySelector('.fbcorner').getBoundingClientRect(), nb = document.getElementById('navBar').getBoundingClientRect();
+          return on && r.left < app.left + 60 && r.bottom <= nb.top - 4 && r.right < fb.left; })(),
         // 야간·전체화면·설정 버튼은 길안내 패널 바로 오른쪽, 패널 위쪽 높이에
         topButtonsNextToNav: tc.left >= np.right && tc.left - np.right <= 16 && Math.abs(tc.top - np.top) <= 4,
       };
@@ -2936,7 +2939,7 @@
     { id: 'S146', name: "S146 test runs never reach the real server (v219: synthetic passes reached production when a non-test page on the same origin — the S67 catalog frame or a hand-opened index.html — read the harness's saved queue): on the test page the send queues are stored under their own '@test' names, records made here carry x: 1, and pass records dated after today (a fake clock) are dropped before sending", fn: s146 },
     { id: 'S147', name: "S147 Naver verdicts on zone pairs and duplicate poles (v220-v223): labels, limits and rear flags follow Naver's badges, and duplicate records Naver does not show are switched off (kept in the data, left out of lookups) — 평인일주로 138° is a school-zone speed camera, 신재로 is school zone both ways, 해안로 is a school-zone signal-and-speed camera both ways, 적중로 is 50 (253° rear), 17755 moves to Naver's point without its place text", fn: s147 },
     { id: 'S148', name: "S148 Naver verdicts on the 18 single cameras (v224): wrong directions turned to Naver's, two-way cameras lose their one-way place text, records Naver does not show (and 30 duplicates of 40 or signal cameras) are switched off, 예술공원로 is a rear camera 35 m on", fn: s148 },
-    { id: 'S149', name: "S149 feedback button panel (v225; v272: recording starts by itself when the panel opens, stops unsent after 8 s of silence, a picture button sends the recording only if speech was heard): when speech recognition fails like on the Tesla (network), the panel opens with a record button and five picture buttons, later taps open it directly, one tap sends with the cards from the moment 의견 was tapped, a recording is queued until the server takes it, and a denied microphone leaves the picture buttons", fn: s149 },
+    { id: 'S149', name: "S149 feedback button panel (v225; v272: recording starts by itself when the panel opens, stops unsent after 8 s of silence, a picture button sends the recording only if speech was heard): when speech recognition fails like on the Tesla (network), the panel opens with a record button and five picture buttons, later taps open it directly, one tap sends with the cards from the moment 의견 was tapped, a recording is queued until the server takes it, and a denied microphone leaves the picture buttons; v282 (driver: people may feel recording invades their privacy, let them leave text): recording starts by itself only on the operator's car, the panel says recording happens only when '녹음' is tapped and is deleted after 30 days, and a '글로' button opens a text box whose text is sent (how 'text') without any recording", fn: s149 },
     { id: 'S150', name: "S150 heading-aware routing (v227): stopped at a light heading north with the destination behind, every route request starts ahead of the car; a route that starts by reversing is asked again further ahead (first route and reroute), a reversing traffic update is dropped, and a car parked over 3 minutes is not given a heading", fn: s150 },
     // S151 (그린 분기 그림 시험) — v245 고정 규칙(운전자 AI 그림만)으로 빠짐, S160 이 대신 확인
     { id: 'S152', name: "S152 arrival pin on the building (v228): a destination that is a building's entrance puts the 도착 pin on that building (its N동, else the complex), the route still ends at the parking entrance or the chosen entrance, the dotted walk and the arrival arrow go to the building, and plain places or far namesakes are left alone", fn: s152 },
@@ -2968,6 +2971,7 @@
     { id: 'S178', name: "S178 recorded voice clips (v278, driver '걍 MeloTTS로 다 가자' — the Tesla browser has no speech engine: 0 voices, speak() → synthesis-failed): every sentence the app speaks, built by the same functions (camSpeech for all kinds/zones/rear/box/distances/limits — box booths now say '박스형 단속 카메라' like Naver, section start, fixed sentences, ETA change, route start with the destination name left out, 이어서/다시 chains, and every Naver guide text in the test routes incl. toll gates) maps fully onto data/voice_clips.json; numbers read 12 · 110 · 1600 · 23000 as clips; with the flag on and no working speech the clips are fetched, decoded and played back to back (onEnd), one missing clip falls back to the beep (onFail), an uncovered sentence returns false; with the flag off speechSynthesis stays; v279: fetched clips land in Cache Storage and play with the network gone", fn: s178 },
     { id: 'S179', name: "S179 cameras only Naver had in the daily Naver checks of 2026-11-24..27 (v280): the 19 spots in data/driver_spots.json (Naver-checked; rear, box and child flags as Naver's badge), plus v282's 8 from the pipeline's verified lines, alert along a straight route in their direction with Naver's limit and kind band (박스형 · 후면단속 · 신호과속 · 과속단속) by 520 m before, not the other way; 광주 필문대로 southbound #3183 and #3102 alert 60 (police data 50)", fn: s179 },
     { id: 'S180', name: "S180 a reroute or traffic answer that starts where the car is not is held, not shown (v280, driver: '고속화 도로 그 밑에 일반도로 … 엉뚱하게 없는 네비가 잡히다가 사라지거든'; /events: all 40 logged reroutes came from a route the car had never been on): (a) a reroute answer starting on a parallel road 40 m away never shows its guidance or '새 경로로 안내합니다', is dropped when the car does not get on it, and the next answer (the car's own road) is used at once; (b) a traffic answer starting 100 m ahead on a road 35 m to the side (passed v181's 'behind the start' check) is dropped, the current route stays, no reroute; (c) a reroute answer 40 m ahead on the same road is used at once as before; (d) an answer on a road 30 m to the side is used once the car moves onto that road", fn: s180 },
+    { id: 'S181', name: "S181 docked bottom bar and the v282 layout (driver photos 2026-11-28: '간격을 좀 띄어주고', '가운데 떠있는걸 독바처럼 좀 내리는게', '잘못된 정보 신고를 제보로 빨간색', '의견을 오른쪽으로', '얘 UI가 너무 공간을 크게 차지', turn arrow '확대를 해도 이정도 느낌으로만'): while guiding at 804x638 the bottom bar spans the full width at the very bottom (40 px, numbers, place, 안내 종료 in one row); the map credit, trip card, GPS and 의견 sit above it; 의견 is 10 px left of the trip card, bottom-aligned, right of the left column; the left column ends at least 24 px above the bar; the chips are 8 px under the top buttons when those show; the report button reads '제보' on red; the card rows are compact (destination <= 34 px, 이어서 <= 32 px); above zoom 17 the turn arrow keeps its zoom-17 screen length; after the end the bar is the small pill again", fn: s181 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -3805,11 +3809,11 @@
       await new Promise((res) => setTimeout(res, 2700));
       r.text3 = b.textContent; r.sentAfter = b.classList.contains('sent');
     } finally {
-      clearTimeout(b._sentT); b.classList.remove('sent', 'saved', 'sending'); b.textContent = '잘못된 정보 신고'; b.hidden = prevHidden; toastEl.hidden = true;
+      clearTimeout(b._sentT); b.classList.remove('sent', 'saved', 'sending'); b.textContent = '제보'; b.hidden = prevHidden; toastEl.hidden = true;
       t.mySpots.length = 0; keepSpots.forEach((x) => t.mySpots.push(x)); t.store.set('mySpots', keepSpotRaw); t.applyUserSpots();   // v169
     }
     const [w, h] = r.size.split('x').map(Number);
-    const ok = w >= 116 && h >= 52 && r.text1 === '✓ 보냄' && r.blue && r.toast1 && !r.toast2 && r.text3 === '잘못된 정보 신고' /* v202 */ && !r.sentAfter;
+    const ok = w >= 84 && h >= 46 /* v282 빨간 '제보' */ && r.text1 === '✓ 보냄' && r.blue && r.toast1 && !r.toast2 && r.text3 === '제보' /* v202 */ && !r.sentAfter;
     return { pass: ok, detail: JSON.stringify(r) };
   }
 
@@ -4107,6 +4111,9 @@
       // 회전 지점 뒤로 배율에 맞춘 길이(가까이 30m, 멀리 볼수록 화면 30px 만큼·최대 100m)까지
       const shown = m._arrowShown || [], end = shown[shown.length - 1], span = m._arrowSpan || {};
       r.span = Math.round(span.after || -1);
+      // v282: 배율 17 보다 가까이 보면 뒤 길이는 배율 17 때 화면 길이(25m 를 2^(배율-17) 로 나눈 것)
+      r.z = Math.round(m.map.getZoom() * 100) / 100;
+      r.spanOk = r.z > 17 ? Math.abs((span.after || 0) * Math.pow(2, r.z - 17) - 25) <= 1.5 : (span.after >= 25 && span.after <= 100);
       r.endFromTurn = end ? Math.round(hav(end, dest(R.P[5], 90, span.after))) : -1;
       // 멀리 보면(배율 14 아래) 화살표를 그리지 않고, 다시 가까이 보면 다시 그린다 (v92 피드백: 축소하면 지도에 비해 너무 큼)
       // 애니메이션 없이 배율 바꾸기 (네이버: setZoom(z, false), Leaflet 대체 지도: { animate: false })
@@ -4122,7 +4129,7 @@
     } finally {
       softReset();
     }
-    const ok = r.pin && r.dots >= 1 /* v246: 건물 쪽 20m 화살표 뒤 점선 */ && r.leg === 4 && /^base\+dots\+glow\+shine/.test(r.kinds) && r.farNone && r.near === 4 && r.corner >= 2 && r.corner <= 4 && Math.abs(r.arrowCorner - r.corner) < 0.3 && r.span >= 25 && r.span <= 100 && r.endFromTurn >= 0 && r.endFromTurn <= 3 &&
+    const ok = r.pin && r.dots >= 1 /* v246: 건물 쪽 20m 화살표 뒤 점선 */ && r.leg === 4 && /^base\+dots\+glow\+shine/.test(r.kinds) && r.farNone && r.near === 4 && r.corner >= 2 && r.corner <= 4 && Math.abs(r.arrowCorner - r.corner) < 0.3 && r.spanOk && r.endFromTurn >= 0 && r.endFromTurn <= 3 &&
       r.zoomOutHidden && r.zoomBack === 4 && r.after === 0 && r.cleared;
     return { pass: !!ok, detail: Object.keys(r).map((k) => k + '=' + r[k]).join(', ') };
   }
@@ -5173,7 +5180,7 @@
       if (!t.cams.loaded) await t.loadCameras();
       ob.post = keepPost; ob.inTest = false; t.store.set('outbox', keepBox);
       t.mySpots.length = 0; keepSpots.forEach((x) => t.mySpots.push(x)); t.store.set('mySpots', keepSpotRaw); t.applyUserSpots();
-      clearTimeout(btn._sentT); btn.classList.remove('sent', 'saved', 'sending'); btn.textContent = '잘못된 정보 신고';
+      clearTimeout(btn._sentT); btn.classList.remove('sent', 'saved', 'sending'); btn.textContent = '제보';
       const te = document.getElementById('toast'); if (te) te.hidden = true;
       t.state.speedKmh = 0; t.renderCamStatus();
       await resetApp(); softReset();
@@ -5398,7 +5405,7 @@
       const m = t.mySpots[0];
       r.a = m ? { n: t.mySpots.length, back: Math.round(hav(m, pressAt)), h: m.h, status: t.mySpotStatus(m), stored: !!t.store.get('mySpots') } : null;
       r.a.toast = text('#toast');
-      const btn = document.getElementById('camMissBtn'); clearTimeout(btn._sentT); btn.classList.remove('sent', 'saved', 'sending'); btn.textContent = '잘못된 정보 신고';
+      const btn = document.getElementById('camMissBtn'); clearTimeout(btn._sentT); btn.classList.remove('sent', 'saved', 'sending'); btn.textContent = '제보';
       // (b) v178: 근처에 카메라가 없어 제한속도를 모르면 숨김 → 같은 방향 카메라(70)를 200m 뒤에 두면 채워져 보인다
       let first = null, label = '', limit = '';
       if (m) {
@@ -5545,7 +5552,7 @@
       btn.click();
       await waitFor(() => !btn.classList.contains('sending'), 2000, 10);
       const msg = document.getElementById('toast').textContent;
-      clearTimeout(btn._sentT); btn.classList.remove('sent', 'saved', 'sending'); btn.textContent = '잘못된 정보 신고';
+      clearTimeout(btn._sentT); btn.classList.remove('sent', 'saved', 'sending'); btn.textContent = '제보';
       return msg;
     };
     const fakes = [];
@@ -6616,7 +6623,7 @@
       b.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await sleep(30);
       r.b = { toast: text('#toast'), flag: t.camState.target ? t.camState.target.flag : 'gone', check: stub.since(c0, '/check').length };
-      clearTimeout(b._sentT); b.classList.remove('sent', 'saved', 'sending'); b.textContent = '잘못된 정보 신고';
+      clearTimeout(b._sentT); b.classList.remove('sent', 'saved', 'sending'); b.textContent = '제보';
       flagKey = tgRow[0] + ',' + tgRow[1];
       t.camState.target = null; card.hidden = true; t.renderCam();
       // (c) 카드가 없을 때 (Worker 가 받음)
@@ -6629,7 +6636,7 @@
       const saved = t.checksLoad();
       r.c = { toast: text('#toast'), sent: !!ck, method: ck && ck.method, keys: ck && ck.body ? Object.keys(ck.body).sort().join(',') : '', trail: !!(ck && ck.body && ck.body.trail),
         saved: saved.length, sameId: !!(ck && saved[0] && saved[0].id === ck.body.id) };
-      clearTimeout(b._sentT); b.classList.remove('sent', 'saved', 'sending'); b.textContent = '잘못된 정보 신고';
+      clearTimeout(b._sentT); b.classList.remove('sent', 'saved', 'sending'); b.textContent = '제보';
       // (d) 네이버에 있음
       const id = saved[0] && saved[0].id;
       stub.canned['/check/status'] = (q) => ({ items: { [id]: { st: 'found', cams: [{ limit: 60, kind: '신호과속' }] } } });   // (POST /check 는 기본 답 {} — ok 가 없으면 번호를 안 남기므로 아래 canned)
@@ -6650,11 +6657,11 @@
       t.mySpots.length = 0; keepArr.forEach((m) => t.mySpots.push(m)); t.store.set('mySpots', keepSpots); t.applyUserSpots(); t.renderMySpots();
       t.store.set('camNo2', keepNo); t.renderCamFlags();
       stub.reset();
-      clearTimeout(b._sentT); b.classList.remove('sent', 'saved', 'sending'); b.textContent = '잘못된 정보 신고';
+      clearTimeout(b._sentT); b.classList.remove('sent', 'saved', 'sending'); b.textContent = '제보';
       softReset();
     }
     const a = r.a || {}, bb = r.b || {}, c = r.c || {}, d = r.d || {}, e = r.e || {};
-    const ok = a.label === '잘못된 정보 신고' && a.aria === '잘못된 정보 신고' && a.wrongHidden && !a.words &&
+    const ok = a.label === '제보' && a.aria === '잘못된 정보 제보' /* v282 */ && a.wrongHidden && !a.words &&
       /^신고 접수 완료/.test(bb.toast) && (bb.flag === 'doubt' || bb.flag === 'hide') && bb.check === 0 &&
       /^신고 접수 완료/.test(c.toast) && c.sent && c.method === 'POST' && c.keys === 'dev,h,id,kmh,lat,lng,v' && !c.trail && c.saved === 1 && c.sameId &&
       d.toast === '신고 반영 완료 · 60 신호·과속단속 추가' && d.fixes === 1 && d.left === 0 && d.askedId &&
@@ -6694,7 +6701,10 @@
       // v206: 주행 기록 카드 안 나침반 줄 오른쪽 끝 (46px, 말풍선 속 마이크 + '의견'), 진짜 누름이 버튼에 닿는다
       // v263 (운전자: 주행 기록 카드는 오른쪽 아래, 왼쪽 아래에는 초록 '의견' 버튼만): 왼쪽 아래 모서리 50px, 진짜 누름이 버튼에 닿는다
       const appR = document.getElementById('app').getBoundingClientRect();
-      r.a = { w: Math.round(fbR.width), h: Math.round(fbR.height), right: fbR.left < appR.left + 40, row: fbR.bottom > appR.bottom - 60,
+      // v282 (운전자 '의견을 오른쪽으로 빼주고'): 오른쪽 아래 주행 기록 카드 왼쪽 10px, 바닥을 카드와 맞춘다 (길안내 중 맨 밑 띠 위)
+      const trR = document.querySelector('.trip').getBoundingClientRect();
+      r.a = { w: Math.round(fbR.width), h: Math.round(fbR.height), right: fbR.right <= trR.left - 6 && fbR.right >= trR.left - 14 && fbR.left > appR.left + appR.width / 2,
+        row: Math.abs(fbR.bottom - trR.bottom) <= 2,
         inCard: !!btn.closest('.fbcorner'), cap: text('.fb-cap'), hit: !!(hit && hit.closest && hit.closest('#fbBtn')), shown: getComputedStyle(btn.parentElement).display !== 'none' };
       // (b)·(c)
       btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -6852,7 +6862,7 @@
       pill.style.marginTop = Math.max(0, Math.round(tr.top - p.bottom + 20)) + 'px';
       t.checkTripCover();
       const hit2 = tapAt();
-      r.b = { covered: app.classList.contains('fb-covered'), takes: !!(hit2 && hit2.closest && hit2.closest('#fbBtn')), pe: getComputedStyle(btn).pointerEvents };
+      r.b = { covered: app.classList.contains('fb-covered'), takes: !!(hit2 && hit2.closest && hit2.closest('#fbBtn')), pe: getComputedStyle(btn).pointerEvents };   // v282: 가로로 안 겹치면 가리지 않는다
       pill.style.marginTop = ''; t.checkTripCover();
       // (c) 실패는 늘 보인다
       const steps = () => t.fb.steps.slice();
@@ -6897,7 +6907,7 @@
     const a = r.a || {}, b = r.b || {}, c1 = r.c1 || {}, c2 = r.c2 || {}, c3 = r.c3 || {}, d = r.d || {};
     const has = (arr, v) => Array.isArray(arr) && arr.includes(v);
     const ok = a.pill && !a.onPill && !a.overlap && (a.covered ? !a.hit : a.hit) && a.alpha >= 0.5 &&
-      b.covered && !b.takes && b.pe === 'none' &&
+      !b.covered && b.takes && b.pe === 'auto' /* v282: 의견은 오른쪽 — 왼쪽 칸이 내려와도 그대로 눌린다 */ &&
       !c1.on && c1.toast === '음성 인식을 시작하지 못했어요 · 버튼으로 보내 주세요' && has(c1.steps, 'tap') && has(c1.steps, 'fail start InvalidStateError') && !c1.listening &&
       !c2.on && c2.toast === '음성 인식 서버에 연결하지 못했어요 · 버튼으로 보내 주세요' && has(c2.steps, 'onstart') && has(c2.steps, 'error network') && has(c2.steps, 'fail network') &&
       !c3.on && c3.toast === '음성 인식이 응답하지 않아요 · 버튼으로 보내 주세요' && has(c3.steps, 'fail nostart') && c1.panel && c2.panel && c3.panel &&
@@ -7195,7 +7205,8 @@
       r.wide = innerWidth >= 1000;
       if (r.wide) {
         const sr = sb.getBoundingClientRect(), fbr = document.querySelector('.fbcorner').getBoundingClientRect();
-        r.b = { gap: Math.round(fbr.top - sr.bottom), shown: getComputedStyle(sb).display !== 'none' };   // v263: 속도 밑 = 왼쪽 아래 '의견' 버튼 위
+        // v284: '의견'은 오른쪽(주행 기록 카드 왼쪽)으로 옮겼다 — 큰 속도는 왼쪽 아래 그대로, 화면 맨 밑에서 40px 넘게 위, '의견'과 가로로 안 겹친다
+        r.b = { bottomGap: Math.round(innerHeight - sr.bottom), clearFb: sr.right < fbr.left, shown: getComputedStyle(sb).display !== 'none' };
         // (c) 주의 표지 칸을 속도 숫자 높이에만 걸치게
         // 제자리에서 보이게 한 뒤 위아래로만 옮긴다 (fixed 로 띄우면 offsetParent 가 없어 검사에서 빠진다)
         sign.hidden = false;
@@ -7216,7 +7227,7 @@
     const a = r.a || {}, b = r.b || {}, c1 = r.c1 || {}, c2 = r.c2 || {};
     // v263 (운전자 '표는 좀 작게, 조금 투명하게 blur'): 주행 기록 카드는 오른쪽 아래 작은 유리 (칸 사이 16px, 폭 140px 넘게), 가림 표시는 왼쪽 아래 '의견' 버튼(fb-covered)
     const ok = a.colGap === '16px' && a.w >= 140 && a.line === 'solid' && a.tripH === a.h + 'px' &&
-      (!r.wide || (b.shown && b.gap >= 16 && b.gap <= 20 && c1.speed && !c1.trip && c2.speed && c2.trip)) &&
+      (!r.wide || (b.shown && b.bottomGap >= 40 && b.clearFb && c1.speed && !c1.trip && c2.speed && !c2.trip)) &&   // v284: 왼쪽 칸이 내려와도 오른쪽 '의견'은 안 가린다
       !r.after.speed && !r.after.trip;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
@@ -7428,8 +7439,11 @@
     let made = 0, ac = null;
     const hide = () => { const hp = document.getElementById('harnessPanel'); const d = hp ? hp.style.display : ''; if (hp) hp.style.display = 'none'; return () => { if (hp) hp.style.display = d; }; };
     const B = (el) => el.getBoundingClientRect();
+    // v282: 버튼판을 열 때 바로 녹음은 운영자 차만 — (a)~(e)·(j) 는 공개 사용자(토큰 없음), (f)·(h)·(i) 는 운영자(가짜 토큰)
+    const keepTok = t.store.get('adminToken'), asOp = (on) => t.store.set('adminToken', on ? 'harness-op-token-000000' : null);
     try {
       t.fb.inTest = true;
+      asOp(false);
       t.store.set('fbMode', null); t.fb.micDenied = false; t.fbA.save([]);
       // v272: 버튼판이 열리면 바로 녹음 — 조용한 가짜 마이크 (말소리 없음)
       ac = new AudioContext();
@@ -7462,9 +7476,9 @@
       r.a = { open: t.fbP.open, toast: text('#fbPanel .fbp-cap'), toastBox: !document.getElementById('toast').hidden, mode: t.store.get('fbMode'), labels: bs.map((x) => x.textContent), minW: Math.round(Math.min(...bs.map((x) => B(x).width))), minH: Math.round(Math.min(...bs.map((x) => B(x).height))),
         hits: hits.every(Boolean), who, overNav: !np.hidden && over(pb, nb), overCam: !!cd && !cd.hidden && cd.getClientRects().length > 0 && over(pb, B(cd)), overBtn: over(pb, fbb),
         inView: pb.left >= 0 && pb.right <= innerWidth && pb.top >= 0 && pb.bottom <= innerHeight, camShown: !!cd && cd.getClientRects().length > 0, pressed: btn.classList.contains('open') };
-      // v272: 음성 인식이 실패하면 버튼판과 함께 바로 녹음 ('말하면 녹음돼요')
-      await waitFor(() => !!t.fbP.rec, 2000, 20);
-      r.a.auto = !!t.fbP.rec && t.fbP.rec.auto === true; r.a.autoCap = text('#fbPanel .fbp-cap');
+      // v282: 공개 사용자는 버튼판이 열려도 녹음하지 않는다 ('녹음'을 누를 때만), 판 밑에 그 사실과 보관 기간
+      await sleep(600);
+      r.a.auto = !!t.fbP.rec; r.a.autoCap = text('#fbPanel .fbp-cap'); r.a.note = text('#fbPanel .fbp-note');
       // (c) 카드가 사라진 뒤 눌러도 '의견'을 누른 때의 카드
       t.camState.target = null; t.renderCam();
       t.fb.last = null;
@@ -7485,8 +7499,13 @@
       const o1 = t.fbP.open;
       btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       r.e = { opened: o1, open: t.fbP.open };
-      // (h) v272: 바로 녹음인데 8초 동안 말소리가 없으면 보내지 않고 멈춘다 (버튼판은 그대로)
+      // (h) v272: 바로 녹음인데 8초 동안 말소리가 없으면 보내지 않고 멈춘다 (버튼판은 그대로) — v282: 운영자 차
+      asOp(true);
       const qh0 = t.fbA.load().length;
+      btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await waitFor(() => !!t.fbP.rec, 2000, 20);
+      r.h0 = { auto: !!t.fbP.rec && t.fbP.rec.auto === true, cap: text('#fbPanel .fbp-cap') };
+      t.fbPanelClose();
       btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await waitFor(() => !!t.fbP.rec, 2000, 20);
       await sleep(8700);
@@ -7536,10 +7555,28 @@
       await waitFor(() => /마이크 권한/.test(text('#fbPanel .fbp-cap')), 2000, 20);
       r.g = { toast: text('#fbPanel .fbp-cap'), recHidden: P().querySelector('.fbp-btn.rec').hidden, presets: [...P().querySelectorAll('.fbp-btn:not(.rec)')].filter((x) => !x.hidden).length, open: t.fbP.open };
       t.fbPanelClose();
+      // (j) v282 '글로': 공개 사용자 — 판의 '글로' → 글 칸(녹음 없음) → 빈 글은 안 보냄 → 쓴 글을 보내면 how 'text', '의견'을 누른 때의 위치·길안내
+      asOp(false); t.fb.micDenied = false;
+      btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await sleep(400);
+      const recJ = !!t.fbP.rec;
+      P().querySelector('.fbp-btn[data-k="text"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      const sh = document.getElementById('fbTextSheet'), ta = document.getElementById('fbText');
+      await sleep(120);
+      r.j = { recJ, panelClosed: !t.fbP.open, sheet: !sh.hidden, focus: document.activeElement === ta, note: text('#fbTextSheet .fbt-note') };
+      t.fb.last = null; ta.value = '  ';
+      document.getElementById('fbTextSend').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      r.j.empty = { sent: !!t.fb.last, sheet: !sh.hidden, toast: text('#toast') };
+      ta.value = '여기 카메라는 50m 앞이에요';
+      document.getElementById('fbTextSend').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      const pj = t.fb.last || {};
+      await waitFor(() => /보냈어요/.test(text('#toast')), 2000, 20);
+      r.j.sent = { text: pj.text, how: pj.how, navOn: pj.navOn, pos: pj.lat != null, sheet: !sh.hidden, toast: text('#toast'), queued: t.fbA.load().length };
       t.endNav();
     } finally {
-      t.fbPanelClose();
+      t.fbPanelClose(); t.fbTextClose();
       t.fbCancel(true);
+      t.store.set('adminToken', keepTok || null);
       t.camState.target = null; t.renderCam();
       t.fbA.post = keepPost; t.fbA.save([]);
       if (md) md.getUserMedia = keepGum;
@@ -7551,18 +7588,21 @@
     }
     const a = r.a || {}, b = r.b || {}, c = r.c || {}, d = r.d || {}, e = r.e || {}, f = r.f || {}, g = r.g || {};
     const q = f.queued || {}, fl = f.flushed || {};
-    const h = r.h || {}, ii = r.i || {};
+    const h = r.h || {}, ii = r.i || {}, h0 = r.h0 || {}, j = r.j || {}, je = j.empty || {}, js = j.sent || {};
     const ok = a.open && a.toast === '음성 인식 서버에 연결하지 못했어요 · 버튼으로 보내 주세요' && !a.toastBox && a.mode === 'panel' &&
-      a.auto && a.autoCap === '음성 인식 서버에 연결하지 못했어요 · 말하면 녹음돼요' && f.auto &&
+      !a.auto && a.autoCap === '음성 인식 서버에 연결하지 못했어요 · 버튼으로 보내 주세요' && /^녹음은 '녹음'을 누를 때만 해요 · .*30일 뒤 지워요$/.test(a.note || '') &&
+      h0.auto && h0.cap === '말하면 녹음돼요' && f.auto &&
+      !j.recJ && j.panelClosed && j.sheet && j.focus && /녹음하지 않아요/.test(j.note || '') && !je.sent && je.sheet && je.toast === '글을 써 주세요' &&
+      js.text === '여기 카메라는 50m 앞이에요' && js.how === 'text' && js.navOn === true && js.pos && !js.sheet && js.toast === '보냈어요' && js.queued === 0 &&
       !h.rec && h.open && h.cap === '말소리가 없어 녹음을 멈췄어요 · 버튼으로 보내 주세요' && h.queued === 0 && h.label === '녹음' &&
       ii.preset === '[소리 이상]' && ii.posted === 1 && ii.audio && ii.closed &&
-      a.labels.join() === '녹음,카메라,길안내,화면,소리,좋아요' && a.minW >= 68 && a.minH >= 72 && a.hits && !a.overNav && !a.overCam && a.camShown && !a.overBtn && a.inView && a.pressed &&
+      a.labels.join() === '녹음,글로,카메라,길안내,화면,소리,좋아요' && a.minW >= 64 && a.minH >= 72 && a.hits && !a.overNav && !a.overCam && a.camShown && !a.overBtn && a.inView && a.pressed &&
       c.text === '[카메라 이상]' && c.preset === 'cam' && c.navOn === true && c.cam === 60 && c.hasPos && c.closed && c.toast === '보냈어요' &&
       b.open && b.made === 0 && !d.open && !d.sent && e.opened && !e.open &&
       f.recShown && f.recording && q.n === 1 && /^audio\//.test(q.mime || '') && q.b64 && q.sec >= 1 && q.x === 1 && q.closed && q.toast === '저장했어요 · 연결되면 보내요' && !q.sent &&
       q.ev && /^\(녹음 [\d.]+초\)$/.test(q.ev.text || '') && q.ev.how === 'audio' && q.ev.qid && q.ev.audio && q.ev.navOn === true && q.ev.pos &&
       fl.r === true && fl.left === 0 && fl.audio === 'A2' && fl.qid && fl.msg === 'feedback audio' && fl.via === 'fb' && !fl.pos &&
-      g.toast === '마이크 권한이 꺼져 있어요 · 버튼으로 보내 주세요' && g.recHidden && g.presets === 5 && g.open;
+      g.toast === '마이크 권한이 꺼져 있어요 · 버튼으로 보내 주세요' && g.recHidden && g.presets === 6 /* v282: 글로 + 다섯 */ && g.open;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
@@ -8565,6 +8605,83 @@
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
+  // S181 (v282): 아래 띠를 맨 밑에 붙이고(네이버처럼), 의견은 오른쪽, 빨간 '제보', 칩은 위쪽 버튼 밑 8px, 안내 카드 작게, 화살표는 배율 17 화면 길이
+  async function s181() {
+    const t = T(), app = document.getElementById('app'), keepStyle = app.getAttribute('style'), r = {};
+    const fx = await (await realFetch(harnessDir + 'fixtures/route-suwonsingal-s.json', { cache: 'no-store' })).json();
+    const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+    const cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+    const R = { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '기흥역', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    const gx = fx.guide.find((g) => g.t === 67), gs = cum[gx.i];
+    const rows = t.cams.rows;
+    const ci = rows.findIndex((x, j) => j < (t.cams.userBase || rows.length) && x[2] === 40 && x[3] === 1 && x[4] === 0 && !x[6] && !((x[10] | 0) & 1));
+    const box = (el) => {
+      if (!el || el.hidden || !el.getClientRects().length || getComputedStyle(el).display === 'none') return null;
+      const q = el.getBoundingClientRect();
+      return { l: Math.round(q.left), t: Math.round(q.top), r: Math.round(q.right), b: Math.round(q.bottom) };
+    };
+    const still = document.createElement('style');
+    still.textContent = '#app *, #app *::before, #app *::after { transition: none !important; animation: none !important; }';
+    document.head.appendChild(still);
+    const map = document.getElementById('map'), hadHidden = map.classList.contains('chrome-hidden');
+    try {
+      app.style.height = '638px'; app.style.width = '804px';
+      window.dispatchEvent(new Event('resize'));
+      softReset();
+      await planAndStart(R);
+      for (let s = Math.max(0, gs - 1900); s <= gs - 900; s += 20) { const a = pointAt(R, s); feed(a.p, 22, a.h, { dt: 900 }); }
+      if (ci >= 0) t.camState.target = { i: ci, c: rows[ci], d: 370, r: 370, minD: 370, after: false, t0: Date.now(), first: 600 };
+      t.renderCam(); t.renderNav();
+      await new Promise((res) => setTimeout(res, 450));
+      t.renderNav(); t.fitColumn();
+      const ab = app.getBoundingClientRect();
+      const nb = box(document.getElementById('navBar')), trip = box(document.querySelector('.trip')), fc = box(document.querySelector('.fbcorner'));
+      const np = box(document.getElementById('navPanel')), at = box(document.querySelector('#map .attrib')), gps = box(document.querySelector('.gps'));
+      const left = ['#navPanel', '#camDrawer', '#camNext', '#bumpCard', '#signCard', '#parkCard', '#camMissBtn'].map((q) => box(document.querySelector(q))).filter(Boolean);
+      const lowest = left.reduce((m, x) => Math.max(m, x.b), 0);
+      const kids = ['#nbRemain', '#nbEta', '#roadName', '#nbEnd'].map((q) => box(document.querySelector(q)));
+      r.dock = { docked: app.classList.contains('docked'), nb: nb && { l: nb.l - Math.round(ab.left), r: Math.round(ab.right) - nb.r, b: Math.round(ab.bottom) - nb.b, h: nb.b - nb.t },
+        oneRow: !!nb && kids.every((k) => k && k.t >= nb.t && k.b <= nb.b), order: kids.every(Boolean) && kids[0].l < kids[1].l && kids[1].r <= kids[2].l + 1 && kids[2].r <= kids[3].l + 1,
+        attrib: at && nb ? nb.t - at.b : null, trip: trip && nb ? nb.t - trip.b : null, gps: gps && nb ? nb.t - gps.b : null, col: nb ? nb.t - lowest : null,
+        fb: fc && trip && np ? { gap: trip.l - fc.r, bottom: trip.b - fc.b, rightOfCol: fc.l > np.r } : null };
+      // 제보 버튼 (접히지 않게 잠깐 넉넉히) · 안내 카드 줄 높이
+      app.style.height = '900px'; window.dispatchEvent(new Event('resize')); t.fitColumn();
+      const mb = document.getElementById('camMissBtn');
+      r.report = { txt: mb.textContent, aria: mb.getAttribute('aria-label'), bg: getComputedStyle(mb).backgroundColor, shown: !!box(mb) };
+      const nd = box(document.querySelector('#navPanel .navdest')), nt = box(document.getElementById('nextTurn'));
+      r.card = { dest: nd ? nd.b - nd.t : null, next: nt ? nt.b - nt.t : null };
+      // 칩: 위쪽 버튼이 보이면 그 밑 8px (분기 그림 160m 앞: 그다음 안내·하이패스·휴게소 칩)
+      for (let s = gs - 880; s <= gs - 160; s += 20) { const a = pointAt(R, s); feed(a.p, 22, a.h, { dt: 900 }); }
+      t.renderNav(); t.fitColumn();
+      map.classList.remove('chrome-hidden');   // 바로 잰다 (주행 중에는 앱이 곧 다시 숨긴다)
+      const btnB = Math.max(...[...document.querySelectorAll('.topctrls .btn')].filter((b) => !b.hidden).map((b) => b.getBoundingClientRect().bottom));
+      const chip = document.querySelector('#navChips:not([hidden]) .nchip');
+      r.chipGap = chip ? Math.round(chip.getBoundingClientRect().top - btnB) : null;
+      if (hadHidden) map.classList.add('chrome-hidden');
+      // 화살표: 배율 17 보다 가까이 보면 화면 길이(미터 x 2^z)가 배율 17 과 같다
+      const s17 = t.arrowSpan(37.3, 17), s19 = t.arrowSpan(37.3, 19), s15 = t.arrowSpan(37.3, 15);
+      r.arrow = { b17: Math.round(s17.before), a17: Math.round(s17.after), b19: Math.round(s19.before * 4), a19: Math.round(s19.after * 4), b15: Math.round(s15.before) };
+      t.endNav(); t.renderNav();
+      r.after = { docked: app.classList.contains('docked'), on: document.getElementById('navBar').classList.contains('on') };
+    } finally {
+      if (keepStyle == null) app.removeAttribute('style'); else app.setAttribute('style', keepStyle);
+      window.dispatchEvent(new Event('resize'));
+      if (hadHidden) map.classList.add('chrome-hidden');
+      t.endNav(); t.camState.target = null; t.renderCam(); t.fitColumn();
+      still.remove();
+      softReset();
+    }
+    const d = r.dock || {}, n = d.nb || {}, f = d.fb || {}, rp = r.report || {}, c = r.card || {}, aw = r.arrow || {}, af = r.after || {};
+    const ok = d.docked && n.l === 0 && n.r === 0 && n.b === 0 && n.h === 40 && d.oneRow && d.order &&
+      d.attrib >= 0 && d.trip >= 8 && d.gps >= 0 && d.col >= 24 && f.gap >= 6 && f.gap <= 14 && Math.abs(f.bottom) <= 2 && f.rightOfCol &&
+      r.chipGap === 8 && rp.txt === '제보' && rp.aria === '잘못된 정보 제보' && rp.bg === 'rgb(224, 49, 49)' && rp.shown &&
+      c.dest !== null && c.dest <= 34 && (c.next === null || c.next <= 32) &&
+      aw.b17 === 38 && aw.a17 === 25 && Math.abs(aw.b19 - aw.b17) <= 1 && Math.abs(aw.a19 - aw.a17) <= 1 && aw.b15 > 100 &&
+      !af.docked && !af.on;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
   // S179 (v280): 네이버 하루 점검(2026-11-24 ~ 27)에서 네이버에만 있던 카메라 19곳을 data/driver_spots.json 에 넣었다(네이버 확인 표시 2,
   //   후면 1 · 박스형 8 · 어린이 4). 자리는 네이버 배지 거리가 실제로 줄어드는 프레임(멈춘 거리는 뺌) 가운데 가장 가까운 것들로 잡았다.
   //   각 자리를 그 방향으로 곧게 지나면 네이버와 같은 제한·종류 띠로 뜨고, 반대 방향으로는 안 뜬다. 광주 필문대로 남행 #3183·#3102 는 60 (경찰 50)
@@ -9064,7 +9181,7 @@
       c.chips.length === 2 && /160m/.test(c.chips[0]) && /^R21km$/.test(c.chips[1]) && !c.restRow &&
       b.row && b.lead && b.chips.length === 1 && /^R/.test(b.chips[0]) &&
       d.bar && d.overlap.length === 0 &&
-      f.tripRight >= 0 && f.tripRight < 40 && f.fbLeft >= 0 && f.fbLeft < 40 && !f.gpsInTrip &&
+      f.tripRight >= 0 && f.tripRight < 40 && r.d.fb && r.d.trip && r.d.trip[0] - r.d.fb[2] >= 6 && r.d.trip[0] - r.d.fb[2] <= 14 /* v282: 의견은 주행 기록 카드 왼쪽 */ && !f.gpsInTrip &&
       e.name === '시험 경유지' && e.tag && e.sub === '도착 시험 목적지' &&
       g.files >= 19 && g.x41sDay === 5;
     return { pass: !!ok, detail: JSON.stringify(r) };
@@ -9689,10 +9806,10 @@
       await resetApp(); softReset();
     }
     const a = r.a || {}, bb = r.b || {}, c = r.c || {}, d = r.d || {};
-    const ok = r.before && r.before.limit === '110' && !r.before.doubt && r.before.btn === '잘못된 정보 신고' &&
+    const ok = r.before && r.before.limit === '110' && !r.before.doubt && r.before.btn === '제보' &&
       r.sentBtn === '✓ 보냄' && a.limit === '?' && a.doubt && /내가 신고함/.test(a.after) && a.btn === '↩ 신고 취소' && a.undo && a.mine === 1 && a.list === 1 &&
-      r.undoBtn === '✓ 취소함' && bb.limit === '110' && !bb.doubt && bb.flag === null && bb.mine === 0 && bb.list === 0 && bb.btn === '잘못된 정보 신고' && !bb.undo &&
-      c.doubt && c.limit === '?' && c.btn === '잘못된 정보 신고' && !c.undo &&
+      r.undoBtn === '✓ 취소함' && bb.limit === '110' && !bb.doubt && bb.flag === null && bb.mine === 0 && bb.list === 0 && bb.btn === '제보' && !bb.undo &&
+      c.doubt && c.limit === '?' && c.btn === '제보' && !c.undo &&
       d.removed === 1 && d.left.join(',') === '180';
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
@@ -10407,7 +10524,7 @@
       btn.click();
       await waitFor(() => !btn.classList.contains('sending'), 2000, 20);
       r.off = { ret: r.offRet, sent: bodies.length - n0, label: btn.textContent };
-      clearTimeout(btn._sentT); btn.classList.remove('sent', 'saved', 'sending'); btn.textContent = '잘못된 정보 신고';
+      clearTimeout(btn._sentT); btn.classList.remove('sent', 'saved', 'sending'); btn.textContent = '제보';
       t.prefs.share = true;
       // (d) 진단 올리기
       const keepLog = t.diag.log.slice();

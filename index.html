@@ -2040,7 +2040,8 @@
     position: absolute; left: var(--chip-left, 340px); top: var(--chip-top, 14px); z-index: 1040; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; pointer-events: none;
     transition: transform .2s ease;
   }
-  #app.tesla #map:not(.chrome-hidden) .navchips { transform: translateY(40px); }
+  /* v282 (운전자 '여기 간격을 좀 띄어주고'): 위쪽 버튼(40px)이 보이는 동안 칩은 버튼 밑 8px — 예전 40px 은 버튼 밑에 딱 붙었다 */
+  #app.tesla #map:not(.chrome-hidden) .navchips { transform: translateY(48px); }
   .nchip.in { animation: nchipIn .22s ease-out; }   /* v269: 처음 나타날 때 한 번만 (글자만 바뀔 때 다시 돌지 않게) */
   @keyframes nchipIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
   /* v273 (운전자 '이거는 좀 더 키워줘도 돼' — 휴게소 칩): 휴게소·다음 안내 칩 1.4배 (글자 14 → 20px, 그림 20 → 28px) */
@@ -2136,6 +2137,78 @@
   @media (min-width: 1000px) {
     #app.tesla .speedbox { bottom: calc(24px + 50px + 18px); }
   }
+
+  /* ===================== v282 (운전자 2026-11-28 사진들) =====================
+     '저 가운데 떠있는걸 독바처럼 좀 내리는게' — 길안내 중 아래 띠는 네이버처럼 화면 맨 밑에 붙은 한 줄(높이 --dock-h).
+     출처 글자·주행 기록 카드·GPS·'의견'·알림·버튼 줄은 그 위로 올라가고, 왼쪽 칸은 띠 위에서 끝난다(app.js fitColumn) */
+  #app.tesla { --dock-h: 0px; --trip-b: 34px; }
+  #app.tesla.docked { --dock-h: 40px; --trip-b: calc(var(--dock-h) + 22px); }
+  #app.tesla.docked .navbar.on {
+    left: 0; right: 0; bottom: 0; transform: none; max-width: none; height: var(--dock-h); border-radius: 0;
+    flex-direction: row; align-items: center; gap: 0; padding: 0 8px 0 16px;
+    background-color: var(--nv-bg); background-image: none; box-shadow: 0 -1px 0 var(--nv-line), 0 -4px 14px rgba(0, 0, 0, .12);
+  }
+  #app.tesla.docked .nb-meta:not([hidden]) { display: contents; }
+  #app.tesla.docked .nb-meta b, #app.tesla.docked .nb-meta span { order: 1; flex: none; font-size: 16px; margin-right: 12px; }
+  #app.tesla.docked .nb-meta #nbEta { margin-right: 18px; }
+  #app.tesla.docked .navbar.on .road { order: 2; flex: 1 1 auto; min-width: 0; padding: 0 30px 0 12px; height: 100%; display: flex; align-items: center;
+    border-left: 1px solid var(--nv-line); font-size: 14px; }
+  #app.tesla.docked .navbar.on .road .rn-clip { flex: 1 1 auto; min-width: 0; }
+  #app.tesla.docked .navbar.on .road::after { right: 12px; }
+  #app.tesla.docked .nb-meta button { order: 3; margin-left: 8px; min-height: 30px; }
+  #app.tesla.docked #map .attrib { bottom: calc(var(--dock-h) + 4px); }
+  #app.tesla.docked .trip { bottom: var(--trip-b); }
+  #app.tesla.docked .gps { bottom: calc(var(--dock-h) + 4px); }
+  #app.tesla.docked .updbtn { bottom: calc(var(--trip-b) + var(--trip-h, 110px) + 8px); }
+  #app.tesla.docked .toast { bottom: calc(var(--dock-h) + 16px); }
+  #app.tesla.docked .navtray { bottom: calc(var(--dock-h) + 12px); }
+  #app.tesla.docked .backme { bottom: calc(var(--dock-h) + 14px); height: 40px; padding: 0 18px 0 14px; font-size: 15px; }
+  #app.tesla.docked .navtray.open ~ .backme { bottom: calc(var(--dock-h) + 120px); }
+
+  /* '의견을 오른쪽으로 빼주고' — 주행 기록 카드 왼쪽 10px, 카드와 바닥을 맞춘다. 버튼판은 그 왼쪽으로 열린다 */
+  #app.tesla .fbcorner { left: auto; right: calc(12px + var(--trip-w, 150px) + 10px); bottom: var(--trip-b); }
+  #app.tesla .fbpanel:not([hidden]) { left: auto; right: calc(100% + 10px); }
+  @keyframes fbpIn { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: none; } }
+  #app.tesla .fbcorner .fb-label { left: auto; right: 0; }
+  /* 버튼판: 칸 하나 더('글로'), 칸 폭 72 → 66 */
+  .fbp-btn { width: 66px; }
+  .fbp-btn.text { background: var(--nv-soft); }
+  .fbp-note { font-size: 11.5px; font-weight: 600; color: var(--nv-sub); padding: 0 4px; line-height: 1.3; }
+  .fbp-btn.rec.on span::before { content: '● '; color: #ffdede; }
+
+  /* '잘못된 정보 신고를 제보로 빨간색' */
+  #app.tesla .cam-miss { min-width: 84px; min-height: 46px; padding: 0 16px; font-size: 17px; font-weight: 800; letter-spacing: .02em;
+    background: #e03131; color: #fff; border: 0; box-shadow: 0 4px 12px rgba(224, 49, 49, .35); }
+  #app.tesla .cam-miss:active { background: #c92a2a; }
+  #app.tesla .cam-miss.sent, #app.tesla .cam-miss.sent:active { background: #1d4fb8; box-shadow: none; }
+  #app.tesla .cam-miss.saved, #app.tesla .cam-miss.saved:active { background: #4b5563; box-shadow: none; }
+  #app.tesla .cam-miss.undo { background: rgba(20, 24, 30, .78); border: 2px solid #fff; box-shadow: none; }
+
+  /* '얘 UI가 너무 공간을 크게 차지하는 느낌 … 네이버지도 보면 간결' — 안내 카드를 조금 작게 (목적지 줄 42 → 32px, 안내 줄 86 → 72px, 이어서 줄 37 → 31px) */
+  #app.tesla .navdest { padding: 6px 12px 6px 11px; gap: 6px; }
+  #app.tesla .navdest::after { left: 11px; right: 11px; }
+  #app.tesla .nd-icon, #app.tesla .nd-icon svg { width: 18px; height: 18px; }
+  #app.tesla .nd-name { font-size: 14.5px; }
+  #app.tesla .navpanel .turn { padding: 7px 12px; gap: 10px; }
+  #app.tesla .turnicon, #app.tesla .turnicon svg { width: 38px; height: 38px; }
+  #app.tesla .turndist { font-size: 24px; }
+  #app.tesla .turntext { font-size: 13px; margin-top: 1px; line-height: 1.25; }
+  #app.tesla .nextturn { padding: 3px 12px; gap: 6px; }
+  #app.tesla .nextturn:not(.goal):not(.via) .nexticon, #app.tesla .nextturn:not(.goal):not(.via) .nexticon svg,
+  #app.tesla .nextturn .nextchain .nexticon, #app.tesla .nextturn .nextchain .nexticon svg,
+  #app.tesla .nextturn.goal .nexticon, #app.tesla .nextturn.goal .nexticon svg, #app.tesla .nextturn.via .nexticon, #app.tesla .nextturn.via .nexticon svg { width: 22px; height: 22px; }
+  #app.tesla .nextturn.soon:not(.goal):not(.via) .nexticon, #app.tesla .nextturn.soon:not(.goal):not(.via) .nexticon svg { width: 26px; height: 26px; }
+  #app.tesla .nextturn:not(.goal):not(.via) #nextDist, #app.tesla .nextturn.goal #nextDist, #app.tesla .nextturn.via #nextDist { font-size: 17px; }
+  #app.tesla .nextturn.soon #nextDist { font-size: 18px; }
+  #app.tesla .nextturn .nextchain b { font-size: 16px; }
+  #app.tesla .nextturn .nextchain .nc-sep { font-size: 18px; }
+  #app.tesla .nextturn .nextlead { font-size: 12px; padding: 1px 6px; }
+
+  /* 글로 의견 (운전자 '음성으로 하면 사생활 침해당했다 생각할 수 있으니 텍스트로 남길 수 있는') */
+  #fbTextSheet .sheet-card { max-width: 520px; }
+  #fbTextSheet textarea { width: 100%; min-height: 84px; box-sizing: border-box; resize: none; font: inherit; font-size: 17px; padding: 10px 12px;
+    border-radius: 12px; border: 1.5px solid var(--nv-line, #ccd); background: var(--nv-soft, #f4f6f8); color: inherit; }
+  #fbTextSheet .fbt-note { font-size: 12.5px; color: var(--nv-sub, #667); margin: 8px 2px 0; line-height: 1.4; }
 </style>
 </head>
 <body>
@@ -2213,7 +2286,7 @@
     <div id="camNext" class="camnext" hidden></div>
     <!-- v123: 단속 카메라를 놓쳤으면 한 번 눌러 신고 (최근 2분 반 궤적과 근처 카메라를 보냄) -->
     <!-- v202 (운전자 '틀림 놓침에서 틀림 없애고 놓침을 잘못 된 정보 신고로'): 경고 카드가 떠 있으면 그 카메라 신고, 없으면 놓친 단속 신고 + 네이버 확인 -->
-    <button id="camMissBtn" class="cam-report cam-miss" type="button" hidden aria-label="잘못된 정보 신고">잘못된 정보 신고</button>
+    <button id="camMissBtn" class="cam-report cam-miss" type="button" hidden aria-label="잘못된 정보 제보">제보</button>
     </div>
     <div id="weather" class="weather" hidden></div>
     <div class="trip">
@@ -2371,6 +2444,16 @@
   </div>
 </div>
 
+<!-- v282 글로 의견 (운전자 '음성으로 하면 사생활 침해당했다 생각할 수 있으니 텍스트로 남길 수 있는'): 의견 버튼판의 '글로' 칸 -->
+<div id="fbTextSheet" class="sheet" hidden>
+  <div class="sheet-card" role="dialog" aria-label="글로 의견 남기기">
+    <h2>글로 의견 남기기</h2>
+    <textarea id="fbText" maxlength="500" rows="3" placeholder="예: 이 카메라는 실제로 50m 앞에 있어요"></textarea>
+    <p class="fbt-note">글자만 보내요. 녹음하지 않아요. '의견'을 누른 때의 위치와 떠 있던 안내가 함께 가요.</p>
+    <div class="row end"><button id="fbTextCancel" type="button">닫기</button><button id="fbTextSend" type="button" class="primary">보내기</button></div>
+  </div>
+</div>
+
 <!-- 주행 기록: 주행마다 거리·시간·속도, 누르면 과속한 곳 목록 -->
 <div id="tripSheet" class="sheet" hidden>
   <div class="sheet-card" role="dialog" aria-label="주행 기록">
@@ -2444,7 +2527,7 @@
 
     <section class="set-group mine" aria-label="내 신고">
       <h3>내 신고</h3>
-      <p id="myEmpty" class="hint">아직 없어요. '잘못된 정보 신고'를 누르면 여기에 모여요.</p>
+      <p id="myEmpty" class="hint">아직 없어요. 빨간 '제보'를 누르면 여기에 모여요.</p>
       <!-- v169/v171: '놓침'으로 고친 카메라와 신고한 단속 지점 (이 기기에만 저장) — 상태와 되돌리기 -->
       <div id="mySpotBox" class="camflags" hidden>
         <p class="hint"><b>신고로 고친 카메라·신고한 지점</b> · 이 차에서 바로 반영돼요. 같은 방향으로 지나면 미리 알려요.</p>
@@ -2462,7 +2545,7 @@
     <section class="set-group info" aria-label="정보">
       <h3>정보</h3>
       <label class="tgl"><span>신고 위치 보내기</span><input type="checkbox" id="optShare"><i aria-hidden="true"></i></label>
-      <p class="hint">'잘못된 정보 신고'를 누르면 그 자리 위치(근처 단속 카메라와 진행 방향)가 서버로 보내져 자료를 고치는 데 써요. 지나온 길은 보내지 않아요. 끄면 이 차에만 기록해요.</p>
+      <p class="hint">빨간 '제보'(잘못된 정보 신고)를 누르면 그 자리 위치(근처 단속 카메라와 진행 방향)가 서버로 보내져 자료를 고치는 데 써요. 지나온 길은 보내지 않아요. 끄면 이 차에만 기록해요.</p>
       <label class="tgl"><span>단속 카메라 알림 통계 보내기</span><input type="checkbox" id="optPassStats"><i aria-hidden="true"></i></label>
       <p class="hint">단속 카메라를 지날 때 알림이 잘 됐는지 익명 통계를 보내요 (위치 경로는 보내지 않아요). 카메라마다 알림 여부와 지날 때 속도(5km/h 단위)를 몇 분씩 모아 보내고, 기기 번호는 넣지 않아요.</p>
       <label class="tgl"><span>테스터 주행 경로 보내기</span><input type="checkbox" id="optRouteShare"><i aria-hidden="true"></i></label>
@@ -2508,8 +2591,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-283"></script>
-<script src="img/ai/picks.js?v=2026.11.16-283"></script>
-<script src="app.js?v=2026.11.16-283"></script>
+<script src="icons.js?v=2026.11.16-284"></script>
+<script src="img/ai/picks.js?v=2026.11.16-284"></script>
+<script src="app.js?v=2026.11.16-284"></script>
 </body>
 </html>
