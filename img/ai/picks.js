@@ -84,6 +84,8 @@ window.TNC_PICKS = {
   "jx2_x41_night": "jx2_x41_night__sunburst26e__2.webp",
   "jx2_x41s_day": "jx2_x41s_day__sunburst26e__2.webp",
   "jx2_x41s_night": "jx2_x41s_night__sunburst26e__1.webp",
+  "jx2_x41c_day": "jx2_x41c_day__sunburst26e__1.webp",
+  "jx2_x41c_night": "jx2_x41c_night__sunburst26e__1.webp",
   "jx2_x22_day": "jx2_x22_day__sunburst26e__1.webp",
   "jx2_x22_night": "jx2_x22_night__sunburst26e__1.webp",
   "jx2_x42_day": "jx2_x42_day__flare26e__1.webp",

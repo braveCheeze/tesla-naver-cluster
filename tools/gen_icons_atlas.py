@@ -809,13 +809,13 @@ JX2_LANES_TXT = {
 JX2_GEO_CURVE = ('GEOMETRY IS CRITICAL (like the junction view of a navigation app about 300 m before this exit): in the foreground all lanes run '
                  'straight and parallel; the green exit lane is the rightmost lane beside the grey through lanes, separated from them by a SOLID '
                  'white line from the very bottom of the image (not dashed), and that solid line curves away to the right with the ramp. The road splits (the gore with white chevron hatching) close ahead, in the middle of the picture, exactly where the '
-                 'sketch has it. Right after the gore the green exit ramp curves SHARPLY to the right and sweeps off the right edge of the picture '
-                 'just below the horizon, while the grey through lanes continue straight to the horizon. From the gore on, the ramp has two lanes: '
+                 'sketch has it. After the gore the green exit ramp bends GENTLY to the right with a large radius (v293b, driver: like Naver) and sweeps '
+                 'in a wide curve to the right edge of the picture just below the horizon, while the grey through lanes continue straight to the horizon. From the gore on, the ramp has two lanes: '
                  'the green route lane on the left and one grey lane on its right, separated by a dashed white line, with a solid white edge on the '
                  'outside. The grey through lanes have straight-ahead arrows; the green exit lane has one white arrow that goes up and then bends '
                  'to the right, exactly as in the sketch. ')
 JX2_LANES_TXT['x41c'] = ('the road has exactly 5 lanes in the foreground: 4 grey lanes go straight on the left and 1 green lane (the route) on '
-                         'their right, which leaves at the gore and curves sharply to the right.')
+                         'their right, which runs straight beside them in the lower part of the picture, then leaves at the gore and bends gently to the right.')
 JX2_CURVE = {'x41c'}
 JX2 = {}
 for _k, _t in JX2_LANES_TXT.items():
