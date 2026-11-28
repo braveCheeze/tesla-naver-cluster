@@ -2969,6 +2969,7 @@
     { id: 'S176', name: "S176 nothing in the left column is cut off (v275, driver photo 2026-11-27 수원신갈IC 160 m: '이렇게 나와 버려 제일 좋은 방법 조금 변경해봐'): at 804×560 and 804×600 on the real 경부 → 수원신갈IC route, 900 m before the exit (card + next row + rest row + 40 camera + speed strip + hi-pass + report button) folds report → hi-pass chip → camera to the right badge → speed strip so the column ends above the attribution line; 160 m before (junction picture) the card is one line with the picture right under it, next guide / rest / hi-pass are chips, the right badge shows speed 79 (red over 40), the 40 sign, 370m and the kind band 8 px left of the route strip, no report button; restoring the size unfolds", fn: s176 },
     { id: 'S177', name: "S177 approach leg then turn (v277, keys Naver check of the crossing cameras v274 removed): a guided car coming in on the camera's own approach and turning at the junction is still alerted — 인항로 #23586 turning left, 안남로 #25184 turning right, 군왕로 #3564 turning toward 270° — while going straight through the junction on the crossing road either way is not; the two 30 school-zone cameras on one pole on 마장로324번길 190 m west of 안남로 follow Naver: westbound (after the right turn) #25199 at 274°, eastbound #25191 at 94°, each only for its own direction", fn: s177 },
     { id: 'S178', name: "S178 recorded voice clips (v278, driver '걍 MeloTTS로 다 가자' — the Tesla browser has no speech engine: 0 voices, speak() → synthesis-failed): every sentence the app speaks, built by the same functions (camSpeech for all kinds/zones/rear/box/distances/limits — box booths now say '박스형 단속 카메라' like Naver, section start, fixed sentences, ETA change, route start with the destination name left out, 이어서/다시 chains, and every Naver guide text in the test routes incl. toll gates) maps fully onto data/voice_clips.json; numbers read 12 · 110 · 1600 · 23000 as clips; with the flag on and no working speech the clips are fetched, decoded and played back to back (onEnd), one missing clip falls back to the beep (onFail), an uncovered sentence returns false; with the flag off speechSynthesis stays; v279: fetched clips land in Cache Storage and play with the network gone", fn: s178 },
+    { id: 'S184', name: "S184 a passed camera switches off at once (v289, driver '과속 단속이 지나 갔는데도 계속 속도가 떠 있는 경우가 있어서 … 지나가면 그냥 신호 과속 표시를 꺼 줘야'): two synthetic 60 cameras at 72 km/h — at the first fix past the pole the red over-speed card, the speed row and the red speedometer go off and '통과' lasts no more than 30 m or 2 s; a camera point 90 m off the road clears within 25 m of the closest approach (it used to stay 120 m more behind the 80 m gate); a 20 m GPS jump back after passing does not bring it back; with fixes every 2 s it is gone at the next fix", fn: s184 },
     { id: 'S183', name: "S183 arrival near the destination (v288, driver '어느순간 길안내를 계속 못찾아서 이거 확인좀 해주고 개선해 줘'): synthetic block — the car leaves a route that loops around the block and comes up the side street to the route end; one reroute, the loop answer is shown with a '목적지 근처예요 · 안내 종료' button, and 40 m from the end it says '목적지 부근입니다'; a rejected answer is not re-asked at once and a stop 110 m away ends guidance after 3 s; crawling on a direct route does not end early; a start 200 m away does not end; an OSM parking entrance and GPS loss end it; a loop answer inside 150 m ends it without showing", fn: s183 },
     { id: 'S182', name: "S182 section card like Naver (v286, driver '구간 평균 나와있는 숫자는 노란색으로 네이버지도랑 맞춰 주고 몇 키로 구간 단속인지 안 나와 있어서 … 평균속도 밑으로 표기'): 900 m into the 서울TG 100 section, day and night, the speed row's 구간평균 number is yellow on a dark chip and the section card shows a red-ring '100' sign in dark ink (the old '제한 100' text was white on the light card), 남은 구간 and the time; the card touches neither the route strip nor the docked bar", fn: s182 },
     { id: 'S179', name: "S179 cameras only Naver had in the daily Naver checks of 2026-11-24..27 (v280): the 19 spots in data/driver_spots.json (Naver-checked; rear, box and child flags as Naver's badge), plus v282's 8 from the pipeline's verified lines, alert along a straight route in their direction with Naver's limit and kind band (박스형 · 후면단속 · 신호과속 · 과속단속) by 520 m before, not the other way; 광주 필문대로 southbound #3183 and #3102 alert 60 (police data 50)", fn: s179 },
@@ -8384,12 +8385,15 @@
       return {
         H, dist, jx: app.classList.contains('jx-time'), folds: t.FOLD_STEPS.filter((c) => app.classList.contains(c)), over: lowest - floor, lowest: lowest - ab.top,
         dest: !!box(document.querySelector('#navPanel .navdest')), turnH: tt ? tt.b - tt.t : 0,
-        picGap: jc && np ? jc.t - np.b : null, cam: !!box($('#camCard')), spd: !!box($('#mySpeed')), toll: !!box($('#tollCard')), miss: !!cMiss, next: !!box($('#nextTurn')),
+        picGap: jc && np ? jc.t - np.b : null, jcB: jc ? jc.b : null, cam: !!box($('#camCard')), spd: !!box($('#mySpeed')), toll: !!box($('#tollCard')), miss: !!cMiss, next: !!box($('#nextTurn')),
         corner: cMiss && cFb ? { l: cMiss.l - Math.round(ab.left), gap: cFb.l - cMiss.r, bot: Math.abs(cFb.b - cMiss.b), aboveBar: nbx ? nbx.t - cFb.b : null, colGap: Math.min(cMiss.t, cFb.t) - lowest } : null,
         rest: !!box($('#restCard')), chips: chips.map((c) => c.k + '|' + c.txt.replace(/\s+/g, ' ')),
-        chipOver: chips.filter((c) => c.b && c.b.r > (badge ? badge.l - 4 : strip ? strip.l - 4 : ab.right)).map((c) => c.k),
+        spBox: box($('#mySpeed')), spOver: hasCls('#mySpeed', 'over'),   // v289: 그림 때도 늘 쓰던 속도 칸
+        chipOver: chips.filter((c) => c.b && c.b.r > (strip ? Math.min(strip.l, sLab ? sLab.l : Infinity) - 4 : ab.right)).map((c) => c.k),
+        // v289 (운전자 '왼쪽에 나오게', '좀 줄여가지고'): 배지는 왼쪽 서랍 안 분기 그림 바로 밑 — 그림 밑 4~16px, 왼쪽 칸 안, 표지 원 52px 이하
         badge: badge ? { txt: [...$('#sideBadge').children].map((c) => c.textContent.trim()).join(' '), cls: $('#sideBadge').className,
-          gap: strip ? Math.min(strip.l, sLab ? sLab.l : Infinity) - badge.r : null, labGap: sLab ? sLab.l - badge.r : null, inView: badge.b <= floor,
+          t: badge.t, under: jc ? badge.t - jc.b : null, inCol: !!np && badge.l >= np.l && badge.r <= np.r, sign: box(document.querySelector('#sideBadge .sbg-sign')),
+          stripGap: strip ? strip.l - badge.r : null, inView: badge.b <= floor,
           tripHit: !!(trip && badge.b > trip.t && badge.r > trip.l && badge.l < trip.r) } : null,
       };
     };
@@ -8399,7 +8403,8 @@
     document.head.appendChild(still);
     try {
       if (ci < 0) return { pass: false, detail: 'no 40 camera row' };
-      for (const H of [560, 600, 638]) for (const d of [900, 160]) out[H + '_' + d] = await scene(H, d);   // v286: 638(테슬라 원래 높이)도
+      // v286: 638(테슬라 원래 높이)도. v289 (운전자 '하이패스가 나오면 오른쪽으로 과속단속을 알려주는데 그냥 줄이고 왼쪽으로'): 500 — 단속 카드까지 접히는 높이
+      for (const H of [500, 560, 600, 638]) for (const d of [900, 160]) out[H + '_' + d] = await scene(H, d);
       if (keepStyle == null) app.removeAttribute('style'); else app.setAttribute('style', keepStyle);
       window.dispatchEvent(new Event('resize'));
       t.fitColumn();
@@ -8415,6 +8420,9 @@
       if (k === 'back') { if (o.folds.length) bad.push('back: still folded ' + o.folds.join(',')); continue; }
       if (o.over > 0) bad.push(k + ': left column ' + o.over + 'px below the screen');
       if (o.chipOver.length) bad.push(k + ': chip runs into the badge ' + o.chipOver.join(','));
+      // v289: 어느 상태에서든 단속 배지는 왼쪽 칸 안 (오른쪽 경로 막대 옆에 단속 표시 없음)
+      if (o.badge && (!o.badge.inCol || (o.badge.stripGap !== null && o.badge.stripGap < 100))) bad.push(k + ': badge not in the left column ' + JSON.stringify(o.badge));
+      if (o.folds.includes('fo-cam') && !o.folds.includes('fo-toll')) bad.push(k + ': camera folded before the hi-pass card');
       // v286: 두 버튼은 화면 안(왼쪽 12px 넘게)·아래 띠 위 8px 넘게, 나란히(제보 → 의견), 왼쪽 칸은 그 위 8px 넘게에서 끝난다
       const cn = o.corner;
       if (!cn) bad.push(k + ': corner buttons missing');
@@ -8430,12 +8438,18 @@
         if (o.dest) bad.push(k + ': destination line shown');
         if (o.turnH > 26) bad.push(k + ': turn text ' + o.turnH + 'px (not one line)');
         if (!(o.picGap !== null && o.picGap >= 0 && o.picGap <= 16)) bad.push(k + ': picture not under the card (' + o.picGap + ')');
-        if (o.cam || o.spd || o.toll || o.next || o.rest) bad.push(k + ': left column still has ' + ['cam', 'spd', 'toll', 'next', 'rest'].filter((x) => o[x]).join(','));
-        if (!o.badge || !/^79km\/h 40 370m \S/.test(o.badge.txt)) bad.push(k + ': badge ' + JSON.stringify(o.badge));
-        if (o.badge && !/\bover\b/.test(o.badge.cls)) bad.push(k + ': 79 over 40 not red');
-        if (o.badge && o.badge.gap !== null && (o.badge.gap < 6 || o.badge.gap > 10)) bad.push(k + ': badge gap to the route strip ' + o.badge.gap);
-        // v286: 막대 위 글자와도 8px 넘게 (반올림 1px) — v284 에서 글자가 '40' 원을 덮었다
-        if (o.badge && o.badge.labGap !== null && o.badge.labGap < 7) bad.push(k + ': badge under the strip label (' + o.badge.labGap + 'px)');
+        if (o.cam || o.toll || o.next || o.rest) bad.push(k + ': left column still has ' + ['cam', 'toll', 'next', 'rest'].filter((x) => o[x]).join(','));
+        // v289 (운전자 '이거 그냥 우리 기존 속도계처럼'): 그림 바로 밑 속도 칸(79 km/h · 제한 40, 빨강), 그 밑 단속 줄. 속도 칸이 접히면 속도는 단속 줄 앞에
+        const spIn = !o.folds.includes('fo-speed');
+        if (spIn && !o.spd) bad.push(k + ': speed row missing under the picture');
+        if (spIn && o.spBox && o.jcB !== null && !(o.spBox.t - o.jcB >= 4 && o.spBox.t - o.jcB <= 16)) bad.push(k + ': speed row not right under the picture');
+        if (!o.badge || !(spIn ? /^40 370m\S/ : /^79km\/h 40 370m\S/).test(o.badge.txt)) bad.push(k + ': badge ' + JSON.stringify(o.badge));
+        if (!(spIn ? o.spOver : o.badge && /\bover\b/.test(o.badge.cls))) bad.push(k + ': 79 over 40 not red');
+        const above = spIn && o.spBox ? o.spBox.b : o.jcB, gapB = o.badge && above !== null ? o.badge.t - above : null;
+        if (o.badge && !(gapB !== null && gapB >= 4 && gapB <= 16)) bad.push(k + ': badge not right under the ' + (spIn ? 'speed row' : 'picture') + ' (' + gapB + ')');
+        if (o.badge && !o.badge.inCol) bad.push(k + ': badge outside the left column');
+        if (o.badge && !(o.badge.sign && o.badge.sign.r - o.badge.sign.l <= 52)) bad.push(k + ': badge sign too big ' + JSON.stringify(o.badge.sign));
+        if (o.badge && o.badge.stripGap !== null && o.badge.stripGap < 100) bad.push(k + ': badge next to the route strip');
         if (o.badge && (!o.badge.inView || o.badge.tripHit)) bad.push(k + ': badge off screen or over the trip card');
         if (!o.chips.some((c) => /^n:/.test(c))) bad.push(k + ': next guide chip missing');
         if (!o.chips.some((c) => /^r:/.test(c))) bad.push(k + ': rest chip missing');
@@ -8696,6 +8710,66 @@
       c.dest !== null && c.dest <= 34 && (c.next === null || c.next <= 32) &&
       aw.b17 === 38 && aw.a17 === 25 && Math.abs(aw.b19 - aw.b17) <= 1 && Math.abs(aw.a19 - aw.a17) <= 1 && aw.b15 > 100 &&
       !af.docked && !af.on;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S184 (v289, 운전자 '과속 단속이 지나 갔는데도 계속 속도가 떠 있는 경우가 있어서 이건 확실하게 안뜨게 해줘야 해 지나가면 그냥 신호 과속 표시를 꺼 줘야'):
+  //   합성 동네(실제 카메라 없음)에 운전자 지점 과속 60 두 대를 잠깐 넣고 시속 72km 로 지난다.
+  //   (a) 지나는 순간: 카드의 빨간 과속(over)·속도 줄(#mySpeed)·속도계 빨강(#speed.over)이 꺼지고, '통과'는 30m·2초 안에 사라진다 (1초마다 20m 오는 위치라 30m 넘은 첫 위치 40m)
+  //   (b) 카메라 점이 길에서 90m 옆(예전 '가장 가까웠던 거리 80m 안' 조건에 걸려 120m 를 더 가서야 내려감) — 가장 가까웠던 뒤 25m 안에 사라진다
+  //   (c) 지난 뒤 위치가 한 번 20m 뒤로 튀어도(GPS 늦음) 다시 뜨지 않는다   (d) 위치가 2초마다 와도 '통과'는 다음 위치(2초)에서 사라진다
+  async function s184() {
+    const t = T(), r = {};
+    const O = dest(NAV_ORIGIN, 90, 20000);   // 6km 안에 카메라가 없는 곳
+    const A = dest(O, 0, 0), B = dest(O, 0, 2500);
+    const keepRows = t.driverSpots.rows.slice();
+    const camAt = (p) => { const tg = t.camState.target; return !!tg && hav({ lat: tg.c[0], lng: tg.c[1] }, p) < 3; };
+    const vis = (q) => { const e = document.querySelector(q); return !!e && !e.hidden && e.getClientRects().length > 0 && getComputedStyle(e).display !== 'none'; };
+    const drive = (cam, side, from, to, step, dt, jumpAt, pickI) => {
+      const o = { before: null, firstAfter: null, clearedAt: null, reshown: false, near: 0 };
+      let jumped = false;
+      for (let s = from; s <= to; s += step) {
+        let ss = s;
+        if (jumpAt != null && !jumped && s >= jumpAt) { jumped = true; ss = s - 20; }   // GPS 가 한 번 20m 뒤 자리를 준다
+        feed(dest(dest(cam, 90, side), 0, ss), 20, 0, { dt });
+        // (b) 길에서 90m 옆 카메라는 처음 고르기에서는 안 잡힌다 — 경로 위 목록·옆길에서 잡혔던 경우처럼 100m 앞에서 붙여 둔다
+        if (pickI != null && s === -100) { const c = t.cams.rows[pickI], dd = hav(t.state.fix, { lat: c[0], lng: c[1] }); t.camState.target = { i: pickI, c, d: dd, r: dd, minD: dd, first: dd, after: false, at: t.state.fix.t, said: {}, flag: null }; }
+        const mine = camAt(cam);
+        const st = { s: ss, mine, txt: mine ? text('#camDist') : '', over: hasCls('#camCard', 'over'), spd: vis('#mySpeed'), speedOver: hasCls('#speed', 'over') };
+        if (ss >= -120 && ss <= -40 && mine && !o.before) o.before = st;
+        if (ss > 0 && o.firstAfter === null) o.firstAfter = st;
+        if (o.clearedAt === null && ss > -10 && !mine && (o.before || o.firstAfter)) o.clearedAt = ss;
+        if (o.clearedAt !== null && mine) o.reshown = true;
+      }
+      return o;
+    };
+    try {
+      await waitFor(() => t.cams.loaded, 10000, 100);
+      r.others = t.camsNear(O.lat, O.lng, 4000).length + t.camsNear(B.lat, B.lng, 4000).length;
+      const n0 = t.cams.rows.length;
+      t.driverSpots.rows.push([round6(A.lat), round6(A.lng), 0, 0, 60, 1, 0], [round6(B.lat), round6(B.lng), 0, 0, 60, 1, 0]);
+      t.applyUserSpots();
+      r.added = t.cams.rows.length - n0;
+      const iB = t.cams.rows.findIndex((x, k) => k >= n0 && hav({ lat: x[0], lng: x[1] }, B) < 3);
+      await resetApp(); softReset();
+      r.a = drive(A, 0, -700, 200, 20, 1000);
+      await resetApp(); softReset();
+      r.b = drive(B, 90, -700, 300, 10, 500, null, iB);
+      await resetApp(); softReset();
+      r.c = drive(A, 0, -700, 200, 20, 1000, 40);
+      await resetApp(); softReset();
+      r.d = drive(A, 0, -700, 200, 40, 2000);
+    } finally {
+      t.driverSpots.rows.length = 0; keepRows.forEach((x) => t.driverSpots.rows.push(x)); t.applyUserSpots();
+      await resetApp(); softReset();
+    }
+    const a = r.a || {}, b = r.b || {}, c = r.c || {}, d = r.d || {};
+    const offAtPass = (x) => !!x.firstAfter && !x.firstAfter.over && !x.firstAfter.spd && !x.firstAfter.speedOver && (!x.firstAfter.mine || x.firstAfter.txt === '통과');
+    const ok = r.others === 0 && r.added === 2 &&
+      !!a.before && a.before.over && a.before.spd && a.before.speedOver && offAtPass(a) && a.clearedAt !== null && a.clearedAt <= 40 && !a.reshown &&
+      !!b.before && b.clearedAt !== null && b.clearedAt <= 25 && !b.reshown &&
+      offAtPass(c) && c.clearedAt !== null && c.clearedAt <= 60 && !c.reshown &&
+      !!d.before && offAtPass(d) && d.clearedAt !== null && d.clearedAt <= 80 && !d.reshown;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
@@ -11082,7 +11156,7 @@
       r.b.length === 3 && r.b[0] === 'navdest>turn>tunnelRow>restCard' && r.b[1] === 'navdest>turn>tunnelRow>restCard>nextTurn' && r.b[2] === 'navdest>turn>restCard>nextTurn' &&
       c.order === 'navdest>turn>nextTurn>restCard' && /^3[6-8]0m 이배재터널 출구까지$/.test(c.main) && /^8[2-4]0m 터널 지나$/.test(c.next) &&
       r.d.join(',') === 'ABC,ABC,ACB,ACB,CB-A,ACB' &&
-      r.e1 === 'camCard>tollCard' && r.e2 === 'tollCard>camCard' && r.e3 === 'laneRow>juncCard>camCard>mySpeed>zoneBadge>secCard>tollCard';
+      r.e1 === 'camCard>tollCard' && r.e2 === 'tollCard>camCard' && r.e3.replace(/>?sideBadge/, '') === 'laneRow>juncCard>camCard>mySpeed>zoneBadge>secCard>tollCard';   // v289: 단속 배지도 서랍 안 (그림·단속 카드 밑을 따라감)
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

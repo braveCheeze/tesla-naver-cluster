@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-288'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-289'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -3198,6 +3198,11 @@
   const SEC_START_HOLD = 60;
   const isSecStart = (c) => c[4] === 1 && !spotUnchecked(c);
   const camHold = (c) => (isRear(c) ? REAR_HOLD : isSignalCam(c) ? 0 : isSecStart(c) ? SEC_START_HOLD : CAM_HOLD);
+  // v289 (운전자 '과속 단속이 지나 갔는데도 계속 속도가 떠 있는 경우가 있어서 이건 확실하게 안뜨게 해줘야 해 지나가면 그냥 신호 과속 표시를 꺼 줘야'):
+  //   보통 카메라의 '통과'는 30m 또는 2초 중 먼저 오는 때까지만. 지나는 순간 그 카메라에 묶인 빨간 과속 강조·속도 줄·과속 경고음은 끈다.
+  //   후면단속(지난 뒤가 단속 자리, '후면단속 중' 130m)과 구간단속(구간 칸)은 그대로
+  const CAM_HOLD_MS = 2000;
+  const camLive = (tg) => !!tg && (!tg.after || isRear(tg.c));
   // 카메라 행: [lat, lng, limit, kind, sec, len, zone, road, rtype, dir(, flags)]
   // kind: 1 과속, 2 신호 전용, 3 과속+신호, 9 구간/기타 · rtype: 1 고속국도, 3 일반국도, 4 지방도, 5 시도, 6 기타
   // 8 이동식: 경찰청 공개 데이터는 고정식만 담고 있어 지금은 없다. 이동식 위치 데이터가 생기면 kind 8 로 넣으면 파란색으로 뜬다
@@ -3841,7 +3846,7 @@
     const sec = camState.section, secDone = sec ? state.odo - sec.d0 : 0;
     if (sec && secDone >= 500 && (same.some((x) => x.c[4] === 2) || (oppEnd && !start))) endSection(!!start);
     if (start) startSection(start.c, f);
-    tg.after = true; // 카메라 좌표 오차를 감안해 지나간 뒤 CAM_HOLD m (후면 단속은 REAR_HOLD m, 신호는 0) 까지 경고를 유지한다
+    tg.after = true; tg.afterT = now; // 지나간 뒤 CAM_HOLD m·CAM_HOLD_MS (후면 단속은 REAR_HOLD m, 신호는 0) 까지 '통과'를 보인다
   }
   // 경로 거리 s 가 놓인 선분 번호
   function routeSegAt(s) {
@@ -4104,15 +4109,19 @@
       // v161: GPS 가 한 번 앞으로 튀어 신호 카메라를 '지난' 것으로 보이면(1초에 갈 수 있는 거리의 두 배 넘게 한꺼번에) 다음 위치로 한 번 더 확인
       const jump = past !== null && tg.lastPast != null && past - tg.lastPast > Math.max(40, state.speedKmh / 3.6 * 2);
       if (past !== null) tg.lastPast = past;
-      const sigPass = past !== null && past >= SIGNAL_PAST && tg.minD < 80 && !jump;
-      const routePass = rp !== null && !isSignalCam(tg.c) && rp >= 0 && tg.minD < 80;
-      const geoPass = rp === null && tg.minD < 80 && d > tg.minD + 10 && behind;
+      // v289: 예전엔 셋 다 '가장 가까웠던 거리 80m 안'이어야 지남이었다 — 카메라 점이 경로에서 80m 넘게 떨어진 곳(점 오차·나란한 길)은
+      //   지남으로 안 잡혀 150m 를 더 가서야(아래 '방향을 틀어 벗어남') 카드·속도가 내려갔다. 이제 경로를 따라 카메라 자리를 넘었거나,
+      //   카메라가 뒤에 있고 진행 방향으로 3m 넘게 지났거나 가장 가까웠던 뒤 5m 넘게 멀어지면 지남이다
+      const sigPass = past !== null && past >= SIGNAL_PAST && !jump;
+      const routePass = rp !== null && !isSignalCam(tg.c) && rp >= 0;
+      const geoPast = state.heading === null ? null : -d * Math.cos(toRad(angleDiff(bearing(f, cp), state.heading)));   // 진행 방향으로 지난 거리
+      const geoPass = rp === null && behind && ((geoPast !== null && geoPast >= 3) || d > tg.minD + 5);
       if (!tg.after && moving && (sigPass || routePass || geoPass)) {   // 카메라를 지나감
         passCam(tg, f, now);
       }
       if (tg.after) {
-        const gone = routePast(tg.c);
-        if ((gone !== null ? gone : d) >= camHold(tg.c)) { // 단속 지점을 다 지났다: 경고를 내리고 '띠링' 한 번
+        const gone = routePast(tg.c), hold = camHold(tg.c);
+        if ((gone !== null ? gone : d) >= hold || (hold === CAM_HOLD && now - (tg.afterT || now) >= CAM_HOLD_MS)) { // 단속 지점을 다 지났다: 경고를 내리고 '띠링' 한 번
           camState.target = tg = null;
           passedChime();
         }
@@ -4245,7 +4254,7 @@
       if (!tg.said.evt) tg.said.evt = tripEvent({ kind: 'cam', label: camLabel(c), limit, kmh, lat: c[0], lng: c[1] });
       else if (kmh > tg.said.evt.kmh) { tg.said.evt.kmh = kmh; }
     }
-    if (tg.after && !(limit > 0 && state.speedKmh > limit + 1 && isSpeedCam(c))) return;
+    if (tg.after && (!isRear(c) || !(limit > 0 && state.speedKmh > limit + 1 && isSpeedCam(c)))) return;   // v289: 지난 보통 카메라는 경고음 없음
     if (!isSpeedCam(c)) { // 신호 전용 카메라: 짧게 한 번만 알린다 (속도 경고 없음)
       if (!tg.said.far && d <= 300) { tg.said.far = true; say('300미터 앞, 신호 단속 카메라입니다.', 1); }
       return;
@@ -4361,7 +4370,7 @@
       card._d = tg.after ? 0 : Math.max(0, sd);   // 서랍 칸 순서 (v158)
       const span = Math.max(Number.isFinite(tg.first) ? tg.first : sd, 300);
       $('#camBar').style.width = tg.after ? '100%' : Math.max(0, Math.min(100, (1 - sd / span) * 100)) + '%';
-      card.classList.toggle('over', speedCam && !doubt && tg.c[2] > 0 && state.speedKmh > tg.c[2] + 1 && sd < 600);
+      card.classList.toggle('over', speedCam && !doubt && camLive(tg) && tg.c[2] > 0 && state.speedKmh > tg.c[2] + 1 && sd < 600);
       card.classList.toggle('signal', !speedCam);
       card.classList.toggle('mobile', tg.c[3] === 8 || isBox(tg.c) || spotUnchecked(tg.c)); // 이동식·박스형·확인 전 신고 지점은 파란색 (v114, v169, v208)
       card.classList.toggle('box', isBox(tg.c));
@@ -4399,7 +4408,7 @@
   // ---------- 단속 서랍 (테슬라 모드: 길안내 패널 밑에서 스르륵) ----------
   // 안의 것(단속 카드·내 속도·보호구역 표지·구간단속 카드·하이패스) 중 하나라도 보이면 열고, 다 숨으면 접는다
   const drawer = { t: 0, hideT: 0, closing: false };
-  const DRAWER_ITEMS = ['#laneRow', '#juncCard', '#camCard', '#mySpeed', '#zoneBadge', '#secCard', '#tollCard'];
+  const DRAWER_ITEMS = ['#laneRow', '#juncCard', '#camCard', '#mySpeed', '#zoneBadge', '#secCard', '#tollCard', '#sideBadge'];   // v289: 배지도 서랍 안
   const drawerAnimated = () => !testPage && $('#app').classList.contains('tesla') && $('#camDrawer').classList.contains('open');
   // q 를 빼도 서랍에 남는 것이 있는지 (내 속도·보호구역 표지는 단속 카드에 딸려 함께 빠진다)
   const drawerKeeps = (q) => ['#laneRow', '#juncCard', '#secCard', '#tollCard'].some((x) => x !== q && !$(x).hidden) ||
@@ -4526,7 +4535,7 @@
   function renderMySpeed() {
     const el = $('#mySpeed'), tg = camState.target, s = camState.section;
     const pl = pointLimit();
-    const lim = !prefs.cams ? null : s ? (pl && pl < s.limit ? pl : s.limit) : tg && tg.flag !== 'doubt' && isSpeedCam(tg.c) ? (tg.c[2] || null) : null;
+    const lim = !prefs.cams ? null : s ? (pl && pl < s.limit ? pl : s.limit) : camLive(tg) && tg.flag !== 'doubt' && isSpeedCam(tg.c) ? (tg.c[2] || null) : null;
     if (!lim) { el.hidden = true; return; }
     el.hidden = false;
     $('#mySpeedVal').textContent = Math.round(state.speedKmh);
@@ -4584,7 +4593,7 @@
     const s = camState.section, p = pointLimit();
     if (s) return p && p < s.limit ? p : s.limit;
     const tg = camState.target;
-    return tg && tg.flag !== 'doubt' && camShownDist(tg) < 1000 && isSpeedCam(tg.c) ? (tg.c[2] || null) : null;
+    return camLive(tg) && tg.flag !== 'doubt' && camShownDist(tg) < 1000 && isSpeedCam(tg.c) ? (tg.c[2] || null) : null;
   }
   function renderLimit() {
     const lim = currentLimit();
@@ -8784,10 +8793,12 @@
       for (const q of ['#camMissBtn', '#fbBtn']) { const e = $(q); if (e && !e.hidden && e.getClientRects().length && getComputedStyle(e).display !== 'none') cTop = Math.min(cTop, e.getBoundingClientRect().top); }
       const limit = Math.min(Math.min(window.innerHeight, app.getBoundingClientRect().bottom) - COL_FLOOR - dock, cTop - 8);
       let k = Math.min(lay.k, FOLD_STEPS.length);
-      applyFold(k);
-      if (colBottom() > limit) { while (k < FOLD_STEPS.length && colBottom() > limit) applyFold(++k); }
+      // v289: 배지가 왼쪽 서랍 안 칸이 되어 접을 때마다 배지도 다시 그려 그 높이까지 잰다
+      const fold = (n) => { applyFold(n); renderSideBadge(); };
+      fold(k);
+      if (colBottom() > limit) { while (k < FOLD_STEPS.length && colBottom() > limit) fold(++k); }
       else {
-        while (k > 0) { applyFold(k - 1); if (colBottom() <= limit - FOLD_SLACK) k--; else { applyFold(k); break; } }
+        while (k > 0) { fold(k - 1); if (colBottom() <= limit - FOLD_SLACK) k--; else { fold(k); break; } }
       }
       lay.k = k;
       syncDrawer();
@@ -8812,8 +8823,7 @@
     if (te && tc.lanes && te.getBoundingClientRect().right > chipRightEdge()) { lay.tollNoLanes = tc.lk; applyChips(); }
   }
   function chipRightEdge() {
-    const b = $('#sideBadge'), rs = $('#routeStrip');
-    if (!b.hidden && b.getClientRects().length) return b.getBoundingClientRect().left - 8;
+    const rs = $('#routeStrip');   // v289: 배지는 왼쪽 서랍 안으로 옮겨 칩 오른쪽 끝은 경로 막대만 본다
     if (!rs.hidden && rs.getClientRects().length && getComputedStyle(rs).display !== 'none') return rs.getBoundingClientRect().left - 8;
     return window.innerWidth - 8;
   }
@@ -8849,56 +8859,52 @@
     }
     return null;
   }
-  // 오른쪽 배지 (네이버 길안내의 왼쪽 위 배지처럼): 지금 속도 + 제한 원, 단속이 있으면 원은 그 카메라 표지 + 빨간 거리 띠 + 종류 띠.
-  // 분기 그림 때는 늘, 접힘으로 단속 카드·속도 띠가 오른쪽으로 오면 그것만
+  // 단속 배지 (네이버 길안내 배지처럼): 단속 표지 원 + 빨간 거리 띠·종류 띠 + 지금 속도, 구간단속 중이면 구간평균·남은 구간·남은 시간.
+  //   분기 그림이 뜬 동안(왼쪽 단속 카드·속도 줄 대신), 또는 접힘으로 단속 카드·속도 줄이 접혔을 때.
+  // v289 (운전자 '신호 과속은 왼쪽에서 보여 주는 게 좋고 현재는 게이지 오른쪽에 … 너무 크게 나오는 거 같아서 좀 줄여가지고 왼쪽에 나오게 해 줘'):
+  //   오른쪽 경로 막대 옆(v275)이 아니라 왼쪽 서랍 안, 분기 그림 바로 밑 한 줄(그림이 없으면 단속 카드 자리): 속도 · 표지 원 · 거리/종류. 표지 원 76 → 50px.
+  //   네이버 가로 화면은 오른쪽 위에 두지만 운전자 말을 따른다. 단속이 없으면(지난 뒤 포함) 속도만 띄우지 않는다 ('지나가면 그냥 … 꺼 줘야')
   function renderSideBadge() {
     const app = $('#app'), el = $('#sideBadge');
     if (!el) return;
-    const jx = app.classList.contains('jx-time'), card = $('#camCard');
+    const jx = app.classList.contains('jx-time'), card = $('#camCard'), tg = camState.target, live = camLive(tg);
     const camOn = !card.hidden && (jx || app.classList.contains('fo-cam'));
-    const spdOn = jx || (app.classList.contains('fo-speed') && !$('#mySpeed').hidden) || (app.classList.contains('fo-sec') && !!camState.section);
+    const sec = camState.section;
+    // v289 (운전자 '이거 그냥 우리 기존 속도계처럼'): 그림 때도 속도는 늘 쓰던 속도 칸(#mySpeed)이 그림 밑에 — 배지에는 속도 칸이 접혔을 때만
+    const spdOn = (app.classList.contains('fo-speed') && !$('#mySpeed').hidden) || (app.classList.contains('fo-sec') && !!sec);
     if (!app.classList.contains('tesla') || (!camOn && !spdOn)) { if (!el.hidden) el.hidden = true; return; }
+    // 자리: 서랍 안 분기 그림 바로 밑 (그림이 없으면 단속 카드 바로 밑)
+    const anchor = jx ? $('#juncCard') : card;
+    if (anchor && el.previousElementSibling !== anchor) anchor.after(el);
     const lim = roadLimit();
     const sp = Math.round(state.speedKmh || 0);
     const sign = card.querySelector('.cam-sign');
-    const cls = 'sidebadge' + (spdOn ? ' spd' : '') + (camOn ? ' cam' : lim ? ' lim' : '') + (lim && state.speedKmh > lim + 1 ? ' over' : '') +
-      (camOn ? ['mobile', 'signal', 'sigspeed', 'aisign', 'ainum', 'doubt', 'rear', 'rear-after', 'seccam'].filter((c) => card.classList.contains(c)).map((c) => ' c-' + c).join('') : '');
+    const cls = 'sidebadge' + (spdOn ? ' spd' : '') + (camOn ? ' cam' : lim ? ' lim' : '') + (spdOn && lim && state.speedKmh > lim + 1 ? ' over' : '') +
+      (camOn ? ['mobile', 'signal', 'sigspeed', 'aisign', 'ainum', 'doubt', 'rear', 'rear-after', 'seccam'].filter((c) => card.classList.contains(c)).map((c) => ' c-' + c).join('') : '') +
+      (camOn && !live ? ' passed' : '');
     const img = camOn && sign.dataset.img ? sign.dataset.img : '';
-    const sec = camState.section;
     const num = camOn ? $('#camLimit').textContent : sec ? String(sec.limit) : lim ? String(lim) : '';
     const rearAfter = camOn && card.classList.contains('rear-after');
-    // v286 (부모 세션 '그림 때 오른쪽 배지도 같은 칸'): 구간단속 중이면 네이버 차례 그대로 제한 원 밑에 구간평균(노랑) · 남은 구간 · 남은 시간
+    // v286 (부모 세션 '그림 때 배지도 같은 칸'): 구간단속 중이면 구간평균(노랑) · 남은 구간 · 남은 시간
     let secHtml = '';
-    if (sec) {
+    if (sec && app.classList.contains('fo-sec')) {   // 구간 칸(#secCard)이 접혔을 때만 (안 접혔으면 같은 칸이 왼쪽에 그대로 있다)
       const st = sectionStats(sec);
       secHtml = '<div class="sbg-sec' + (st.over ? ' over' : '') + '"><small>구간평균</small><b>' + (st.avg === null ? '-' : Math.round(st.avg)) + '</b>' +
         '<small>남은 구간</small><span>' + esc(st.remain !== null ? fmtDist(st.remain) : fmtDist(st.done)) + '</span>' + (st.minLeft !== null ? '<span>' + mmss(st.minLeft) + '</span>' : '') + '</div>';
     }
-    const html = (spdOn ? '<div class="sbg-speed"><b>' + sp + '</b><i>km/h</i></div>' : '') +
-      (num ? '<div class="sbg-sign"' + (img ? ' style=\'background-image:' + img.replace(/'/g, '&#39;') + '\'' : '') + '>' + (camOn && !img ? '<i class="sbg-ico" aria-hidden="true"></i>' : '') + '<b>' + esc(num) + '</b></div>' : '') +
-      (camOn && !rearAfter ? '<div class="sbg-dist">' + esc($('#camDist').textContent) + '</div>' : '') +
-      (camOn ? '<div class="sbg-kind" data-band="' + esc(rearAfter ? 'black' : card.dataset.band || '') + '">' + esc(rearAfter ? '후면단속 중' : $('#camKind').textContent || $('#camType').textContent) + '</div>' : '') + secHtml;
+    const txt = camOn ? '<div class="sbg-txt">' + (!rearAfter ? '<div class="sbg-dist">' + esc($('#camDist').textContent) + '</div>' : '') +
+      '<div class="sbg-kind" data-band="' + esc(rearAfter ? 'black' : card.dataset.band || '') + '">' + esc(rearAfter ? '후면단속 중' : $('#camKind').textContent || $('#camType').textContent) + '</div></div>' : '';
+    // v289 (운전자 '속도만 왼쪽으로 표기해주면 될듯'): 지금 속도 → 표지 원 → 거리/종류
+    const html = (spdOn ? '<div class="sbg-speed"><b>' + sp + '</b><i>km/h</i></div>' : '') + (num ? '<div class="sbg-sign"' + (img ? ' style="background-image:' + img.replace(/"/g, '&quot;') + '"' : '') + '>' + (camOn && !img ? '<i class="sbg-ico" aria-hidden="true"></i>' : '') + '<b>' + esc(num) + '</b></div>' : '') +
+      txt + secHtml;
     if (el.className !== cls) el.className = cls;
     if (el._h !== html) { el.innerHTML = html; el._h = html; }
     el.setAttribute('aria-label', (spdOn ? '지금 ' + sp + 'km/h' : '') + (num ? ' 제한 ' + num : '') + (camOn ? ' ' + $('#camType').textContent + ' ' + $('#camDist').textContent : ''));
     el.hidden = false;
-    // 자리: 시계·날씨 밑, 오른쪽 경로 막대 왼쪽 8px (막대가 없으면 화면 오른쪽 12px)
-    const base = app.getBoundingClientRect(), rs = $('#routeStrip');
-    const stripOn = !rs.hidden && rs.getClientRects().length && getComputedStyle(rs).display !== 'none';
-    // v286 (부모 세션, v284 수원신갈IC 160m: 막대 위 '3.3km 14:20 도착' 글자가 '40' 원을 덮음): 막대(34px)보다 넓은 위 글자(.rs-top)가 왼쪽으로
-    //   튀어나온다 — 막대와 그 글자 중 더 왼쪽 끝에서 8px (v275 규칙)
-    const rsTop = stripOn ? rs.querySelector('.rs-top') : null;
-    const stripL = stripOn ? Math.min(rs.getBoundingClientRect().left, rsTop && rsTop.getClientRects().length ? rsTop.getBoundingClientRect().left : Infinity) : 0;
-    const right = stripOn ? base.right - stripL + 8 : 12;
-    const tops = ['.timebox', '#weather'].map((q) => $(q)).filter((e) => e && !e.hidden && e.getClientRects().length).map((e) => e.getBoundingClientRect().bottom - base.top);
-    const top = Math.max(60, ...tops) + 10;
-    const setVar = (k, px) => { const v = Math.round(px) + 'px'; if (app.style.getPropertyValue(k) !== v) app.style.setProperty(k, v); };
-    setVar('--sbg-right', right);
-    setVar('--sbg-top', top);
-    // v286: 구간 칸까지 붙은 배지가 오른쪽 아래 주행 기록 카드나 맨 밑 아래 띠에 닿으면 남은 구간·시간 줄부터, 그래도 닿으면 구간 칸을 뺀다 (8px 띄움)
+    // v286: 구간 칸까지 붙은 배지가 왼쪽 아래 '제보'·'의견'이나 맨 밑 아래 띠에 닿으면 남은 구간·시간 줄부터, 그래도 닿으면 구간 칸을 뺀다 (8px 띄움)
     if (secHtml) {
-      const tr = $('.trip'), nb = $('#navBar');
-      const floors = [tr, nb].filter((e) => e && !e.hidden && e.getClientRects().length && getComputedStyle(e).display !== 'none').map((e) => e.getBoundingClientRect().top);
+      const base = app.getBoundingClientRect();
+      const floors = [$('.fbcorner'), $('#navBar')].filter((e) => e && !e.hidden && e.getClientRects().length && getComputedStyle(e).display !== 'none').map((e) => e.getBoundingClientRect().top);
       const floor = Math.min(base.bottom, ...floors) - 8;
       el.classList.remove('sec-tight', 'sec-none');
       if (el.getBoundingClientRect().bottom > floor) el.classList.add('sec-tight');
