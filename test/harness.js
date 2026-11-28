@@ -2966,7 +2966,7 @@
     { id: 'S176', name: "S176 nothing in the left column is cut off (v275, driver photo 2026-11-27 수원신갈IC 160 m: '이렇게 나와 버려 제일 좋은 방법 조금 변경해봐'): at 804×560 and 804×600 on the real 경부 → 수원신갈IC route, 900 m before the exit (card + next row + rest row + 40 camera + speed strip + hi-pass + report button) folds report → hi-pass chip → camera to the right badge → speed strip so the column ends above the attribution line; 160 m before (junction picture) the card is one line with the picture right under it, next guide / rest / hi-pass are chips, the right badge shows speed 79 (red over 40), the 40 sign, 370m and the kind band 8 px left of the route strip, no report button; restoring the size unfolds", fn: s176 },
     { id: 'S177', name: "S177 approach leg then turn (v277, keys Naver check of the crossing cameras v274 removed): a guided car coming in on the camera's own approach and turning at the junction is still alerted — 인항로 #23586 turning left, 안남로 #25184 turning right, 군왕로 #3564 turning toward 270° — while going straight through the junction on the crossing road either way is not; the two 30 school-zone cameras on one pole on 마장로324번길 190 m west of 안남로 follow Naver: westbound (after the right turn) #25199 at 274°, eastbound #25191 at 94°, each only for its own direction", fn: s177 },
     { id: 'S178', name: "S178 recorded voice clips (v278, driver '걍 MeloTTS로 다 가자' — the Tesla browser has no speech engine: 0 voices, speak() → synthesis-failed): every sentence the app speaks, built by the same functions (camSpeech for all kinds/zones/rear/box/distances/limits — box booths now say '박스형 단속 카메라' like Naver, section start, fixed sentences, ETA change, route start with the destination name left out, 이어서/다시 chains, and every Naver guide text in the test routes incl. toll gates) maps fully onto data/voice_clips.json; numbers read 12 · 110 · 1600 · 23000 as clips; with the flag on and no working speech the clips are fetched, decoded and played back to back (onEnd), one missing clip falls back to the beep (onFail), an uncovered sentence returns false; with the flag off speechSynthesis stays; v279: fetched clips land in Cache Storage and play with the network gone", fn: s178 },
-    { id: 'S179', name: "S179 cameras only Naver had in the daily Naver checks of 2026-11-24..27 (v280): the 19 spots in data/driver_spots.json (Naver-checked; rear, box and child flags as Naver's badge) alert along a straight route in their direction with Naver's limit and kind band (박스형 · 후면단속 · 신호과속 · 과속단속) by 520 m before, not the other way; 광주 필문대로 southbound #3183 and #3102 alert 60 (police data 50)", fn: s179 },
+    { id: 'S179', name: "S179 cameras only Naver had in the daily Naver checks of 2026-11-24..27 (v280): the 19 spots in data/driver_spots.json (Naver-checked; rear, box and child flags as Naver's badge), plus v282's 8 from the pipeline's verified lines, alert along a straight route in their direction with Naver's limit and kind band (박스형 · 후면단속 · 신호과속 · 과속단속) by 520 m before, not the other way; 광주 필문대로 southbound #3183 and #3102 alert 60 (police data 50)", fn: s179 },
     { id: 'S180', name: "S180 a reroute or traffic answer that starts where the car is not is held, not shown (v280, driver: '고속화 도로 그 밑에 일반도로 … 엉뚱하게 없는 네비가 잡히다가 사라지거든'; /events: all 40 logged reroutes came from a route the car had never been on): (a) a reroute answer starting on a parallel road 40 m away never shows its guidance or '새 경로로 안내합니다', is dropped when the car does not get on it, and the next answer (the car's own road) is used at once; (b) a traffic answer starting 100 m ahead on a road 35 m to the side (passed v181's 'behind the start' check) is dropped, the current route stays, no reroute; (c) a reroute answer 40 m ahead on the same road is used at once as before; (d) an answer on a road 30 m to the side is used once the car moves onto that road", fn: s180 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
@@ -7007,7 +7007,7 @@
       c.label === '어린이보호구역 신호·과속단속' && c.zone === 2 && !c.blue &&
       d.label === '운전자 신고 신호·과속단속' && d.blue && d.short === '신고 지점' && d.voice === '신고된 단속 지점' &&
       e.label === '과속단속' && !e.blue &&
-      f.rows === 46 && f.checked === 46 && f.zone === 5 &&   // v280: 네이버 하루 점검 11-24~27 에서 19곳 더함(어린이 30 둘). v276: 아암대로 북행 60 박스형 더함. v210: keys 네이버 확인 — 구갈·삼가 남동 확인(네이버 자리로), 판교JC 하행 합류는 없음(뺌). v213: 비룡로 신호·과속 50 더함. v233: 동해대로 80 174° 더함
+      f.rows === 54 && f.checked === 54 && f.zone === 7 &&   // v282: pipeline 의 keys verified 8곳(어린이 30 둘). v280: 네이버 하루 점검 11-24~27 에서 19곳 더함(어린이 30 둘). v276: 아암대로 북행 60 박스형 더함. v210: keys 네이버 확인 — 구갈·삼가 남동 확인(네이버 자리로), 판교JC 하행 합류는 없음(뺌). v213: 비룡로 신호·과속 50 더함. v233: 동해대로 80 174° 더함
       g.w15 === 9 && g.w17 === 14 && g.w18 === 16 && g.w165 === 12.5 && g.casing17 === 18 && g.dots === 3.4 && g.casingColor === '#141414' &&
       g.arrow17 && g.arrow17.inner === 14 && g.arrow17.shaft === 18;
     return { pass: !!ok, detail: JSON.stringify(r) };
@@ -8577,7 +8577,11 @@
       [37.300237, 126.979257, 74, 30, '신호과속'], [37.300808, 126.981712, 75, 30, '신호과속'], [37.495441, 127.092209, 113, 60, '과속단속'],
       [37.398842, 127.099423, 176, 60, '박스형'], [37.504347, 126.703244, 274, 50, '후면단속'], [37.481942, 126.674631, 183, 50, '과속단속'],
       [35.154749, 126.931848, 183, 60, '신호과속'], [37.401285, 126.664829, 124, 50, '신호과속'], [37.38793, 126.641814, 40, 50, '후면단속'],
-      [37.396148, 126.65071, 41, 50, '후면단속']];
+      [37.396148, 126.65071, 41, 50, '후면단속'],
+      // v282: pipeline/found 의 keys verified 줄 (가장 가까운 장면으로 다듬은 자리)
+      [37.529583, 127.165417, 28, 50, '신호과속'], [37.317719, 127.105412, 189, 50, '신호과속'], [37.247482, 126.950336, 353, 90, '박스형'],
+      [37.45122, 126.63127, 27, 60, '신호과속'], [37.499142, 126.673315, 90, 30, '신호과속'], [37.452873, 126.654626, 255, 50, '과속단속'],
+      [37.456693, 126.63514, 211, 50, '신호과속'], [37.409191, 126.657876, 246, 30, '신호과속']];
     const mk = (pts) => {
       const path = pts.map((p) => [round6(p.lng), round6(p.lat)]);
       const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
@@ -8623,7 +8627,7 @@
     } finally {
       await resetApp(); softReset();
     }
-    const ok = r.n === 19 && !r.miss.length && !r.bad.length && !r.back.length && r.lim60 && r.lim60[3183] === '60' && r.lim60[3102] === '60';
+    const ok = r.n === 27 && !r.miss.length && !r.bad.length && !r.back.length && r.lim60 && r.lim60[3183] === '60' && r.lim60[3102] === '60';
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
