@@ -2974,6 +2974,7 @@
     { id: 'S187', name: "S187 '텍스트로 보내기' fills the text box by voice (v291, driver '그냥 텍스트로 보내기 < 뭐 이런 단어면 좋겠어 / 그리고 음성으로 텍스트 채우는 느낌으로'): with /health stt the sheet opens and records at once, the words ('여기 카메라 위치가 틀려요') fill the box within a few seconds, an edited box is not overwritten, '보내기' sends a text item (how 'stt') with the recording under the same qid; '다시' clears and records again; a failed /stt sends the recording (how 'audio'); a Worker without stt keeps the plain text box", fn: s187 },
     { id: 'S188', name: "S188 junction pictures never draw more lanes than we know (v292–v293, note 09:04 '2차선인데도 불구하고 4차선 팝업이 뜨면서 1,2차선은 직진, 3,4차선은 빠지는'): the fork inside 수원신갈IC ('오산, 신갈', 3 lanes in), 판교IC '분당' and 하남IC '서울, 판교' (inside the ramp, lanes unknown) and 여수사거리 (ordinary road, no data) use the plain fork picture instead of 2 + 2; 보정교차로삼거리 '신갈' shows no picture, like Naver; 성남IC with a 2-lane approach and unknown branches uses the plain 2-lane exit picture instead of 4 + 1; 성남IC (4 in) stays 4 + 1, 하남분기점 4 + 2, and 서하남교차로 '강동' (checked against Naver) stays 2 + 2", fn: s188 },
     { id: 'S189', name: "S189 Naver-style curving exit picture only where checked against Naver (v293, driver '신갈JC원주는 왼쪽처럼 보여주는게 더 좋아보이는데'): 신갈분기점 '원주, 인천' uses x41c (gore close, ramp curving sharply right) once that picture exists and x41 until then; 성남IC is not in the table and keeps x41", fn: s189 },
+    { id: 'S190', name: "S190 a route shield only on the branch that really is that road (v294, parent session: 하남IC in-ramp board showed ㉟ on '서울 판교' where Naver has ⑩⓪ — ㉟ belongs to '대전 호법'): no shield on in-ramp splits (하남IC '서울, 판교') or after leaving the expressway (수원신갈IC '오산, 신갈', 송파IC '위례'); 신갈분기점 '대전' ①, '원주, 인천' ⑤⓪, 하남분기점 ⑩⓪ and the 하남IC '서울, 대전' entry ㉟ stay", fn: s190 },
     { id: 'S184', name: "S184 a passed camera switches off at once (v289, driver '과속 단속이 지나 갔는데도 계속 속도가 떠 있는 경우가 있어서 … 지나가면 그냥 신호 과속 표시를 꺼 줘야'): two synthetic 60 cameras at 72 km/h — at the first fix past the pole the red over-speed card, the speed row and the red speedometer go off and '통과' lasts no more than 30 m or 2 s; a camera point 90 m off the road clears within 25 m of the closest approach (it used to stay 120 m more behind the 80 m gate); a 20 m GPS jump back after passing does not bring it back; with fixes every 2 s it is gone at the next fix", fn: s184 },
     { id: 'S183', name: "S183 arrival near the destination (v288, driver '어느순간 길안내를 계속 못찾아서 이거 확인좀 해주고 개선해 줘'): synthetic block — the car leaves a route that loops around the block and comes up the side street to the route end; one reroute, the loop answer is shown with a '목적지 근처예요 · 안내 종료' button, and 40 m from the end it says '목적지 부근입니다'; a rejected answer is not re-asked at once and a stop 110 m away ends guidance after 3 s; crawling on a direct route does not end early; a start 200 m away does not end; an OSM parking entrance and GPS loss end it; a loop answer inside 150 m ends it without showing", fn: s183 },
     { id: 'S182', name: "S182 section card like Naver (v286, driver '구간 평균 나와있는 숫자는 노란색으로 네이버지도랑 맞춰 주고 몇 키로 구간 단속인지 안 나와 있어서 … 평균속도 밑으로 표기'): 900 m into the 서울TG 100 section, day and night, the speed row's 구간평균 number is yellow on a dark chip and the section card shows a red-ring '100' sign in dark ink (the old '제한 100' text was white on the light card), 남은 구간 and the time; the card touches neither the route strip nor the docked bar", fn: s182 },
@@ -8751,6 +8752,49 @@
       if (want !== 's' && (/직진/.test(o.text) || /직진입니다/.test(o.say))) bad.push(f + ' became straight');
     }
     return { pass: bad.length === 0, detail: (bad.length ? bad.join(' | ') + ' || ' : '') + JSON.stringify(r) };
+  }
+
+  // S190 (v294, 부모 세션 — v293 비교에서 하남IC 연결로 안 '서울, 판교' 표지에 ㉟, 네이버는 ㉟ '대전 호법' · ⑩⓪ '서울 판교'): 경로 표지판의 노선 방패는
+  //   그 갈래가 정말 그 길일 때만 — 연결로 안 갈림(하남IC '서울, 판교')·고속도로를 나온 뒤(수원신갈IC '오산, 신갈', 송파IC '위례')는 방패 없이.
+  //   그대로: 신갈분기점 '대전' ①(OSM 갈래 ref), 하남분기점 ⑩⓪(다른 고속도로로 옮김), 신갈분기점 '원주, 인천' ⑤⓪, 하남IC '서울, 대전' 진입 ㉟
+  async function s190() {
+    const t = T(), r = {};
+    const fixture = async (f) => {
+      const fx = await (await realFetch(harnessDir + 'fixtures/' + f, { cache: 'no-store' })).json();
+      const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0]; for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + hav(P[k - 1], P[k]));
+      return { route: fx, P, cum, dest: { name: '시험', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    };
+    const at = async (f, re, before) => {
+      const R = await fixture(f);
+      await resetApp(); softReset(); await planAndStart(R);
+      const g = R.route.guide.find((x) => re.test(x.s)), sg = R.cum[Math.min(g.i, R.cum.length - 1)];
+      for (let s = Math.max(0, sg - before - 900); s <= sg - before; s += 20) { const a = pointAt(R, s); feed(a.p, 20, a.h); }
+      const a = pointAt(R, sg - before); feed(a.p, 20, a.h);
+      t.juncState.key = ''; t.renderNav(); await sleep(60); t.renderNav(); await sleep(30);
+      const lab = document.getElementById('juncLabel');
+      const lead = lab && lab.querySelector('.sg-lead');
+      const nx = t.nav.next, jj = t.juncInfo(nx), last = t.nav.pts.length - 1;
+      const v = { next: (nx && nx.s || '').slice(0, 26), shown: visible('#juncCard'), lead: lead ? (lead.textContent || '').trim() : '',
+        no: t.jxGoNo(nx, jj, t.routeRoadAt(Math.min(nx.i + 2, last)), t.routeRoadAt(Math.max(nx.i - 2, 0))) };
+      t.endNav();
+      return v;
+    };
+    try {
+      await waitFor(() => t.jdData.loaded && t.forksData.loaded, 10000, 100);
+      r.hanamIn = await at('route-paldang-hanamic-s.json', /하남IC에서 '서울, 판교'/, 165);
+      r.hanamEntry = await at('route-paldang-hanamic-s.json', /하남IC에서 '서울, 대전'/, 150);
+      r.hanamJc = await at('route-paldang-hanamic-s.json', /하남분기점에서 '수도권제1순환선/, 330);
+      r.singalDj = await at('route-giheung-ic-s.json', /신갈분기점에서 '대전'/, 330);
+      r.singalWj = await at('route-singal-jc-s.json', /신갈분기점에서 '원주, 인천'/, 330);
+      r.suwonOut = await at('route-suwonsingal-s.json', /수원신갈IC에서 '오산, 신갈'/, 150);
+      r.songpaWr = await at('route-songpaic-uturn.json', /송파IC에서 '위례' 방면으로 왼쪽 방향/, 150);
+    } finally {
+      softReset();
+    }
+    const ok = r.hanamIn && r.hanamIn.no === 0 && r.hanamIn.lead === '' && r.hanamEntry.no === 35 && r.hanamJc.no === 100 && r.singalDj.no === 1 &&
+      r.singalWj.no === 50 && r.suwonOut.no === 0 && r.songpaWr.no === 0;
+    return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
   // S189 (v293, 운전자 '신갈JC원주는 왼쪽처럼 보여주는게 더 좋아보이는데', '바로 오른쪽 커브길인데 두개다 직진처럼 그려놓은'): 네이버와 맞춘 곳(JX_CURVE)만
