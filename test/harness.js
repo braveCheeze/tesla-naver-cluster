@@ -8826,8 +8826,13 @@
       const on = view();
       setC(false); t.renderNav(); await sleep(60); t.renderNav(); await sleep(30);
       const off = view();
+      // v296: 고른 진짜 그림으로 — 고어 뒤 회색 둘째 차로 '인천', 초록 차로 글자 '원주' 하나
+      for (const k of K) { if (keep[k]) t.iconPicks[k] = keep[k]; }
+      t.juncState.key = ''; t.renderNav(); await sleep(60); t.renderNav(); await sleep(30);
+      const real = { shape: t.jxShape2(t.juncInfo(t.nav.next), t.nav.next), side: [...document.querySelectorAll('#juncSvg .jx-side')].map((e) => e.textContent),
+        lanes: [...document.querySelectorAll('#juncSvg .jx-lane.jv-day:not(.jx-side)')].map((e) => e.textContent) };
       t.endNav();
-      return { on, off };
+      return { on, off, real };
     };
     try {
       await waitFor(() => t.jdData.loaded && t.forksData.loaded, 10000, 100);
@@ -8841,7 +8846,9 @@
     const a = r.a || {}, c = r.c || {};
     const ok = a.on && a.on.shown && a.on.curve && a.on.shape === 'x41c' && /^jxd__t__1/.test(a.on.src) &&
       a.off && a.off.shown && a.off.shape === 'x41' && /^jx2_x41_day/.test(a.off.src) &&
-      c.on && c.on.shown && !c.on.curve && /^x41/.test(c.on.shape || '') && c.on.shape !== 'x41c';
+      c.on && c.on.shown && !c.on.curve && /^x41/.test(c.on.shape || '') && c.on.shape !== 'x41c' &&
+      (!a.real || a.real.shape !== 'x41c' || (a.real.side.length === 2 && a.real.side.every((x) => x === '인천') && a.real.lanes[a.real.lanes.length - 1] === '원주')) &&
+      !(c.real && c.real.side.length);
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
