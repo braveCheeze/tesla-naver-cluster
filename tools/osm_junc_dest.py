@@ -19,6 +19,8 @@ OpenStreetMap(ODbL)의 연결로 destination 태그에서 가져온다. 네이�
     xn 그 나들목 이름
     m  1 = 들어오는 길이 motorway·motorway_link (v262, 초록 표지)
     s  갈래 안에서 다시 갈리는 차로 수 {갈래 번호: [왼쪽 차로 수, 오른쪽 차로 수]} (판교분기점 경부 북행 '일산;구리' 3 = 일산 1 + 구리 2)
+    i  들어오는 길(갈림 바로 앞)의 lanes 태그 (v292, 부모 세션 09:04 '2차선인데 4차선 팝업': 그림의 곧게 가는 차로가 들어오는 길의
+       차로 수보다 많지 않게). 모르면 넣지 않는다
 - 사용:  set TMP=D:\\tmp & py -I tools\\osm_junc_dest.py D:\\osm\\south-korea-latest.osm.pbf data\\junc_dest.json
 """
 import json
@@ -229,6 +231,8 @@ for nid, outs in through.items():
                         extra.setdefault('s', {})[str(i)] = fx[5]
                     fixed.append((why, here, b[2], n))
     # v4: 나들목 번호 (v257: 앞쪽 방면 'a' 는 뺐다)
+    if W[wi]['ln'] > 0:
+        extra['i'] = W[wi]['ln']   # v292: 들어오는 길 차로 수
     if W[wi]['hw'].startswith('motorway'):
         extra['m'] = 1   # v262: 고속도로·고속도로 연결로 위 갈림 (앱은 한국도로공사 초록 표지)
     xr = exit_ref(nid, wi, ki, [(wid, k) for (wid, k), b in zip(outs, br) if W[wid]['hw'].endswith('_link')])

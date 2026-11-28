@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-291'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-292'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -6961,10 +6961,28 @@
     const ol = jxOsmLanes(g);
     if (ol) {
       const fork = j.kind === 'fork' && ol.other <= 2 && ol.go <= 2;
-      return Object.assign({ T: ol.other, E: ol.go, stay: false, fork, sub: ol.sub, side: jxSideBefore(g), src: 'osm' }, fork ? jxForkGeo(j, g) : {});
+      // v292: 갈림길 그림(f22·f22k)은 2 + 2 = 네 차로 — 두 갈래를 더해 네 차로가 안 되면(1 + 1 등) 그리지 않는다
+      return Object.assign({ T: ol.other, E: ol.go, stay: false, fork, few: fork && ol.other + ol.go < 4, sub: ol.sub, side: jxSideBefore(g), src: 'osm' }, fork ? jxForkGeo(j, g) : {});
     }
-    if (j.kind === 'fork') return Object.assign({ T: 2, E: 2, stay: false, fork: true, src: '' }, jxForkGeo(j, g));
-    return { T: j.hwy ? 4 : 3, E: 1, stay: false, side: jxSideBefore(g), src: '' };
+    // v292: 들어오는 길이 세 차로 이하(OSM lanes)면 2 + 2 갈림길 그림을 쓰지 않는다 (예전 갈림 그림 junc_fork — 차로 수를 그리지 않음)
+    if (j.kind === 'fork') { const n = jxInLanes(g); return Object.assign({ T: 2, E: 2, stay: false, fork: true, few: !!n && n < 4, src: n ? 'osm-in' : '' }, jxForkGeo(j, g)); }
+    // v292 (부모 세션 09:04 '2차선인데 4차선 팝업'): 갈래 하나만 차로 수를 알면 그 수를, 곧게 가는 갈래를 모르면 들어오는 길의 차로 수(OSM lanes)를
+    //   넘지 않게 — 모를 때만 고속도로 4 · 아니면 3
+    const pl = jxPartLanes(g), cap = jxInLanes(g);
+    const T = pl.other || Math.min(j.hwy ? 4 : 3, cap || 9);
+    return { T, E: pl.go || 1, stay: false, side: jxSideBefore(g), src: pl.other || pl.go ? 'osm-part' : cap ? 'osm-in' : '' };
+  }
+  // v292: 이 갈림점의 들어오는 길 차로 수 (junc_dest 'i', 갈림 바로 앞 OSM lanes). 모르면 null
+  function jxInLanes(g) {
+    const s = juncSplitAt(g), n = s && s.r.ex ? Math.floor(+s.r.ex.i) : 0;
+    return n > 0 ? n : null;
+  }
+  // v292: 갈래 차로 수를 하나만 알 때 — { go: 경로 갈래, other: 다른 갈래 합 } (모르면 0)
+  function jxPartLanes(g) {
+    const s = juncSplitAt(g), L = s && s.r.lanes;
+    if (!L || L.length !== s.r.br.length) return { go: 0, other: 0 };
+    const others = L.filter((n, i) => i !== s.go);
+    return { go: L[s.go] > 0 ? L[s.go] : 0, other: others.every((n) => n > 0) ? others.reduce((a, n) => a + n, 0) : 0 };
   }
   const jxSideBefore = (g) => { const x = jxSideExit(g); return !!(x && x.before); };   // 옆 연결로 그림(x41s·x42s)은 이미 갈라진 출구만
   // v260 (부모 세션, 네이버 서하남교차로): 갈림길은 대칭 Y 가 아니다 — 한 무리는 곧게, 다른 무리가 멀리서 비킨다. OSM 갈래 끝이 들어오는
@@ -6983,14 +7001,15 @@
   }
   function jx2ShapeOf(c) {
     if (c.stay) return c.T >= 4 ? 's41' : 's31';
-    if (c.fork) return c.straight ? 'f22k' : 'f22';
+    if (c.fork) return c.few ? 'f11' : c.straight ? 'f22k' : 'f22';   // v292 f11: 차로가 넷이 안 되는 갈림 — 2판 그림 없음
+    if (c.T <= 2 && c.E === 1) return 'x21';   // v292: 곧게 가는 차로 둘 이하 + 출구 1 — 2판 그림이 아직 없다 (예전 2차로 그림 junc_ramp 로)
     if (c.E >= 3) return 'x43';
     if (c.E === 2) return c.T >= 3 ? (c.side ? 'x42s' : 'x42') : 'x22';
     return c.T >= 4 ? (c.side ? 'x41s' : 'x41') : 'x31';
   }
   // 2판 그림이 있으면 그 모양 (차로 수가 가장 가까운 2판 그림까지), 없으면 null — renderJunction 은 1판(jxShape)으로
   const JX2_NEAR = { x43: ['x43', 'x42'], x42: ['x42', 'x43', 'x22'], x42s: ['x42s', 'x42'], x22: ['x22', 'x42'], x41: ['x41', 'x31'], x41s: ['x41s', 'x41'], x31: ['x31', 'x41'],
-    s41: ['s41', 's31'], s31: ['s31', 's41'], f22: ['f22', 'x22'], f22k: ['f22k'] };
+    s41: ['s41', 's31'], s31: ['s31', 's41'], f22: ['f22', 'x22'], f22k: ['f22k'], x21: ['x21'], f11: ['f11'] };
   function jxShape2(j, g) {
     if (!j || !NV_KINDS.has(j.kind)) return null;
     const c = jxConfig(j, g || nav.next);
@@ -7040,6 +7059,9 @@
   function jxShape(j, g) {
     if (!j || !NV_KINDS.has(j.kind)) return null;
     g = g || nav.next;
+    // v292 (09:04 '2차선인데 4차선 팝업'): 곧게 가는 차로가 둘 이하인 출구는 1판 그림(모두 3·4차로)을 쓰지 않는다 → 예전 2차로 그림(junc_ramp)
+    const c0 = j.kind !== 'main' ? jxConfig(j, g) : null;
+    if (c0 && ((c0.fork && c0.few) || (!c0.stay && !c0.fork && c0.T <= 2 && c0.E === 1))) return null;
     // v253: 차로 단면이 있으면 그 차로 수로 고른다 (안내 종류보다 먼저): 경로가 곧게 → 본선 그대로, 나가는 차로 둘 이상 → 2+2, 곧게 가는 차로 넷 이상 → 4+1
     //   v255: 나가는 차로 둘 + 곧게 가는 차로 넷 이상 → 4+2 (판교IC 'SB|S|S|S|S|R|R', 네이버도 버스 + 4 + 출구 2) — 그림이 없으면 2+2
     const ln = jxLaneAt(g);

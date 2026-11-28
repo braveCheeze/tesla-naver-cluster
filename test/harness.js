@@ -2972,6 +2972,7 @@
     { id: 'S185', name: "S185 straight-on at forks (v290, driver '직진해야하는 코스면 그냥 직진으로', '원래 저렇게 안보여줬잖아' — deliberately unlike Naver's side-step arrow): 신갈분기점 '대전' (main road kept) and 보정교차로삼거리 '신갈' 오른쪽 도로 주행 (8°) show a plain ↑, '직진' text and '○○ 방면 직진입니다'; 서하남교차로 '강동', 신갈분기점 '원주, 인천', 하남분기점 and 수원신갈IC '수원, 신갈' keep their left/right", fn: s185 },
     { id: 'S186', name: "S186 section card closes off the section road (v290, feedback '구간 단속 시작 지점만 지나고 끝나는 지점 안 지났을 때 계속 나옵니다'): 900 m into the 서울TG 100 section a reroute onto another road closes it quietly; without guidance, turning back 800 m closes it; following the route keeps it open", fn: s186 },
     { id: 'S187', name: "S187 '텍스트로 보내기' fills the text box by voice (v291, driver '그냥 텍스트로 보내기 < 뭐 이런 단어면 좋겠어 / 그리고 음성으로 텍스트 채우는 느낌으로'): with /health stt the sheet opens and records at once, the words ('여기 카메라 위치가 틀려요') fill the box within a few seconds, an edited box is not overwritten, '보내기' sends a text item (how 'stt') with the recording under the same qid; '다시' clears and records again; a failed /stt sends the recording (how 'audio'); a Worker without stt keeps the plain text box", fn: s187 },
+    { id: 'S188', name: "S188 junction pictures never draw more lanes than OSM knows (v292, note 09:04 '2차선인데도 불구하고 4차선 팝업이 뜨면서 1,2차선은 직진, 3,4차선은 빠지는'): the fork inside 수원신갈IC ('오산, 신갈', 3 lanes in) uses the plain fork picture instead of 2 + 2; 성남IC with a 2-lane approach and unknown branches uses the plain 2-lane exit picture instead of 4 + 1; 성남IC (4 in) stays 4 + 1, 판교IC '분당' (approach unknown) stays 2 + 2, 하남분기점 stays 4 + 2", fn: s188 },
     { id: 'S184', name: "S184 a passed camera switches off at once (v289, driver '과속 단속이 지나 갔는데도 계속 속도가 떠 있는 경우가 있어서 … 지나가면 그냥 신호 과속 표시를 꺼 줘야'): two synthetic 60 cameras at 72 km/h — at the first fix past the pole the red over-speed card, the speed row and the red speedometer go off and '통과' lasts no more than 30 m or 2 s; a camera point 90 m off the road clears within 25 m of the closest approach (it used to stay 120 m more behind the 80 m gate); a 20 m GPS jump back after passing does not bring it back; with fixes every 2 s it is gone at the next fix", fn: s184 },
     { id: 'S183', name: "S183 arrival near the destination (v288, driver '어느순간 길안내를 계속 못찾아서 이거 확인좀 해주고 개선해 줘'): synthetic block — the car leaves a route that loops around the block and comes up the side street to the route end; one reroute, the loop answer is shown with a '목적지 근처예요 · 안내 종료' button, and 40 m from the end it says '목적지 부근입니다'; a rejected answer is not re-asked at once and a stop 110 m away ends guidance after 3 s; crawling on a direct route does not end early; a start 200 m away does not end; an OSM parking entrance and GPS loss end it; a loop answer inside 150 m ends it without showing", fn: s183 },
     { id: 'S182', name: "S182 section card like Naver (v286, driver '구간 평균 나와있는 숫자는 노란색으로 네이버지도랑 맞춰 주고 몇 키로 구간 단속인지 안 나와 있어서 … 평균속도 밑으로 표기'): 900 m into the 서울TG 100 section, day and night, the speed row's 구간평균 number is yellow on a dark chip and the section card shows a red-ring '100' sign in dark ink (the old '제한 100' text was white on the light card), 남은 구간 and the time; the card touches neither the route strip nor the docked bar", fn: s182 },
@@ -8749,6 +8750,62 @@
       if (want !== 's' && (/직진/.test(o.text) || /직진입니다/.test(o.say))) bad.push(f + ' became straight');
     }
     return { pass: bad.length === 0, detail: (bad.length ? bad.join(' | ') + ' || ' : '') + JSON.stringify(r) };
+  }
+
+  // S188 (v292, 쪽지 09:04 '갈래길 길안내 화면이 팝업될 때 2차선인데도 불구하고 4차선 팝업이 뜨면서 1,2차선은 직진, 3,4차선은 빠지는 것으로 안내되어서
+  //   조금 혼동이 생길 듯'; 부모 세션 '들어오는 길의 OSM lanes 보다 많이 그리지 말 것'): 분기점 그림의 차로가 아는 차로 수보다 많지 않다
+  //   (a) 수원신갈IC 연결로 안 '오산, 신갈' 갈림: 들어오는 길 3차로(OSM junc_dest 'i') → 2 + 2 갈림길 그림(f22) 대신 예전 갈림 그림(junc_fork, 차로 수 없음)
+  //   (b) 성남IC '성남, 광주' 출구: 들어오는 길이 2차로이고 갈래 차로를 모르면 → 4 + 1 그림 대신 예전 출구 그림(junc_ramp, 곧게 가는 2차로)
+  //   (c) 그대로: 성남IC 4 + 1 (x41·x41s, 들어오는 길 4), 판교IC '분당' 갈림 f22 (들어오는 길 모름), 하남분기점 4 + 2
+  async function s188() {
+    const t = T(), r = {};
+    const fixture = async (f) => {
+      const fx = await (await realFetch(harnessDir + 'fixtures/' + f, { cache: 'no-store' })).json();
+      const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0]; for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + hav(P[k - 1], P[k]));
+      return { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '시험', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+    };
+    const view = () => {
+      const g = t.nav.next, j = t.juncInfo(g), c = j ? t.jxConfig(j, g) : null;
+      const img = document.querySelector('#juncSvg img.jv-day');
+      return { shown: visible('#juncCard'), src: img ? img.getAttribute('src').replace(/^.*\/img\/ai\//, '').replace(/\?.*$/, '') : '', kind: j && j.kind,
+        jx2: t.jxShape2(j, g), jx1: t.jxShape(j, g), T: c && c.T, E: c && c.E, few: !!(c && c.few), src2: c && c.src, next: (g && g.s || '').slice(0, 30) };
+    };
+    const at = async (f, re, before, tweak) => {
+      const R = await fixture(f);
+      await resetApp(); softReset(); await planAndStart(R);
+      const g = R.route.guide.find((x) => re.test(x.s)), sg = R.cum[Math.min(g.i, R.cum.length - 1)];
+      for (let s = Math.max(0, sg - before - 900); s <= sg - before; s += 20) { const a = pointAt(R, s); feed(a.p, 20, a.h); }
+      const a = pointAt(R, sg - before); feed(a.p, 20, a.h);
+      const undo = tweak ? tweak() : null;
+      t.juncState.key = ''; t.renderNav(); await sleep(60); t.renderNav(); await sleep(30);
+      const v = view();
+      if (undo) undo();
+      t.juncState.key = '';
+      t.endNav();
+      return v;
+    };
+    try {
+      await waitFor(() => t.jdData.loaded && t.forksData.loaded, 10000, 100);
+      r.a = await at('route-suwonsingal-s.json', /수원신갈IC에서 '오산, 신갈'/, 150);
+      r.b = await at('route-ring1-pangyo.json', /성남IC에서 '성남, 광주'/, 330, () => {
+        const sp = t.juncSplitAt(t.nav.next), keep = { i: sp.r.ex.i, lanes: sp.r.lanes };
+        sp.r.ex.i = 2; sp.r.lanes = sp.r.lanes.map(() => 0);
+        return () => { sp.r.ex.i = keep.i; sp.r.lanes = keep.lanes; };
+      });
+      r.c1 = await at('route-ring1-pangyo.json', /성남IC에서 '성남, 광주'/, 330);
+      r.c2 = await at('route-pangyo-ic-s.json', /판교IC에서 '분당' 방면으로 왼쪽 방향/, 150);
+      r.c3 = await at('route-paldang-hanamic-s.json', /하남분기점에서 '수도권제1순환선, 판교, 서하남'/, 330);
+    } finally {
+      softReset();
+    }
+    const a = r.a || {}, b = r.b || {}, c1 = r.c1 || {}, c2 = r.c2 || {}, c3 = r.c3 || {};
+    const ok = a.shown && a.kind === 'fork' && a.few && !a.jx2 && !a.jx1 && /^junc_fork_day/.test(a.src) &&
+      b.shown && b.kind === 'ramp' && b.T === 2 && b.E === 1 && !b.jx2 && !b.jx1 && /^junc_ramp_day/.test(b.src) &&
+      c1.shown && c1.T === 4 && /^x41/.test(c1.jx2 || '') && /^jx2_x41/.test(c1.src) &&
+      c2.shown && c2.jx2 === 'f22' && !c2.few &&
+      c3.shown && c3.jx2 === 'x42' && c3.T === 4 && c3.E === 2;
+    return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
   // S187 (v291, 운전자 '그냥 텍스트로 보내기 < 뭐 이런 단어면 좋겠어 / 그리고 음성으로 텍스트 채우는 느낌으로'): 의견 판 '텍스트로 보내기'
