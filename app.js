@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-287'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-288'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -5352,6 +5352,19 @@
         //   이제 경로 이탈 재탐색과 교통 갱신의 답은 차가 이미 그 경로선 위에 있거나 출발점 뒤 같은 선 위(옆 15m 안)일 때만 바로 쓴다.
         //   아니면 띄우지 않고(지금 화면 그대로) 차가 그 경로에 올라타는지 몇 초 본다 — 올라타면 그때 안내, 아니면 버리고 지금 자리에서 다시 묻는다
         //   (교통 갱신은 버리고 지금 경로로 계속). 재탐색 답을 두 번 버렸으면 세 번째는 예전처럼 바로 쓴다
+        // v288: 목적지 300m 안에서 다시 찾은 경로가 블록을 돌면(곧은 거리의 3배·+250m 넘게): 150m 안이면 그 경로를 띄우지 않고 끝내고,
+        //   150~300m 면 띄우되 아래에 '목적지 근처예요 · 안내 종료' 버튼 (nearEndCheck)
+        if (reroute === true && nav.active && state.fix && nearDrove()) {
+          const L = r.path[r.path.length - 1], E = { lat: L[1], lng: L[0] };
+          let len = +r.distance || 0;
+          if (!len) for (let i = 1; i < r.path.length; i++) len += haversine({ lat: r.path[i - 1][1], lng: r.path[i - 1][0] }, { lat: r.path[i][1], lng: r.path[i][0] });
+          const d = nearDist(state.fix, E);
+          if (d < NEAR_ZONE_M && loopLen(len, d)) {
+            nav.nearD = d;
+            if (d < NEAR_ARRIVE_M) { arriveNear('loop', state.fix.t); return; }
+            nav.nearLoop = true;
+          }
+        }
         if ((reroute === true || reroute === 'traffic') && nav.active && state.fix) {
           const fit = routeFitsCar(r.path, state.fix);
           if (!fit.ok && (reroute === 'traffic' || (nav.candRejects || 0) < 2)) {
@@ -5574,7 +5587,7 @@
       if (c.reroute === 'traffic') return false;   // 지금 경로로 계속 (다음 교통 갱신은 5분 뒤)
       nav.candRejects = (nav.candRejects || 0) + 1;
       // 다시 묻기는 예전 '한 번도 못 올라탄 경로' 규칙 그대로: 바로 한 번(quickLeft), 그다음은 재탐색 간격(nav.gap)을 지켜 아래 이탈 판정이 묻는다
-      if (nav.quickLeft > 0) {
+      if (nav.quickLeft > 0 && !(nav.nearD < NEAR_ZONE_M)) {   // v288: 목적지 300m 안에서는 바로 다시 묻지 않는다 (20초 간격)
         nav.quickLeft = 0;
         nav.lastReroute = f.t; nav.off = 0;
         toast('지금 위치에 맞춰 경로를 다시 찾는 중…', '', 4000);
@@ -5846,6 +5859,9 @@
     nav.preview = false; nav.active = true;
     updateSoundPill();
     nav.odo0 = state.odo; // 경로 막대의 출발점 (재탐색해도 유지)
+    nav.startD = state.fix ? nearDist(state.fix) : 0;   // v288: 목적지 부근 도착 규칙은 300m 넘게 떨어진 곳에서 왔을 때만
+    nav.slowAt = 0; nav.nearD = Infinity; nav.nearLoop = false;
+    loadParkEntr();
     camState.markerAt = null; camState.peekAt = 0; // 지도 카메라 표시를 경로 위 카메라로 바로 바꾼다
     // 안내 시작 전에 잡혀 있던 카메라가 경로 위가 아니면 바로 내린다
     if (camState.target && !camState.target.after && !camOnRouteAhead(camState.target.c)) camState.target = null;
@@ -5880,8 +5896,100 @@
     $('#routeCard').hidden = true;
     $('#map').classList.remove('navigating');
     camState.target = null;
+    nav.nearLoop = false; nav.nearD = Infinity; nav.slowAt = 0; nearEndBtn(false);
     renderNav();
     setFollowing(true);
+  }
+  // v288 (2026-11-28 15:32 운전자 '어느순간 길안내를 계속 못찾아서 이거 확인좀 해주고 개선해 줘'): 목적지 오피스텔 블록에 핀 반대쪽 옆길로 들어와
+  //   경로 끝(네이버 '…오피스텔입구') 3m 옆까지 갔는데, 경로는 서쪽 사거리로 1.2km 도는 그대로 남고 벗어날 때마다 다시 찾기 → 차 뒤에서 시작하는 답은
+  //   지켜보다 버림 → 또 다시 찾기. 지하 주차장으로 내려갈 때까지 안내가 안 끝났다. 도착이 '경로 위 남은 거리 30m' 뿐이라 경로를 벗어나면
+  //   남은 거리가 그 자리에 멈춰 있었다. 이제 네이버처럼 목적지 부근이면 끝낸다 ('목적지 부근입니다. 안내를 종료합니다'):
+  //   - 목적지(핀)나 경로 끝(입구)까지 곧은 거리 150m 안이고, 경로를 벗어났거나 남은 경로가 곧은 거리의 3배(+250m)를 넘으면(블록 한 바퀴):
+  //     시속 10km 아래 3초(경로 위면 100m 안만) 또는 경로 이탈 두 번. 경로 위로 곧장 다가가는 중이면 예전처럼 남은 30m 에서
+  //   - 경로를 벗어나 경로 끝 40m 안을 시속 30km 아래로 지나면 (입구에 닿았다)
+  //   - 위치가 8초 넘게 안 오는데(지하 주차장) 마지막 위치가 위 조건이고 시속 25km 아래였으면
+  //   - 다시 찾은 경로가 150m 안에서 블록을 도는 경로면 띄우지 않고 끝낸다. 150~300m 면 띄우되 '목적지 근처예요 · 안내 종료' 버튼
+  //   - 300m 안에서는 다시 찾기를 20초에 한 번만 (바로 다시 묻기 없음)
+  //   출발이 목적지 300m 안이고 아직 300m 를 못 달렸으면(주차장에서 옆 건물로) 이 규칙은 쓰지 않는다
+  const NEAR_ARRIVE_M = 150, NEAR_GOAL_M = 40, NEAR_ZONE_M = 300;
+  function nearDist(p, end) {
+    if (!nav.dest || !p) return Infinity;
+    const E = end || (nav.pts && nav.pts[nav.pts.length - 1]);
+    return Math.min(haversine(p, nav.dest), E ? haversine(p, E) : Infinity);
+  }
+  const nearDrove = () => (state.odo - (nav.odo0 || 0)) > 300 || (nav.startD || 0) > 300;
+  const loopLen = (len, d) => len > Math.max(3 * d, d + 250);
+  function nearArrivalWhy(f) {
+    const d = nearDist(f);
+    nav.nearD = d;
+    if (state.speedKmh < 10) { if (!nav.slowAt) nav.slowAt = f.t; } else nav.slowAt = 0;
+    const remain = Math.max(0, nav.total - nav.along);
+    nav.nearLoopNow = !nav.onRoute || loopLen(remain, d);
+    if (!nearDrove() || !nav.nearLoopNow) return null;   // 경로 위로 곧장 다가가는 중이면 예전처럼 (남은 30m)
+    // OSM 주차장 입구(목적지·경로 끝 250m 안) 20m 안으로 시속 25km 아래로 들어가면
+    if (d < 250 && state.speedKmh < 25 && parkEntrNear(f, 20, 250)) return 'parking';
+    if (!(d < NEAR_ARRIVE_M)) return null;
+    if (d < NEAR_GOAL_M && state.speedKmh < 30) return 'goal';   // 입구 40m 안 (경로를 벗어났거나, 블록을 도는 경로가 입구 옆을 지날 때)
+    if (nav.slowAt && f.t - nav.slowAt >= 3000 && (!nav.onRoute || d < 100)) return 'slow';
+    return null;
+  }
+  // v288: OSM 주차장 입구(amenity=parking_entrance, 전국 약 7천 곳) — tools/osm_park_entr.py 가 data/park_entr.json 으로.
+  //   길안내를 시작할 때 한 번 받는다. 1km 칸으로 나눠 둔다. 목적지 건물 윤곽(OSM 건물 138만 개)은 너무 커서 싣지 않는다
+  const parkEntr = { loaded: false, busy: false, cells: new Map() };
+  function loadParkEntr() {
+    if (parkEntr.loaded || parkEntr.busy) return;
+    parkEntr.busy = true;
+    fetch('data/park_entr.json', { cache: 'force-cache' }).then((r) => (r.ok ? r.json() : null)).then((j) => {
+      parkEntr.busy = false;
+      if (!j || !Array.isArray(j.p)) return;
+      setParkEntr(j);
+    }).catch(() => { parkEntr.busy = false; });
+  }
+  function setParkEntr(j) {
+    parkEntr.cells = new Map();
+    for (let i = 0; i + 1 < j.p.length; i += 2) {
+      const lat = j.p[i] / 1e5, lng = j.p[i + 1] / 1e5, k = Math.floor(lat * 100) + ':' + Math.floor(lng * 100);
+      if (!parkEntr.cells.has(k)) parkEntr.cells.set(k, []);
+      parkEntr.cells.get(k).push({ lat, lng });
+    }
+    parkEntr.loaded = true;
+  }
+  function parkEntrNear(p, r, toDest) {
+    if (!parkEntr.loaded || !p) return null;
+    const a = Math.floor(p.lat * 100), b = Math.floor(p.lng * 100);
+    for (let i = -1; i <= 1; i++) for (let k = -1; k <= 1; k++) {
+      for (const e of parkEntr.cells.get((a + i) + ':' + (b + k)) || []) {
+        if (haversine(p, e) <= r && nearDist(e) <= toDest) return e;
+      }
+    }
+    return null;
+  }
+  function arriveNear(why, t) {
+    const name = nav.dest ? nav.dest.name : '목적지';
+    report('info', { msg: 'arrived near', why, d: Math.round(nav.nearD), remain: Math.round(Math.max(0, (nav.total || 0) - (nav.along || 0))), onRoute: !!nav.onRoute,
+      kmh: Math.round(state.speedKmh), rr: nav.rerouteN || 0 });
+    routeArrived(t || Date.now());
+    say('목적지 부근입니다. 안내를 종료합니다.', 2, true);
+    endNav();
+    toast(name + ' 부근입니다 · 안내를 마칩니다', '', 5000);
+  }
+  // 150~300m 에서 블록을 도는 경로를 받았을 때: 경로는 띄우고, 아래 가운데 작은 버튼으로 바로 끝낼 수 있게
+  function nearEndBtn(on) {
+    let el = document.getElementById('nearEnd');
+    if (!on) { if (el) el.hidden = true; return; }
+    if (!el) {
+      el = document.createElement('button');
+      el.id = 'nearEnd'; el.className = 'nearend'; el.type = 'button';
+      el.innerHTML = '<span>목적지 근처예요</span><b>안내 종료</b>';
+      el.addEventListener('click', (e) => { e.stopPropagation(); if (nav.active) arriveNear('button', state.fix && state.fix.t); });
+      $('#map').appendChild(el);
+    }
+    el.hidden = false;
+  }
+  function nearEndCheck() {
+    if (!nav.active || !nav.nearLoop) { nearEndBtn(false); return; }
+    if (!(nav.nearD < NEAR_ZONE_M + 50) || (nav.onRoute && !nav.nearLoopNow)) { nav.nearLoop = false; nearEndBtn(false); return; }
+    nearEndBtn(true);
   }
 
   // 네이버 길찾기 안내 종류(guide.type) → 아이콘. 2026-11-14 네이버 문서의 '분기점 안내 코드' 표 전체로 다시 맞췄다
@@ -6304,6 +6412,9 @@
       if (!nav.off) { nav.offSince = f.t; nav.offOdo = state.odo; }
       nav.off++;
     }
+    // v288: 목적지 부근(150m 안에서 경로를 벗어났거나 블록을 도는 경로, 입구 옆, 주차장 입구)이면 다시 찾지 않고 끝낸다
+    const nearWhy = nearArrivalWhy(f);
+    if (nearWhy) { arriveNear(nearWhy, f.t); return; }
     // 확실히 다른 길(80m 넘게 벗어남·다른 방향)이면 2번, 아니면 3번 연속 확인되면 다시 찾는다.
     // v135: 테슬라 GPS 는 1초에 10번 와서 3번 연속이 0.3초였다 — 벗어난 채로 1초(확실히 다른 길)·2초가 지나야 한다 (1초에 한 번이면 예전과 같다)
     // v170: 시간과 거리 둘 다 — 확실히 다른 길이면 1초·10m(예전과 같이 빠르게), 보통 2초·20m, 회전 구간은 4초·50m
@@ -6313,10 +6424,13 @@
     const offMs = sure ? 1000 : zone ? 4000 : 2000, offM = sure ? 10 : zone ? 50 : 20;
     const offLong = nav.off > 0 && f.t - (nav.offSince || f.t) >= offMs && state.odo - (nav.offOdo || state.odo) >= offM;
     // 다시 찾은 경로에 한 번도 못 올라탔으면(답이 오는 사이 차가 경로 시작점을 지나쳤으면) 간격을 기다리지 않고 한 번 바로 다시 찾는다
-    const quick = nav.quickLeft > 0 && nav.rerouted && nav.onCount === 0 && f.t - (nav.setAt || 0) > 2500;
+    // v288: 목적지 300m 안에서는 바로 다시 묻기 없이 20초에 한 번만 (블록을 도는 답을 잇달아 받지 않게)
+    const nearZone = nav.nearD < NEAR_ZONE_M;
+    const quick = !nearZone && nav.quickLeft > 0 && nav.rerouted && nav.onCount === 0 && f.t - (nav.setAt || 0) > 2500;
     // v280: 재탐색 답을 지켜보는 동안은 다시 묻지 않는다 (지켜보기가 버리면 그때 지금 자리에서 다시 묻는다)
     const heldReroute = !!(nav.cand && nav.cand.reroute === true);
-    if (nav.off >= need && offLong && !nav.busy && !heldReroute && (quick || f.t - nav.lastReroute > nav.gap)) {
+    const gapNow = nearZone ? Math.max(nav.gap, 20000) : nav.gap;
+    if (nav.off >= need && offLong && !nav.busy && !heldReroute && (quick || f.t - nav.lastReroute > gapNow)) {
       nav.lastReroute = f.t;
       nav.off = 0; nav.onCount = 0;
       if (quick) nav.quickLeft = 0;
@@ -6360,6 +6474,7 @@
     nav.next = nav.guides[nav.gi] || null;
     nav.dg = nav.next ? nav.cum[nav.next.i] - nav.along : nav.remain;
     if (nav.next) announceTurn(nav.next, nav.dg);
+    nearEndCheck();   // v288
     renderNav();
   }
 
@@ -10179,6 +10294,10 @@
       $('#speed').classList.add('stale');
       setGps('warn', 'GPS 신호 없음');
     }
+    // v288: 목적지 부근(150m 안, 경로를 벗어났거나 블록을 도는 경로)에서 시속 25km 아래로 가다 위치가 8초 넘게 끊기면(지하 주차장) 도착
+    if (nav.active && state.fix && !state.demoTimer && silentMs > 8000 && nav.nearD < NEAR_ARRIVE_M && nav.nearLoopNow && state.speedKmh < 25 && nearDrove()) {
+      arriveNear('gps', state.fix.t);
+    }
     if (nav.active) renderNav(); else checkTripCover();
     if (camState.section) renderSection();
     tunnelCamTick();
@@ -12104,7 +12223,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, fbTextOpen, fbTextSend, fbTextClose, fbAutoRec, arrowSpan, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, soonChain, soonSpeech, SOON_M, exitedBefore, juncSplitAt, jxLaneAt, juncWanted, jxSplit2, mainKeep, jxOsmLanes, jxByLanes, jxShape2, jxConfig, jx2ShapeOf, JX2_LANES, JX2_BOARD, jxSideExit, jxCity, jxRoadShort, jxForkGeo, SEC_JOIN_RULE, loneSecEnd, quietSecEnd, jxShape, jxMirror, JX_BOARD, JX_TEXT, JX_LANES, juncOther, jdData, setJuncDest, loadJuncDest, camFlagUndo, camFlagToday, undoWrongCard, clearConfirmedFlags, CAM_FLAG_CLEAR, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams, passWhy, pruneTurnCams, camDirOk, routeNet, routeUpstream, laneGuideM, planSignPlace, findBuilding, sunPosStored, eventBody, routeArrived, routeIdleCheck, routeStartup, routeHide, tripEndGap, routeHeading, startsReversed, ROUTE_AHEAD, fitSigns, nvSceneFits, planScene, routeTurnSum, renderJunction, juncState, fitColumn, colBottom, renderSideBadge, roadLimit, setJxTime, foldState: lay, FOLD_STEPS, applyChips, vc, vcPlan, vcLoadList, vcSpeak, vcUse, vcNum, NM, unmark, markGuide, turnSpeech, camSpeech, routeStartSpeech, soonSpeech, SOON_ACT,
+      nearArrivalWhy, arriveNear, nearDist, setParkEntr, parkEntr, parkEntrNear, nearEndCheck, tickClock, tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, fbTextOpen, fbTextSend, fbTextClose, fbAutoRec, arrowSpan, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, soonChain, soonSpeech, SOON_M, exitedBefore, juncSplitAt, jxLaneAt, juncWanted, jxSplit2, mainKeep, jxOsmLanes, jxByLanes, jxShape2, jxConfig, jx2ShapeOf, JX2_LANES, JX2_BOARD, jxSideExit, jxCity, jxRoadShort, jxForkGeo, SEC_JOIN_RULE, loneSecEnd, quietSecEnd, jxShape, jxMirror, JX_BOARD, JX_TEXT, JX_LANES, juncOther, jdData, setJuncDest, loadJuncDest, camFlagUndo, camFlagToday, undoWrongCard, clearConfirmedFlags, CAM_FLAG_CLEAR, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams, passWhy, pruneTurnCams, camDirOk, routeNet, routeUpstream, laneGuideM, planSignPlace, findBuilding, sunPosStored, eventBody, routeArrived, routeIdleCheck, routeStartup, routeHide, tripEndGap, routeHeading, startsReversed, ROUTE_AHEAD, fitSigns, nvSceneFits, planScene, routeTurnSum, renderJunction, juncState, fitColumn, colBottom, renderSideBadge, roadLimit, setJxTime, foldState: lay, FOLD_STEPS, applyChips, vc, vcPlan, vcLoadList, vcSpeak, vcUse, vcNum, NM, unmark, markGuide, turnSpeech, camSpeech, routeStartSpeech, soonSpeech, SOON_ACT,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,

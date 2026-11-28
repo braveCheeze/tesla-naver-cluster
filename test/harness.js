@@ -2969,6 +2969,7 @@
     { id: 'S176', name: "S176 nothing in the left column is cut off (v275, driver photo 2026-11-27 수원신갈IC 160 m: '이렇게 나와 버려 제일 좋은 방법 조금 변경해봐'): at 804×560 and 804×600 on the real 경부 → 수원신갈IC route, 900 m before the exit (card + next row + rest row + 40 camera + speed strip + hi-pass + report button) folds report → hi-pass chip → camera to the right badge → speed strip so the column ends above the attribution line; 160 m before (junction picture) the card is one line with the picture right under it, next guide / rest / hi-pass are chips, the right badge shows speed 79 (red over 40), the 40 sign, 370m and the kind band 8 px left of the route strip, no report button; restoring the size unfolds", fn: s176 },
     { id: 'S177', name: "S177 approach leg then turn (v277, keys Naver check of the crossing cameras v274 removed): a guided car coming in on the camera's own approach and turning at the junction is still alerted — 인항로 #23586 turning left, 안남로 #25184 turning right, 군왕로 #3564 turning toward 270° — while going straight through the junction on the crossing road either way is not; the two 30 school-zone cameras on one pole on 마장로324번길 190 m west of 안남로 follow Naver: westbound (after the right turn) #25199 at 274°, eastbound #25191 at 94°, each only for its own direction", fn: s177 },
     { id: 'S178', name: "S178 recorded voice clips (v278, driver '걍 MeloTTS로 다 가자' — the Tesla browser has no speech engine: 0 voices, speak() → synthesis-failed): every sentence the app speaks, built by the same functions (camSpeech for all kinds/zones/rear/box/distances/limits — box booths now say '박스형 단속 카메라' like Naver, section start, fixed sentences, ETA change, route start with the destination name left out, 이어서/다시 chains, and every Naver guide text in the test routes incl. toll gates) maps fully onto data/voice_clips.json; numbers read 12 · 110 · 1600 · 23000 as clips; with the flag on and no working speech the clips are fetched, decoded and played back to back (onEnd), one missing clip falls back to the beep (onFail), an uncovered sentence returns false; with the flag off speechSynthesis stays; v279: fetched clips land in Cache Storage and play with the network gone", fn: s178 },
+    { id: 'S183', name: "S183 arrival near the destination (v288, driver '어느순간 길안내를 계속 못찾아서 이거 확인좀 해주고 개선해 줘'): synthetic block — the car leaves a route that loops around the block and comes up the side street to the route end; one reroute, the loop answer is shown with a '목적지 근처예요 · 안내 종료' button, and 40 m from the end it says '목적지 부근입니다'; a rejected answer is not re-asked at once and a stop 110 m away ends guidance after 3 s; crawling on a direct route does not end early; a start 200 m away does not end; an OSM parking entrance and GPS loss end it; a loop answer inside 150 m ends it without showing", fn: s183 },
     { id: 'S182', name: "S182 section card like Naver (v286, driver '구간 평균 나와있는 숫자는 노란색으로 네이버지도랑 맞춰 주고 몇 키로 구간 단속인지 안 나와 있어서 … 평균속도 밑으로 표기'): 900 m into the 서울TG 100 section, day and night, the speed row's 구간평균 number is yellow on a dark chip and the section card shows a red-ring '100' sign in dark ink (the old '제한 100' text was white on the light card), 남은 구간 and the time; the card touches neither the route strip nor the docked bar", fn: s182 },
     { id: 'S179', name: "S179 cameras only Naver had in the daily Naver checks of 2026-11-24..27 (v280): the 19 spots in data/driver_spots.json (Naver-checked; rear, box and child flags as Naver's badge), plus v282's 8 from the pipeline's verified lines, alert along a straight route in their direction with Naver's limit and kind band (박스형 · 후면단속 · 신호과속 · 과속단속) by 520 m before, not the other way; 광주 필문대로 southbound #3183 and #3102 alert 60 (police data 50)", fn: s179 },
     { id: 'S180', name: "S180 a reroute or traffic answer that starts where the car is not is held, not shown (v280, driver: '고속화 도로 그 밑에 일반도로 … 엉뚱하게 없는 네비가 잡히다가 사라지거든'; /events: all 40 logged reroutes came from a route the car had never been on): (a) a reroute answer starting on a parallel road 40 m away never shows its guidance or '새 경로로 안내합니다', is dropped when the car does not get on it, and the next answer (the car's own road) is used at once; (b) a traffic answer starting 100 m ahead on a road 35 m to the side (passed v181's 'behind the start' check) is dropped, the current route stays, no reroute; (c) a reroute answer 40 m ahead on the same road is used at once as before; (d) an answer on a road 30 m to the side is used once the car moves onto that road", fn: s180 },
@@ -4386,7 +4387,7 @@
     const cum = [0];
     for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
     const R = { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '경부 상행', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
-    const CAM = { lat: 37.3539, lng: 127.10339 };
+    const CAM = { lat: 37.35334, lng: 127.103457 };   // v287: #22040 을 네이버 자리로 (62m 남쪽)
     let camS = 0, camD = Infinity;
     for (let s = 0; s <= R.total; s += 5) { const d = hav(pointAt(R, s).p, CAM); if (d < camD) { camD = d; camS = s; } }
     const tgS = cum[fx.guide.find((g) => g.t === 121).i];
@@ -8691,10 +8692,139 @@
     const d = r.dock || {}, n = d.nb || {}, f = d.fb || {}, rp = r.report || {}, c = r.card || {}, aw = r.arrow || {}, af = r.after || {};
     const ok = d.docked && n.l === 0 && n.r === 0 && n.b === 0 && n.h === 40 && d.oneRow && d.order &&
       d.attrib >= 0 && d.trip >= 8 && d.gps >= 0 && d.col >= 24 && f.l >= 12 && f.gap >= 6 && f.gap <= 14 && f.bottom <= 2 && f.aboveBar >= 8 && f.colGap >= 7 && f.round &&
-      r.chipGap === 8 && rp.txt === '제보' && rp.aria === '잘못된 정보 제보' && rp.color === 'rgb(224, 49, 49)' && rp.icon && rp.shown &&
+      r.chipGap === 8 && rp.txt === '제보' && rp.aria === '잘못된 정보 제보' && (rp.color === 'rgb(224, 49, 49)' || rp.color === 'rgb(255, 107, 107)') /* 밤 #ff6b6b */ && rp.icon && rp.shown &&
       c.dest !== null && c.dest <= 34 && (c.next === null || c.next <= 32) &&
       aw.b17 === 38 && aw.a17 === 25 && Math.abs(aw.b19 - aw.b17) <= 1 && Math.abs(aw.a19 - aw.a17) <= 1 && aw.b15 > 100 &&
       !af.docked && !af.on;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S183 (v288, 운전자 '어느순간 길안내를 계속 못찾아서 이거 확인좀 해주고 개선해 줘' — 2026-11-28 오피스텔 블록에 핀 반대쪽 옆길로 들어와
+  //   경로 끝 3m 옆까지 갔는데 경로는 서쪽 사거리로 도는 그대로, 다시 찾기가 잇달아 나고 지하 주차장까지 안내가 안 끝났다).
+  //   합성 블록 (운전자 자리 아님): 목적지 핀 D, 큰길은 D 250m 남쪽 동서로, 경로 끝 E 는 D 150m 동쪽 옆길(D 40m 남쪽).
+  //   처음 경로: 큰길을 서쪽으로 → 600m 서쪽 길 북쪽 → D 60m 북쪽 길 동쪽 → 옆길 남쪽으로 E (블록 한 바퀴). 차는 큰길에서 옆길로 바로 북쪽.
+  //   (a) 80m 동쪽 옆길로 꺾으면(E 225m) 다시 찾기 — 답이 블록을 돌면 띄우되 '목적지 근처예요 · 안내 종료' 버튼, 그 뒤 E 쪽으로 들어가 40m 안이면 끝
+  //   (b) 답이 차 뒤에서 시작해 버려져도 300m 안에서는 바로 다시 묻지 않고(20초에 한 번), E 110m 에서 멈추면 3초 뒤 도착
+  //   (c) 경로 위로 곧장 다가가며 180~100m 에서 시속 5km 로 기어도 끝나지 않고, 남은 30m 에서 예전처럼 '도착했습니다'
+  //   (d) 목적지 200m 안에서 출발했으면(주차장에서 옆 건물로) 서 있어도 끝나지 않는다
+  //   (e) OSM 주차장 입구(E 210m) 20m 안으로 시속 15km 로 들어가면 도착   (f) E 100m 에서 시속 15km 로 가다 위치가 8초 끊기면(지하 주차장) 도착
+  //   (g) 블록을 도는 답이 150m 안에서 오면 띄우지 않고 바로 도착
+  async function s183() {
+    const t = T(), r = {};
+    const O = dest(NAV_ORIGIN, 200, 55000);   // 합성 동네 (위의 다른 시험과 겹치지 않게)
+    const at = (x, y) => dest(dest(O, 90, x), 0, y), D = at(0, 0), E = at(150, -40);
+    const seg = (a, b, step) => { const n = Math.max(1, Math.round(hav(a, b) / (step || 20))), out = []; for (let k = 0; k <= n; k++) out.push({ lat: a.lat + (b.lat - a.lat) * k / n, lng: a.lng + (b.lng - a.lng) * k / n }); return out; };
+    const poly = (...ps) => { const out = []; for (let k = 0; k + 1 < ps.length; k++) { const s1 = seg(ps[k], ps[k + 1]); out.push(...(k ? s1.slice(1) : s1)); } return out; };
+    const mk = (pts, name) => {
+      const P = pts.map((q) => ({ lat: round6(q.lat), lng: round6(q.lng) }));
+      const cum = [0]; for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+      const total = cum[cum.length - 1], n = P.length;
+      return { route: { distance: r0(total), duration: r0(total / 10 * 1000), tollFare: 0, fuelPrice: 0, path: P.map((q) => [q.lng, q.lat]),
+        guide: [{ i: Math.min(3, n - 2), t: 3, s: name + '에서 우회전', d: r0(cum[Math.min(3, n - 2)]), ms: 3000 }, { i: n - 1, t: 88, s: '목적지', d: r0(total), ms: r0(total / 10 * 1000) }],
+        sections: [{ i: 0, n, name, speed: 40, cong: 1 }] }, P, cum, total, dest: { name: '시험오피스텔', addr: '', lat: D.lat, lng: D.lng } };
+    };
+    const SX = 230;   // 차가 올라가는 옆길 (경로 끝 E 가 있는 길보다 80m 동쪽)
+    const loopFrom = (p) => mk(poly(dest(p, 0, 25), at(SX, 60), at(-200, 60), at(-200, -250), at(150, -250), E), '블록길');
+    const backRoute = () => mk(poly(at(SX, -250), at(-600, -250), at(-600, 60), at(150, 60), E), '뒤길');
+    const R0 = mk(poly(at(2000, -250), at(-600, -250), at(-600, 60), at(150, 60), E), '큰길');
+    const spoke = (mark, re) => t.alertLog.slice(mark ? t.alertLog.indexOf(mark) + 1 : 0).map((e) => e.text).filter((x) => re.test(x)).length;
+    const markLog = () => t.alertLog[t.alertLog.length - 1] || null;
+    const calls = () => stub.count('/route');
+    const tick = async () => { await new Promise((res) => setTimeout(res, 0)); await waitFor(() => !t.nav.busy, 3000, 10); };
+    const btn = () => { const b = document.getElementById('nearEnd'); return !!b && !b.hidden; };
+    const keepLoaded = t.parkEntr.loaded, keepCells = t.parkEntr.cells;
+    const startOn = async (R, fromX) => {
+      await resetApp(); softReset();
+      stub.canned['/route'] = R.route;
+      feed(at(fromX, -250), 0, 270);
+      await t.planRoute(R.dest, false); t.startNav();
+    };
+    const driveMain = (x0, x1) => { for (let x = x0; x >= x1; x -= 14) feed(at(x, -250), 14, 270); };
+    try {
+      t.setParkEntr({ p: [] });
+      // (a)
+      await startOn(R0, 2000);
+      driveMain(2000, 150);
+      const c0 = calls(), log0 = markLog();
+      let n = 0, btnSeen = false, arrivedAt = null, loopShown = false;
+      stub.canned['/route'] = () => { n++; return loopFrom(t.state.fix).route; };
+      const path = []; for (let y = -243; y <= -40; y += 7) path.push([at(SX, y), 0]); for (let x = SX - 6; x >= 150; x -= 6) path.push([at(x, -40), 270]);
+      for (const [q, h] of path) {
+        feed(q, 6.5, h);
+        await tick(); t.renderNav();
+        if (btn()) btnSeen = true;
+        if (t.nav.route && t.nav.route.sections && t.nav.route.sections[0].name === '블록길') loopShown = true;
+        if (!t.nav.active) { arrivedAt = Math.round(hav(t.state.fix, E)); break; }
+      }
+      r.a = { reroutes: calls() - c0, answers: n, loopShown, btnSeen, arrivedAt, near: spoke(log0, /목적지 부근입니다/), plain: spoke(log0, /목적지에 도착했습니다/), btnAfter: btn() };
+      // (b) 답이 차 뒤(남쪽 큰길)에서 시작 → 지켜보다 버림. 300m 안이라 바로 다시 묻지 않는다
+      await startOn(R0, 2000);
+      driveMain(2000, 150);
+      const c1 = calls(), log1 = markLog();
+      stub.canned['/route'] = () => backRoute().route;
+      let stopAt = null;
+      for (let y = -243; y <= -150; y += 7) { feed(at(SX, y), 7, 0); await tick(); }
+      for (let k = 0; k < 8 && t.nav.active; k++) { feed(at(SX, -150), 0, 0); await tick(); if (!t.nav.active) stopAt = k; }
+      r.b = { reroutes: calls() - c1, stopAt, active: t.nav.active, near: spoke(log1, /목적지 부근입니다/) };
+      // (c) 곧장 다가가는 경로 위에서 기어가기
+      const R2 = mk(poly(at(150, -2000), E), '옆길');
+      await resetApp(); softReset();
+      stub.canned['/route'] = R2.route;
+      feed(at(150, -2000), 0, 0);
+      await t.planRoute(R2.dest, false); t.startNav();
+      for (let y = -1990; y <= -180; y += 14) feed(at(150, y), 14, 0);
+      const log2 = markLog();
+      for (let y = -180; y <= -100; y += 1.4) feed(at(150, y), 1.4, 0);
+      const crawlActive = t.nav.active;
+      for (let y = -100; y <= -30 && t.nav.active; y += 7) feed(at(150, y), 7, 0);
+      r.c = { crawlActive, active: t.nav.active, near: spoke(log2, /목적지 부근입니다/), plain: spoke(log2, /목적지에 도착했습니다/) };
+      // (d) 목적지 200m 안에서 출발
+      await resetApp(); softReset();
+      stub.canned['/route'] = R0.route;
+      feed(at(150, -230), 0, 0);
+      await t.planRoute(R0.dest, false); t.startNav();
+      for (let k = 0; k < 8; k++) { feed(at(152, -228), 0, 0); await tick(); }
+      r.d = { active: t.nav.active };
+      // (e) 주차장 입구
+      await startOn(R0, 2000);
+      const PE = at(300, -220);
+      t.setParkEntr({ p: [Math.round(PE.lat * 1e5), Math.round(PE.lng * 1e5)] });
+      driveMain(2000, 150);
+      stub.canned['/route'] = () => loopFrom(t.state.fix).route;
+      for (let y = -243; y <= -220; y += 7) { feed(at(SX, y), 7, 0); await tick(); }
+      let peAt = null;
+      for (let x = SX + 4; x <= 330 && t.nav.active; x += 4) { feed(at(x, -220), 4, 90); await tick(); if (!t.nav.active) peAt = Math.round(hav(t.state.fix, PE)); }
+      r.e = { active: t.nav.active, peAt };
+      t.setParkEntr({ p: [] });
+      // (f) 위치가 끊김
+      await startOn(R0, 2000);
+      driveMain(2000, 150);
+      stub.canned['/route'] = () => backRoute().route;
+      for (let y = -243; y <= -140; y += 6) { feed(at(SX, y), 6, 0); await tick(); }
+      const fActive = t.nav.active;
+      await new Promise((res) => setTimeout(res, 8400));
+      t.tickClock();
+      r.f = { before: fActive, after: t.nav.active };
+      // (g) 150m 안에서 블록을 도는 답 → 띄우지 않고 도착
+      const R3 = mk(poly(at(150, 2000), E), '북쪽길');
+      await resetApp(); softReset();
+      stub.canned['/route'] = R3.route;
+      feed(at(150, 2000), 0, 180);
+      await t.planRoute(R3.dest, false); t.startNav();
+      for (let y = 1990; y >= 60; y -= 14) feed(at(150, y), 14, 180);
+      const log3 = markLog();
+      stub.canned['/route'] = () => mk(poly(dest(t.state.fix, 270, 25), at(-200, 60), at(-200, -250), at(150, -250), E), '블록길').route;
+      for (let x = 144; x >= 60 && t.nav.active; x -= 6) { feed(at(x, 60), 6, 270); await tick(); }
+      r.g = { active: t.nav.active, near: spoke(log3, /목적지 부근입니다/), newRoute: spoke(log3, /새 경로로 안내/) };
+    } finally {
+      t.parkEntr.cells = keepCells; t.parkEntr.loaded = keepLoaded;
+      await resetApp(); softReset();
+    }
+    const a = r.a, b = r.b, c = r.c, d = r.d, e = r.e, f = r.f, g = r.g;
+    const ok = a.reroutes >= 1 && a.reroutes <= 2 && a.loopShown && a.btnSeen && a.arrivedAt !== null && a.arrivedAt <= 40 && a.near + a.plain === 1 && !a.btnAfter &&
+      b.reroutes <= 1 && !b.active && b.stopAt !== null && b.near === 1 &&
+      c.crawlActive && !c.active && c.near === 0 && c.plain === 1 &&
+      d.active && !e.active && e.peAt !== null && e.peAt <= 20 && f.before && !f.after && !g.active && g.near === 1 && g.newRoute === 0;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
@@ -9587,7 +9717,7 @@
   //   합류는 지금 동작을 적어 SKIP 으로 둔다
   async function s163() {
     const t = T(), r = {};
-    const START = { lat: 37.25084, lng: 127.10393 }, END = { lat: 37.3539, lng: 127.10339 };
+    const START = { lat: 37.25084, lng: 127.10393 }, END = { lat: 37.35334, lng: 127.103457 };   // v287: 끝 #22040 네이버 자리
     const fixture = async (f) => {
       const fx = await (await realFetch(harnessDir + 'fixtures/' + f, { cache: 'no-store' })).json();
       const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
@@ -9832,19 +9962,21 @@
   //   (d) 새 버전이 열릴 때 지우는 목록(CAM_FLAG_CLEAR): 그 시각 전 22040 신고 표시는 지우고, 그 뒤 누른 것은 남긴다
   async function s159() {
     const t = T(), r = {}, b = document.getElementById('camMissBtn'), card = document.getElementById('camCard');
+    // v287: #22040 을 네이버 자리로 옮겨 신고 표시 열쇠(자리)도 바뀌었다 — 지금 자료의 자리로. (d) 의 CAM_FLAG_CLEAR 는 옮기기 전 자리 그대로
+    const K22040 = t.cams.rows[22040][0] + ',' + t.cams.rows[22040][1];
     const keepNo = t.store.get('camNo2'), keepMap = new Map([...t.camNoMap].map(([k, v]) => [k, v.map((e) => Object.assign({}, e, { days: e.days.slice() }))]));
     const keepShare = t.prefs.share;
     const settle = () => { clearTimeout(b._sentT); b.classList.remove('sent', 'saved', 'sending'); t.renderCam(); };
     const view = () => ({ limit: text('#camLimit'), doubt: card.classList.contains('doubt'), after: getComputedStyle(document.getElementById('camType'), '::after').content,
       btn: b.textContent, undo: b.classList.contains('undo'), flag: t.camState.target ? t.camState.target.flag || null : 'none',
-      mine: (t.camNoMap.get('37.3539,127.10339') || []).length, list: document.querySelectorAll('#camFlagList li').length });
+      mine: (t.camNoMap.get(K22040) || []).length, list: document.querySelectorAll('#camFlagList li').length });
     try {
       t.prefs.share = false;   // 시험 중에는 서버로 보내지 않는다
       await waitFor(() => t.cams.loaded, 10000, 100);
       const R = buildNavRoute();
       softReset(); await planAndStart(R);
       for (let s = 15; s <= 90; s += 15) { const a = pointAt(R, s); feed(a.p, 15, 0); }
-      t.camNoMap.delete('37.3539,127.10339');
+      t.camNoMap.delete(K22040);
       const i = 22040, c = t.cams.rows[i];
       const show = (flag) => { t.camState.target = { i, c, d: 670, r: 670, minD: 670, after: false, t0: Date.now(), first: 2600, flag }; t.renderCam(); card._camAt = Date.now() - 2000; };
       show(undefined);
@@ -9862,7 +9994,7 @@
       r.b = view();
       // (c) 다른 날 누른 신고
       const old = Date.now() - 3 * 86400e3, d = new Date(old);
-      t.camNoMap.set('37.3539,127.10339', [{ h: null, t0: old, t1: old, days: [d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate()], lim: 110, name: '구간단속 끝' }]);
+      t.camNoMap.set(K22040, [{ h: null, t0: old, t1: old, days: [d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate()], lim: 110, name: '구간단속 끝' }]);
       show(t.camFlag(c, 0));
       r.c = view();
       // (d) 새 버전이 열릴 때 지우는 목록

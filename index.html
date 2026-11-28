@@ -2211,6 +2211,19 @@
   /* 넓은 화면의 큰 속도는 두 버튼 위로 */
   @media (min-width: 1000px) { #app.tesla .speedbox { bottom: calc(var(--trip-b) + 50px + 16px); } }
 
+  /* v288 목적지 300m 안에서 블록을 도는 경로를 받았을 때: 아래 가운데 '목적지 근처예요 · 안내 종료' (누르면 도착으로 끝낸다) */
+  .nearend {
+    position: absolute; left: 50%; bottom: 84px; z-index: 1066; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 6px 0 18px; border: 0; border-radius: 24px; cursor: pointer;
+    background: var(--nv-bg, #fff); color: var(--nv-fg, #111); box-shadow: 0 8px 22px rgba(0, 0, 0, .28);
+    font: 800 16px/1 Pretendard, system-ui, sans-serif; letter-spacing: -.3px; white-space: nowrap; pointer-events: auto;
+    animation: bmIn .22s cubic-bezier(.2, .8, .2, 1);
+  }
+  .nearend[hidden] { display: none; }
+  .nearend b { display: inline-flex; align-items: center; height: 36px; padding: 0 14px; border-radius: 18px; background: #e03131; color: #fff; font-weight: 800; }
+  .nearend:active { transform: translateX(-50%) scale(.96); }
+  #app.tesla.docked .nearend { bottom: calc(var(--dock-h) + 62px); }   /* 알림(띠 위 16px, 높이 약 36px) 위 */
+
   /* v286 구간단속 칸 (운전자 '구간 평균 나와있는 숫자는 노란색으로 네이버지도랑 맞춰 주고 몇 키로 구간 단속인지 안 나와 있어서 … 평균속도 밑으로'):
      위 속도 칸의 구간평균 숫자는 네이버처럼 어두운 칸 위 노랑. 그 밑 구간 칸은 빨간 원 제한 표지 · 남은 구간 · 남은 시간 (낮·밤 같은 어두운 칸) */
   .sec-blk { display: none; }
@@ -2658,8 +2671,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-287"></script>
-<script src="img/ai/picks.js?v=2026.11.16-287"></script>
-<script src="app.js?v=2026.11.16-287"></script>
+<script src="icons.js?v=2026.11.16-288"></script>
+<script src="img/ai/picks.js?v=2026.11.16-288"></script>
+<script src="app.js?v=2026.11.16-288"></script>
 </body>
 </html>
