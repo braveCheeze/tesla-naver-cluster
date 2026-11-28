@@ -2969,6 +2969,8 @@
     { id: 'S176', name: "S176 nothing in the left column is cut off (v275, driver photo 2026-11-27 수원신갈IC 160 m: '이렇게 나와 버려 제일 좋은 방법 조금 변경해봐'): at 804×560 and 804×600 on the real 경부 → 수원신갈IC route, 900 m before the exit (card + next row + rest row + 40 camera + speed strip + hi-pass + report button) folds report → hi-pass chip → camera to the right badge → speed strip so the column ends above the attribution line; 160 m before (junction picture) the card is one line with the picture right under it, next guide / rest / hi-pass are chips, the right badge shows speed 79 (red over 40), the 40 sign, 370m and the kind band 8 px left of the route strip, no report button; restoring the size unfolds", fn: s176 },
     { id: 'S177', name: "S177 approach leg then turn (v277, keys Naver check of the crossing cameras v274 removed): a guided car coming in on the camera's own approach and turning at the junction is still alerted — 인항로 #23586 turning left, 안남로 #25184 turning right, 군왕로 #3564 turning toward 270° — while going straight through the junction on the crossing road either way is not; the two 30 school-zone cameras on one pole on 마장로324번길 190 m west of 안남로 follow Naver: westbound (after the right turn) #25199 at 274°, eastbound #25191 at 94°, each only for its own direction", fn: s177 },
     { id: 'S178', name: "S178 recorded voice clips (v278, driver '걍 MeloTTS로 다 가자' — the Tesla browser has no speech engine: 0 voices, speak() → synthesis-failed): every sentence the app speaks, built by the same functions (camSpeech for all kinds/zones/rear/box/distances/limits — box booths now say '박스형 단속 카메라' like Naver, section start, fixed sentences, ETA change, route start with the destination name left out, 이어서/다시 chains, and every Naver guide text in the test routes incl. toll gates) maps fully onto data/voice_clips.json; numbers read 12 · 110 · 1600 · 23000 as clips; with the flag on and no working speech the clips are fetched, decoded and played back to back (onEnd), one missing clip falls back to the beep (onFail), an uncovered sentence returns false; with the flag off speechSynthesis stays; v279: fetched clips land in Cache Storage and play with the network gone", fn: s178 },
+    { id: 'S185', name: "S185 straight-on at forks (v290, driver '직진해야하는 코스면 그냥 직진으로', '원래 저렇게 안보여줬잖아' — deliberately unlike Naver's side-step arrow): 신갈분기점 '대전' (main road kept) and 보정교차로삼거리 '신갈' 오른쪽 도로 주행 (8°) show a plain ↑, '직진' text and '○○ 방면 직진입니다'; 서하남교차로 '강동', 신갈분기점 '원주, 인천', 하남분기점 and 수원신갈IC '수원, 신갈' keep their left/right", fn: s185 },
+    { id: 'S186', name: "S186 section card closes off the section road (v290, feedback '구간 단속 시작 지점만 지나고 끝나는 지점 안 지났을 때 계속 나옵니다'): 900 m into the 서울TG 100 section a reroute onto another road closes it quietly; without guidance, turning back 800 m closes it; following the route keeps it open", fn: s186 },
     { id: 'S184', name: "S184 a passed camera switches off at once (v289, driver '과속 단속이 지나 갔는데도 계속 속도가 떠 있는 경우가 있어서 … 지나가면 그냥 신호 과속 표시를 꺼 줘야'): two synthetic 60 cameras at 72 km/h — at the first fix past the pole the red over-speed card, the speed row and the red speedometer go off and '통과' lasts no more than 30 m or 2 s; a camera point 90 m off the road clears within 25 m of the closest approach (it used to stay 120 m more behind the 80 m gate); a 20 m GPS jump back after passing does not bring it back; with fixes every 2 s it is gone at the next fix", fn: s184 },
     { id: 'S183', name: "S183 arrival near the destination (v288, driver '어느순간 길안내를 계속 못찾아서 이거 확인좀 해주고 개선해 줘'): synthetic block — the car leaves a route that loops around the block and comes up the side street to the route end; one reroute, the loop answer is shown with a '목적지 근처예요 · 안내 종료' button, and 40 m from the end it says '목적지 부근입니다'; a rejected answer is not re-asked at once and a stop 110 m away ends guidance after 3 s; crawling on a direct route does not end early; a start 200 m away does not end; an OSM parking entrance and GPS loss end it; a loop answer inside 150 m ends it without showing", fn: s183 },
     { id: 'S182', name: "S182 section card like Naver (v286, driver '구간 평균 나와있는 숫자는 노란색으로 네이버지도랑 맞춰 주고 몇 키로 구간 단속인지 안 나와 있어서 … 평균속도 밑으로 표기'): 900 m into the 서울TG 100 section, day and night, the speed row's 구간평균 number is yellow on a dark chip and the section card shows a red-ring '100' sign in dark ink (the old '제한 100' text was white on the light card), 남은 구간 and the time; the card touches neither the route strip nor the docked bar", fn: s182 },
@@ -4184,7 +4186,7 @@
     // v253 (jx 비교표 1번): 차로 단면이 없는 본선 그대로(이 합성 길)는 네이버처럼 분기점 그림 칸이 없다 — 글·아이콘은 그대로 '직진'
     const ok = !!a && !!b && a.kind === 's' && a.text === '신갈분기점에서 직진 · 서울 방면' && !a.junc && a.scene === '' &&
       b.kind === 'kr' && /오른쪽 방향/.test(b.text) && b.junc && !b.main && !b.straightSign &&
-      /\bml\b/.test(a.icon) && b.icon === 'sr';
+      /\bti-s\b/.test(a.icon) && b.icon === 'sr';   // v290 (운전자 '원래 저렇게 안보여줬잖아'): 본선 그대로는 그냥 ↑ (v143 의 ml 을 거둠)
     return { pass: ok, detail: JSON.stringify(r) };
   }
 
@@ -8388,7 +8390,7 @@
         picGap: jc && np ? jc.t - np.b : null, jcB: jc ? jc.b : null, cam: !!box($('#camCard')), spd: !!box($('#mySpeed')), toll: !!box($('#tollCard')), miss: !!cMiss, next: !!box($('#nextTurn')),
         corner: cMiss && cFb ? { l: cMiss.l - Math.round(ab.left), gap: cFb.l - cMiss.r, bot: Math.abs(cFb.b - cMiss.b), aboveBar: nbx ? nbx.t - cFb.b : null, colGap: Math.min(cMiss.t, cFb.t) - lowest } : null,
         rest: !!box($('#restCard')), chips: chips.map((c) => c.k + '|' + c.txt.replace(/\s+/g, ' ')),
-        spBox: box($('#mySpeed')), spOver: hasCls('#mySpeed', 'over'),   // v289: 그림 때도 늘 쓰던 속도 칸
+        spBox: box($('#mySpeed')), spOver: hasCls('#mySpeed', 'over'), spTxt: text('#mySpeed'),   // v289: 그림 때도 늘 쓰던 속도 칸 · v290: 단속 거리도 그 칸 안
         chipOver: chips.filter((c) => c.b && c.b.r > (strip ? Math.min(strip.l, sLab ? sLab.l : Infinity) - 4 : ab.right)).map((c) => c.k),
         // v289 (운전자 '왼쪽에 나오게', '좀 줄여가지고'): 배지는 왼쪽 서랍 안 분기 그림 바로 밑 — 그림 밑 4~16px, 왼쪽 칸 안, 표지 원 52px 이하
         badge: badge ? { txt: [...$('#sideBadge').children].map((c) => c.textContent.trim()).join(' '), cls: $('#sideBadge').className,
@@ -8429,7 +8431,7 @@
       else if (cn.l < 12 || cn.gap < 6 || cn.gap > 14 || cn.bot > 2 || !(cn.aboveBar >= 8) || cn.colGap < 7) bad.push(k + ': corner ' + JSON.stringify(cn));
       if (o.dist === 900) {
         if (o.jx) bad.push(k + ': picture already at 900 m');
-        if (!o.cam && !(o.badge && /370m/.test(o.badge.txt))) bad.push(k + ': camera lost');
+        if (!o.cam && !/370m/.test(o.spTxt || '')) bad.push(k + ': camera lost');   // v290: 단속 카드가 접히면 거리는 속도 칸 안
         if (!o.toll && !o.chips.some((c) => /^t:.*hi-pass/.test(c))) bad.push(k + ': hi-pass lost');
         // v286: '제보'·'의견'은 왼쪽 아래 모서리에 늘 (접는 칸이 아님) — 카드를 먼저 접는다
         if (o.folds.length && o.folds[0] !== 'fo-toll') bad.push(k + ': fold order ' + o.folds.join(','));
@@ -8439,18 +8441,13 @@
         if (o.turnH > 26) bad.push(k + ': turn text ' + o.turnH + 'px (not one line)');
         if (!(o.picGap !== null && o.picGap >= 0 && o.picGap <= 16)) bad.push(k + ': picture not under the card (' + o.picGap + ')');
         if (o.cam || o.toll || o.next || o.rest) bad.push(k + ': left column still has ' + ['cam', 'toll', 'next', 'rest'].filter((x) => o[x]).join(','));
-        // v289 (운전자 '이거 그냥 우리 기존 속도계처럼'): 그림 바로 밑 속도 칸(79 km/h · 제한 40, 빨강), 그 밑 단속 줄. 속도 칸이 접히면 속도는 단속 줄 앞에
-        const spIn = !o.folds.includes('fo-speed');
-        if (spIn && !o.spd) bad.push(k + ': speed row missing under the picture');
-        if (spIn && o.spBox && o.jcB !== null && !(o.spBox.t - o.jcB >= 4 && o.spBox.t - o.jcB <= 16)) bad.push(k + ': speed row not right under the picture');
-        if (!o.badge || !(spIn ? /^40 370m\S/ : /^79km\/h 40 370m\S/).test(o.badge.txt)) bad.push(k + ': badge ' + JSON.stringify(o.badge));
-        if (!(spIn ? o.spOver : o.badge && /\bover\b/.test(o.badge.cls))) bad.push(k + ': 79 over 40 not red');
-        const above = spIn && o.spBox ? o.spBox.b : o.jcB, gapB = o.badge && above !== null ? o.badge.t - above : null;
-        if (o.badge && !(gapB !== null && gapB >= 4 && gapB <= 16)) bad.push(k + ': badge not right under the ' + (spIn ? 'speed row' : 'picture') + ' (' + gapB + ')');
-        if (o.badge && !o.badge.inCol) bad.push(k + ': badge outside the left column');
-        if (o.badge && !(o.badge.sign && o.badge.sign.r - o.badge.sign.l <= 52)) bad.push(k + ': badge sign too big ' + JSON.stringify(o.badge.sign));
-        if (o.badge && o.badge.stripGap !== null && o.badge.stripGap < 100) bad.push(k + ': badge next to the route strip');
-        if (o.badge && (!o.badge.inView || o.badge.tripHit)) bad.push(k + ': badge off screen or over the trip card');
+        // v289 (운전자 '이거 그냥 우리 기존 속도계처럼'): 그림 바로 밑 속도 칸(79 km/h · 제한 40, 빨강).
+        // v290 (운전자 '저거 40표지판이랑 과속단속.. 그림도 빼줘'): 그 밑 단속 줄은 없고, 단속 거리·종류는 속도 칸 안('370m · 과속단속')
+        if (!o.spd) bad.push(k + ': speed row missing under the picture');
+        if (o.spBox && o.jcB !== null && !(o.spBox.t - o.jcB >= 4 && o.spBox.t - o.jcB <= 16)) bad.push(k + ': speed row not right under the picture');
+        if (!/제한 40/.test(o.spTxt || '') || !/370m/.test(o.spTxt || '') || !/과속단속/.test(o.spTxt || '')) bad.push(k + ': speed row ' + o.spTxt);
+        if (!o.spOver) bad.push(k + ': 79 over 40 not red');
+        if (o.badge) bad.push(k + ': camera row still under the picture ' + JSON.stringify(o.badge));
         if (!o.chips.some((c) => /^n:/.test(c))) bad.push(k + ': next guide chip missing');
         if (!o.chips.some((c) => /^r:/.test(c))) bad.push(k + ': rest chip missing');
         if (!o.chips.some((c) => /^t:.*hi-pass\s*\d/.test(c))) bad.push(k + ': hi-pass chip missing');
@@ -8710,6 +8707,93 @@
       c.dest !== null && c.dest <= 34 && (c.next === null || c.next <= 32) &&
       aw.b17 === 38 && aw.a17 === 25 && Math.abs(aw.b19 - aw.b17) <= 1 && Math.abs(aw.a19 - aw.a17) <= 1 && aw.b15 > 100 &&
       !af.docked && !af.on;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S185 (v290, 운전자 '신갈쪽 들어올때나 보통 계속 직진할때 좌회전 같은 아이콘이 있어 … 직진해야하는 코스면 그냥 직진으로', 다시 물었을 때 '원래 저렇게 안보여줬잖아'):
+  //   곧게 가는 비켜 가기는 ↑ · 글 '…에서 직진 · ○○ 방면' · 음성 '○○ 방면 직진입니다'. 네이버는 '…도로 주행'에 늘 비켜 가기 화살표를 쓰지만(keys 2026-11-28)
+  //   운전자가 ↑ 를 골랐다 — 일부러 네이버와 다르다. 본선 그대로 신갈분기점 '대전'(41), 갈림 자료 없는 보정교차로삼거리 '신갈'(42, 8°) → ↑.
+  //   그대로: 서하남교차로 '강동' 왼쪽 방향(출구 직후), 신갈분기점 '원주, 인천' 오른쪽 방향(다른 갈래가 더 곧음), 하남분기점, 수원신갈IC '수원, 신갈'(출구 직후 49°)
+  async function s185() {
+    const t = T(), r = {};
+    const cases = [
+      ['route-giheung-ic-s', /신갈분기점에서 '대전'/, 's'],
+      ['route-night-seongnam-giheung', /보정교차로삼거리에서 '신갈'/, 's'],
+      ['route-seohanam-ic-n', /서하남교차로에서 '강동'/, 'kl'],
+      ['route-singal-jc-s', /신갈분기점에서 '원주, 인천'/, 'kr'],
+      ['route-paldang-hanamic-s', /하남분기점에서/, 'kr'],
+      ['route-suwonsingal-s', /수원신갈IC에서 '수원, 신갈' 방면으로 오른쪽 도로 주행/, 'mr'],
+    ];
+    try {
+      for (const [f, re, want] of cases) {
+        const fx = await (await realFetch(harnessDir + 'fixtures/' + f + '.json', { cache: 'no-store' })).json();
+        const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+        const cum = [0]; for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + hav(P[k - 1], P[k]));
+        const R = { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: 'x', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+        await resetApp(); softReset();
+        await planAndStart(R);
+        const g = (t.nav.guides || []).find((x) => re.test(x.s || ''));
+        if (!g) { r[f] = 'no guide'; continue; }
+        const k0 = t.turnKind0(g), straight = (k0 === 'kl' || k0 === 'kr') && t.turnKind(g) === 's';
+        r[f] = { want, icon: t.iconKind(g), kind: t.turnKind(g), text: t.guideText(g.s, straight), say: t.turnSpeech(g).replace(/[\u0001-\u001f\u2060-\u206f]/g, '') };   // 이름 표시(보이지 않는 글자)는 빼고
+        t.endNav();
+      }
+    } finally { await resetApp(); softReset(); }
+    const bad = [];
+    for (const [f, , want] of cases) {
+      const o = r[f];
+      if (!o || typeof o === 'string') { bad.push(f + ' ' + o); continue; }
+      if (o.icon !== want) bad.push(f + ' icon ' + o.icon);
+      if (want === 's' && !(/직진/.test(o.text) && /방면 직진입니다$/.test(o.say))) bad.push(f + ' text/say');
+      if (want !== 's' && (/직진/.test(o.text) || /직진입니다/.test(o.say))) bad.push(f + ' became straight');
+    }
+    return { pass: bad.length === 0, detail: (bad.length ? bad.join(' | ') + ' || ' : '') + JSON.stringify(r) };
+  }
+
+  // S186 (v290, 의견 2026-11-28 19:07 '구간 단속 시작 지점만 지나고 끝나는 지점 안 지났을 때 계속 나옵니다'): 서울TG 경로 100 구간 900m 안에서
+  //   (a) 다시 찾은 경로가 구간 길을 벗어나(동쪽 합성 길) 끝 카메라가 더는 앞에 없으면 구간 칸·평균이 닫힌다 ('끝났습니다' 없이)
+  //   (b) 길안내 없이 시작을 지나 1km 가다 돌아서 오면(시작 자리에서 곧은 거리 < 달린 거리의 반) 닫힌다
+  //   (c) 그대로 경로를 따라가면 끝 카메라 전까지 열려 있다
+  async function s186() {
+    const t = T(), r = {};
+    const START = { lat: 37.40725, lng: 127.1038 };
+    try {
+      await waitFor(() => t.cams.loaded, 10000, 100);
+      const fx = await (await realFetch(harnessDir + 'fixtures/route-seoultg-n.json', { cache: 'no-store' })).json();
+      const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0]; for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + hav(P[k - 1], P[k]));
+      const R = { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '시험', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+      let sc = 0, bd = 1e9; for (let s = 0; s < R.total; s += 2) { const d = hav(pointAt(R, s).p, START); if (d < bd) { bd = d; sc = s; } }
+      // (c) 대조
+      await resetApp(); softReset(); await planAndStart(R);
+      for (let s = sc - 1500; s <= sc + 900; s += 20) { const a = pointAt(R, s); feed(a.p, 23, a.h); }
+      r.c0 = !!t.camState.section;
+      for (let s = sc + 920; s <= sc + 1800; s += 20) { const a = pointAt(R, s); feed(a.p, 23, a.h); }
+      r.c = !!t.camState.section;
+      t.endNav();
+      // (a) 경로가 구간 길을 벗어남
+      await resetApp(); softReset(); await planAndStart(R);
+      for (let s = sc - 1500; s <= sc + 900; s += 20) { const a = pointAt(R, s); feed(a.p, 23, a.h); }
+      r.a0 = !!t.camState.section;
+      const here = t.state.fix, side = [];
+      for (let m = 30; m <= 3000; m += 30) side.push(dest(here, 90, m));
+      const S2 = { distance: 3000, duration: 200000, tollFare: 0, fuelPrice: 0, path: [[here.lng, here.lat]].concat(side.map((q) => [round6(q.lng), round6(q.lat)])),
+        guide: [{ i: side.length, t: 88, s: '목적지', d: 3000, ms: 200000 }], sections: [{ i: 0, n: side.length + 1, name: '옆길', speed: 50, cong: 1 }] };
+      stub.canned['/route'] = S2;
+      const log0 = t.alertLog[t.alertLog.length - 1] || null;
+      await t.planRoute(t.nav.dest, true);
+      await waitFor(() => !t.nav.busy, 3000, 10);
+      for (let m = 30; m <= 300; m += 30) feed(dest(here, 90, m), 15, 90);
+      r.a = { onRoute: t.nav.onRoute, section: !!t.camState.section, ended: t.alertLog.slice(log0 ? t.alertLog.indexOf(log0) + 1 : 0).some((e) => /구간단속이 끝났습니다/.test(e.text)) };
+      t.endNav();
+      // (b) 길안내 없이 돌아섬
+      await resetApp(); softReset();
+      for (let s = sc - 800; s <= sc + 1000; s += 20) { const a = pointAt(R, s); feed(a.p, 23, a.h); }
+      r.b0 = !!t.camState.section;
+      for (let s = sc + 1000; s >= sc + 200; s -= 20) { const a = pointAt(R, s); feed(a.p, 15, (a.h + 180) % 360); }
+      r.b = !!t.camState.section;
+    } finally { await resetApp(); softReset(); }
+    const ok = r.c0 && r.c && r.a0 && r.a && r.a.onRoute && !r.a.section && !r.a.ended && r.b0 && !r.b;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 

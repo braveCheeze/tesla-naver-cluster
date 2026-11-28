@@ -2065,7 +2065,10 @@
   /* v286: '제보'는 왼쪽 아래 모서리 버튼 — 분기 그림 때도 접지 않는다 (예전: 그림 때·fo-report 때 숨김) */
   #app.tesla.jx-time #tollCard, #app.tesla.fo-toll #tollCard { display: none !important; }
   #app.tesla.jx-time #camCard, #app.tesla.jx-time #zoneBadge, #app.tesla.fo-cam #camCard, #app.tesla.fo-cam #zoneBadge { display: none !important; }
-  #app.tesla.fo-speed #mySpeed { display: none !important; }
+  /* v290: 속도 칸은 접어도 숨기지 않고 작게 (단속 거리가 이 칸 안에 있다) */
+  #app.tesla.fo-speed .cd-in .myspeed:not([hidden]) { padding-top: 6px; padding-bottom: 6px; }
+  #app.tesla.fo-speed .cd-in .myspeed b { font-size: 30px; }
+  #app.tesla.fo-speed .cd-in .myspeed em { font-size: 18px; }
   /* v289 (운전자 '이거 그냥 우리 기존 속도계처럼 나오게 해줘도 될 거같아'): 그림이 뜬 동안에도 속도는 늘 쓰던 속도 칸('79 km/h · 제한 40', 넘으면 빨강) —
      그림 바로 밑, 그 밑에 단속 줄(표지 원 · 거리/종류). 카메라·구간이 가까운 쪽이 위로 가는 순서(v158)와 상관없이 이 차례 */
   #app.tesla.jx-time #juncCard { order: -3; }
@@ -2290,6 +2293,10 @@
   #app.tesla .sidebadge .sbg-sec span { display: inline; font-size: 13px; padding: 0; }
   /* '통과' 동안: 거리 띠는 회색, 빨간 강조 없음 */
   #app.tesla .sidebadge.passed .sbg-dist { background: #6b7280; }
+  /* v290 (운전자 '저거 40표지판이랑 과속단속.. 그림도 빼줘'): 단속 거리·종류는 속도 칸 오른쪽 '제한 40' 밑에 작게 */
+  #app.tesla .myspeed em.withd { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.05; }
+  #app.tesla .myspeed em.withd .cdist { font-size: 13px; font-weight: 800; margin-top: 4px; letter-spacing: -.01em; white-space: nowrap; }
+  #app.tesla.fo-speed .myspeed em.withd .cdist { font-size: 12px; margin-top: 2px; }
 
   /* '잘못된 정보 신고를 제보로 빨간색' */
   #app.tesla .cam-miss { min-width: 84px; min-height: 46px; padding: 0 16px; font-size: 17px; font-weight: 800; letter-spacing: .02em;
@@ -2707,8 +2714,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-289"></script>
-<script src="img/ai/picks.js?v=2026.11.16-289"></script>
-<script src="app.js?v=2026.11.16-289"></script>
+<script src="icons.js?v=2026.11.16-290"></script>
+<script src="img/ai/picks.js?v=2026.11.16-290"></script>
+<script src="app.js?v=2026.11.16-290"></script>
 </body>
 </html>

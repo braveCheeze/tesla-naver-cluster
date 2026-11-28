@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-289'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-290'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -4198,9 +4198,21 @@
       const done = state.odo - s.d0;
       // 끝 카메라를 못 지나간 것으로 보일 때의 안전장치. 길안내 경로에서 끝 카메라가 앞에 보이면 길이로 끝내지 않는다
       // (데이터의 구간 길이는 어림값이라 실제보다 짧을 수 있다)
-      const routeKnows = sectionRemainRoute(s) !== null;
+      const rem = sectionRemainRoute(s), routeKnows = rem !== null;
+      if (routeKnows) { s.endSeen = true; s.lastRem = rem; }
+      // v290 (2026-11-28 19:07 의견 '구간 단속 시작 지점만 지나고 끝나는 지점 안 지났을 때 계속 나옵니다'): 시작을 지나고 구간 길을 벗어나면
+      //   (끝 카메라 전에 나가는 출구·다른 길) 예전엔 '구간 길이 × 1.3 + 400m' 또는 45분까지 구간 칸·평균·제한이 남았다.
+      //   길안내 경로를 믿을 수 있는데 끝 카메라가 더는 앞에 없으면(본 적이 있거나 1.5km 넘게 왔는데) 닫는다 — 끝 바로 앞(150m)이었으면 '끝났습니다'.
+      //   길안내가 없거나 경로를 벗어났으면 800m 넘게 왔는데 시작 자리에서 곧은 거리가 그 반도 안 되면(돌아섬·빠져나감) 닫는다
+      const trusted = nav.active && !!nav.pts && routeTrusted();
+      if (trusted && !routeKnows && (s.endSeen || done > 1500)) {
+        report('info', { msg: 'section closed off route', done: Math.round(done), seen: !!s.endSeen, last: s.lastRem == null ? null : Math.round(s.lastRem) });
+        endSection(!(s.lastRem != null && s.lastRem < 150));
+      } else if (!trusted && s.p0 && done > 800 && haversine(f, s.p0) < done * 0.45) {
+        report('info', { msg: 'section closed off road', done: Math.round(done) });
+        endSection(true);
       // v161: 길이를 끝내 모르면 40km 를 넘게 가면 닫는다 (예전엔 45분까지 옛 구간 평균·제한속도가 남았다)
-      if ((!routeKnows && (s.len ? done > s.len * 1.3 + 400 : done > 40000)) || now - s.t0 > 45 * 60000) endSection();
+      } else if ((!routeKnows && (s.len ? done > s.len * 1.3 + 400 : done > 40000)) || now - s.t0 > 45 * 60000) endSection();
     }
     if (tg) announceCam(tg, f);
     // 경고 거리 밖의 다음 카메라를 3초마다 미리 찾아 둔다 ('다음 단속 2.4km').
@@ -4302,7 +4314,7 @@
     // 앞 구간이 열려 있으면(끝을 못 지난 것으로 보이면) 조용히 닫고 새 구간을 연다
     if (camState.section) endSection(true);
     const len = secLen(c) || guessSecLen(c, f);
-    camState.section = { limit: c[2], len, t0: f ? f.t : Date.now(), d0: state.odo };
+    camState.section = { limit: c[2], len, t0: f ? f.t : Date.now(), d0: state.odo, p0: f ? { lat: f.lat, lng: f.lng } : null };
     say('구간단속 시작. 제한속도 ' + c[2] + '.', 2);
   }
   function endSection(quiet) {
@@ -4547,7 +4559,17 @@
       // v286 (운전자 '구간 평균 나와있는 숫자는 노란색으로 네이버지도랑 맞춰 주고'): 숫자는 네이버처럼 어두운 칸 위 노랑
       em.innerHTML = '<small>구간평균</small><span class="avgv">' + (st.avg === null ? '-' : Math.round(st.avg)) + '</span>';
       em.classList.toggle('avg-over', st.over);
-    } else { em.textContent = '제한 ' + lim; em.classList.remove('avg-over'); }
+    } else {
+      // v290 (운전자 '저거 40표지판이랑 과속단속.. 그림도 빼줘'): 그림이 뜬 동안(단속 카드 대신)·단속 카드가 접혔을 때는 속도 칸 오른쪽 '제한 40' 밑에
+      //   단속까지 남은 거리와 종류를 작게 ('370m · 과속단속'). 그림 밑 단속 줄(표지 원·거리 띠)은 없앴다
+      const app = $('#app'), inBox = (app.classList.contains('jx-time') || app.classList.contains('fo-cam')) && camLive(tg) && !s;
+      if (inBox) {
+        const k = camShort(tg.c), d = tg.after ? (isRear(tg.c) ? '후면단속 중' : '통과') : fmtDist(camShownDist(tg));
+        em.innerHTML = '<span class="limt">제한 ' + lim + '</span><small class="cdist">' + esc(d) + (k && !tg.after ? ' · ' + esc(k) : '') + '</small>';
+      } else em.textContent = '제한 ' + lim;
+      em.classList.toggle('withd', inBox);
+      em.classList.remove('avg-over');
+    }
     el.classList.toggle('over', state.speedKmh > lim + 1);
   }
   function renderCamAvg() {
@@ -6056,16 +6078,47 @@
     g._mk = ok; g._mkFor = nav.route;
     return ok;
   }
+  // v290 (운전자 '신갈쪽 들어올때나 보통 계속 직진할때 좌회전 같은 아이콘이 있어 … 직진해야하는 코스면 그냥 직진으로 알려줘도 될 거 같고
+  //   왼쪽으로 빠져야하는 길이 있으면 그때 왼쪽으로'. 네이버 신갈JC '대전' 은 글이 '왼쪽 도로 주행'이어도 카드는 ↑ 323m):
+  //   비켜 가기 안내가 실제로 곧게 가는 길이면 직진(↑ · '…방면 직진' · '직진입니다').
+  //   네이버는 '…도로 주행'에 늘 비켜 가기 화살표(keys 2026-11-28: 신갈JC '대전', 판교JC 학의, 학의JC '판교', 영동 '오른쪽 주행', 보정교차로삼거리)를 쓰지만
+  //   운전자가 '원래 저렇게 안보여줬잖아'(v133 은 ↑ 였다) · '직진해야하는 코스면 그냥 직진으로'라며 ↑ 를 골랐다 — 일부러 네이버와 다르다
+  //   (1) 본선 그대로(mainKeep, v133)  (2) '도로 주행'(41·42·81·82)이고 출구 직후가 아니면: 갈림 자료(OSM 갈래 200m 꺾임)가 있으면 경로 갈래가
+  //   15° 안이고 다른 갈래보다 곧을 때, 없으면 경로가 갈림점 뒤 150m 에 15° 안으로 갈 때.
+  //   '방향'(4·5)은 네이버 글 그대로 — 연결로는 처음 150m 에 천천히 갈라져(신갈JC '원주' 4°, 판교JC '일산' -9°) 꺾임만으로는 출구와 못 가른다.
+  //   서하남교차로(출구 직후 '왼쪽 방향')·하남JC(다른 갈래가 더 곧음)는 그대로
+  const ROAD_KEEP_T = new Set([41, 42, 81, 82]);
+  function forkStraight(g) {
+    const k = turnKind0(g);
+    if (k !== 'kl' && k !== 'kr') return false;
+    if (mainKeep(g)) return true;
+    if (!ROAD_KEEP_T.has(g.t) || !nav.route || !nav.cum || !nav.cum.length || g.i == null) return false;
+    if (g._fsFor === nav.route) return g._fs;
+    let ok = false;
+    if (!exitedBefore(g)) {
+      const sp = juncSplitAt(g);
+      const geo = sp && sp.r && sp.r.br && sp.r.br.length >= 2 ? jxForkGeo({ left: false }, g) : null;
+      if (geo && geo.forkAng) {
+        const [a, o] = geo.forkAng;
+        ok = Math.abs(a) <= 15 && Math.abs(a) < Math.abs(o);
+      } else {
+        const last = nav.cum.length - 1, at = nav.cum[Math.min(g.i, last)];
+        const b1 = routeBearingAt(Math.max(0, at - 120), at - 10), b2 = routeBearingAt(at + 10, Math.min(nav.cum[last], at + 150));
+        ok = b1 != null && b2 != null && at - 120 >= 0 && at + 150 <= nav.cum[last] && angleDiff(b1, b2) <= 15;
+      }
+    }
+    g._fs = ok; g._fsFor = nav.route;
+    return ok;
+  }
   function turnKind(g) {
     const k = turnKind0(g);
-    return (k === 'kl' || k === 'kr') && mainKeep(g) ? 's' : k;
+    return (k === 'kl' || k === 'kr') && forkStraight(g) ? 's' : k;
   }
   // 안내 글을 '직진'으로 바꿔 쓰는 건 방향 있는 갈림길(비켜 가기 kl/kr)을 본선 그대로 갈 때만. v156 (2026-11-17 수도권1순환 북행
   // 서하남IC 2.4km 앞 '분기도로 진입'(54, 방향 없음): 네이버는 '분기 후 합류', 우리는 본선 위라 '직진'이 나왔다) — 방향 없는 전방 분기(jc)는
   // 본선이 섬을 끼고 두 갈래로 갈라졌다 다시 합쳐지는 곳이라 어느 갈래로 가도 되고, 글·그림 모두 '분기 후 합류'
   function mainStraight(g) {
-    const k = turnKind0(g);
-    return (k === 'kl' || k === 'kr') && mainKeep(g);
+    return forkStraight(g);   // v290: 본선 그대로 + 곧게 가는 '도로 주행'
   }
   // 안내 칸·그다음 칸에 그릴 그림 (v143, 2026-11-16 판교분기점 운전자 '네이버 지도에 있는 아이콘이 이런 식으로 나오는데 왜 우리는 이런 식으로 나와'):
   // 네이버는 '오른쪽 방향'(4·5, 방향 있는 전방 분기)은 굵은 화살표 하나가 그쪽으로 휘는 그림('4.1km 대전'),
@@ -6118,7 +6171,9 @@
   function iconKind(g) {
     if (!g) return 'goal';
     const k0 = turnKind0(g);
-    if ((k0 === 'kl' || k0 === 'kr') && (g.t === 41 || g.t === 42 || mainKeep(g))) return k0 === 'kl' ? 'ml' : 'mr';
+    // v290: 곧게 가는 갈림길은 그냥 ↑ (네이버 신갈JC '대전' ↑ 323m). 예전 'ml/mr'(직진 화살표 밑동이 옆에서 넘어오는 그림)은 좌회전처럼 보였다
+    if ((k0 === 'kl' || k0 === 'kr') && forkStraight(g)) return 's';
+    if ((k0 === 'kl' || k0 === 'kr') && (g.t === 41 || g.t === 42)) return k0 === 'kl' ? 'ml' : 'mr';
     return turnKind(g);
   }
   // v141 좌우는 한 곳에서 (2026-11-16 송파IC '오른쪽 진입'인데 IN 그림이 왼쪽으로 빠지는 모양 — 운전자 '로직 잘 좀 봐줘'):
@@ -6531,6 +6586,11 @@
     return t;
   }
   function turnSpeech(g) {
+    // v290: 곧게 가는 갈림길은 '신갈분기점에서 대전 방면 직진입니다' (네이버 문장 '왼쪽 도로 주행' 대신 — 운전자 선택, 네이버와 다름)
+    if (g.t !== 121 && forkStraight(g)) {
+      const m = String(g.s || '').match(/^(?:(.+?)에서\s+)?(?:('[^']+')\s*방면으로\s+)?(.+)$/);
+      return (m && m[1] ? NM(m[1]) + '에서 ' : '') + (m && m[2] ? NM(m[2].replace(/'/g, '') + ' 방면') + ' ' : '') + '직진입니다';
+    }
     if (g.t !== 121) return markGuide(g.s);
     const p = tollParts(g), f = fareText(p.fare), tg = /톨게이트$/.test(p.name);
     return (tg ? NM(p.name.replace(/톨게이트$/, '')) + '톨게이트' : NM(p.name)) + (f ? ', ' + (f === '무료' ? '통행료 무료' : '통행료 ' + f) : '') + '. 하이패스 차로를 이용하세요';
@@ -8794,7 +8854,7 @@
       const limit = Math.min(Math.min(window.innerHeight, app.getBoundingClientRect().bottom) - COL_FLOOR - dock, cTop - 8);
       let k = Math.min(lay.k, FOLD_STEPS.length);
       // v289: 배지가 왼쪽 서랍 안 칸이 되어 접을 때마다 배지도 다시 그려 그 높이까지 잰다
-      const fold = (n) => { applyFold(n); renderSideBadge(); };
+      const fold = (n) => { applyFold(n); renderMySpeed(); renderSideBadge(); };   // v290: 단속 거리는 속도 칸 안 (그림·접힘에 따라)
       fold(k);
       if (colBottom() > limit) { while (k < FOLD_STEPS.length && colBottom() > limit) fold(++k); }
       else {
@@ -8868,11 +8928,13 @@
     const app = $('#app'), el = $('#sideBadge');
     if (!el) return;
     const jx = app.classList.contains('jx-time'), card = $('#camCard'), tg = camState.target, live = camLive(tg);
-    const camOn = !card.hidden && (jx || app.classList.contains('fo-cam'));
+    // v290 (운전자 '저거 40표지판이랑 과속단속.. 그림도 빼줘'): 단속은 속도 칸 안('제한 40' 밑 '370m · 과속단속')으로 — 이 칸에는 단속 표지·거리 띠·속도를
+    //   그리지 않는다. 남은 일은 구간 칸이 접혔을 때(fo-sec) 그 구간평균 · 남은 구간 · 남은 시간 한 줄뿐
+    const camOn = false;
     const sec = camState.section;
-    // v289 (운전자 '이거 그냥 우리 기존 속도계처럼'): 그림 때도 속도는 늘 쓰던 속도 칸(#mySpeed)이 그림 밑에 — 배지에는 속도 칸이 접혔을 때만
-    const spdOn = (app.classList.contains('fo-speed') && !$('#mySpeed').hidden) || (app.classList.contains('fo-sec') && !!sec);
-    if (!app.classList.contains('tesla') || (!camOn && !spdOn)) { if (!el.hidden) el.hidden = true; return; }
+    const spdOn = false;
+    if (!(sec && app.classList.contains('fo-sec'))) { if (!el.hidden) el.hidden = true; return; }
+    if (!app.classList.contains('tesla')) { if (!el.hidden) el.hidden = true; return; }
     // 자리: 서랍 안 분기 그림 바로 밑 (그림이 없으면 단속 카드 바로 밑)
     const anchor = jx ? $('#juncCard') : card;
     if (anchor && el.previousElementSibling !== anchor) anchor.after(el);
@@ -8895,7 +8957,7 @@
     const txt = camOn ? '<div class="sbg-txt">' + (!rearAfter ? '<div class="sbg-dist">' + esc($('#camDist').textContent) + '</div>' : '') +
       '<div class="sbg-kind" data-band="' + esc(rearAfter ? 'black' : card.dataset.band || '') + '">' + esc(rearAfter ? '후면단속 중' : $('#camKind').textContent || $('#camType').textContent) + '</div></div>' : '';
     // v289 (운전자 '속도만 왼쪽으로 표기해주면 될듯'): 지금 속도 → 표지 원 → 거리/종류
-    const html = (spdOn ? '<div class="sbg-speed"><b>' + sp + '</b><i>km/h</i></div>' : '') + (num ? '<div class="sbg-sign"' + (img ? ' style="background-image:' + img.replace(/"/g, '&quot;') + '"' : '') + '>' + (camOn && !img ? '<i class="sbg-ico" aria-hidden="true"></i>' : '') + '<b>' + esc(num) + '</b></div>' : '') +
+    const html = (spdOn ? '<div class="sbg-speed"><b>' + sp + '</b><i>km/h</i></div>' : '') + (num && camOn ? '<div class="sbg-sign"' + (img ? ' style="background-image:' + img.replace(/"/g, '&quot;') + '"' : '') + '>' + (camOn && !img ? '<i class="sbg-ico" aria-hidden="true"></i>' : '') + '<b>' + esc(num) + '</b></div>' : '') +
       txt + secHtml;
     if (el.className !== cls) el.className = cls;
     if (el._h !== html) { el.innerHTML = html; el._h = html; }
