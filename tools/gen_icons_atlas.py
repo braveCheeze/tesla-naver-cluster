@@ -773,6 +773,12 @@ JX2_EDIT = ('Redraw image 1 as a finished junction view for the guidance panel o
             'Add realism: fine asphalt texture, a concrete median barrier and metal guard rails or sound walls, grassy embankments with a few '
             'trees, distant apartment blocks and low hills on the horizon. No cars, no people, no text anywhere, no logos, no route shields, '
             'no watermark. ')
+JX2_GEO_OLD = ('GEOMETRY IS CRITICAL (like a real junction seen about 300 m before the exit): in the whole foreground and middle of the '
+               'image every lane runs straight ahead and parallel toward the same vanishing point; the exit lanes are a straight deceleration '
+               'lane beside the through lanes, separated from them only by a lane line, and every lane arrow points straight ahead. Nothing '
+               'curves in the foreground. The road splits (the gore with chevron hatching) only far ahead, close to the horizon, exactly where '
+               'the sketch has it, and the exit ramp bends to the right only beyond that gore. ')
+assert JX2_GEO_OLD in JX2_EDIT
 # v263 (운전자 '성남IC 는 네이버지도대로'): 경로 출구 차로는 지평선까지 곧게, 그 오른쪽 다른 출구가 빗금 고어에서 갈라져 휜다
 _SIDE = (' IMPORTANT for this view: the green exit lane does NOT bend; it runs perfectly straight all the way to the horizon, parallel to the '
          'through lanes. In the foreground the green lane is the rightmost lane, with a solid white edge line on its right. Only in the middle of '
@@ -797,10 +803,25 @@ JX2_LANES_TXT = {
              'left 2 green lanes (the route) run straight all the way to the horizon, and the right 2 grey lanes run straight beside them '
              'and only veer off to the right in the distance, beyond the gore.'),
 }
+# v293 (운전자 '신갈JC원주는 왼쪽처럼 보여주는게 더 좋아보이는데', '바로 오른쪽 커브길인데 두개다 직진처럼 그려놓은' — 네이버 신갈분기점 '원주'):
+#   x41c 는 고어가 그림 가운데쯤 가깝고 출구가 고어 바로 뒤에서 급하게 오른쪽으로 휜다. 다른 2판 그림의 '앞쪽 곧게, 고어는 지평선 가까이'(v258)
+#   문단만 바꾼다
+JX2_GEO_CURVE = ('GEOMETRY IS CRITICAL (like the junction view of a navigation app about 300 m before this exit): in the foreground all lanes run '
+                 'straight and parallel; the green exit lane is the rightmost lane beside the grey through lanes, separated from them by a SOLID '
+                 'white line from the very bottom of the image (not dashed), and that solid line curves away to the right with the ramp. The road splits (the gore with white chevron hatching) close ahead, in the middle of the picture, exactly where the '
+                 'sketch has it. Right after the gore the green exit ramp curves SHARPLY to the right and sweeps off the right edge of the picture '
+                 'just below the horizon, while the grey through lanes continue straight to the horizon. From the gore on, the ramp has two lanes: '
+                 'the green route lane on the left and one grey lane on its right, separated by a dashed white line, with a solid white edge on the '
+                 'outside. The grey through lanes have straight-ahead arrows; the green exit lane has one white arrow that goes up and then bends '
+                 'to the right, exactly as in the sketch. ')
+JX2_LANES_TXT['x41c'] = ('the road has exactly 5 lanes in the foreground: 4 grey lanes go straight on the left and 1 green lane (the route) on '
+                         'their right, which leaves at the gore and curves sharply to the right.')
+JX2_CURVE = {'x41c'}
 JX2 = {}
 for _k, _t in JX2_LANES_TXT.items():
-    JX2['jx2_%s_day' % _k] = (('ref/jx2_%s.png' % _k,), JX2_EDIT % _t, JX_DAY)
-    JX2['jx2_%s_night' % _k] = (('ref/jx2_%s.png' % _k,), JX2_EDIT % _t, JX_NIGHT)
+    _e = JX2_EDIT.replace(JX2_GEO_OLD, JX2_GEO_CURVE) if _k in JX2_CURVE else JX2_EDIT
+    JX2['jx2_%s_day' % _k] = (('ref/jx2_%s.png' % _k,), _e % _t, JX_DAY)
+    JX2['jx2_%s_night' % _k] = (('ref/jx2_%s.png' % _k,), _e % _t, JX_NIGHT)
 
 
 def _gpt25(model):

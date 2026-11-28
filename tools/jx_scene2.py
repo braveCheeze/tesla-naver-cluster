@@ -99,6 +99,26 @@ SHAPES = {
     'f22': {'lanes': [(-7.2, -3.6, 0), (-3.6, 0, 0), (0, 3.6, 1), (3.6, 7.2, 1)], 'go': (1,), 'bend': EXIT_BEND, 'lz': 8.0, 'paint_to': Z1, 'city': True},
     'f22k': {'lanes': [(-7.2, -3.6, 0), (-3.6, 0, 0), (0, 3.6, 1), (3.6, 7.2, 1)], 'go': (0,), 'bend': EXIT_BEND, 'lz': 8.0, 'paint_to': Z1, 'city': True},
 }
+# v293 (운전자 '신갈JC원주는 왼쪽처럼 보여주는게 더 좋아보이는데', '바로 오른쪽 커브길인데 두개다 직진처럼 그려놓은' — 네이버 신갈분기점
+#   '원주, 인천' 330m): x41c = 본선 4 + 출구 1 인데 고어가 그림 가운데쯤 가깝고(ZS_C), 출구 연결로가 고어 바로 뒤에서 급하게 오른쪽으로
+#   휘어 지평선 아래에서 그림 오른쪽 끝으로 나간다. 연결로는 고어부터 두 차로(경로 초록 + 오른쪽 회색 한 차로, 사이 점선 — 네이버의 바깥
+#   회색 차로). 출구 차로 바닥 화살표는 오른쪽으로 꺾이는 ↱, 본선은 ↑. v258 의 '앞쪽 곧게, 고어는 지평선 가까이'(x41)는 그대로 두고
+#   네이버와 맞춘 곳만(app.js JX_CURVE) 이 그림을 쓴다
+ZS_C = 18.0
+RAMP_C = (0.32, 0.042, ZS_C)
+
+
+def _curve():
+    sh = _exit(4, 1)
+    sh['bend'] = {0: [], 1: [RAMP_C]}
+    sh['zs'] = ZS_C
+    sh['ramp2'] = (sh['lanes'][-1][1], ZS_C)   # 출구 차로 오른쪽 가장자리 X, 회색 차로가 생기는 Z
+    sh['turn'] = {1: 3.8}
+    sh['solid_split'] = True
+    return sh
+
+
+SHAPES['x41c'] = _curve()
 GO_N = {k: sum(1 for ln in v['lanes'] if ln[2] in v['go'] and len(ln) < 4) for k, v in SHAPES.items()}
 
 
@@ -155,6 +175,35 @@ def arrow_poly(cx, side, sh, z0, z1, turn):
     return Lb + head + Rb[::-1]
 
 
+def arrow_turn(cx, z0, z1, turn):
+    """v293 x41c: 오른쪽으로 꺾이는 ↱ — 몸통은 차로를 따라 곧게 올라가다 끝에서 오른쪽으로 휜다. 머리는 화면에서 끝 방향으로"""
+    n, th = 16, 0.66
+    pts = []
+    for i in range(n + 1):
+        t = th * i / n
+        X = cx + turn * max(0.0, (t - 0.25) / 0.75) ** 2
+        Z = z0 + (z1 - z0) * t
+        pts.append((proj(X, Z), Z))
+    L, R = [], []
+    for i, ((x, y), Z) in enumerate(pts):
+        (xa, ya), _ = pts[max(0, i - 1)]
+        (xb, yb), _ = pts[min(n, i + 1)]
+        dx, dy = xb - xa, yb - ya
+        k = math.hypot(dx, dy) or 1.0
+        nx, ny = -dy / k, dx / k
+        w = F * 0.30 / Z
+        L.append((x + nx * w, y + ny * w)); R.append((x - nx * w, y - ny * w))
+    (bx, by), Zb = pts[-1]
+    (ax, ay), _ = pts[-3]
+    dx, dy = bx - ax, by - ay
+    k = math.hypot(dx, dy) or 1.0
+    ux, uy = dx / k, dy / k
+    hw = F * 0.95 / Zb
+    hl = F * 1.6 / Zb
+    head = [(bx - uy * hw, by + ux * hw), (bx + ux * hl, by + uy * hl), (bx + uy * hw, by - ux * hw)]
+    return L + [head[2], head[1], head[0]] + R[::-1]
+
+
 def lane_groups(sh):
     """갈래별 (왼쪽 X, 오른쪽 X, 시작 Z)"""
     g = {}
@@ -185,6 +234,14 @@ def draw_base(name):
     fg = [g for g in groups.values() if g[2] <= Z0 + 0.01]
     allx0 = min(g[0] for g in fg); allx1 = max(g[1] for g in fg)
     d.polygon(strip(allx0 - 0.8, allx1 + 0.8, 0, sh, Z0, zs0), fill=asphalt)   # 고어 앞은 한 판 (모든 차로가 곧게 나란히)
+    r2 = sh.get('ramp2')
+    if r2:
+        # v293 x41c: 고어부터 출구 연결로 오른쪽에 회색 한 차로 (앞머리는 비스듬히 넓어진다)
+        xr, z2 = r2
+        d.polygon(strip(xr, xr + LW + 0.8, 1, sh, z2), fill=asphalt)
+        zt = z2 - 7.0
+        d.polygon([proj(xr + 0.8, zt), proj(xr + LW + 0.8, z2), proj(xr + 0.8, z2)], fill=asphalt)
+        d.polygon([proj(xr + 0.65, zt), proj(xr + 0.97, zt), proj(xr + LW + 0.16, z2), proj(xr + LW - 0.16, z2)], fill=white)
     if sh.get('side'):
         # v263 (운전자: 네이버 성남IC 처럼 — 다른 출구가 우리 출구 차로 오른쪽에서 빗금 고어를 지나 갈라진다)
         #   고어 = 출구 차로 오른쪽 가장자리와 옆 연결로 왼쪽 가장자리 사이 삼각형 (벌어짐이 GORE_W 가 될 때까지만). 길 바닥 + 흰 빗금, 그 뒤는 풀밭
@@ -223,6 +280,12 @@ def draw_base(name):
                 shared.add((s1, 'r')); shared.add((s2, 'l'))
     for s, (x0, x1, za) in groups.items():
         lane_line(x0, s, sh, False, d, white, 0.16, zs0 if (s, 'l') in shared else za)
+        if r2 and s == 1:
+            # v293 x41c: 출구 차로 오른쪽은 고어까지 실선(길 가장자리), 그 뒤는 연결로 두 차로 사이 점선, 바깥 가장자리 실선
+            lane_line(x1, s, sh, False, d, white, 0.16, za, r2[1])
+            lane_line(x1, s, sh, True, d, white, 0.13, r2[1])
+            lane_line(x1 + LW, s, sh, False, d, white, 0.16, r2[1])
+            continue
         lane_line(x1, s, sh, False, d, white, 0.16, zs0 if (s, 'r') in shared else za)
     for i, ln in enumerate(sh['lanes'][1:], 1):
         x0, x1, s = ln[:3]
@@ -232,15 +295,17 @@ def draw_base(name):
         if ps == s:
             lane_line(x0, s, sh, True, d, white, 0.13)
         elif ps == 0 or s == 0:
-            lane_line(x0, 0, sh, True, d, white, 0.2, Z0, zs0)
+            # v293 x41c (운전자가 네이버 신갈JC 원주 그림의 본선 | 출구 경계에 빨간 줄을 그어 보냄): 출구 차로는 맨 앞부터 실선으로 갈라져 그대로 휜다
+            lane_line(x0, 0, sh, not sh.get('solid_split'), d, white, 0.2, Z0, zs0)
         else:
             lane_line(x0, 1, sh, True, d, white, 0.13, Z0, ZS2)   # 출구 안 두 무리: 다시 갈리기 전까지는 같은 연결로
-    # 노면 화살표: 앞쪽은 모두 곧게 (네이버 330m — 출구 차로도 아직 감속 차로)
+    # 노면 화살표: 앞쪽은 모두 곧게 (네이버 330m — 출구 차로도 아직 감속 차로). v293 x41c: 출구 차로는 오른쪽으로 꺾이는 ↱
     for ln in sh['lanes']:
         if lane_za(ln):
             continue
         x0, x1, s = ln[:3]
-        d.polygon(arrow_poly((x0 + x1) / 2, s, sh, 10.2, 14.5, 0), fill=white)
+        tn = sh.get('turn', {}).get(s, 0)
+        d.polygon(arrow_turn((x0 + x1) / 2, 10.2, 14.5, tn) if tn else arrow_poly((x0 + x1) / 2, s, sh, 10.2, 14.5, 0), fill=white)
     gray = (120, 128, 138)
     d.rectangle([BEAM[0] * W, BEAM[1] * H, BEAM[2] * W, BEAM[3] * H], fill=gray)
     d.rectangle([0.035 * W, BEAM[1] * H, 0.055 * W, HZ + 40], fill=gray)
