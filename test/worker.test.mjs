@@ -591,6 +591,101 @@ if (sqlite) {
   ok(db3.prepare('PRAGMA table_info(cam_day)').all().map((c) => c.name).join(',').endsWith(',adist,other'), 'an old cam_day table gets the other column');
 }
 
+// ---------------- v294 진단·신고 기록(/event · /events)을 D1 로 — 바로 답하고 뒤에서 쓰기, D1 실패면 KV evf:, 옮기기·지우기, 예전 KV 함께 읽기 ----------------
+if (sqlite) {
+  const dbE = new sqlite.DatabaseSync(':memory:');
+  let insCalls = 0, mode = 'ok';
+  const stE = (sql, args) => ({
+    bind: (...a) => stE(sql, a),
+    run: async () => {
+      if (mode === 'fail') throw new Error('D1_ERROR: simulated outage');
+      if (mode === 'slow') await new Promise((r) => setTimeout(r, 400));
+      if (/INSERT OR IGNORE INTO events/.test(sql)) insCalls++;
+      const r = dbE.prepare(sql).run(...(args || []));
+      return { success: true, meta: { rows_read: 0, rows_written: Number(r.changes) || 0, changes: Number(r.changes) || 0 } };
+    },
+    all: async () => { if (mode === 'fail') throw new Error('D1_ERROR: simulated outage'); const rs = dbE.prepare(sql).all(...(args || [])); return { results: rs, meta: { rows_read: rs.length } }; },
+    first: async () => dbE.prepare(sql).get(...(args || [])) || null,
+    _sync: () => { if (mode === 'fail') throw new Error('D1_ERROR: simulated outage'); return /^\s*select/i.test(sql) ? dbE.prepare(sql).all(...(args || [])) : dbE.prepare(sql).run(...(args || [])); },
+  });
+  const SE = { prepare: (sql) => stE(sql), batch: async (list) => { if (mode === 'fail') throw new Error('D1_ERROR: simulated outage'); dbE.exec('BEGIN'); try { const r = list.map((x) => x._sync()); dbE.exec('COMMIT'); return r; } catch (e) { dbE.exec('ROLLBACK'); throw e; } } };
+  const envE = { ...env, STATS: SE };
+  const evRows = () => dbE.prepare('SELECT id, at, sid, type, msg, usr FROM events ORDER BY at').all();
+  const kvKeys = (pre) => [...kv.keys()].filter((k) => k.startsWith(pre));
+  const base = shift;
+  // (a) D1 에 넣고, KV evr: 는 새로 쓰지 않는다. 같은 모양으로 읽힌다. 표·인덱스는 처음 쓸 때 저절로
+  const evr0 = kvKeys('evr:').length;
+  const a1 = await call('POST', '/event', { body: { type: 'warn', msg: 'd1 one', sid: 'sid00001', v: 'x', trace: [[0, 37, 127]] }, e: envE });
+  const idx = dbE.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'events'").all().map((x) => x.name).filter((n) => n.startsWith('events_')).sort().join(',');
+  ok(a1.s === 200 && a1.j.ok && evRows().some((r) => r.msg === 'd1 one' && r.sid === 'sid00001') && kvKeys('evr:').length === evr0 &&
+    idx === 'events_at,events_sid_at,events_usr_at', 'v294: /event goes to the D1 events table (created on first use with indexes at, sid+at, usr+at), not to KV');
+  // 옮기기 전에 KV 에 쓴 기록 (7일 동안 함께 읽는다)
+  const oldAt = realNow() + base - 3600e3;
+  kv.set('evr:' + String(9e15 - oldAt).padStart(16, '0') + ':oldkv1', JSON.stringify({ type: 'warn', msg: 'old kv record', sid: 'sid0000k', serverAt: oldAt }));
+  shift = base + 31 * 60e3;   // 예전 evr: 목록은 30분 같은 것을 쓰므로 그 뒤에
+  const g1 = (await call('GET', '/events', { token: TOKEN, e: envE })).j.items;
+  const d1one = g1.find((x) => x.msg === 'd1 one');
+  ok(d1one && d1one.serverAt && !('trace' in d1one) && g1.some((x) => x.msg === 'old kv record'), 'v294: /events reads D1 (same shape, public trace dropped) plus the older KV evr: records');
+  // (b) 여러 건을 한 요청으로 → 한 문장
+  const i0 = insCalls;
+  shift = base + 1000;
+  const b1 = await call('POST', '/event', { body: [{ type: 'info', msg: 'batch 1', sid: 'sid00002' }, { type: 'info', msg: 'batch 2', sid: 'sid00002' }, { type: 'user', msg: 'batch 3', sid: 'sid00002', user: true }], e: envE });
+  ok(b1.s === 200 && insCalls - i0 === 1 && evRows().filter((r) => /^batch/.test(r.msg)).length === 3, 'v294: an array of events is inserted with one statement');
+  const u1 = (await call('GET', '/events?user=1', { token: TOKEN, e: envE })).j.items;
+  ok(u1.some((x) => x.msg === 'batch 3') && !u1.some((x) => x.msg === 'batch 1'), 'v294: /events?user=1 filters in D1');
+  // (c) before 쪽 넘기기
+  const t1 = base + 1000;
+  shift = base + 5000;
+  await call('POST', '/event', { body: { type: 'info', msg: 'later one', sid: 'sid00003' }, e: envE });
+  const pg = (await call('GET', '/events?before=' + (realNow() + base + 3000) + '&limit=3', { token: TOKEN, e: envE })).j;
+  ok(pg.items.length === 3 && pg.items.every((x) => x.serverAt < realNow() + base + 3000) && !pg.items.some((x) => x.msg === 'later one') && pg.oldest === pg.items[0].serverAt,
+    'v294: before= paging works on D1 (older records, oldest for the next page)');
+  // (d) D1 이 실패해도 기록은 KV evf: 로, /events 에 보인다
+  mode = 'fail';
+  shift = base + 9000;
+  const f1 = await call('POST', '/event', { body: { type: 'warn', msg: 'during outage', sid: 'sid00004' }, e: envE });
+  const fk = kvKeys('evf:');
+  ok(f1.s === 200 && f1.j.ok && fk.length === 1 && JSON.parse(kv.get(fk[0])).msg === 'during outage', 'v294: D1 fails → the event is kept in KV evf: (7 days)');
+  const g2 = (await call('GET', '/events', { token: TOKEN, e: envE })).j.items;
+  ok(g2.some((x) => x.msg === 'during outage'), 'v294: /events shows the KV fallback record while D1 is down');
+  // (e) D1 이 돌아오면 한 시간 안의 다음 쓰기에서 옮기고 지운다 (KV 목록은 한 시간에 한 번)
+  mode = 'ok';
+  shift = base + 2 * 3600e3;
+  await call('POST', '/event', { body: { type: 'info', msg: 'after outage', sid: 'sid00005' }, e: envE });
+  ok(kvKeys('evf:').length === 0 && !kv.has('evfpend') && evRows().some((r) => r.msg === 'during outage') && evRows().some((r) => r.msg === 'after outage'),
+    'v294: once D1 works again the KV fallback is moved into D1 and deleted (and its flag cleared)');
+  const g3 = (await call('GET', '/events?limit=200', { token: TOKEN, e: envE })).j.items;
+  ok(g3.filter((x) => x.msg === 'during outage').length === 1, 'v294: the moved record shows once (no duplicate)');
+  const lc = kvCount.list;
+  shift = base + 2 * 3600e3 + 60e3;
+  await call('POST', '/event', { body: { type: 'info', msg: 'no extra list', sid: 'sid00006' }, e: envE });
+  ok(kvCount.list === lc, 'v294: no KV list() for the fallback check within the hour');
+  const lc2 = kvCount.list;
+  for (let k = 0; k < 4; k++) { shift = base + 2 * 3600e3 + 120e3 + k * 61e3; await call('GET', '/events', { token: TOKEN, e: envE }); }
+  ok(kvCount.list - lc2 <= 1, 'v294: polling /events every minute makes at most one KV list() in 4 minutes (old evr: list kept 30 min, evf: only with its flag) — ' + (kvCount.list - lc2));
+  // (f) D1 이 느려도 앱은 기다리지 않는다 (waitUntil)
+  mode = 'slow';
+  const waits = [];
+  const ctx = { waitUntil: (pr) => waits.push(pr) };
+  const tq = realNow();
+  const rs = await W.fetch(new Request('https://w.example/event', { method: 'POST', headers: { Origin: O, 'CF-Connecting-IP': '10.7.7.7' }, body: JSON.stringify({ type: 'info', msg: 'slow d1', sid: 'sid00007' }) }), envE, ctx);
+  const dt = realNow() - tq;
+  ok(rs.status === 200 && dt < 200 && waits.length === 1 && !evRows().some((r) => r.msg === 'slow d1'), 'v294: /event answers at once (' + dt + ' ms) while the D1 write waits in ctx.waitUntil');
+  await Promise.all(waits);
+  ok(evRows().some((r) => r.msg === 'slow d1'), 'v294: the slow D1 write lands after the answer');
+  mode = 'ok';
+  // (g) 7일 지난 행은 한 시간에 한 번 500 행까지 지운다
+  dbE.prepare("INSERT INTO events (id, at, sid, type, msg, usr, body) VALUES ('evr:old1', ?, 's', 'info', 'very old', 0, '{}')").run(realNow() + base - 9 * 86400e3);
+  shift = base + 4 * 3600e3;
+  await call('POST', '/event', { body: { type: 'info', msg: 'cleanup trigger', sid: 'sid00008' }, e: envE });
+  ok(!evRows().some((r) => r.msg === 'very old') && evRows().some((r) => r.msg === 'cleanup trigger'), 'v294: rows older than 7 days are deleted in small batches (hourly)');
+  // (h) /health 에 저장소와 D1 행 수
+  const hh = (await call('GET', '/health', { origin: '', e: envE })).j;
+  ok(hh.stores && /^d1/.test(hh.stores['/event']) && /kv evf:/.test(hh.stores['/events']) && hh.stores['/pass'] === 'd1' && hh.events && hh.events.inserted >= 7 && hh.events.fallback === 1 && hh.events.moved === 1 && hh.events.rowsWritten > 0,
+    '/health shows which store each path uses and the D1 rows written');
+  shift = base;
+}
+
 Date.now = realNow;
 console.log(fail ? fail + ' FAILED' : 'ALL PASS');
 process.exit(fail ? 1 : 0);

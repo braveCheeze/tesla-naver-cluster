@@ -121,22 +121,20 @@ const putCheckState = (env, id, st) => env.LOGS.put('chks:' + id, JSON.stringify
 const CHECK_PEND = 'chkpend', CHECK_PEND_STALE_MS = 120e3, CHECK_SWEEP_MS = 30 * 60e3;
 let checkSweepAt = Date.now();
 const LIST_TTL_MS = 60e3;
-const listCache = new WeakMap();   // LOGS → Map(prefix|limit → {at, keys})
-async function cachedList(env, prefix, limit) {
-  let m = listCache.get(env.LOGS);
-  if (!m) listCache.set(env.LOGS, (m = new Map()));
+const listCache = new Map();   // prefix|limit → {at, keys} (KV 바인딩은 Worker 에 하나 — 요청마다 env 가 새 객체여도 같은 칸)
+async function cachedList(env, prefix, limit, ttl) {
+  const m = listCache;
   const c = m.get(prefix + '|' + limit);
-  if (c && Date.now() - c.at < LIST_TTL_MS) return c.keys;
+  if (c && Date.now() - c.at < (ttl || LIST_TTL_MS)) return c.keys;
   const l = await env.LOGS.list({ prefix, limit });
   const keys = l.keys.map((k) => ({ name: k.name }));
   m.set(prefix + '|' + limit, { at: Date.now(), keys });
   return keys;
 }
 function listDirty(env, prefix) {
-  const m = listCache.get(env.LOGS);
-  if (m) for (const k of [...m.keys()]) if (k.startsWith(prefix)) m.delete(k);
+  for (const k of [...listCache.keys()]) if (k.startsWith(prefix)) listCache.delete(k);
 }
-const autoSeen = new WeakMap();   // LOGS → Map(cam → 기억한 시각): chka·chkx 가 있는 카메라
+const autoSeen = new Map();   // cam → 기억한 시각: chka·chkx 가 있는 카메라
 const AUTO_SEEN_MS = 3600e3;
 // v215 자동 확인 후보 거르기 (2026-11-24 keys: 울진 앞바다 36.918,129.700 은 길찾기가 502, 강릉 후보는 길에서 150~590m 떨어져 확인할 수 없었다).
 //   운전자 확인 지점(앱 data/driver_spots.json) 100m 안이면 넣는다. 아니면 네이버 길찾기로 그 점에서 100m 안에 길이 있는지 본다:
@@ -193,8 +191,7 @@ async function autoCheckJob(env) {
   for (const r of rows) {
     const m = PASS_KEY.exec(String(r.cam || ''));
     if (!m) continue;
-    let seen = autoSeen.get(env.LOGS);
-    if (!seen) autoSeen.set(env.LOGS, (seen = new Map()));
+    const seen = autoSeen;
     if (Date.now() - (seen.get(r.cam) || 0) < AUTO_SEEN_MS) continue;   // v293: 이 인스턴스가 1시간 안에 본 표시
     if ((await env.LOGS.get('chka:' + r.cam)) || (await env.LOGS.get('chkx:' + r.cam))) { seen.set(r.cam, Date.now()); continue; }   // 7일에 한 번 · v215 길 밖(30일)
     if (++probes > 5) break;   // 한 번 부를 때 길 검사는 5번까지 (나머지는 다음에: 응답을 빨리, 바깥 호출 수 제한 안에서)
@@ -286,6 +283,127 @@ async function passDb(env) {
   }
   await passReady;
   return env.STATS;
+}
+// ---- v294 진단·신고 기록(/event)을 D1 로 (2026-11-28 운전자 '무료 D1로 옮겨', '단점도 보완하고싶어') ----
+//   KV 무료는 쓰기·목록이 하루 1,000번이라 기록에는 좁다. 이미 붙어 있는 D1(STATS, 무료 쓰기 10만 행·읽기 500만 행/일)의 events 표에 넣는다.
+//   - /event 는 바로 답하고 D1 쓰기는 ctx.waitUntil 로 (앱이 D1 을 기다리지 않는다). 한 요청에 여러 건(배열, 20건까지)이면 한 문장으로
+//   - D1 이 실패하면 KV 'evf:'(7일)에 둔다 — 잃지 않는다(경고 한 줄은 10분에 한 번까지). 뒤에 D1 쓰기가 되면 한 시간에 한 번
+//     (KV 목록 1번) 그 키들을 D1 로 옮기고 지운다
+//   - /events 는 D1 + KV(evf:, 그리고 D1 로 처음 쓴 뒤 7일 동안은 그전에 쓴 evr:)를 합쳐 예전과 같은 모양으로 준다
+//   - 모든 쿼리는 시각 범위 + LIMIT 으로 (D1 은 읽은 행 수로 센다). 7일 지난 행은 한 시간에 한 번 500 행씩 지운다
+//   - D1 이 없으면(STATS 바인딩 없음) 예전처럼 KV evr: 에만
+const EV_KEEP_MS = 7 * 86400e3, EV_HOUR = 3600e3, EV_DEL_BATCH = 500, EV_MAX_BATCH = 20, EV_MOVE_MAX = 50;
+// KV 목록을 아끼려고: 비켜 둔 기록이 있을 때만 'evfpend' 표시(값 = 넣은 시각)를 두고, 그때만 evf: 목록을 본다.
+//   D1 로 옮긴 뒤 예전 evr: 은 더 생기지 않으므로 그 목록은 30분 같은 것을 쓴다
+const EV_PEND = 'evfpend', EV_OLD_LIST_TTL = 30 * 60e3;
+let evReady = null, evReadyFor = null, evCleanAt = 0, evMoveAt = 0, evWarnAt = 0, evCutAt = 0;
+const evStat = { since: Date.now(), rowsRead: 0, rowsWritten: 0, inserted: 0, fallback: 0, moved: 0, cleaned: 0, errors: 0 };
+const evKey = (ts, pre) => (pre || 'evr:') + String(EVR_BASE - ts).padStart(16, '0') + ':' + crypto.randomUUID().slice(0, 6);
+const evTime = (k) => EVR_BASE - Number(String(k).split(':')[1]);
+function evMeta(r) {
+  const m = r && r.meta;
+  if (m) { evStat.rowsRead += Number(m.rows_read) || 0; evStat.rowsWritten += Number(m.rows_written) || 0; }
+  return r;
+}
+async function evDb(env) {
+  if (!env.STATS) return null;
+  if (!evReady || evReadyFor !== env.STATS) {
+    const S = env.STATS;
+    evReadyFor = S;
+    evReady = S.batch([
+      S.prepare('CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY, at INTEGER NOT NULL, sid TEXT, dev TEXT, v TEXT, type TEXT, msg TEXT, ' +
+        'usr INTEGER NOT NULL DEFAULT 0, body TEXT NOT NULL)'),
+      S.prepare('CREATE INDEX IF NOT EXISTS events_at ON events (at)'),
+      S.prepare('CREATE INDEX IF NOT EXISTS events_sid_at ON events (sid, at)'),
+      S.prepare('CREATE INDEX IF NOT EXISTS events_usr_at ON events (usr, at)'),
+    ]).then(() => true, (e) => { evReady = null; throw e; });
+  }
+  await evReady;
+  return env.STATS;
+}
+// 여러 건을 한 문장으로 (D1 무료는 요청마다 쿼리 50번까지) — id 가 같으면 넣지 않는다(옮기기를 두 번 해도 하나)
+const EV_INS = 'INSERT OR IGNORE INTO events (id, at, sid, dev, v, type, msg, usr, body) ' +
+  "SELECT json_extract(value, '$.id'), json_extract(value, '$.at'), json_extract(value, '$.sid'), json_extract(value, '$.dev'), json_extract(value, '$.v'), " +
+  "json_extract(value, '$.type'), json_extract(value, '$.msg'), json_extract(value, '$.usr'), json_extract(value, '$.body') FROM json_each(?)";
+const evCol = (v, n) => (v == null || v === '' ? null : String(v).slice(0, n));
+async function evInsert(env, rows) {
+  const S = await evDb(env);
+  const data = rows.map((r) => ({ id: r.id, at: r.at, sid: evCol(r.ev.sid, 40), dev: evCol(r.ev.dev, 40), v: evCol(r.ev.v, 30), type: evCol(r.ev.type, 40),
+    msg: evCol(r.ev.msg, 200), usr: r.ev.user ? 1 : 0, body: JSON.stringify(r.ev) }));
+  evMeta(await S.prepare(EV_INS).bind(JSON.stringify(data)).run());
+  evStat.inserted += rows.length;
+  if (!evCutAt && env.LOGS) {
+    // D1 로 처음 쓴 때 (이 뒤 7일 동안만 예전 KV evr: 를 함께 읽는다)
+    const v = Number(await env.LOGS.get('evd1')) || 0;
+    evCutAt = v || Date.now();
+    if (!v) await env.LOGS.put('evd1', String(evCutAt));
+  }
+}
+async function evFallback(env, rows, err) {
+  evStat.fallback += rows.length; evStat.errors++;
+  if (Date.now() - evWarnAt > 600e3) {
+    evWarnAt = Date.now();
+    console.warn('events: D1 write failed, kept ' + rows.length + ' in KV evf: — ' + String((err && err.message) || err).slice(0, 160));
+  }
+  if (!env.LOGS) return;
+  for (const r of rows) await env.LOGS.put(r.id.replace(/^evr:/, 'evf:'), JSON.stringify(r.ev), { expirationTtl: 7 * 86400 });
+  await env.LOGS.put(EV_PEND, String(Date.now()), { expirationTtl: 7 * 86400 });
+  listDirty(env, 'evf:');
+}
+// 쓰기가 된 뒤에 (waitUntil 안에서): KV 로 비켜 둔 기록을 D1 로 옮기기 · 7일 지난 행 지우기 — 각각 한 시간에 한 번
+async function evMaint(env) {
+  const now = Date.now();
+  const pend = env.LOGS && now - evMoveAt > EV_HOUR ? Number(await env.LOGS.get(EV_PEND)) || 0 : 0;
+  if (pend) {
+    evMoveAt = now;
+    const l = await env.LOGS.list({ prefix: 'evf:', limit: EV_MOVE_MAX });
+    const rows = [];
+    for (const k of l.keys) {
+      const v = await env.LOGS.get(k.name);
+      if (!v) continue;
+      try { rows.push({ id: k.name.replace(/^evf:/, 'evr:'), at: evTime(k.name), ev: JSON.parse(v), k: k.name }); } catch (e) { /* 깨진 값은 그대로 7일 뒤 사라짐 */ }
+    }
+    if (rows.length) {
+      await evInsert(env, rows);
+      for (const r of rows) { if (env.LOGS.delete) await env.LOGS.delete(r.k); else await env.LOGS.put(r.k, '', { expirationTtl: 60 }); }
+      evStat.moved += rows.length;
+      listDirty(env, 'evf:');
+    }
+    // 다 옮겼고 표시가 2분 넘게 묵었으면(다른 인스턴스가 막 비켜 둔 것이 목록에 늦게 보일 수 있다) 표시를 지운다
+    if (l.keys.length < EV_MOVE_MAX && now - pend > 120e3) { if (env.LOGS.delete) await env.LOGS.delete(EV_PEND); else await env.LOGS.put(EV_PEND, '', { expirationTtl: 60 }); }
+  }
+  if (now - evCleanAt > EV_HOUR) {
+    evCleanAt = now;
+    const S = await evDb(env);
+    const r = evMeta(await S.prepare('DELETE FROM events WHERE id IN (SELECT id FROM events WHERE at < ? ORDER BY at LIMIT ?)').bind(now - EV_KEEP_MS, EV_DEL_BATCH).run());
+    evStat.cleaned += (r && r.meta && Number(r.meta.changes)) || 0;
+  }
+}
+// D1 로 처음 쓴 때 (모르면 KV 에서 한 번 읽는다)
+async function evCutover(env) {
+  if (!evCutAt && env.LOGS) evCutAt = Number(await env.LOGS.get('evd1')) || 0;
+  return evCutAt;
+}
+// KV 기록 키 (prefix 'evr:' 예전 · 'evf:' D1 실패로 비켜 둔 것) — 최신부터 lim 개, 시간순. before 가 없으면 60초 같은 목록
+async function evKvKeys(env, prefix, since, before, lim, ttl) {
+  let keys;
+  if (before) {
+    keys = [];
+    let cur;
+    for (let page = 0; page < 10 && keys.length < lim; page++) {
+      const l = await env.LOGS.list({ prefix, limit: 1000, cursor: cur });
+      for (const k of l.keys) {
+        const t = evTime(k.name);
+        if (t < before && t > since) { keys.push(k.name); if (keys.length >= lim) break; }
+      }
+      if (l.list_complete || !l.cursor) break;
+      cur = l.cursor;
+    }
+    keys.reverse();
+  } else {
+    keys = (await cachedList(env, prefix, 1000, ttl)).map((k) => k.name).filter((n) => evTime(n) > since).slice(0, lim).reverse();
+  }
+  return keys;
 }
 // 통과 기록 → 카메라 날짜별 합계(cam_day)·통과 기록(pass_rec) 문장. D1 무료는 요청마다 쿼리 50번까지라 표마다 한 문장(json_each)으로 넣는다
 const CAM_UP = 'INSERT INTO cam_day (day, cam, lim, kind, n, alerted, covered, missed, hidden, flagged, navn, over, adist, other) ' +
@@ -415,7 +533,7 @@ async function upstream(url, headers) {
 }
 
 export default {
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     const origin = req.headers.get('Origin') || '';
     const allowed = ALLOWED_ORIGINS.includes(origin);
     const cors = {
@@ -473,6 +591,10 @@ export default {
         stats: !!env.STATS,
         hostFallback: true,   // v269: 네이버 주소 막히면 다른 주소로 한 번 (배포됐는지 이것으로 본다)
         stt: !!(env.AI && typeof env.AI.run === 'function'),   // v291: 받아쓰기 — 대시보드에서 Workers AI 바인딩 'AI' 를 붙였을 때만 (앱은 이것을 보고 켠다)
+        // v294: 길마다 어느 저장소를 쓰는지, 이 인스턴스가 켜진 뒤 D1 기록 표의 읽은·쓴 행 수 (D1 이 답에 주는 meta)
+        stores: { '/event': env.STATS ? 'd1 (kv evf: if d1 fails)' : 'kv', '/events': env.STATS ? 'd1 + kv evf:' + (evCutAt && Date.now() > evCutAt + EV_KEEP_MS + 86400e3 ? '' : ' + kv evr: (before d1)') : 'kv',
+          '/check': 'kv', '/check/results': 'kv', '/check/unmatched': 'kv', '/fb': 'kv', '/pass': 'd1', '/trip': 'd1' },
+        events: env.STATS ? Object.assign({}, evStat, { cutover: evCutAt || null }) : undefined,
       }, 200, cors);
     }
     // 브라우저가 아닌 곳에서 마구 부르는 것을 1차로 막는다 (Origin 은 위조 가능하므로 완벽하진 않음)
@@ -985,67 +1107,84 @@ export default {
         if (!env.LOGS) return json({ ok: false }, 200, cors);
         const text = await req.text();
         if (text.length > 20000) return json({ error: 'too large' }, 413, cors);
-        let ev;
-        try { ev = JSON.parse(text); } catch (e) { return json({ error: 'bad json' }, 400, cors); }
-        if (!ev || typeof ev !== 'object') return json({ error: 'bad event' }, 400, cors);
-        Object.keys(ev).forEach((k) => { if (typeof ev[k] === 'string') ev[k] = ev[k].slice(0, 1000); });
-        // v172: 운영자 차가 아니면 위치 궤적은 저장하지 않는다 (위치정보 최소 수집. 앱도 공개 사용자는 궤적을 보내지 않는다)
-        if (!isAdmin) { delete ev.trace; delete ev.track; }
+        let body;
+        try { body = JSON.parse(text); } catch (e) { return json({ error: 'bad json' }, 400, cors); }
+        // v294: 한 요청에 여러 건(배열, 20건까지)도 받는다 — D1 에 한 문장으로
+        const list = Array.isArray(body) ? body.slice(0, EV_MAX_BATCH) : [body];
+        if (!list.length || list.some((ev) => !ev || typeof ev !== 'object' || Array.isArray(ev))) return json({ error: 'bad event' }, 400, cors);
         const ts = Date.now();
-        ev.serverAt = ts;
-        ev.country = (req.cf && req.cf.country) || '';
-        // KV 목록은 키 이름 순서로 앞에서부터 1000개만 준다. 예전처럼 시각 오름차순 키('evt:')면 기록이 1000개를 넘는 순간
-        // 새 기록이 목록에 안 보인다(2026-11-14 실제로 11:30 뒤 기록이 안 보였음). 그래서 최신이 맨 앞에 오도록 뒤집은 시각으로 저장한다
-        const key = 'evr:' + String(EVR_BASE - ts).padStart(16, '0') + ':' + crypto.randomUUID().slice(0, 6);
-        await env.LOGS.put(key, JSON.stringify(ev), { expirationTtl: 60 * 60 * 24 * 7 });
+        const rows = list.map((ev) => {
+          Object.keys(ev).forEach((k) => { if (typeof ev[k] === 'string') ev[k] = ev[k].slice(0, 1000); });
+          // v172: 운영자 차가 아니면 위치 궤적은 저장하지 않는다 (위치정보 최소 수집. 앱도 공개 사용자는 궤적을 보내지 않는다)
+          if (!isAdmin) { delete ev.trace; delete ev.track; }
+          ev.serverAt = ts;
+          ev.country = (req.cf && req.cf.country) || '';
+          // KV 목록은 키 이름 순서로 앞에서부터 1000개만 준다. 예전처럼 시각 오름차순 키('evt:')면 기록이 1000개를 넘는 순간
+          // 새 기록이 목록에 안 보인다(2026-11-14 실제로 11:30 뒤 기록이 안 보였음). 그래서 최신이 맨 앞에 오도록 뒤집은 시각으로 저장한다
+          return { id: evKey(ts), at: ts, ev };
+        });
+        if (env.STATS) {
+          // v294: D1 — 바로 답하고 쓰기는 뒤에서. 실패하면 KV evf: 로 비켜 둔다(잃지 않는다)
+          const work = (async () => {
+            try { await evInsert(env, rows); } catch (e) { try { await evFallback(env, rows, e); } catch (e2) { evStat.errors++; } return; }
+            try { await evMaint(env); } catch (e) { evStat.errors++; }
+          })();
+          if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(work); else await work;
+          return json({ ok: true }, 200, cors);
+        }
+        for (const r of rows) await env.LOGS.put(r.id, JSON.stringify(r.ev), { expirationTtl: 60 * 60 * 24 * 7 });
         listDirty(env, 'evr:');
         return json({ ok: true }, 200, cors);
       }
       if (url.pathname === '/events') {
-        if (!env.LOGS) return json({ items: [] }, 200, cors);
+        if (!env.LOGS && !env.STATS) return json({ items: [] }, 200, cors);
         const since = Number(p.get('since')) || 0;
         // v161 (2026-11-20): 예전엔 최신 50건만 줘서 그보다 오래된 놓침·틀림 신고를 볼 수 없었다.
-        // before=<ms> 를 주면 그 시각보다 오래된 것 중 최신부터 limit 개(기본 50, 최대 200)를 시간순으로 준다(목록을 최대 10쪽까지 넘김).
+        // before=<ms> 를 주면 그 시각보다 오래된 것 중 최신부터 limit 개(기본 50, 최대 200)를 시간순으로 준다.
         // 답의 oldest 를 다음 before 로 주면 더 예전으로 간다. before 가 없으면 예전과 똑같다(최신 50건, since 보다 새 것만)
+        // v294: D1 events 표(시각 범위 + LIMIT, 인덱스 at·usr+at) + KV(evf: · D1 로 옮기기 전 evr:) 를 합친다. 같은 모양
         const before = Number(p.get('before')) || 0;
         const lim = Math.min(200, Math.max(1, Number(p.get('limit')) || 50));
-        const tOf = (n) => EVR_BASE - Number(n.split(':')[1]);
-        let keys;
-        if (before) {
-          keys = [];
-          let cur;
-          for (let page = 0; page < 10 && keys.length < lim; page++) {
-            const l = await env.LOGS.list({ prefix: 'evr:', limit: 1000, cursor: cur });
-            for (const k of l.keys) {
-              const t = tOf(k.name);
-              if (t < before && t > since) { keys.push(k.name); if (keys.length >= lim) break; }
+        const userOnly = p.get('user') === '1';
+        const parse = (v) => { try { return JSON.parse(v); } catch (e) { return { raw: v }; } };
+        let items = [];
+        if (env.STATS) {
+          try {
+            const S = await evDb(env);
+            const lo = Math.max(since, Date.now() - EV_KEEP_MS - 86400e3), hi = before || Date.now() + 60e3;
+            const q = evMeta(await S.prepare('SELECT body FROM events WHERE at > ? AND at < ?' + (userOnly ? ' AND usr = 1' : '') + ' ORDER BY at DESC LIMIT ?')
+              .bind(lo, hi, lim).all());
+            items = ((q && q.results) || []).map((r) => parse(r.body));
+          } catch (e) { evStat.errors++; }
+        }
+        if (env.LOGS) {
+          const cut = env.STATS ? await evCutover(env) : 0;
+          let keys = [];
+          if (!env.STATS || !cut || Date.now() < cut + EV_KEEP_MS + 86400e3) {
+            // D1 로 옮기기 전 기록 (7일). D1 을 쓰면 더 생기지 않으므로 목록은 30분 같은 것을
+            keys = keys.concat(await evKvKeys(env, 'evr:', since, before, lim, env.STATS ? EV_OLD_LIST_TTL : 0));
+          }
+          if (env.STATS && (await env.LOGS.get(EV_PEND))) keys = keys.concat(await evKvKeys(env, 'evf:', since, before, lim));   // D1 이 실패해 비켜 둔 기록
+          // 예전 형식('evt:') 기록: legacy=1 일 때만 끝까지 넘겨 가며 찾는다 (목록 호출이 여러 번 들어 평소엔 안 씀. 7일 뒤 모두 사라짐)
+          if (p.get('legacy') === '1') {
+            let cursor, old = [];
+            for (let page = 0; page < 10; page++) {
+              const l = await env.LOGS.list({ prefix: 'evt:', limit: 1000, cursor });
+              old = old.concat(l.keys.map((k) => k.name).filter((n) => Number(n.split(':')[1]) > since));
+              if (l.list_complete || !l.cursor) break;
+              cursor = l.cursor;
             }
-            if (l.list_complete || !l.cursor) break;
-            cur = l.cursor;
+            keys = old.sort().slice(-50).concat(keys);
           }
-          keys.reverse();
-        } else {
-          // 최신 기록부터 (목록 한 번). since 보다 새 것만, 최대 limit(기본 50)개를 시간순으로
-          // v293: 같은 인스턴스에서 60초 동안 같은 목록 (관리 화면·모니터가 자주 불러도 목록은 1분에 한 번)
-          const listed = { keys: await cachedList(env, 'evr:', 1000) };
-          keys = listed.keys.map((k) => k.name).filter((n) => tOf(n) > since).slice(0, lim).reverse();
+          let kv = (await Promise.all(keys.map((k) => env.LOGS.get(k)))).filter(Boolean).map(parse);
+          if (userOnly) kv = kv.filter((e) => e.user);   // 운전자가 누른 '놓침'·'틀림'만
+          items = items.concat(kv);
         }
-        // 예전 형식('evt:') 기록: legacy=1 일 때만 끝까지 넘겨 가며 찾는다 (목록 호출이 여러 번 들어 평소엔 안 씀. 7일 뒤 모두 사라짐)
-        if (p.get('legacy') === '1') {
-          let cursor, old = [];
-          for (let page = 0; page < 10; page++) {
-            const l = await env.LOGS.list({ prefix: 'evt:', limit: 1000, cursor });
-            old = old.concat(l.keys.map((k) => k.name).filter((n) => Number(n.split(':')[1]) > since));
-            if (l.list_complete || !l.cursor) break;
-            cursor = l.cursor;
-          }
-          keys = old.sort().slice(-50).concat(keys).slice(-50);
-        }
-        let items = (await Promise.all(keys.map((k) => env.LOGS.get(k)))).filter(Boolean).map((v) => {
-          try { return JSON.parse(v); } catch (e) { return { raw: v }; }
-        }).sort((a, b) => (a.serverAt || 0) - (b.serverAt || 0));
+        // 옮기는 사이 D1·KV 에 같은 기록이 있을 수 있다 — 하나로
+        const seen = new Set();
+        items = items.filter((e) => { const k = (e.serverAt || 0) + '|' + (e.sid || '') + '|' + (e.type || '') + '|' + (e.msg || ''); if (seen.has(k)) return false; seen.add(k); return true; })
+          .sort((a, b) => (a.serverAt || 0) - (b.serverAt || 0)).slice(-lim);
         const oldest = items.length ? items[0].serverAt || null : null;
-        if (p.get('user') === '1') items = items.filter((e) => e.user);   // 운전자가 누른 '놓침'·'틀림'만
         return json(before ? { items, oldest } : { items }, 200, cors);
       }
 
