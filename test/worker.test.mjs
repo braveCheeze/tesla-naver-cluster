@@ -19,11 +19,12 @@ Date.now = () => realNow() + shift;
 const DAY = 86400000;
 
 const kv = new Map();
+const kvCount = { list: 0 };   // v293: 무료 KV 목록은 하루 1,000번 — 자주 불리는 길에서 목록을 부르는지 센다
 const LOGS = {
   get: async (k) => (kv.has(k) ? kv.get(k) : null),
   put: async (k, v) => { kv.set(k, v); },
   delete: async (k) => { kv.delete(k); },
-  list: async ({ prefix }) => ({ keys: [...kv.keys()].filter((k) => k.startsWith(prefix)).sort().map((name) => ({ name })), list_complete: true }),
+  list: async ({ prefix }) => { kvCount.list++; return { keys: [...kv.keys()].filter((k) => k.startsWith(prefix)).sort().map((name) => ({ name })), list_complete: true }; },
 };
 const TOKEN = 'T'.repeat(40);
 // 실제 배포처럼 IP_SALT 없이 ADMIN_TOKEN 만 (v175: 소금은 토큰에서 만든다)
@@ -131,6 +132,15 @@ ok((await call('POST', '/log', { body: { big: 'x'.repeat(600000) }, token: TOKEN
 await call('POST', '/event', { body: { type: 'warn', msg: 'pub', trace: [[0, 37, 127]] } });
 await call('POST', '/event', { body: { type: 'warn', msg: 'op', trace: [[0, 37, 127]] }, token: TOKEN });
 const ev = (await call('GET', '/events', { token: TOKEN })).j.items;
+{
+  // v293: 관리 화면·모니터가 /events 를 자주 불러도 목록은 60초에 한 번 (이 인스턴스가 새 기록을 쓰면 바로 새로)
+  const lc0 = kvCount.list;
+  await call('GET', '/events', { token: TOKEN }); await call('GET', '/events?since=1', { token: TOKEN });
+  ok(kvCount.list === lc0, 'v293: repeated /events within 60 s reuse one KV list()');
+  await call('POST', '/event', { body: { type: 'info', msg: 'v293 fresh', sid: 's1', v: 'x' } });
+  const again = (await call('GET', '/events', { token: TOKEN })).j.items;
+  ok(kvCount.list === lc0 + 1 && again.some((x) => x.msg === 'v293 fresh'), 'v293: a new event from this instance is listed at once');
+}
 ok(!('trace' in ev.find((x) => x.msg === 'pub')) && Array.isArray(ev.find((x) => x.msg === 'op').trace), 'public event trace dropped, operator trace kept');
 let codes = [];
 for (let i = 0; i < 42; i++) codes.push((await call('GET', '/route?start=127.1,37.5&goal=127.2,37.6&options=trafast', { ip: '2.2.2.2' })).s);
@@ -457,8 +467,10 @@ if (!sqlite) {
 // ---------------- v202 실시간 신고 확인 (/check · /check/status · /check/next · /check/result · /check/unmatched) ----------------
 {
   const job = (id, dev, o) => Object.assign({ id, dev, lat: 37.699451, lng: 127.124144, h: 146, kmh: 58, v: '2026.11.16-202', trail: [[37.69, 127.12], [37.695, 127.122]] }, o || {});
+  const lc0 = kvCount.list;
   const q1 = await call('POST', '/check', { body: job('rq0000000001', 'devaaaaaaaa1') });
-  ok(q1.s === 200 && q1.j.ok && q1.j.id === 'rq0000000001' && q1.j.pos >= 1, 'POST /check queues a report and answers its place');
+  ok(q1.s === 200 && q1.j.ok && q1.j.id === 'rq0000000001' && kv.has('chkpend'), 'POST /check queues a report and sets the pending flag');
+  ok(kvCount.list === lc0, 'v293: POST /check makes no KV list() (free plan: 1,000 a day)');
   const qk = [...kv.keys()].find((k) => k.startsWith('chkq:0:'));
   ok(qk && JSON.parse(kv.get(qk)).trail.length === 0, 'public report keeps no trail (operator car only)');
   ok((await call('POST', '/check', { body: job('bad id!', 'devaaaaaaaa1') })).s === 400 && (await call('POST', '/check', { body: job('rq0000000002', 'devaaaaaaaa1', { lat: 1 }) })).s === 400,
@@ -469,6 +481,16 @@ if (!sqlite) {
   ok(n1.s === 200 && n1.j.job.id === 'rq0000000001' && n1.j.job.kind === 'user' && n1.j.job.heading === 146 && n1.j.job.kmh === 58, '/check/next (operator tool, no Origin) gives the job');
   ok(![...kv.keys()].some((k) => k.startsWith('chkq:')) && (await call('GET', '/check/status?ids=rq0000000001')).j.items.rq0000000001.st === 'checking', 'taken off the queue, now checking');
   ok((await call('GET', '/check/next', { token: TOKEN, origin: '' })).s === 204, 'empty queue (no stats) → 204');
+  {
+    // v293: 대기열이 비고 표시가 2분 넘게 묵으면 표시를 지우고, 그 뒤 /check/next 는 목록을 부르지 않는다
+    shift += 3 * 60000;
+    await call('GET', '/check/next', { token: TOKEN, origin: '' });
+    ok(!kv.has('chkpend'), 'v293: an empty queue clears the stale pending flag');
+    const lc1 = kvCount.list;
+    for (let i = 0; i < 5; i++) await call('GET', '/check/next', { token: TOKEN, origin: '' });
+    ok(kvCount.list === lc1, 'v293: /check/next without the pending flag makes no KV list()');
+    shift -= 3 * 60000;
+  }
   // 네이버에 있음 → 모든 사용자 신고 지점(제한·종류)으로
   const r1 = await call('POST', '/check/result', { token: TOKEN, origin: '', body: { id: 'rq0000000001', status: 'found', run: 'emu1',
     cams: [{ lat: 37.6995, lng: 127.1241, heading: 146, limit: 60, kind: '신호과속', rel: -20, shots: 2, evidence: 'a.png' }, { lat: 37.7, lng: 127.12, limit: 0, kind: '표지판 확인' }] } });

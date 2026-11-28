@@ -112,6 +112,32 @@ function offsetPt(p, h, m) {
 }
 async function checkState(env, id) { try { return JSON.parse((await env.LOGS.get('chks:' + id)) || 'null'); } catch (e) { return null; } }
 const putCheckState = (env, id, st) => env.LOGS.put('chks:' + id, JSON.stringify(st), { expirationTtl: CHECK_STATE_TTL });
+// v293 (2026-11-28 관리 화면 'Worker 500: KV list() limit exceeded for the day' — 무료 KV 목록은 하루 1,000번): 목록(list)은 자주 불리는 길에 두지 않는다.
+//   - 신고 대기열: /check 가 넣을 때 표시 키 'chkpend'(값 = 넣은 시각)를 둔다. /check/next 는 표시가 있을 때만 목록을 본다(get 은 하루 10만 번).
+//     목록이 비었고 표시가 2분 넘게 묵었으면(KV 목록은 늦게 보일 수 있다) 표시를 지운다. 안전망으로 인스턴스마다 30분에 한 번은 표시 없이도 본다
+//   - 운영자 목록(/events 최신·/check/results·/check/unmatched·/fb): 같은 인스턴스에서 60초 동안 같은 목록을 다시 쓴다. 이 인스턴스가 그 칸에
+//     쓰면 바로 비운다
+//   - 자동 확인 후보(chka·chkx 있음)는 인스턴스 안에서 1시간 기억해 /check/next 마다 KV 를 다시 읽지 않는다
+const CHECK_PEND = 'chkpend', CHECK_PEND_STALE_MS = 120e3, CHECK_SWEEP_MS = 30 * 60e3;
+let checkSweepAt = Date.now();
+const LIST_TTL_MS = 60e3;
+const listCache = new WeakMap();   // LOGS → Map(prefix|limit → {at, keys})
+async function cachedList(env, prefix, limit) {
+  let m = listCache.get(env.LOGS);
+  if (!m) listCache.set(env.LOGS, (m = new Map()));
+  const c = m.get(prefix + '|' + limit);
+  if (c && Date.now() - c.at < LIST_TTL_MS) return c.keys;
+  const l = await env.LOGS.list({ prefix, limit });
+  const keys = l.keys.map((k) => ({ name: k.name }));
+  m.set(prefix + '|' + limit, { at: Date.now(), keys });
+  return keys;
+}
+function listDirty(env, prefix) {
+  const m = listCache.get(env.LOGS);
+  if (m) for (const k of [...m.keys()]) if (k.startsWith(prefix)) m.delete(k);
+}
+const autoSeen = new WeakMap();   // LOGS → Map(cam → 기억한 시각): chka·chkx 가 있는 카메라
+const AUTO_SEEN_MS = 3600e3;
 // v215 자동 확인 후보 거르기 (2026-11-24 keys: 울진 앞바다 36.918,129.700 은 길찾기가 502, 강릉 후보는 길에서 150~590m 떨어져 확인할 수 없었다).
 //   운전자 확인 지점(앱 data/driver_spots.json) 100m 안이면 넣는다. 아니면 네이버 길찾기로 그 점에서 100m 안에 길이 있는지 본다:
 //   그 점에서 찍는 방향(모르면 북)으로 300m 앞까지 길을 찾아, 경로 첫 점(네이버가 길 위로 붙인 출발점)이 100m 안이면 길 위.
@@ -167,14 +193,17 @@ async function autoCheckJob(env) {
   for (const r of rows) {
     const m = PASS_KEY.exec(String(r.cam || ''));
     if (!m) continue;
-    if (await env.LOGS.get('chka:' + r.cam)) continue;   // 7일에 한 번
-    if (await env.LOGS.get('chkx:' + r.cam)) continue;   // v215: 길 밖으로 본 키 (30일)
+    let seen = autoSeen.get(env.LOGS);
+    if (!seen) autoSeen.set(env.LOGS, (seen = new Map()));
+    if (Date.now() - (seen.get(r.cam) || 0) < AUTO_SEEN_MS) continue;   // v293: 이 인스턴스가 1시간 안에 본 표시
+    if ((await env.LOGS.get('chka:' + r.cam)) || (await env.LOGS.get('chkx:' + r.cam))) { seen.set(r.cam, Date.now()); continue; }   // 7일에 한 번 · v215 길 밖(30일)
     if (++probes > 5) break;   // 한 번 부를 때 길 검사는 5번까지 (나머지는 다음에: 응답을 빨리, 바깥 호출 수 제한 안에서)
     const at = { lat: +m[1], lng: +m[2] }, h = m[3] === 'x' ? null : +m[3] * 45;
     const usable = await autoCheckable(env, at, h);
-    if (usable === false) { await env.LOGS.put('chkx:' + r.cam, '1', { expirationTtl: AUTO_SKIP_TTL }); continue; }
+    if (usable === false) { await env.LOGS.put('chkx:' + r.cam, '1', { expirationTtl: AUTO_SKIP_TTL }); seen.set(r.cam, Date.now()); continue; }
     if (usable === null) continue;
     await env.LOGS.put('chka:' + r.cam, '1', { expirationTtl: CHECK_AUTO_TTL });
+    seen.set(r.cam, Date.now());
     const id = 'a' + crypto.randomUUID().replace(/-/g, '').slice(0, 15);
     const job = { id, kind: 'auto', lat: at.lat, lng: at.lng, heading: h, cam: r.cam, limit: r.lim || null, camKind: r.kind || null,
       passes: r.n, missed: r.m, missDays: r.md, trail: h == null ? [] : [[offsetPt(at, (h + 180) % 360, 450).lat, offsetPt(at, (h + 180) % 360, 450).lng], [at.lat, at.lng]], at: Date.now() };
@@ -629,9 +658,8 @@ export default {
         const qk = 'chkq:0:' + String(Date.now()).padStart(13, '0') + ':' + id;
         await env.LOGS.put(qk, JSON.stringify(job), { expirationTtl: CHECK_STATE_TTL });
         await putCheckState(env, id, { st: 'queued', kind: 'user', at: Date.now(), q: qk, dev, lat: at.lat, lng: at.lng, h: job.heading });
-        let pos = 1;
-        try { pos = (await env.LOGS.list({ prefix: 'chkq:', limit: 1000 })).keys.length || 1; } catch (e) { /* 모름 */ }
-        return json({ ok: true, id, pos }, 200, cors);
+        await env.LOGS.put(CHECK_PEND, String(Date.now()), { expirationTtl: CHECK_STATE_TTL });   // v293: 목록 대신 표시 (대기 순번 'pos' 는 뺐다 — 앱은 쓰지 않음)
+        return json({ ok: true, id }, 200, cors);
       }
       if (url.pathname === '/check/status') {
         if (!env.LOGS) return json({ items: {} }, 200, cors);
@@ -645,7 +673,14 @@ export default {
       }
       if (url.pathname === '/check/next') {
         if (!env.LOGS) return new Response(null, { status: 204, headers: cors });
-        const l = await env.LOGS.list({ prefix: 'chkq:', limit: 20 });
+        // v293: 표시('chkpend')가 있을 때만 대기열 목록을 본다 (안전망: 인스턴스마다 30분에 한 번은 표시 없이도)
+        const pend = await env.LOGS.get(CHECK_PEND);
+        const sweep = Date.now() - checkSweepAt > CHECK_SWEEP_MS;
+        const l = pend || sweep ? await env.LOGS.list({ prefix: 'chkq:', limit: 20 }) : { keys: [] };
+        if (sweep) checkSweepAt = Date.now();
+        if (pend && !l.keys.length && Date.now() - (Number(pend) || 0) > CHECK_PEND_STALE_MS) {
+          if (env.LOGS.delete) await env.LOGS.delete(CHECK_PEND); else await env.LOGS.put(CHECK_PEND, '', { expirationTtl: 60 });
+        }
         for (const k of l.keys) {
           const raw = await env.LOGS.get(k.name);
           if (env.LOGS.delete) await env.LOGS.delete(k.name); else await env.LOGS.put(k.name, '', { expirationTtl: 60 });
@@ -705,17 +740,19 @@ export default {
             if (dv && !u.devs.includes(dv) && u.devs.length < 50) u.devs.push(dv);
             if (!u.days.includes(day)) { u.days.push(day); if (u.days.length > 60) u.days.shift(); }
             await env.LOGS.put(key, JSON.stringify(u));
+            listDirty(env, 'unm:');
           }
         }
         const res = { st: status, kind: st.kind || 'user', at: st.at, done: Date.now(), cams: applied, dev: st.dev, lat: st.lat != null ? st.lat : job.lat, lng: st.lng != null ? st.lng : job.lng, h: st.h != null ? st.h : job.heading };
         await putCheckState(env, id, res);
         await env.LOGS.put('chkr:' + String(EVR_BASE - Date.now()).padStart(16, '0') + ':' + id, JSON.stringify(Object.assign({ id, reason: b.reason ? String(b.reason).slice(0, 200) : undefined,
           run: b.run ? String(b.run).slice(0, 80) : undefined, found: Array.isArray(b.cams) ? b.cams.slice(0, 6) : [] }, res, { dev: undefined })), { expirationTtl: CHECK_RES_TTL });
+        listDirty(env, 'chkr:');
         return json({ ok: true, applied: applied.length }, 200, cors);
       }
       if (url.pathname === '/check/unmatched') {
         if (!env.LOGS) return json({ v: 1, items: [] }, 200, cors);
-        const l = await env.LOGS.list({ prefix: 'unm:', limit: 1000 });
+        const l = { keys: await cachedList(env, 'unm:', 1000) };   // v293: 60초 같은 목록
         const items = [];
         for (const k of l.keys) {
           let u = null;
@@ -732,7 +769,7 @@ export default {
       }
       if (url.pathname === '/check/results') {
         if (!env.LOGS) return json({ items: [] }, 200, cors);
-        const l = await env.LOGS.list({ prefix: 'chkr:', limit: 100 });
+        const l = { keys: await cachedList(env, 'chkr:', 100) };   // v293: 60초 같은 목록
         const items = (await Promise.all(l.keys.map((k) => env.LOGS.get(k.name)))).filter(Boolean).map((v) => { try { return JSON.parse(v); } catch (e) { return null; } }).filter(Boolean);
         return json({ items }, 200, cors);
       }
@@ -961,6 +998,7 @@ export default {
         // 새 기록이 목록에 안 보인다(2026-11-14 실제로 11:30 뒤 기록이 안 보였음). 그래서 최신이 맨 앞에 오도록 뒤집은 시각으로 저장한다
         const key = 'evr:' + String(EVR_BASE - ts).padStart(16, '0') + ':' + crypto.randomUUID().slice(0, 6);
         await env.LOGS.put(key, JSON.stringify(ev), { expirationTtl: 60 * 60 * 24 * 7 });
+        listDirty(env, 'evr:');
         return json({ ok: true }, 200, cors);
       }
       if (url.pathname === '/events') {
@@ -988,7 +1026,8 @@ export default {
           keys.reverse();
         } else {
           // 최신 기록부터 (목록 한 번). since 보다 새 것만, 최대 limit(기본 50)개를 시간순으로
-          const listed = await env.LOGS.list({ prefix: 'evr:', limit: 1000 });
+          // v293: 같은 인스턴스에서 60초 동안 같은 목록 (관리 화면·모니터가 자주 불러도 목록은 1분에 한 번)
+          const listed = { keys: await cachedList(env, 'evr:', 1000) };
           keys = listed.keys.map((k) => k.name).filter((n) => tOf(n) > since).slice(0, lim).reverse();
         }
         // 예전 형식('evt:') 기록: legacy=1 일 때만 끝까지 넘겨 가며 찾는다 (목록 호출이 여러 번 들어 평소엔 안 씀. 7일 뒤 모두 사라짐)
@@ -1026,6 +1065,7 @@ export default {
           const rec = { at: Date.now(), mime: String(b.mime).slice(0, 60), sec: Math.max(0, Math.min(60, Number(b.sec) || 0)), v: String(b.v || '').slice(0, 30),
             sid: String(b.sid || '').slice(0, 20), qid: id, country: (req.cf && req.cf.country) || '', b64: b.b64 };
           await env.LOGS.put('fba:' + id, JSON.stringify(rec), { expirationTtl: 60 * 60 * 24 * 30 });
+          listDirty(env, 'fba:');
           return json({ ok: true, id }, 200, cors);
         }
         const id = (p.get('id') || '').replace(/[^a-z0-9-]/gi, '');
@@ -1033,7 +1073,7 @@ export default {
           const v = await env.LOGS.get('fba:' + id);
           return v ? new Response(v, { status: 200, headers: { ...cors, 'Content-Type': 'application/json' } }) : json({ error: 'not found' }, 404, cors);
         }
-        const l = await env.LOGS.list({ prefix: 'fba:', limit: 200 });
+        const l = { keys: await cachedList(env, 'fba:', 200) };   // v293: 60초 같은 목록
         return json({ ids: l.keys.map((k) => k.name.slice(4)) }, 200, cors);
       }
 
