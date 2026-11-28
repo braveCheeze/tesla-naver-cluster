@@ -104,17 +104,23 @@ SHAPES = {
 #   휘어 지평선 아래에서 그림 오른쪽 끝으로 나간다. 연결로는 고어부터 두 차로(경로 초록 + 오른쪽 회색 한 차로, 사이 점선 — 네이버의 바깥
 #   회색 차로). 출구 차로 바닥 화살표는 오른쪽으로 꺾이는 ↱, 본선은 ↑. v258 의 '앞쪽 곧게, 고어는 지평선 가까이'(x41)는 그대로 두고
 #   네이버와 맞춘 곳만(app.js JX_CURVE) 이 그림을 쓴다
-ZS_C = 18.0
-RAMP_C = (0.32, 0.042, ZS_C)
+# v293b (운전자 '네이버처럼 완만하게'): 초록 출구 차로는 그림 아래 40% 동안 본선 옆에 곧게 가다가(고어 21m), 큰 반지름으로 완만하게
+#   오른쪽으로 휘어 지평선 바로 밑에서 오른쪽 끝까지 넓게 쓸고 나간다 (예전 18m · 0.32·d + 0.042·d² 는 너무 이르고 급했다)
+ZS_C = 21.0
+RAMP_C = (0.15, 0.0125, ZS_C)
+# 네이버처럼 오른쪽 끝에 따로 휘는 다른 연결로 (칠 안 함, 글자·차로 수에 넣지 않음): 그림 오른쪽 아래에서 생겨 오른쪽으로
+FAR_RAMP = {'x': 12.2, 'w': 5.6, 'z0': 9.0, 'bend': (0.22, 0.03)}
+RAMP2_Z = (ZS_C + 6.0, ZS_C + 22.0)   # 연결로 오른쪽 회색 차로가 휘는 길을 따라 생겨 넓어지는 곳 (시작, 다 넓어진 곳)
 
 
 def _curve():
     sh = _exit(4, 1)
     sh['bend'] = {0: [], 1: [RAMP_C]}
     sh['zs'] = ZS_C
-    sh['ramp2'] = (sh['lanes'][-1][1], ZS_C)   # 출구 차로 오른쪽 가장자리 X, 회색 차로가 생기는 Z
-    sh['turn'] = {1: 3.8}
+    sh['ramp2'] = (sh['lanes'][-1][1], RAMP2_Z[1], RAMP2_Z[0])   # 출구 차로 오른쪽 가장자리 X, 다 넓어진 Z, 생기기 시작하는 Z
+    sh['turn'] = {1: 1}
     sh['solid_split'] = True
+    sh['far'] = FAR_RAMP
     return sh
 
 
@@ -204,6 +210,33 @@ def arrow_turn(cx, z0, z1, turn):
     return L + [head[2], head[1], head[0]] + R[::-1]
 
 
+def arrow_glyph(cx, z):
+    """v293b x41c: 오른쪽으로 꺾이는 ↱ 를 화면에 곧게 세워 그린다 (차로 원근을 따라 기울이면 왼쪽으로 말린 갈고리처럼 보였다 — 부모 세션)"""
+    x0, y0 = proj(cx, z)
+    k = F / z / 30.0          # 크기: 둘레 화살표보다 조금 크게 (z 12m 에서 약 1.1)
+    H, R, L, hl, hw, wd = 96 * k, 24 * k, 3 * k, 25 * k, 22 * k, 10 * k
+    lean = -0.18              # 차로가 지평선 쪽으로 모이는 만큼 아주 조금만 기울인다
+    ys = 0.06 * H
+    path = [(0.0, -H / 2 + i * (H / 2 + ys) / 6) for i in range(7)]
+    for i in range(1, 9):
+        t = math.pi - (math.pi / 2) * i / 8
+        path.append((R + R * math.cos(t), ys + R * math.sin(t)))
+    path.append((R + L, ys + R))
+    ou = -(R + L + hl) / 2 + 9 * k   # 몸통이 왼쪽 실선에 붙지 않게, 그림 가운데가 차로 가운데쯤
+    pts = [(x0 + u + ou + lean * v, y0 - v) for u, v in path]
+    Lp, Rp = [], []
+    for i, (x, y) in enumerate(pts):
+        xa, ya = pts[max(0, i - 1)]
+        xb, yb = pts[min(len(pts) - 1, i + 1)]
+        dx, dy = xb - xa, yb - ya
+        n = math.hypot(dx, dy) or 1.0
+        nx, ny = -dy / n, dx / n
+        Lp.append((x + nx * wd, y + ny * wd)); Rp.append((x - nx * wd, y - ny * wd))
+    ex, ey = pts[-1]
+    head = [(ex, ey - hw), (ex + hl, ey), (ex, ey + hw)]
+    return Lp + head + Rp[::-1]
+
+
 def lane_groups(sh):
     """갈래별 (왼쪽 X, 오른쪽 X, 시작 Z)"""
     g = {}
@@ -237,11 +270,17 @@ def draw_base(name):
     r2 = sh.get('ramp2')
     if r2:
         # v293 x41c: 고어부터 출구 연결로 오른쪽에 회색 한 차로 (앞머리는 비스듬히 넓어진다)
-        xr, z2 = r2
-        d.polygon(strip(xr, xr + LW + 0.8, 1, sh, z2), fill=asphalt)
-        zt = z2 - 7.0
-        d.polygon([proj(xr + 0.8, zt), proj(xr + LW + 0.8, z2), proj(xr + 0.8, z2)], fill=asphalt)
-        d.polygon([proj(xr + 0.65, zt), proj(xr + 0.97, zt), proj(xr + LW + 0.16, z2), proj(xr + LW - 0.16, z2)], fill=white)
+        xr, z2 = r2[:2]
+        zt = r2[2] if len(r2) > 2 else z2 - 7.0
+        wz = lambda z: LW * min(1.0, max(0.0, (z - zt) / (z2 - zt)))
+        Zs = [z for z in zs() if z > zt]
+        Lr = [proj(xr + shift(z, 1, sh), z) for z in Zs]
+        Rr = [proj(xr + wz(z) + 0.8 + shift(z, 1, sh), z) for z in Zs]
+        d.polygon(Lr + Rr[::-1], fill=asphalt)
+        # 바깥 가장자리 실선: 회색 차로가 생기는 곳부터 넓어지는 모양을 따라
+        Lo = [proj(xr + wz(z) - 0.16 + shift(z, 1, sh), z) for z in Zs]
+        Ro = [proj(xr + wz(z) + 0.16 + shift(z, 1, sh), z) for z in Zs]
+        d.polygon(Lo + Ro[::-1], fill=white)
     if sh.get('side'):
         # v263 (운전자: 네이버 성남IC 처럼 — 다른 출구가 우리 출구 차로 오른쪽에서 빗금 고어를 지나 갈라진다)
         #   고어 = 출구 차로 오른쪽 가장자리와 옆 연결로 왼쪽 가장자리 사이 삼각형 (벌어짐이 GORE_W 가 될 때까지만). 길 바닥 + 흰 빗금, 그 뒤는 풀밭
@@ -282,9 +321,9 @@ def draw_base(name):
         lane_line(x0, s, sh, False, d, white, 0.16, zs0 if (s, 'l') in shared else za)
         if r2 and s == 1:
             # v293 x41c: 출구 차로 오른쪽은 고어까지 실선(길 가장자리), 그 뒤는 연결로 두 차로 사이 점선, 바깥 가장자리 실선
-            lane_line(x1, s, sh, False, d, white, 0.16, za, r2[1])
-            lane_line(x1, s, sh, True, d, white, 0.13, r2[1])
-            lane_line(x1 + LW, s, sh, False, d, white, 0.16, r2[1])
+            zt2 = r2[2] if len(r2) > 2 else r2[1]
+            lane_line(x1, s, sh, False, d, white, 0.16, za, zt2)
+            lane_line(x1, s, sh, True, d, white, 0.13, zt2)
             continue
         lane_line(x1, s, sh, False, d, white, 0.16, zs0 if (s, 'r') in shared else za)
     for i, ln in enumerate(sh['lanes'][1:], 1):
@@ -305,7 +344,16 @@ def draw_base(name):
             continue
         x0, x1, s = ln[:3]
         tn = sh.get('turn', {}).get(s, 0)
-        d.polygon(arrow_turn((x0 + x1) / 2, 10.2, 14.5, tn) if tn else arrow_poly((x0 + x1) / 2, s, sh, 10.2, 14.5, 0), fill=white)
+        d.polygon(arrow_glyph((x0 + x1) / 2, 12.0) if tn else arrow_poly((x0 + x1) / 2, s, sh, 10.2, 14.5, 0), fill=white)
+    far = sh.get('far')
+    if far:
+        # v293b: 오른쪽 끝 다른 연결로 (풀밭을 사이에 두고) — 회색 길, 가장자리 실선
+        fsh = {'bend': {9: [(far['bend'][0], far['bend'][1], far['z0'])]}}
+        xa, xb = far['x'], far['x'] + far['w']
+        d.polygon(strip(xa - 0.6, xb + 0.6, 9, fsh, far['z0'] - 6.0), fill=asphalt)
+        lane_line(xa, 9, fsh, False, d, white, 0.16, far['z0'] - 6.0)
+        lane_line(xb, 9, fsh, False, d, white, 0.16, far['z0'] - 6.0)
+        lane_line((xa + xb) / 2, 9, fsh, True, d, white, 0.12, far['z0'])
     gray = (120, 128, 138)
     d.rectangle([BEAM[0] * W, BEAM[1] * H, BEAM[2] * W, BEAM[3] * H], fill=gray)
     d.rectangle([0.035 * W, BEAM[1] * H, 0.055 * W, HZ + 40], fill=gray)
