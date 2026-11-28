@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-280'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-281'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -4607,6 +4607,7 @@
     off: 0, lastReroute: 0, busy: false, lastTraffic: 0, rerouted: false, quickLeft: 0, routeMs: 0,
     onRoute: false, onCount: 0, gap: 12000, gen: 0, byDemo: false,
     routeCams: null, routeCamList: [], // 경로 위 카메라 (경로가 바뀌면 다시 계산)
+    cand: null, candRejects: 0, heldN: 0, heldOk: 0, heldRej: 0,   // v280: 차가 올라타는지 지켜보는 새 경로 (holdRoute)
   };
 
   function recents() { try { return JSON.parse(store.get('recent') || '[]'); } catch (e) { return []; } }
@@ -5328,24 +5329,25 @@
           return;
         }
       }
-      setRoute(r, dest, reroute);
-      if (reroute && nav.active) { liveRouteSave(); liveSave(true); }   // v200
-      if (reroute === 'traffic' && sideList && sideList.length) offerSideAlt(sideList, r);
-      if (reroute === 'traffic') {
-        // 교통 갱신은 조용히. 도착 예정이 3분 넘게 바뀔 때만 알려 준다
-        const diff = beforeMs == null ? 0 : r.duration - beforeMs;
-        if (Math.abs(diff) >= 180000) {
-          say('교통 상황을 반영했습니다. 도착 예정이 ' + Math.round(Math.abs(diff) / 60000) + '분 ' + (diff > 0 ? '늦어졌습니다.' : '빨라졌습니다.'), 1);
+      if (reroute) {
+        // v280 (2026-11-28 운전자 '고속화 도로 그 밑에 일반도로 … 엉뚱하게 없는 네비가 잡히다가 사라지거든'): /events 7일 재탐색 115번 가운데
+        //   기록을 남긴 40번 모두 차가 직전 새 경로(재탐색·교통 갱신·처음)에 한 번도 올라타지 못했다(onCount 0). 63번은 경로를 받은 지 60초 안.
+        //   네이버가 출발점을 옆 길·고가 위아래·진출로에 붙인 답을 바로 띄워 그 길의 안내가 떴다가, 차가 멀어지면 다시 이탈 → 재탐색이었다.
+        //   이제 경로 이탈 재탐색과 교통 갱신의 답은 차가 이미 그 경로선 위에 있거나 출발점 뒤 같은 선 위(옆 15m 안)일 때만 바로 쓴다.
+        //   아니면 띄우지 않고(지금 화면 그대로) 차가 그 경로에 올라타는지 몇 초 본다 — 올라타면 그때 안내, 아니면 버리고 지금 자리에서 다시 묻는다
+        //   (교통 갱신은 버리고 지금 경로로 계속). 재탐색 답을 두 번 버렸으면 세 번째는 예전처럼 바로 쓴다
+        if ((reroute === true || reroute === 'traffic') && nav.active && state.fix) {
+          const fit = routeFitsCar(r.path, state.fix);
+          if (!fit.ok && (reroute === 'traffic' || (nav.candRejects || 0) < 2)) {
+            holdRoute({ r, dest, reroute, option: q.option, sideList, beforeMs, gen, fit });
+            return;
+          }
         }
-        navUpdate(state.fix);
-      } else if (reroute) {
-        nav.option = q.option; // 이후 교통 갱신도 새로 잡은 추천 경로 기준으로
-        const viaNow = reroute === 'via' && nav.via && nav.via[0];
-        say(viaNow ? '경유지를 거쳐 가는 경로로 안내합니다.' : '새 경로로 안내합니다.', 1);
-        toast((viaNow ? '경유지 ' + viaNow.name + ' 경유 · ' : '새 경로로 안내합니다 · ' + (ALT_LABEL[q.option] || '추천') + ' · ') +
-          fmtDist(r.distance || nav.total) + ' · ' + fmtMin(r.duration), '', 4000);
-        navUpdate(state.fix);
-      } else if (nav.autoStart) {
+        applyRoute(r, dest, reroute, q.option, sideList, beforeMs);
+        return;
+      }
+      setRoute(r, dest, reroute);
+      if (nav.autoStart) {
         // 새 버전으로 바꾸기 전에 안내하던 목적지: 경로 카드 없이 바로 이어서 안내 (v200 후진 뒤 이어 가기는 시작 말 없이)
         const quiet = !!nav.quietStart;
         nav.autoStart = false; nav.resumeOpt = null; nav.quietStart = false;
@@ -5497,6 +5499,93 @@
     const segB = bearing(a, b);
     if (angleDiff(segB, bearing(f, a)) > 30) return false;
     return !(state.heading !== null && state.speedKmh > 5 && angleDiff(segB, state.heading) > 45);
+  }
+  // v280: 받은 경로를 바로 띄울 만큼 차가 그 경로 위에 있는지.
+  //   on: 앞쪽 2km 의 가장 가까운 구간까지 옆 거리가 정확도의 2배(25~50m) 안, 방향 45° 안, 그리고 출발점을 지나 3m 넘게 (출발점 앞의 점은 아님)
+  //   behind: 출발점 뒤 150m 안에서, 첫 구간을 뒤로 늘인 선에서 옆으로 15m 안 (같은 길에서 출발점을 향해 가는 중 — 재탐색 답은 늘 조금 앞에서 시작한다)
+  //   slow: 시속 10km 아래면 방향을 몰라 따지지 않는다 (예전처럼 바로 쓴다)
+  // v181 routeFit 의 '출발점 뒤'는 150m 안·출발점 쪽 30° 안이면 됐다 — 옆 40m 나란한 길의 100m 앞 출발점도 통과했다
+  function routeFitsCar(path, f) {
+    const P = (path || []).map((x) => ({ lat: x[1], lng: x[0] }));
+    if (P.length < 2) return { ok: false, why: 'empty', d: Infinity, skew: 0 };
+    const moving = state.heading !== null && state.speedKmh >= 10;
+    let best = { d: Infinity, i: 0, t: 0, at: 0 }, run = 0;
+    for (let i = 0; i < P.length - 1 && run < 2000; i++) {
+      const L = haversine(P[i], P[i + 1]), pr = projectSeg(f, P[i], P[i + 1]);
+      if (pr.dist < best.d) best = { d: pr.dist, i, t: pr.t, at: run + pr.t * L };
+      run += L;
+    }
+    const skew = moving && best.d < Infinity ? angleDiff(bearing(P[best.i], P[best.i + 1]), state.heading) : 0;
+    if (!moving) return { ok: true, why: 'slow', d: best.d, skew };
+    const lim = Math.max(25, Math.min(50, (f.acc || 10) * 2));
+    if (best.d <= lim && skew <= 45 && best.at > 3) return { ok: true, why: 'on', d: best.d, skew, at: best.at };
+    let k = 1;
+    while (k < P.length - 1 && haversine(P[0], P[k]) < 12) k++;
+    const b0 = bearing(P[0], P[k]), dS = haversine(f, P[0]);
+    if (dS <= 150 && angleDiff(b0, state.heading) <= 30) {
+      const a = angleDiff(bearing(P[0], f), (b0 + 180) % 360);   // 차가 출발점 바로 뒤(늘인 선 쪽)에 있으면 0
+      const xt = dS * Math.sin(toRad(Math.min(90, a)));
+      if (a < 90 && xt <= 15) return { ok: true, why: 'behind', d: best.d, skew, xt };
+    }
+    return { ok: false, why: 'off', d: best.d, skew };
+  }
+  // v280: 바로 쓰지 않은 새 경로를 지켜본다. 차가 그 경로선 위(on)로 두 번(1초 넘게) 보이면 그때 안내를 바꾸고,
+  //   출발점 뒤 줄 서 있는 동안은 기다리고, 그 밖에서 3번(2초 넘게) 보이거나 30초가 지나면 버린다
+  function holdRoute(c) {
+    c.at = state.fix ? state.fix.t : Date.now(); c.ok = 0; c.okAt = 0; c.bad = 0;
+    c.P = c.r.path.map((p) => ({ lat: p[1], lng: p[0] }));
+    nav.cand = c; nav.heldN++;
+    report('info', { msg: 'route held', reroute: String(c.reroute), d: Math.round(c.fit.d), skew: Math.round(c.fit.skew || 0),
+      acc: Math.round((state.fix && state.fix.acc) || 0), kmh: Math.round(state.speedKmh) });
+  }
+  function candFix(f) {
+    const c = nav.cand;
+    if (!c) return false;
+    if (c.gen !== nav.gen || !nav.active) { nav.cand = null; return false; }
+    const fit = routeFitsCar(c.r.path, f), age = f.t - c.at;
+    if (fit.why === 'on') { if (!c.ok) c.okAt = f.t; c.ok++; }
+    else if (fit.why === 'off' && !carBehindStart(f, c.P[0], c.P[1])) c.bad++;
+    if (c.ok >= 2 && f.t - c.okAt >= 800) {
+      nav.cand = null; nav.candRejects = 0; nav.heldOk++;
+      report('info', { msg: 'route held ok', reroute: String(c.reroute), s: Math.round(age / 1000) });
+      applyRoute(c.r, c.dest, c.reroute, c.option, c.sideList, c.beforeMs);
+      return true;
+    }
+    if ((c.bad >= 3 && age >= 2000) || age > 30000) {
+      nav.cand = null; nav.heldRej++;
+      report('info', { msg: 'route held rejected', reroute: String(c.reroute), d: Math.round(fit.d), skew: Math.round(fit.skew || 0), ok: c.ok, bad: c.bad,
+        s: Math.round(age / 1000), kmh: Math.round(state.speedKmh) });
+      if (c.reroute === 'traffic') return false;   // 지금 경로로 계속 (다음 교통 갱신은 5분 뒤)
+      nav.candRejects = (nav.candRejects || 0) + 1;
+      // 다시 묻기는 예전 '한 번도 못 올라탄 경로' 규칙 그대로: 바로 한 번(quickLeft), 그다음은 재탐색 간격(nav.gap)을 지켜 아래 이탈 판정이 묻는다
+      if (nav.quickLeft > 0) {
+        nav.quickLeft = 0;
+        nav.lastReroute = f.t; nav.off = 0;
+        toast('지금 위치에 맞춰 경로를 다시 찾는 중…', '', 4000);
+        planRoute(nav.dest, true);
+      }
+    }
+    return false;
+  }
+  // 재탐색·교통 갱신·경유·재추천으로 받은 경로를 안내에 쓴다 (v280 에서 planRoute 밖으로: 지켜본 경로도 같은 길로)
+  function applyRoute(r, dest, reroute, option, sideList, beforeMs) {
+    setRoute(r, dest, reroute);
+    if (nav.active) { liveRouteSave(); liveSave(true); }   // v200
+    if (reroute === 'traffic') {
+      if (sideList && sideList.length) offerSideAlt(sideList, r);
+      // 교통 갱신은 조용히. 도착 예정이 3분 넘게 바뀔 때만 알려 준다
+      const diff = beforeMs == null ? 0 : r.duration - beforeMs;
+      if (Math.abs(diff) >= 180000) {
+        say('교통 상황을 반영했습니다. 도착 예정이 ' + Math.round(Math.abs(diff) / 60000) + '분 ' + (diff > 0 ? '늦어졌습니다.' : '빨라졌습니다.'), 1);
+      }
+    } else {
+      nav.option = option; // 이후 교통 갱신도 새로 잡은 추천 경로 기준으로
+      const viaNow = reroute === 'via' && nav.via && nav.via[0];
+      say(viaNow ? '경유지를 거쳐 가는 경로로 안내합니다.' : '새 경로로 안내합니다.', 1);
+      toast((viaNow ? '경유지 ' + viaNow.name + ' 경유 · ' : '새 경로로 안내합니다 · ' + (ALT_LABEL[option] || '추천') + ' · ') +
+        fmtDist(r.distance || nav.total) + ' · ' + fmtMin(r.duration), '', 4000);
+    }
+    if (state.fix) navUpdate(state.fix);
   }
   // v227: 길찾기 출발점을 차보다 얼마나 앞에 둘지 (처음, 경로가 뒤로 돌면 두 번째, 세 번째)
   const ROUTE_AHEAD = [25, 70, 140];
@@ -5755,6 +5844,7 @@
   }
   function endNav() {
     nav.gen++; nav.busy = false; nav.byDemo = false;
+    nav.cand = null; nav.candRejects = 0;
     routeNetPill(false);
     if (live.on && !state.demoTimer && !live.pending) liveClear();   // v200: 끝냈거나 도착했으면 다시 열려도 이어 가지 않는다
     clearTimeout(nav.retryT); nav.retryT = null;
@@ -6130,6 +6220,7 @@
   const turnZoneAt = (at) => turnZones().find(([a, b]) => at >= a && at <= b) || null;
   function navUpdate(f) {
     if (!nav.active || !nav.pts || !f) return;
+    if (nav.cand && candFix(f)) return;   // v280: 지켜보던 새 경로에 올라탔다 — 그 경로로 이 위치를 이미 처리했다
     // 경유지 근처(150m)를 지나면 목록에서 뺀다 (이후 재탐색이 경유지로 되돌아가지 않게)
     if (nav.via && nav.via.length && haversine(f, nav.via[0]) < 150) {
       const v = nav.via.shift();
@@ -6189,7 +6280,7 @@
       nav.seg = best.seg;
       nav.along = nav.cum[best.seg] + best.t * (nav.cum[best.seg + 1] - nav.cum[best.seg]);
       nav.off = 0; nav.offSince = 0;
-      if (++nav.onCount >= 5) { nav.gap = 10000; nav.quickLeft = 0; } // 경로 위를 잘 따라가면 재탐색 간격 초기화
+      if (++nav.onCount >= 5) { nav.gap = 10000; nav.quickLeft = 0; nav.candRejects = 0; } // 경로 위를 잘 따라가면 재탐색 간격 초기화
     } else if ((f.acc || 0) < 60 && state.speedKmh > 3 &&
                (nav.onCount > 0 || nav.rerouted || f.t - (nav.setAt || 0) > 20000)) {
       // 출발점이 도로에서 떨어진 곳(주차장 등)이면 경로에 한 번 올라탄 뒤부터 센다.
@@ -6207,7 +6298,9 @@
     const offLong = nav.off > 0 && f.t - (nav.offSince || f.t) >= offMs && state.odo - (nav.offOdo || state.odo) >= offM;
     // 다시 찾은 경로에 한 번도 못 올라탔으면(답이 오는 사이 차가 경로 시작점을 지나쳤으면) 간격을 기다리지 않고 한 번 바로 다시 찾는다
     const quick = nav.quickLeft > 0 && nav.rerouted && nav.onCount === 0 && f.t - (nav.setAt || 0) > 2500;
-    if (nav.off >= need && offLong && !nav.busy && (quick || f.t - nav.lastReroute > nav.gap)) {
+    // v280: 재탐색 답을 지켜보는 동안은 다시 묻지 않는다 (지켜보기가 버리면 그때 지금 자리에서 다시 묻는다)
+    const heldReroute = !!(nav.cand && nav.cand.reroute === true);
+    if (nav.off >= need && offLong && !nav.busy && !heldReroute && (quick || f.t - nav.lastReroute > nav.gap)) {
       nav.lastReroute = f.t;
       nav.off = 0; nav.onCount = 0;
       if (quick) nav.quickLeft = 0;
@@ -6232,7 +6325,7 @@
     // v195: 다른 경로가 갈라지는 곳을 지나면 말풍선과 선을 내린다
     if (sideAlt.r && nav.onRoute && nav.along > sideAlt.at + 30) clearSideAlt();
     // 5분마다 지금 위치에서 경로를 다시 받아 교통 상황(막히는 구간·도착 시간)을 갱신한다 (시간당 최대 12회)
-    if (nav.onRoute && !nav.busy && nav.total - nav.along > 1500 && f.t - nav.lastTraffic > 5 * 60000) {
+    if (nav.onRoute && !nav.busy && !nav.cand && nav.total - nav.along > 1500 && f.t - nav.lastTraffic > 5 * 60000) {
       nav.lastTraffic = f.t;
       planRoute(nav.dest, 'traffic');
     }

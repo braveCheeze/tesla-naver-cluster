@@ -2967,6 +2967,7 @@
     { id: 'S177', name: "S177 approach leg then turn (v277, keys Naver check of the crossing cameras v274 removed): a guided car coming in on the camera's own approach and turning at the junction is still alerted — 인항로 #23586 turning left, 안남로 #25184 turning right, 군왕로 #3564 turning toward 270° — while going straight through the junction on the crossing road either way is not; the two 30 school-zone cameras on one pole on 마장로324번길 190 m west of 안남로 follow Naver: westbound (after the right turn) #25199 at 274°, eastbound #25191 at 94°, each only for its own direction", fn: s177 },
     { id: 'S178', name: "S178 recorded voice clips (v278, driver '걍 MeloTTS로 다 가자' — the Tesla browser has no speech engine: 0 voices, speak() → synthesis-failed): every sentence the app speaks, built by the same functions (camSpeech for all kinds/zones/rear/box/distances/limits — box booths now say '박스형 단속 카메라' like Naver, section start, fixed sentences, ETA change, route start with the destination name left out, 이어서/다시 chains, and every Naver guide text in the test routes incl. toll gates) maps fully onto data/voice_clips.json; numbers read 12 · 110 · 1600 · 23000 as clips; with the flag on and no working speech the clips are fetched, decoded and played back to back (onEnd), one missing clip falls back to the beep (onFail), an uncovered sentence returns false; with the flag off speechSynthesis stays; v279: fetched clips land in Cache Storage and play with the network gone", fn: s178 },
     { id: 'S179', name: "S179 cameras only Naver had in the daily Naver checks of 2026-11-24..27 (v280): the 19 spots in data/driver_spots.json (Naver-checked; rear, box and child flags as Naver's badge) alert along a straight route in their direction with Naver's limit and kind band (박스형 · 후면단속 · 신호과속 · 과속단속) by 520 m before, not the other way; 광주 필문대로 southbound #3183 and #3102 alert 60 (police data 50)", fn: s179 },
+    { id: 'S180', name: "S180 a reroute or traffic answer that starts where the car is not is held, not shown (v280, driver: '고속화 도로 그 밑에 일반도로 … 엉뚱하게 없는 네비가 잡히다가 사라지거든'; /events: all 40 logged reroutes came from a route the car had never been on): (a) a reroute answer starting on a parallel road 40 m away never shows its guidance or '새 경로로 안내합니다', is dropped when the car does not get on it, and the next answer (the car's own road) is used at once; (b) a traffic answer starting 100 m ahead on a road 35 m to the side (passed v181's 'behind the start' check) is dropped, the current route stays, no reroute; (c) a reroute answer 40 m ahead on the same road is used at once as before; (d) an answer on a road 30 m to the side is used once the car moves onto that road", fn: s180 },
     { id: 'S127', name: "S127 tester routes (v198, driver '어차피 다 테스터이고 익명이라서', '출발지 도착지 모두 남는 방향으로 … 원본은 30일 뒤에 자동으로 지우는걸로'): the one-line notice shows only when parked (nothing recorded while driving before it); the route is kept from start to end at 2–5 s, camera passes carry the card distance, every trip gets a new random id, no device or session id; pass statistics off marks the parts ps 0; the settings switch clears and stops it", fn: s127 },
   ];
 
@@ -8456,6 +8457,111 @@
     const a = r[23586] || {}, b = r[25184] || {}, c = r[3564] || {}, e = r.east || {};
     const ok = a.turn && b.turn && c.turn && [a, b, c].every((x) => x.cross && !x.cross[0] && !x.cross[1]) &&
       (b.after || []).includes(25199) && !(b.after || []).includes(25191) && e.s25191 && !e.s25199;
+    return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S180 (v280, 운전자 '고속화 도로 그 밑에 일반도로 … 엉뚱하게 없는 네비가 잡히다가 사라지거든'): 재탐색·교통 갱신 답이 차가 없는 길에서
+  //   시작하면 바로 띄우지 않는다. (a) 동쪽으로 벗어난 차의 재탐색 답이 40m 북쪽 나란한 길에서 시작 → 그 안내('가짜길')는 한 번도 안 뜨고
+  //   '새 경로로 안내합니다'도 없고, 차가 그 길에 안 올라타면 버리고 다시 묻는다. 두 번째 답(차가 가는 길)은 바로 쓴다.
+  //   (b) 교통 갱신 답이 100m 앞·35m 옆 나란한 길에서 시작(v181 검사는 '출발점 뒤'로 통과시켰다) → 지금 경로로 계속, 이탈도 없음.
+  //   (c) 같은 길 40m 앞에서 시작하는 재탐색 답은 예전처럼 바로. (d) 30m 옆 길에서 시작하는 답도 차가 그 길로 들어서면 그때 안내
+  async function s180() {
+    const t = T(), r = {};
+    const mk = (pts, name, guideTxt) => {
+      const P = pts.map((q) => ({ lat: round6(q.lat), lng: round6(q.lng) }));
+      const cum = [0]; for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + hav(P[i - 1], P[i]));
+      const total = cum[cum.length - 1], n = P.length;
+      const guide = (guideTxt ? [{ i: 3, t: 3, s: guideTxt, d: r0(cum[3]), ms: r0(cum[3] / 14 * 1000) }] : []).concat([{ i: n - 1, t: 88, s: '목적지', d: r0(total), ms: r0(total / 14 * 1000) }]);
+      return { route: { distance: r0(total), duration: r0(total / 14 * 1000), tollFare: 0, fuelPrice: 0, path: P.map((q) => [q.lng, q.lat]), guide,
+        sections: [{ i: 0, n, name, speed: 50, cong: 1 }] }, P, cum, total, dest: { name: '시험 목적지', addr: '', lat: P[n - 1].lat, lng: P[n - 1].lng } };
+    };
+    const line = (from, h, len, step) => { const out = []; for (let s = 0; s <= len; s += step || 20) out.push(dest(from, h, s)); return out; };
+    const O = dest(NAV_ORIGIN, 90, 90000);
+    const R = mk(line(O, 0, 3000), '곧은로', '곧은로에서 좌회전');
+    // 안내 기록은 300줄까지라 꽉 차면 번호가 밀린다: 번호 대신 마지막 줄(표시)부터 센다 (S73 과 같게)
+    const markLog = () => t.alertLog[t.alertLog.length - 1] || null;
+    const spoke = (mark) => t.alertLog.slice(mark ? t.alertLog.indexOf(mark) + 1 : 0).map((e) => e.text).filter((x) => /새 경로로 안내/.test(x)).length;
+    const routeCalls = () => stub.count('/route');
+    try {
+      await resetApp(); softReset();
+      stub.canned['/route'] = R.route;
+      await planAndStart(R);
+      for (let m = 20; m <= 400; m += 16) feed(dest(O, 0, m), 14, 0);
+      // (a) 400m 에서 동쪽 길로 꺾는다. 재탐색 답 1: 60m 앞 · 40m 북쪽 나란한 길(가짜길). 답 2: 차가 가는 동쪽 길(진짜길)
+      const turnPt = dest(O, 0, 400);
+      const bogus = mk(line(dest(dest(turnPt, 90, 120), 0, 40), 90, 1500), '가짜길', '가짜길에서 우회전');
+      const real = mk(line(dest(turnPt, 90, 130), 90, 1500), '진짜길', '진짜길에서 좌회전');
+      let n = 0;
+      stub.canned['/route'] = () => (++n === 1 ? bogus.route : real.route);
+      const log0 = markLog(), c0 = routeCalls(), held0 = t.nav.heldN, rej0 = t.nav.heldRej;
+      let bogusShown = false, bogusRoute = false, heldSeen = false, realAt = null, realShown = false;
+      for (let e = 12; e <= 360; e += 12) {
+        feed(dest(turnPt, 90, e), 12, 90);
+        await new Promise((res) => setTimeout(res, 0));
+        await waitFor(() => !t.nav.busy, 3000, 10);
+        t.renderNav();
+        if (/가짜길/.test(text('#turnText'))) bogusShown = true;
+        if (/진짜길/.test(text('#turnText'))) realShown = true;
+        if (t.nav.route && t.nav.route.sections && t.nav.route.sections[0].name === '가짜길') bogusRoute = true;
+        if (t.nav.cand) heldSeen = true;
+        if (realAt === null && t.nav.route && t.nav.route.sections && t.nav.route.sections[0].name === '진짜길') realAt = e;
+      }
+      r.a = { calls: routeCalls() - c0, heldSeen, held: t.nav.heldN - held0, rejected: t.nav.heldRej - rej0, bogusShown, bogusRoute, realAt,
+        realShown, spoke: spoke(log0), onRoute: t.nav.onRoute };
+      t.endNav();
+      // (b) 교통 갱신: 지금 경로(곧은로 북행) 100m 앞 · 35m 동쪽 나란한 길에서 시작하는 답
+      await resetApp(); softReset();
+      stub.canned['/route'] = R.route;
+      await planAndStart(R);
+      for (let m = 20; m <= 600; m += 16) feed(dest(O, 0, m), 14, 0);
+      const here = t.state.fix;
+      const par = mk(line(dest(dest(here, 0, 100), 90, 35), 0, 2400), '옆길', '옆길에서 우회전');
+      stub.canned['/route'] = par.route;
+      const route0 = t.nav.route, log1 = markLog(), held1 = t.nav.heldN;
+      await t.planRoute(R.dest, 'traffic');
+      const heldNow = !!t.nav.cand;
+      stub.canned['/route'] = R.route;
+      const c1 = routeCalls();
+      let parShown = false;
+      for (let m = 616; m <= 900; m += 16) { feed(dest(O, 0, m), 14, 0); t.renderNav(); if (/옆길/.test(text('#turnText'))) parShown = true; }
+      r.b = { held: t.nav.heldN - held1, heldNow, kept: t.nav.route === route0, cand: !!t.nav.cand, reroutes: routeCalls() - c1, parShown, onRoute: t.nav.onRoute, spoke: spoke(log1) };
+      // (c) 같은 길 40m 앞에서 시작하는 재탐색 답은 바로 쓴다
+      const same = mk(line(dest(t.state.fix, 0, 40), 0, 1800), '곧은로2', '곧은로2에서 좌회전');
+      stub.canned['/route'] = same.route;
+      const log2 = markLog();
+      await t.planRoute(R.dest, true);
+      r.c = { applied: !!t.nav.route && t.nav.route.sections[0].name === '곧은로2', cand: !!t.nav.cand, spoke: spoke(log2) };
+      t.endNav();
+      // (d) 30m 동쪽 길에서 시작하는 답 — 차가 그 길로 옮겨 가면 그때 안내
+      await resetApp(); softReset();
+      stub.canned['/route'] = R.route;
+      await planAndStart(R);
+      for (let m = 20; m <= 600; m += 16) feed(dest(O, 0, m), 14, 0);
+      const h0 = t.state.fix;
+      const east = mk(line(dest(dest(h0, 0, 60), 90, 30), 0, 2000), '동쪽길', '동쪽길에서 우회전');
+      stub.canned['/route'] = east.route;
+      const log3 = markLog(), ok0 = t.nav.heldOk;
+      await t.planRoute(R.dest, true);
+      const heldD = !!t.nav.cand;
+      // 30m 동쪽으로 비스듬히 옮겨 탄 뒤 북쪽으로
+      for (let k = 1; k <= 5; k++) feed(dest(dest(h0, 0, 14 * k), 90, 6 * k), 14, 23);
+      let eastAt = null, eastShown = false;
+      for (let m = 90; m <= 300; m += 14) {
+        feed(dest(dest(h0, 0, m), 90, 30), 14, 0);
+        if (eastAt === null && t.nav.route && t.nav.route.sections[0].name === '동쪽길') eastAt = m;
+        t.renderNav();
+        if (/동쪽길/.test(text('#turnText'))) eastShown = true;
+      }
+      r.d = { heldD, eastAt, ok: t.nav.heldOk - ok0, eastShown, spoke: spoke(log3), onRoute: t.nav.onRoute };
+      t.endNav();
+    } finally {
+      await resetApp(); softReset();
+    }
+    const { a = {}, b = {}, c = {}, d = {} } = r;
+    const ok = a.heldSeen && a.held >= 1 && a.rejected >= 1 && !a.bogusShown && !a.bogusRoute && a.realAt !== null && a.calls === 2 && a.spoke === 1 && a.realShown &&
+      b.held === 1 && b.heldNow && b.kept && !b.cand && b.reroutes === 0 && !b.parShown && b.onRoute && b.spoke === 0 &&
+      c.applied && !c.cand && c.spoke === 1 &&
+      d.heldD && d.eastAt !== null && d.ok === 1 && d.eastShown && d.spoke === 1 && d.onRoute;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
