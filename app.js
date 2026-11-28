@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-290'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-291'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -11490,6 +11490,9 @@
   //   운영자 차(운전자 본인)만. 다른 사람은 '녹음'을 누를 때만 녹음하고, 판에 그 사실과 보관 기간(서버 /fb 30일)을 적고, '글로' 칸으로 글만 남길 수도 있다
   const fbAutoRec = () => isOp();
   const FB_NOTE = "녹음은 '녹음'을 누를 때만 해요 · 확인에만 쓰고 30일 뒤 지워요";
+  // v291: 받아쓰기가 켜지면 '텍스트로 보내기'도 녹음한다 (말한 것을 글로 채우고 녹음도 함께 감) — 판 밑 글도 그렇게
+  const FB_NOTE_STT = "녹음은 '녹음'·'텍스트로 보내기'를 누를 때만 해요 · 확인에만 쓰고 30일 뒤 지워요";
+  function fbNoteSet() { const n = $('#fbPanel .fbp-note'); if (n) n.textContent = STT.ok ? FB_NOTE_STT : FB_NOTE; }
   const FB_ICON = {
     rec: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2.8" width="6" height="11.4" rx="3" fill="currentColor"/><path d="M5.6 11a6.4 6.4 0 0 0 12.8 0M12 17.4V21M8.6 21h6.8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
     cam: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l1.6-2.4h6.8L17 8h3a1.5 1.5 0 0 1 1.5 1.5v8A1.5 1.5 0 0 1 20 19H4a1.5 1.5 0 0 1-1.5-1.5v-8A1.5 1.5 0 0 1 4 8z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13.3" r="3.3" fill="none" stroke="currentColor" stroke-width="2"/></svg>',
@@ -11531,7 +11534,7 @@
     if (!el || el.dataset.built) return;
     el.dataset.built = '1';
     const btn = (k, label, cls) => '<button type="button" class="fbp-btn' + (cls ? ' ' + cls : '') + '" data-k="' + k + '">' + FB_ICON[k] + '<span>' + label + '</span></button>';
-    el.innerHTML = '<div class="fbp-cap">누르면 바로 보내요</div><div class="fbp-row">' + btn('rec', '녹음', 'rec') + btn('text', '글로', 'text') + FB_PRESETS.map(([k, , b]) => btn(k, b)).join('') + '</div>' +
+    el.innerHTML = '<div class="fbp-cap">누르면 바로 보내요</div><div class="fbp-row">' + btn('rec', '녹음', 'rec') + btn('text', '텍스트로 보내기', 'text') + FB_PRESETS.map(([k, , b]) => btn(k, b)).join('') + '</div>' +
       '<div class="fbp-note">' + esc(FB_NOTE) + '</div>';
     el.addEventListener('click', (ev) => {
       const b = ev.target.closest && ev.target.closest('.fbp-btn');
@@ -11548,6 +11551,7 @@
   }
   function fbPanelOpen(why, autoRec) {
     fbPanelRender();
+    fbNoteSet(); sttAvailable().then(fbNoteSet, () => {});
     const el = $('#fbPanel');
     if (!el) return;
     fbCap(why);
@@ -11596,24 +11600,185 @@
     fbSent(fb.inTest ? true : reportSure('feedback', body));
   }
   // v282 글로 의견: 판을 닫고(녹음 중이면 버린다) 글 칸을 연다. 보내는 카드·위치는 '의견'을 누른 때의 것
-  function fbTextOpen() {
+  // v291 (운전자 '그냥 텍스트로 보내기 < 뭐 이런 단어면 좋겠어 / 그리고 음성으로 텍스트 채우는 느낌으로'): '텍스트로 보내기'를 누르면 글 칸이 열리고,
+  //   받아쓰기가 되면(Worker /health stt — Workers AI 바인딩을 붙였을 때) 바로 녹음해 말한 것이 글 칸에 채워진다(4초마다, 말이 끝나면 한 번 더).
+  //   고칠 수 있고(서 있을 때 자판), '보내기'를 눌러야 보낸다 — 글 의견(how 'stt') + 녹음은 지금처럼 함께(/fb, 같은 qid). '다시'는 지우고 다시 녹음,
+  //   '취소'는 아무것도 안 보낸다. 받아쓰기가 안 되면(꺼짐·통신·서버 실패) 녹음 의견으로 보낸다. 받아쓰기가 없는 Worker 면 예전처럼 글 칸만
+  const STT = { ok: null, at: 0 };
+  const STT_EVERY_MS = 4000, STT_MAX_CALLS = 6;
+  async function sttAvailable() {
+    if (STT.ok !== null && Date.now() - STT.at < 10 * 60000) return STT.ok;
+    let fail = false;
+    try { const j = await api('/health', {}, null, 4000); STT.ok = !!(j && j.stt); } catch (e) { STT.ok = false; fail = true; }
+    STT.at = Date.now() - (fail ? 9 * 60000 : 0);   // 통신 실패면 1분 뒤 다시 묻는다
+    return STT.ok;
+  }
+  const dict = { rec: null, blob: null, sec: 0, said: '', failed: false, calls: 0, busy: false, gen: 0 };
+  function fbTextUi() {
+    const st = $('#fbTextStt'), redo = $('#fbTextRedo'), note = $('#fbTextSheet .fbt-note');
+    const on = !!(dict.rec || dict.blob || dict.failed);
+    if (redo) redo.hidden = !on;
+    if (note) note.hidden = on;
+    if (!st) return;
+    st.hidden = !on;
+    st.classList.toggle('live', !!dict.rec);
+    st.textContent = dict.rec ? '듣는 중… 말하면 글로 채워져요 · 다 말했으면 잠깐 쉬세요' : dict.failed ? '글로 바꾸지 못했어요 · 보내기를 누르면 녹음으로 보내요'
+      : dict.busy ? '글로 바꾸는 중…' : dict.blob ? '고칠 곳이 있으면 고치고 보내기를 누르세요 · 녹음도 함께 가요' : '';
+  }
+  async function fbTextOpen() {
     const snap = fbP.snap || fbPayload('');
     fbStep('text open');
     fbPanelClose();
     fbP.textSnap = snap;
     const sh = $('#fbTextSheet'), ta = $('#fbText');
     if (!sh || !ta) return;
-    ta.value = '';
+    ta.value = ''; ta.dataset.user = '';
+    Object.assign(dict, { rec: null, blob: null, sec: 0, said: '', failed: false, calls: 0, busy: false, gen: dict.gen + 1 });
     sh.hidden = false;
-    setTimeout(() => { try { ta.focus(); } catch (e) { /* 없음 */ } }, 50);
+    fbTextUi();
+    if (fbRecOk() && await sttAvailable() && !sh.hidden) dictStart();
+    else setTimeout(() => { try { ta.focus(); } catch (e) { /* 없음 */ } }, 50);
   }
-  function fbTextClose() { const sh = $('#fbTextSheet'); if (sh) sh.hidden = true; fbP.textSnap = null; }
-  function fbTextSend() {
+  function fbTextClose() { dictStop(false); const sh = $('#fbTextSheet'); if (sh) sh.hidden = true; fbP.textSnap = null; }
+  async function dictStart() {
+    const gen = ++dict.gen;
+    Object.assign(dict, { blob: null, sec: 0, said: '', failed: false, calls: 0, busy: false });
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); } catch (e) {
+      if (/NotAllowed|Security/.test(String(e && e.name))) fb.micDenied = true;
+      fbStep('stt mic ' + String((e && e.name) || 'error').slice(0, 20));
+      fbTextUi();
+      return;
+    }
+    if (gen !== dict.gen || $('#fbTextSheet').hidden) { stream.getTracks().forEach((t) => t.stop()); return; }
+    const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
+    const mime = types.find((m) => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) || '';
+    let mr;
+    try { mr = new MediaRecorder(stream, Object.assign({ audioBitsPerSecond: 24000 }, mime ? { mimeType: mime } : {})); } catch (e) { stream.getTracks().forEach((t) => t.stop()); dict.failed = true; fbTextUi(); return; }
+    const rec = { mr, stream, chunks: [], t0: Date.now(), heard: false, loudAt: Date.now(), ac: null, an: null, tick: null, gen, keep: true, lastStt: Date.now() };
+    rec.done = new Promise((res) => { rec.resolve = res; });
+    dict.rec = rec;
+    mr.ondataavailable = (e) => { if (e.data && e.data.size) rec.chunks.push(e.data); };
+    mr.onstop = () => {
+      clearInterval(rec.tick);
+      stream.getTracks().forEach((t) => t.stop());
+      try { if (rec.ac) rec.ac.close(); } catch (e) { /* 이미 닫힘 */ }
+      if (dict.rec === rec) dict.rec = null;
+      if (!rec.keep || gen !== dict.gen || !rec.chunks.length) { fbTextUi(); rec.resolve(); return; }
+      dict.blob = new Blob(rec.chunks, { type: mr.mimeType || mime || 'audio/webm' });
+      dict.sec = Math.round((Date.now() - rec.t0) / 100) / 10;
+      fbTextUi();
+      rec.resolve();
+      if (!rec.sending) dictTranscribe(dict.blob, gen, true);   // 보내기를 눌러 멈춘 것이면 칸에 보이는 글 그대로 보낸다
+    };
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      rec.ac = new AC(); rec.an = rec.ac.createAnalyser(); rec.an.fftSize = 1024;
+      rec.ac.createMediaStreamSource(stream).connect(rec.an);
+      if (rec.ac.state === 'suspended') rec.ac.resume().catch(() => {});
+    } catch (e) { rec.an = null; }
+    const buf = new Float32Array(1024);
+    rec.tick = setInterval(() => {
+      const now = Date.now();
+      if (!rec.an || !rec.ac || rec.ac.state !== 'running') {
+        // 소리 크기를 못 재면(오디오가 잠김) 말하는 중으로 보고 4초마다 글로 바꾼다 — 멈춤은 20초 또는 '보내기'
+        if (now - rec.t0 >= 1000) { rec.heard = true; rec.loudAt = now; }
+      } else {
+        rec.an.getFloatTimeDomainData(buf);
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+        if (Math.sqrt(sum / buf.length) > 0.02) { rec.heard = true; rec.loudAt = now; }
+      }
+      // 말하는 동안 4초마다 지금까지 녹음을 글로 (말한 것이 칸에 차오르게)
+      if (rec.heard && now - rec.lastStt >= STT_EVERY_MS && rec.chunks.length && !dict.busy) {
+        rec.lastStt = now;
+        dictTranscribe(new Blob(rec.chunks, { type: mr.mimeType || mime || 'audio/webm' }), gen, false);
+      }
+      if (now - rec.t0 >= FB_REC_MAX_MS || (rec.heard && now - rec.loudAt >= FB_REC_QUIET_MS) || (!rec.heard && now - rec.t0 >= FB_AUTO_SILENT_MS)) dictStop(rec.heard);
+    }, 200);
+    try { mr.start(1000); } catch (e) { dict.rec = null; clearInterval(rec.tick); stream.getTracks().forEach((t) => t.stop()); dict.failed = true; fbTextUi(); return; }
+    fbStep('stt rec');
+    fbTextUi();
+  }
+  function dictStop(keep, sending) {
+    const rec = dict.rec;
+    if (!rec) return Promise.resolve();
+    rec.keep = !!keep; rec.sending = !!sending;
+    dict.rec = null;
+    clearInterval(rec.tick);
+    try { if (rec.mr.state !== 'inactive') rec.mr.stop(); else rec.mr.onstop(); } catch (e) { rec.stream.getTracks().forEach((t) => t.stop()); rec.resolve(); }
+    fbTextUi();
+    return Promise.race([rec.done, new Promise((res) => setTimeout(res, 1500))]);
+  }
+  // 녹음(webm/opus) → 16kHz 한 줄 WAV (Whisper 가 확실히 받는 꼴, 20초에 약 640KB)
+  async function toWav16k(blob) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ac = new AC();
+    let audio;
+    try { audio = await ac.decodeAudioData(await blob.arrayBuffer()); } finally { try { ac.close(); } catch (e) { /* 닫힘 */ } }
+    const rate = 16000, n = Math.max(1, Math.ceil(audio.duration * rate));
+    const off = new OfflineAudioContext(1, n, rate);
+    const src = off.createBufferSource(); src.buffer = audio; src.connect(off.destination); src.start();
+    const pcm = (await off.startRendering()).getChannelData(0);
+    const dv = new DataView(new ArrayBuffer(44 + pcm.length * 2));
+    const str = (o, t) => { for (let i = 0; i < t.length; i++) dv.setUint8(o + i, t.charCodeAt(i)); };
+    str(0, 'RIFF'); dv.setUint32(4, 36 + pcm.length * 2, true); str(8, 'WAVE'); str(12, 'fmt ');
+    dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true); dv.setUint32(24, rate, true); dv.setUint32(28, rate * 2, true);
+    dv.setUint16(32, 2, true); dv.setUint16(34, 16, true); str(36, 'data'); dv.setUint32(40, pcm.length * 2, true);
+    for (let i = 0; i < pcm.length; i++) { const x = Math.max(-1, Math.min(1, pcm[i])); dv.setInt16(44 + i * 2, x < 0 ? x * 0x8000 : x * 0x7fff, true); }
+    return new Blob([dv], { type: 'audio/wav' });
+  }
+  async function dictTranscribe(blob, gen, final) {
+    if (dict.calls >= STT_MAX_CALLS && !final) return;
+    if (!navigator.onLine) { if (final) { dict.failed = true; fbTextUi(); } return; }
+    dict.calls++; dict.busy = true; fbTextUi();
+    let text = null;
+    try {
+      const wav = await toWav16k(blob);
+      const b64 = await fbB64(wav);
+      const j = await api('/stt', {}, { b64, mime: 'audio/wav', sec: dict.sec || null, x: IS_TEST_PAGE ? 1 : undefined }, 9000);
+      text = String((j && j.text) || '').trim();
+    } catch (e) { fbStep('stt fail ' + String((e && (e.status || e.message)) || '').slice(0, 30)); text = null; }
+    if (gen !== dict.gen) return;
+    dict.busy = false;
+    const ta = $('#fbText');
+    if (text) {
+      dict.said = text;
+      if (ta && ta.dataset.user !== '1') ta.value = text.slice(0, 500);
+    } else if (final && !dict.said) dict.failed = true;
+    fbTextUi();
+  }
+  async function fbTextSend() {
+    if (dict.rec) await dictStop(true, true);   // 아직 듣는 중이면 거기까지 녹음 (칸에 보이는 글 그대로 보낸다)
     const ta = $('#fbText'), text = ta ? String(ta.value || '').trim() : '';
-    if (!text) { toast('글을 써 주세요', '', 1800); return false; }
-    const body = Object.assign({}, fbP.textSnap || fbPayload(''), { text: text.slice(0, 500), how: 'text', ms: Date.now() - fb.t0 });
-    fb.last = body;
+    const audioBlob = dict.blob;
+    if (!text && !audioBlob) { toast('글을 써 주세요', '', 1800); return false; }
+    const base = fbP.textSnap || fbPayload('');
     fbStep('text send');
+    if (audioBlob) {
+      // 받아쓰기 글(또는 고친 글) + 녹음 — 녹음은 지금 녹음 의견처럼 같은 qid 로 따로 올린다. 글이 없으면(받아쓰기 실패) 녹음 의견 그대로
+      const qid = tele.sid + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+      const sec = dict.sec;
+      const body = Object.assign({}, base, text ? { text: text.slice(0, 500), how: 'stt', said: dict.said ? dict.said.slice(0, 500) : '' } : { text: '(녹음 ' + sec + '초)', how: 'audio' },
+        { sec, mime: audioBlob.type, qid, audio: qid, ms: Date.now() - fb.t0 });
+      fb.last = body;
+      $('#fbTextSheet').hidden = true; fbP.textSnap = null;
+      fbUi('send');
+      const sent = fbB64(audioBlob).then((b64) => {
+        if (b64) {
+          const item = { qid, at: Date.now(), v: APP_VERSION, sid: tele.sid, mime: audioBlob.type || 'audio/webm', sec, b64 };
+          if (IS_TEST_PAGE) item.x = 1;
+          const q = fbA.load(); q.push(item); fbA.save(q);
+        }
+        const ev = fb.inTest ? true : reportSure('feedback', body);
+        return Promise.all([ev, fbAudioFlush()]).then(([e]) => (e === false || fbA.load().some((x) => x.qid === qid) ? false : true));
+      });
+      dict.blob = null;
+      fbSent(sent);
+      return true;
+    }
+    const body = Object.assign({}, base, { text: text.slice(0, 500), how: 'text', ms: Date.now() - fb.t0 });
+    fb.last = body;
     fbTextClose();
     fbSent(fb.inTest ? true : reportSure('feedback', body));
     return true;
@@ -11622,6 +11787,8 @@
     $('#fbTextSend').addEventListener('click', (ev) => { ev.stopPropagation(); fbTextSend(); });
     $('#fbTextCancel').addEventListener('click', (ev) => { ev.stopPropagation(); fbTextClose(); });
     $('#fbTextSheet').addEventListener('click', (ev) => { if (ev.target === $('#fbTextSheet')) fbTextClose(); });
+    $('#fbText').addEventListener('input', () => { $('#fbText').dataset.user = '1'; });
+    if ($('#fbTextRedo')) $('#fbTextRedo').addEventListener('click', (ev) => { ev.stopPropagation(); dictStop(false); const ta = $('#fbText'); ta.value = ''; ta.dataset.user = ''; dictStart(); });
   }
   async function fbRecToggle(auto) {
     if (fbP.rec) { fbRecStop(true); return; }   // 다시 누르면 끝내고 보낸다
@@ -12291,7 +12458,7 @@
       forksData, setForkData, loadForks, ensureRouteForks, forkLane,
       clData, setColorLines, loadColorLines, ensureRouteColorLines, colorLineAhead,
       signs, signState, setSignData, loadSigns, evalSigns, SIGN_TYPES, road, localOnRoute, routeNamesAt, sameStreet, bumpRoad, signRoad,
-      nearArrivalWhy, arriveNear, nearDist, setParkEntr, parkEntr, parkEntrNear, nearEndCheck, tickClock, tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, fbTextOpen, fbTextSend, fbTextClose, fbAutoRec, arrowSpan, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, soonChain, soonSpeech, SOON_M, exitedBefore, juncSplitAt, jxLaneAt, juncWanted, jxSplit2, mainKeep, jxOsmLanes, jxByLanes, jxShape2, jxConfig, jx2ShapeOf, JX2_LANES, JX2_BOARD, jxSideExit, jxCity, jxRoadShort, jxForkGeo, SEC_JOIN_RULE, loneSecEnd, quietSecEnd, jxShape, jxMirror, JX_BOARD, JX_TEXT, JX_LANES, juncOther, jdData, setJuncDest, loadJuncDest, camFlagUndo, camFlagToday, undoWrongCard, clearConfirmedFlags, CAM_FLAG_CLEAR, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams, passWhy, pruneTurnCams, camDirOk, routeNet, routeUpstream, laneGuideM, planSignPlace, findBuilding, sunPosStored, eventBody, routeArrived, routeIdleCheck, routeStartup, routeHide, tripEndGap, routeHeading, startsReversed, ROUTE_AHEAD, fitSigns, nvSceneFits, planScene, routeTurnSum, renderJunction, juncState, fitColumn, colBottom, renderSideBadge, roadLimit, setJxTime, foldState: lay, FOLD_STEPS, applyChips, vc, vcPlan, vcLoadList, vcSpeak, vcUse, vcNum, NM, unmark, markGuide, turnSpeech, camSpeech, routeStartSpeech, soonSpeech, SOON_ACT,
+      STT, dict, nearArrivalWhy, arriveNear, nearDist, setParkEntr, parkEntr, parkEntrNear, nearEndCheck, tickClock, tripLog, loadTrips, finishTrip, renderTrips, wxIcon, renderWeather, weather, guideText, dirNames, juncSignHtml, kindSide, textSide, turnKind0, iconKind, findParking, parkLabel, expwayNo, camMiss, camMissCheck, store, goMe, pageCtl, speak, ttsSeen, routeFit, carBehindStart, spotLimit, limitKnown, camWanted, tts, ttsStatus, ttsNotice, renderVoiceState, resumeVisible, camLabel, finalLeg, goalSideIco, legOf, findGate, spotUnchecked, camSpoken, checkTripCover, tripHeight, camSrc, camsNear, fbStep, splitInfo, placeColorRow, schoolTimes, setSchoolTimes, loadSchoolTimes, schoolLimitAt, applySchoolTimes, fb, fbStart, fbCancel, fbSend, fbTick, fbPayload, fbSupport, fbP, fbA, fbPanelOpen, fbPanelClose, fbPreset, fbRecToggle, fbRecStop, fbAudioFlush, fbTextOpen, fbTextSend, fbTextClose, fbAutoRec, arrowSpan, checkSt, sendCheck, checkPoll, checksLoad, reportWrongCard, live, liveSave, liveLoad, liveClear, resumeLive, maybeResume, probeAutoplay, MANUAL_ZOOM_MS, routePointAt, tnDark, inTunnelNow, tunnelDarkTick, namedTunnelAt, isOp, adminToken, renderDevMenu, devMenuOn, authHeaders, placeCredit, updateAttrib, applyNight, nightMode, userReport, uploadDiag, diag, camFixes, sharedFixes, sharedSpots, applyCamFixes, diagnoseMiss, fixFromMiss, loadSharedFixes, devId, turnZones, turnZoneAt, mySpots, driverSpots, addMySpot, removeMySpot, mySpotStatus, applyUserSpots, renderMySpots, isUserSpot, sameRoad, camLevelOk, highwaySpans, onHighwayAt, pathTangent, camOnExpwy, hwSideCam, routeSegNear, fastSideCam, tooFastForCam, tooFastOnRoute, camShort, camBand, sameSpotAhead, camSignSlot, camSignImg, sideAlt, offerSideAlt, takeSideAlt, clearSideAlt, sideBranch, curv, passCam, tunnelCamTick, routeTunnelAt, camRange, outbox, outboxFlush, reportSure, camLoad, renderCamStatus, camNoMap, camFlag, camFlagAdd, renderCamFlags, soonChain, soonSpeech, SOON_M, exitedBefore, juncSplitAt, jxLaneAt, juncWanted, jxSplit2, mainKeep, jxOsmLanes, jxByLanes, jxShape2, jxConfig, jx2ShapeOf, JX2_LANES, JX2_BOARD, jxSideExit, jxCity, jxRoadShort, jxForkGeo, SEC_JOIN_RULE, loneSecEnd, quietSecEnd, jxShape, jxMirror, JX_BOARD, JX_TEXT, JX_LANES, juncOther, jdData, setJuncDest, loadJuncDest, camFlagUndo, camFlagToday, undoWrongCard, clearConfirmedFlags, CAM_FLAG_CLEAR, secLen, pickCam, camDist, routeTrusted, updateSoundPill, sound: { get unlocked() { return audioUnlocked; }, set unlocked(v) { audioUnlocked = v; } }, camNoUnflag, camUserNo, hdgFix, fixLog, ensureRouteCams, passWhy, pruneTurnCams, camDirOk, routeNet, routeUpstream, laneGuideM, planSignPlace, findBuilding, sunPosStored, eventBody, routeArrived, routeIdleCheck, routeStartup, routeHide, tripEndGap, routeHeading, startsReversed, ROUTE_AHEAD, fitSigns, nvSceneFits, planScene, routeTurnSum, renderJunction, juncState, fitColumn, colBottom, renderSideBadge, roadLimit, setJxTime, foldState: lay, FOLD_STEPS, applyChips, vc, vcPlan, vcLoadList, vcSpeak, vcUse, vcNum, NM, unmark, markGuide, turnSpeech, camSpeech, routeStartSpeech, soonSpeech, SOON_ACT,
       tripStore: { save: (l) => store.set('trips', l ? JSON.stringify(l) : null) },
       ownZoom, syncZoomGestures, manualZoom, pickAt, closePick, pickTarget, describeAt, placeNear, catTail, queryVariants, regionOf, nameTier, rankPlaces, looksAddr,
       orderByDist, orderAlerts, afterWord,

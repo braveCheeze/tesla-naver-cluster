@@ -35,13 +35,13 @@ const routeHits = new Map();
 // Origin 은 위조할 수 있으므로 유료 API(네이버 클라우드)와 KV 쓰기를 이것으로 지킨다.
 // v175: 공유 IP(CGNAT) 뒤의 여러 차가 정상으로 써도 막히지 않게 넉넉히 (비용은 하루 상한이 지킨다)
 const LIMITS = { '/route': 40, '/geocode': 60, '/reverse': 150, '/search': 60, '/hipass': 60, '/weather': 60, '/config': 120,
-  '/event': 60, '/log': 3, '/fb': 6, '/fix': 30, '/fixes': 60, '/events': 30, '/fix/review': 30, '/pass': 20, '/passes': 30, '/trip': 30, '/trips': 60, '/handoff': 30,
+  '/event': 60, '/log': 3, '/fb': 6, '/stt': 6, '/fix': 30, '/fixes': 60, '/events': 30, '/fix/review': 30, '/pass': 20, '/passes': 30, '/trip': 30, '/trips': 60, '/handoff': 30,
   '/check': 10, '/check/status': 30, '/check/next': 120, '/check/result': 120, '/check/unmatched': 30, '/check/results': 30 };
 const PAID = new Set(['/route', '/geocode', '/reverse', '/search']);
 const KV_WRITE = new Set(['/event', '/fix', '/fix/review', '/check', '/fb']);
-const DAY_CAP = { paid: 20000, kv: 900, pass: 30000, trip: 3000 };   // pass: 하루 통과 기록 건수, trip: 경로 조각 수 (D1 무료 한도 쓰기 하루 10만 행 안)
+const DAY_CAP = { paid: 20000, kv: 900, pass: 30000, trip: 3000, stt: 600 };   // stt: 받아쓰기 (10초짜리 600번 ≈ Workers AI 하루 무료 10,000 뉴런의 약 47%)   // pass: 하루 통과 기록 건수, trip: 경로 조각 수 (D1 무료 한도 쓰기 하루 10만 행 안)
 const hits = new Map();
-const day = { d: '', paid: 0, kv: 0, pass: 0, trip: 0 };
+const day = { d: '', paid: 0, kv: 0, pass: 0, trip: 0, stt: 0 };
 // 넘었으면 다시 해도 되는 데까지 남은 초(1~60), 아니면 0
 function overLimit(ip, path) {
   const lim = LIMITS[path];
@@ -53,7 +53,8 @@ function overLimit(ip, path) {
 }
 function overDay(path) {
   const d = new Date().toISOString().slice(0, 10);
-  if (day.d !== d) { day.d = d; day.paid = 0; day.kv = 0; day.pass = 0; day.trip = 0; }
+  if (day.d !== d) { day.d = d; day.paid = 0; day.kv = 0; day.pass = 0; day.trip = 0; day.stt = 0; }
+  if (path === '/stt') return ++day.stt > DAY_CAP.stt;
   if (PAID.has(path)) return ++day.paid > DAY_CAP.paid;
   if (KV_WRITE.has(path)) return ++day.kv > DAY_CAP.kv;
   return false;
@@ -407,7 +408,8 @@ export default {
     const isHandoffPost = req.method === 'POST' && url.pathname === '/handoff';
     const isCheckPost = req.method === 'POST' && (url.pathname === '/check' || url.pathname === '/check/result');
     const isFbPost = req.method === 'POST' && url.pathname === '/fb';   // v225: 의견 녹음
-    if (req.method !== 'GET' && !isLogPost && !isEventPost && !isFixPost && !isReviewPost && !isPassPost && !isTripPost && !isHandoffPost && !isCheckPost && !isFbPost) return json({ error: 'method' }, 405, cors);
+    const isSttPost = req.method === 'POST' && url.pathname === '/stt';   // v291: 받아쓰기
+    if (req.method !== 'GET' && !isLogPost && !isEventPost && !isFixPost && !isReviewPost && !isPassPost && !isTripPost && !isHandoffPost && !isCheckPost && !isFbPost && !isSttPost) return json({ error: 'method' }, 405, cors);
     // v172: 접속지(IP)별 횟수 제한 → 하루 상한 → 운영자 토큰 순서 (토큰 맞히기 시도도 횟수 제한에 걸린다)
     const ip = req.headers.get('CF-Connecting-IP') || 'x';
     const wait = overLimit(ip, url.pathname);
@@ -441,6 +443,7 @@ export default {
         autoFix: !!ipSalt(env),
         stats: !!env.STATS,
         hostFallback: true,   // v269: 네이버 주소 막히면 다른 주소로 한 번 (배포됐는지 이것으로 본다)
+        stt: !!(env.AI && typeof env.AI.run === 'function'),   // v291: 받아쓰기 — 대시보드에서 Workers AI 바인딩 'AI' 를 붙였을 때만 (앱은 이것을 보고 켠다)
       }, 200, cors);
     }
     // 브라우저가 아닌 곳에서 마구 부르는 것을 1차로 막는다 (Origin 은 위조 가능하므로 완벽하진 않음)
@@ -1032,6 +1035,25 @@ export default {
         }
         const l = await env.LOGS.list({ prefix: 'fba:', limit: 200 });
         return json({ ids: l.keys.map((k) => k.name.slice(4)) }, 200, cors);
+      }
+
+      // v291 받아쓰기 (운전자 '그냥 텍스트로 보내기 … 음성으로 텍스트 채우는 느낌으로'): 테슬라 브라우저 음성 인식은 서버에 닿지 못해(network) 쓸 수 없다.
+      // 앱이 녹음을 16kHz WAV(base64, 1MB 까지)로 보내면 Workers AI Whisper 가 글자로 바꿔 {text} 로 돌려준다. 소리도 글도 여기서는 저장하지 않는다
+      // (의견으로 보낼 때 /fb·/event 가 지금처럼 남긴다). 바인딩(AI)이 없으면 503 — 앱은 /health 의 stt 를 보고 켠다
+      if (url.pathname === '/stt') {
+        if (!isSttPost) return json({ error: 'method' }, 405, cors);
+        if (!env.AI || typeof env.AI.run !== 'function') return json({ error: 'stt off' }, 503, cors);
+        const text = await req.text();
+        if (text.length > 1400000) return json({ error: 'too large' }, 413, cors);
+        let b;
+        try { b = JSON.parse(text); } catch (e) { return json({ error: 'bad json' }, 400, cors); }
+        if (!b || typeof b.b64 !== 'string' || b.b64.length < 200 || !/^audio\/[a-z0-9.+-]+/i.test(String(b.mime || ''))) return json({ error: 'bad audio' }, 400, cors);
+        try {
+          const out = await env.AI.run('@cf/openai/whisper-large-v3-turbo', { audio: b.b64, language: 'ko', vad_filter: true });
+          return json({ text: String((out && out.text) || '').replace(/\s+/g, ' ').trim().slice(0, 500) }, 200, cors);
+        } catch (e) {
+          return json({ error: 'stt failed', message: String((e && e.message) || e).slice(0, 120) }, 502, cors);
+        }
       }
 
       if (url.pathname === '/log') {

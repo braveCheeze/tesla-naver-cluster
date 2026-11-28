@@ -109,6 +109,25 @@ ok((await call('POST', '/log', { body: { big: 'x'.repeat(600000) }, token: TOKEN
   const dv = await call('POST', '/fb', { body: { qid: 'q5', mime: 'audio/webm', b64: 'AAAA' }, ip: '8.8.1.5', origin: 'http://localhost:8765' });
   ok(dv.s === 200 && dv.j.dropped === 'dev', 'a recording from a localhost page is answered but not stored');
 }
+// v291 받아쓰기: 바인딩이 없으면 503·/health stt false, 있으면 {text} (Whisper 에 ko, 저장 안 함), 출처·크기·종류 검사
+{
+  const wav = 'U'.repeat(4000);
+  ok((await call('GET', '/health')).j.stt === false, '/health stt false without the AI binding');
+  ok((await call('POST', '/stt', { body: { b64: wav, mime: 'audio/wav' }, ip: '8.8.2.1' })).s === 503, '/stt without the AI binding → 503');
+  const seen = [];
+  const eAI = Object.assign({}, env, { AI: { run: async (m, inp) => { seen.push({ m, lang: inp.language, n: inp.audio.length }); return { text: '  여기 카메라 위치가 \n 틀려요 ' }; } } });
+  ok((await call('GET', '/health', { e: eAI })).j.stt === true, '/health stt true with the AI binding');
+  const r1 = await call('POST', '/stt', { body: { b64: wav, mime: 'audio/wav', sec: 4 }, ip: '8.8.2.2', e: eAI });
+  ok(r1.s === 200 && r1.j.text === '여기 카메라 위치가 틀려요' && seen.length === 1 && seen[0].m === '@cf/openai/whisper-large-v3-turbo' && seen[0].lang === 'ko' && seen[0].n === 4000,
+    '/stt → Whisper turbo with language ko, text trimmed to one line');
+  ok((await call('POST', '/stt', { body: { b64: wav, mime: 'text/plain' }, ip: '8.8.2.3', e: eAI })).s === 400, '/stt rejects a non-audio type');
+  ok((await call('POST', '/stt', { body: { b64: 'U'.repeat(1400001), mime: 'audio/wav' }, ip: '8.8.2.4', e: eAI })).s === 413, '/stt over 1.4MB → 413');
+  ok((await call('POST', '/stt', { body: { b64: wav, mime: 'audio/wav' }, ip: '8.8.2.5', e: eAI, origin: 'https://evil.example' })).s === 403, '/stt from another site → 403');
+  ok((await call('GET', '/stt', { ip: '8.8.2.6', e: eAI })).s === 405, 'GET /stt → 405');
+  const eBad = Object.assign({}, env, { AI: { run: async () => { throw new Error('model busy'); } } });
+  ok((await call('POST', '/stt', { body: { b64: wav, mime: 'audio/wav' }, ip: '8.8.2.7', e: eBad })).s === 502, '/stt model failure → 502 (the app falls back to a recording)');
+  ok(!(await LOGS.list({ prefix: '' })).keys.some((k) => /stt/i.test(k.name)), '/stt stores nothing');
+}
 await call('POST', '/event', { body: { type: 'warn', msg: 'pub', trace: [[0, 37, 127]] } });
 await call('POST', '/event', { body: { type: 'warn', msg: 'op', trace: [[0, 37, 127]] }, token: TOKEN });
 const ev = (await call('GET', '/events', { token: TOKEN })).j.items;

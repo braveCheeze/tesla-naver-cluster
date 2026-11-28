@@ -26,7 +26,7 @@
 
   // ---------------------------------------------------------------- config
   const PROXY_DEFAULT = 'https://tesla-nav.cy6789.workers.dev';
-  const ENDPOINTS = ['/route', '/geocode', '/search', '/reverse', '/health', '/log', '/config', '/hipass', '/check', '/check/status', '/fixes'];   // v202: 실시간 신고 확인
+  const ENDPOINTS = ['/route', '/geocode', '/search', '/reverse', '/health', '/log', '/config', '/hipass', '/check', '/check/status', '/fixes', '/stt'];   // v202: 실시간 신고 확인 · v291: 받아쓰기
   const BOOT_TIMEOUT_MS = 20000;
   const LS_KEYS = ['tnc.voice', 'tnc.beep', 'tnc.key', 'tnc.recent', 'tnc.cams'];
 
@@ -2971,6 +2971,7 @@
     { id: 'S178', name: "S178 recorded voice clips (v278, driver '걍 MeloTTS로 다 가자' — the Tesla browser has no speech engine: 0 voices, speak() → synthesis-failed): every sentence the app speaks, built by the same functions (camSpeech for all kinds/zones/rear/box/distances/limits — box booths now say '박스형 단속 카메라' like Naver, section start, fixed sentences, ETA change, route start with the destination name left out, 이어서/다시 chains, and every Naver guide text in the test routes incl. toll gates) maps fully onto data/voice_clips.json; numbers read 12 · 110 · 1600 · 23000 as clips; with the flag on and no working speech the clips are fetched, decoded and played back to back (onEnd), one missing clip falls back to the beep (onFail), an uncovered sentence returns false; with the flag off speechSynthesis stays; v279: fetched clips land in Cache Storage and play with the network gone", fn: s178 },
     { id: 'S185', name: "S185 straight-on at forks (v290, driver '직진해야하는 코스면 그냥 직진으로', '원래 저렇게 안보여줬잖아' — deliberately unlike Naver's side-step arrow): 신갈분기점 '대전' (main road kept) and 보정교차로삼거리 '신갈' 오른쪽 도로 주행 (8°) show a plain ↑, '직진' text and '○○ 방면 직진입니다'; 서하남교차로 '강동', 신갈분기점 '원주, 인천', 하남분기점 and 수원신갈IC '수원, 신갈' keep their left/right", fn: s185 },
     { id: 'S186', name: "S186 section card closes off the section road (v290, feedback '구간 단속 시작 지점만 지나고 끝나는 지점 안 지났을 때 계속 나옵니다'): 900 m into the 서울TG 100 section a reroute onto another road closes it quietly; without guidance, turning back 800 m closes it; following the route keeps it open", fn: s186 },
+    { id: 'S187', name: "S187 '텍스트로 보내기' fills the text box by voice (v291, driver '그냥 텍스트로 보내기 < 뭐 이런 단어면 좋겠어 / 그리고 음성으로 텍스트 채우는 느낌으로'): with /health stt the sheet opens and records at once, the words ('여기 카메라 위치가 틀려요') fill the box within a few seconds, an edited box is not overwritten, '보내기' sends a text item (how 'stt') with the recording under the same qid; '다시' clears and records again; a failed /stt sends the recording (how 'audio'); a Worker without stt keeps the plain text box", fn: s187 },
     { id: 'S184', name: "S184 a passed camera switches off at once (v289, driver '과속 단속이 지나 갔는데도 계속 속도가 떠 있는 경우가 있어서 … 지나가면 그냥 신호 과속 표시를 꺼 줘야'): two synthetic 60 cameras at 72 km/h — at the first fix past the pole the red over-speed card, the speed row and the red speedometer go off and '통과' lasts no more than 30 m or 2 s; a camera point 90 m off the road clears within 25 m of the closest approach (it used to stay 120 m more behind the 80 m gate); a 20 m GPS jump back after passing does not bring it back; with fixes every 2 s it is gone at the next fix", fn: s184 },
     { id: 'S183', name: "S183 arrival near the destination (v288, driver '어느순간 길안내를 계속 못찾아서 이거 확인좀 해주고 개선해 줘'): synthetic block — the car leaves a route that loops around the block and comes up the side street to the route end; one reroute, the loop answer is shown with a '목적지 근처예요 · 안내 종료' button, and 40 m from the end it says '목적지 부근입니다'; a rejected answer is not re-asked at once and a stop 110 m away ends guidance after 3 s; crawling on a direct route does not end early; a start 200 m away does not end; an OSM parking entrance and GPS loss end it; a loop answer inside 150 m ends it without showing", fn: s183 },
     { id: 'S182', name: "S182 section card like Naver (v286, driver '구간 평균 나와있는 숫자는 노란색으로 네이버지도랑 맞춰 주고 몇 키로 구간 단속인지 안 나와 있어서 … 평균속도 밑으로 표기'): 900 m into the 서울TG 100 section, day and night, the speed row's 구간평균 number is yellow on a dark chip and the section card shows a red-ring '100' sign in dark ink (the old '제한 100' text was white on the light card), 남은 구간 and the time; the card touches neither the route strip nor the docked bar", fn: s182 },
@@ -7603,7 +7604,7 @@
       js.text === '여기 카메라는 50m 앞이에요' && js.how === 'text' && js.navOn === true && js.pos && !js.sheet && js.toast === '보냈어요' && js.queued === 0 &&
       !h.rec && h.open && h.cap === '말소리가 없어 녹음을 멈췄어요 · 버튼으로 보내 주세요' && h.queued === 0 && h.label === '녹음' &&
       ii.preset === '[소리 이상]' && ii.posted === 1 && ii.audio && ii.closed &&
-      a.labels.join() === '녹음,글로,카메라,길안내,화면,소리,좋아요' && a.minW >= 64 && a.minH >= 72 && a.hits && !a.overNav && !a.overCam && a.camShown && !a.overBtn && !a.overCar && !a.overMiss && a.inView && a.pressed &&
+      a.labels.join() === '녹음,텍스트로 보내기,카메라,길안내,화면,소리,좋아요' && a.minW >= 64 && a.minH >= 72 && a.hits && !a.overNav && !a.overCam && a.camShown && !a.overBtn && !a.overCar && !a.overMiss && a.inView && a.pressed &&
       c.text === '[카메라 이상]' && c.preset === 'cam' && c.navOn === true && c.cam === 60 && c.hasPos && c.closed && c.toast === '보냈어요' &&
       b.open && b.made === 0 && !d.open && !d.sent && e.opened && !e.open &&
       f.recShown && f.recording && q.n === 1 && /^audio\//.test(q.mime || '') && q.b64 && q.sec >= 1 && q.x === 1 && q.closed && q.toast === '저장했어요 · 연결되면 보내요' && !q.sent &&
@@ -8748,6 +8749,98 @@
       if (want !== 's' && (/직진/.test(o.text) || /직진입니다/.test(o.say))) bad.push(f + ' became straight');
     }
     return { pass: bad.length === 0, detail: (bad.length ? bad.join(' | ') + ' || ' : '') + JSON.stringify(r) };
+  }
+
+  // S187 (v291, 운전자 '그냥 텍스트로 보내기 < 뭐 이런 단어면 좋겠어 / 그리고 음성으로 텍스트 채우는 느낌으로'): 의견 판 '텍스트로 보내기'
+  //   (a) Worker 가 받아쓰기를 하면(/health stt) 누르자마자 글 칸이 열리고 녹음, 4초 안팎에 말한 것('여기 카메라 위치가 틀려요')이 칸에 차오른다.
+  //       고친 글은 덮어쓰지 않는다. '보내기' → 글 의견 how 'stt' + 녹음은 같은 qid 로 함에 (위치·길안내는 '의견'을 누른 때)
+  //   (b) '다시' → 칸이 비고 다시 녹음   (c) /stt 가 실패하면 '글로 바꾸지 못했어요' — 보내기는 녹음 의견(how 'audio')
+  //   (d) 받아쓰기가 없는 Worker 면 예전처럼 글 칸만 (녹음 없음)
+  //   판 밑 글: 받아쓰기가 켜지면 "녹음은 '녹음'·'텍스트로 보내기'를 누를 때만 해요"
+  //   숨은 창에서는 setInterval 이 늦어지므로 setTimeout·setInterval 대체(MessageChannel)를 깔고 따로 돌린다
+  async function s187() {
+    const t = T(), r = {}, md = navigator.mediaDevices, keepGum = md && md.getUserMedia, keepPost = t.fbA.post;
+    const btn = document.getElementById('fbBtn'), P = () => document.getElementById('fbPanel');
+    const sh = document.getElementById('fbTextSheet'), ta = document.getElementById('fbText');
+    const R = buildNavRoute();
+    const ac = new AudioContext(), dst = ac.createMediaStreamDestination(), osc = ac.createOscillator();
+    osc.frequency.value = 220; osc.connect(dst); osc.start();
+    const posts = [], sttCalls = [];
+    let sttMode = 'ok';
+    const openText = async () => {
+      btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await waitFor(() => t.fbP.open, 1500, 10);
+      P().querySelector('.fbp-btn[data-k="text"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    };
+    try {
+      t.fb.inTest = true; t.store.set('fbMode', 'panel'); t.fb.micDenied = false; t.fbA.save([]);
+      md.getUserMedia = async () => dst.stream.clone();
+      t.fbA.post = async (item) => { posts.push(item); return { id: 'A' + posts.length, via: 'fb' }; };
+      stub.canned['/health'] = { ok: true, stt: true };
+      stub.canned['/stt'] = (q, rec) => { sttCalls.push(rec.body || {}); if (sttMode === 'fail') { const e = new Error('stt failed'); e.status = 502; throw e; } return { text: '여기 카메라 위치가 틀려요' }; };
+      t.STT.ok = null;
+      softReset(); await planAndStart(R);
+      for (let s = 15; s <= 150; s += 15) { const a = pointAt(R, s); feed(a.p, 15, a.h); }
+      // (a)
+      await openText();
+      await waitFor(() => !!t.dict.rec, 3000, 20);
+      r.a = { sheet: !sh.hidden, rec: !!t.dict.rec, label: [...P().querySelectorAll('.fbp-btn')].map((x) => x.textContent).join(','), note: text('#fbPanel .fbp-note') };
+      await waitFor(() => ta.value.length > 0, 9000, 50);
+      r.a.filled = ta.value; r.a.calls = sttCalls.length; r.a.wav = !!(sttCalls[0] && /^audio\/wav$/.test(sttCalls[0].mime || '') && (sttCalls[0].b64 || '').length > 1000);
+      r.a.status = text('#fbTextStt');
+      ta.value = '여기 카메라 위치가 틀려요 (50m 앞)'; ta.dispatchEvent(new Event('input', { bubbles: true }));
+      await sleep(4500);
+      r.a.kept = ta.value;
+      t.fb.last = null;
+      await t.fbTextSend();
+      await waitFor(() => posts.length >= 1 || t.fbA.load().length >= 1, 4000, 20).catch(() => {});
+      const ev = t.fb.last || {};
+      r.a.sent = { text: ev.text, how: ev.how, audio: !!ev.audio, qid: ev.qid, navOn: ev.navOn, pos: ev.lat != null, sheet: !sh.hidden, posted: posts.map((x) => x.qid), mime: posts[0] && posts[0].mime };
+      // (b) 다시
+      await openText();
+      await waitFor(() => ta.value.length > 0, 9000, 50);
+      document.getElementById('fbTextRedo').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      r.b = { cleared: ta.value === '' };
+      await waitFor(() => !!t.dict.rec, 3000, 20);
+      r.b.rec = !!t.dict.rec;
+      document.getElementById('fbTextCancel').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await sleep(200);
+      r.b.closed = sh.hidden; r.b.stopped = !t.dict.rec;
+      // (c) /stt 실패 → 녹음 의견
+      sttMode = 'fail'; posts.length = 0;
+      await openText();
+      await waitFor(() => !!t.dict.rec, 3000, 20);
+      await sleep(4800);
+      t.fb.last = null;
+      await t.fbTextSend();
+      await waitFor(() => posts.length >= 1, 4000, 20).catch(() => {});
+      const ev2 = t.fb.last || {};
+      r.c = { how: ev2.how, text: ev2.text, audio: !!ev2.audio, posted: posts.length };
+      // (d) 받아쓰기 없는 Worker
+      stub.canned['/health'] = { ok: true };
+      t.STT.ok = null;
+      await openText();
+      await sleep(600);
+      r.d = { sheet: !sh.hidden, rec: !!t.dict.rec, note: text('#fbTextSheet .fbt-note'), redo: !document.getElementById('fbTextRedo').hidden };
+      t.fbTextClose();
+      t.endNav();
+    } finally {
+      try { osc.stop(); ac.close(); } catch (e) { /* 이미 */ }
+      t.fbTextClose(); t.fbPanelClose(); t.fbCancel(true);
+      t.fbA.post = keepPost; t.fbA.save([]);
+      if (md) md.getUserMedia = keepGum;
+      delete stub.canned['/health']; delete stub.canned['/stt']; t.STT.ok = null;
+      t.store.set('fbMode', null); t.fb.inTest = false; t.fb.last = null;
+      softReset();
+    }
+    const a = r.a || {}, b = r.b || {}, c = r.c || {}, d = r.d || {};
+    const ok = a.sheet && a.rec && /텍스트로 보내기/.test(a.label) && /^녹음은 '녹음'·'텍스트로 보내기'를 누를 때만 해요/.test(a.note || '') && a.filled === '여기 카메라 위치가 틀려요' && a.calls >= 1 && a.wav && /듣는 중/.test(a.status) &&
+      a.kept === '여기 카메라 위치가 틀려요 (50m 앞)' && a.sent.text === '여기 카메라 위치가 틀려요 (50m 앞)' && a.sent.how === 'stt' && a.sent.audio && a.sent.navOn && a.sent.pos && !a.sent.sheet &&
+      a.sent.posted.includes(a.sent.qid) &&
+      b.cleared && b.rec && b.closed && b.stopped &&
+      c.how === 'audio' && /^\(녹음 [\d.]+초\)$/.test(c.text || '') && c.audio && c.posted >= 1 &&
+      d.sheet && !d.rec && /녹음하지 않아요/.test(d.note) && !d.redo;
+    return { pass: !!ok, detail: JSON.stringify(r) };
   }
 
   // S186 (v290, 의견 2026-11-28 19:07 '구간 단속 시작 지점만 지나고 끝나는 지점 안 지났을 때 계속 나옵니다'): 서울TG 경로 100 구간 900m 안에서

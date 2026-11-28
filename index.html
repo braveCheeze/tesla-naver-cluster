@@ -2184,7 +2184,7 @@
   /* 버튼판: 칸 하나 더('글로'), 칸 폭 72 → 66 */
   .fbp-btn { width: 66px; }
   .fbp-btn.text { background: var(--nv-soft); }
-  .fbp-note { font-size: 11.5px; font-weight: 600; color: var(--nv-sub); padding: 0 4px; line-height: 1.3; }
+  .fbp-note { font-size: 11.5px; font-weight: 600; color: var(--nv-sub); padding: 0 4px; line-height: 1.3; word-break: keep-all; }
   .fbp-btn.rec.on span::before { content: '● '; color: #ffdede; }
 
   /* ===================== v286 (운전자 '의견 아이콘처럼 제보도 동그라미의 아이콘을 좀 만들어서 제보라고 써줬으면 좋겠고
@@ -2330,7 +2330,12 @@
   #fbTextSheet .sheet-card { max-width: 520px; }
   #fbTextSheet textarea { width: 100%; min-height: 84px; box-sizing: border-box; resize: none; font: inherit; font-size: 17px; padding: 10px 12px;
     border-radius: 12px; border: 1.5px solid var(--nv-line, #ccd); background: var(--nv-soft, #f4f6f8); color: inherit; }
-  #fbTextSheet .fbt-note { font-size: 12.5px; color: var(--nv-sub, #667); margin: 8px 2px 0; line-height: 1.4; }
+  #fbTextSheet .fbt-note { font-size: 12.5px; color: var(--nv-sub, #667); margin: 8px 2px 0; line-height: 1.4; word-break: keep-all; }
+  /* v291 받아쓰기: 칸 밑 상태 한 줄 (듣는 중이면 초록 점이 깜빡) · 버튼판 '텍스트로 보내기'는 두 줄 */
+  #fbTextSheet .fbt-stt { font-size: 14px; font-weight: 700; color: var(--nv-fg, #222); margin: 8px 2px 0; line-height: 1.4; word-break: keep-all; }
+  #fbTextSheet .fbt-stt.live::before { content: ''; display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #03c75a; margin-right: 7px; vertical-align: 1px; animation: fbpRec 1.1s ease-in-out infinite; }
+  #fbTextSheet textarea { font-size: 20px; }
+  .fbp-btn[data-k="text"] span { font-size: 12.5px; line-height: 1.12; white-space: normal; word-break: keep-all; text-align: center; padding: 0 2px; }
 </style>
 </head>
 <body>
@@ -2569,11 +2574,12 @@
 
 <!-- v282 글로 의견 (운전자 '음성으로 하면 사생활 침해당했다 생각할 수 있으니 텍스트로 남길 수 있는'): 의견 버튼판의 '글로' 칸 -->
 <div id="fbTextSheet" class="sheet" hidden>
-  <div class="sheet-card" role="dialog" aria-label="글로 의견 남기기">
-    <h2>글로 의견 남기기</h2>
+  <div class="sheet-card" role="dialog" aria-label="텍스트로 의견 보내기">
+    <h2>텍스트로 보내기</h2>
     <textarea id="fbText" maxlength="500" rows="3" placeholder="예: 이 카메라는 실제로 50m 앞에 있어요"></textarea>
+    <p id="fbTextStt" class="fbt-stt" hidden></p>
     <p class="fbt-note">글자만 보내요. 녹음하지 않아요. '의견'을 누른 때의 위치와 떠 있던 안내가 함께 가요.</p>
-    <div class="row end"><button id="fbTextCancel" type="button">닫기</button><button id="fbTextSend" type="button" class="primary">보내기</button></div>
+    <div class="row end"><button id="fbTextCancel" type="button">취소</button><button id="fbTextRedo" type="button" hidden>다시</button><button id="fbTextSend" type="button" class="primary">보내기</button></div>
   </div>
 </div>
 
@@ -2714,8 +2720,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-290"></script>
-<script src="img/ai/picks.js?v=2026.11.16-290"></script>
-<script src="app.js?v=2026.11.16-290"></script>
+<script src="icons.js?v=2026.11.16-291"></script>
+<script src="img/ai/picks.js?v=2026.11.16-291"></script>
+<script src="app.js?v=2026.11.16-291"></script>
 </body>
 </html>
