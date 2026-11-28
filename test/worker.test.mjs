@@ -19,12 +19,12 @@ Date.now = () => realNow() + shift;
 const DAY = 86400000;
 
 const kv = new Map();
-const kvCount = { list: 0 };   // v293: 무료 KV 목록은 하루 1,000번 — 자주 불리는 길에서 목록을 부르는지 센다
+const kvCount = { list: 0, fail: false };   // fail: 하루 목록 한도를 넘은 것처럼 list() 가 던진다 (v294b)   // v293: 무료 KV 목록은 하루 1,000번 — 자주 불리는 길에서 목록을 부르는지 센다
 const LOGS = {
   get: async (k) => (kv.has(k) ? kv.get(k) : null),
   put: async (k, v) => { kv.set(k, v); },
   delete: async (k) => { kv.delete(k); },
-  list: async ({ prefix }) => { kvCount.list++; return { keys: [...kv.keys()].filter((k) => k.startsWith(prefix)).sort().map((name) => ({ name })), list_complete: true }; },
+  list: async ({ prefix }) => { kvCount.list++; if (kvCount.fail) throw new Error('KV list() limit exceeded for the day'); return { keys: [...kv.keys()].filter((k) => k.startsWith(prefix)).sort().map((name) => ({ name })), list_complete: true }; },
 };
 const TOKEN = 'T'.repeat(40);
 // 실제 배포처럼 IP_SALT 없이 ADMIN_TOKEN 만 (v175: 소금은 토큰에서 만든다)
@@ -679,8 +679,25 @@ if (sqlite) {
   shift = base + 4 * 3600e3;
   await call('POST', '/event', { body: { type: 'info', msg: 'cleanup trigger', sid: 'sid00008' }, e: envE });
   ok(!evRows().some((r) => r.msg === 'very old') && evRows().some((r) => r.msg === 'cleanup trigger'), 'v294: rows older than 7 days are deleted in small batches (hourly)');
+  // (h0) v294b: KV 목록이 하루 한도로 실패해도 /events·/check/results·/check/unmatched·/fb 는 500 이 아니다 — D1 기록 + kvSkipped(또는 앞 목록 kvStale)
+  kvCount.fail = true;
+  shift = base + 4 * 3600e3 + 31 * 60e3;   // 목록 캐시가 지난 뒤
+  const kf = await call('GET', '/events', { token: TOKEN, e: envE });
+  ok(kf.s === 200 && kf.j.items.some((x) => x.msg === 'cleanup trigger') && (kf.j.kvSkipped === 'list limit' || kf.j.kvStale === true),
+    'v294b: KV list limit → /events still answers with the D1 rows (' + JSON.stringify({ skipped: kf.j.kvSkipped, stale: kf.j.kvStale }) + ')');
+  const kr = await call('GET', '/check/results', { token: TOKEN, origin: '', e: envE });
+  const ku = await call('GET', '/check/unmatched', { token: TOKEN, origin: '', e: envE });
+  const kb = await call('GET', '/fb', { token: TOKEN, origin: '', e: envE });
+  ok(kr.s === 200 && Array.isArray(kr.j.items) && ku.s === 200 && Array.isArray(ku.j.items) && kb.s === 200 && Array.isArray(kb.j.ids) &&
+    [kr.j, ku.j, kb.j].every((j) => j.kvSkipped === 'list limit' || j.kvStale === true), 'v294b: /check/results, /check/unmatched and GET /fb answer 200 with kvSkipped or the previous listing');
+  kv.set('chkpend', String(realNow() + shift - 600e3));
+  const kn = await call('GET', '/check/next', { token: TOKEN, origin: '', e: envE });
+  ok((kn.s === 200 || kn.s === 204) && kv.has('chkpend'), 'v294b: /check/next with the queue list failing is not a 500 and keeps the pending flag');
+  kv.delete('chkpend');
+  kvCount.fail = false;
   // (h) /health 에 저장소와 D1 행 수
   const hh = (await call('GET', '/health', { origin: '', e: envE })).j;
+  ok(hh.events && hh.events.since > 1e12, 'v294b: /health events.since is the instance start time, not 0');
   ok(hh.stores && /^d1/.test(hh.stores['/event']) && /kv evf:/.test(hh.stores['/events']) && hh.stores['/pass'] === 'd1' && hh.events && hh.events.inserted >= 7 && hh.events.fallback === 1 && hh.events.moved === 1 && hh.events.rowsWritten > 0,
     '/health shows which store each path uses and the D1 rows written');
   shift = base;

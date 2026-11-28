@@ -119,17 +119,27 @@ const putCheckState = (env, id, st) => env.LOGS.put('chks:' + id, JSON.stringify
 //     쓰면 바로 비운다
 //   - 자동 확인 후보(chka·chkx 있음)는 인스턴스 안에서 1시간 기억해 /check/next 마다 KV 를 다시 읽지 않는다
 const CHECK_PEND = 'chkpend', CHECK_PEND_STALE_MS = 120e3, CHECK_SWEEP_MS = 30 * 60e3;
-let checkSweepAt = Date.now();
+let checkSweepAt = 0;   // v294b: Worker 전역에서는 Date.now() 가 0 — 첫 요청 때 정한다 (그러지 않으면 인스턴스마다 첫 /check/next 에 목록)
 const LIST_TTL_MS = 60e3;
 const listCache = new Map();   // prefix|limit → {at, keys} (KV 바인딩은 Worker 에 하나 — 요청마다 env 가 새 객체여도 같은 칸)
 async function cachedList(env, prefix, limit, ttl) {
   const m = listCache;
   const c = m.get(prefix + '|' + limit);
   if (c && Date.now() - c.at < (ttl || LIST_TTL_MS)) return c.keys;
-  const l = await env.LOGS.list({ prefix, limit });
+  let l;
+  try { l = await env.LOGS.list({ prefix, limit }); } catch (e) {
+    // v294b (2026-11-29 00:43 관리 화면 502 'KV list() limit exceeded'): 목록이 안 되면 앞서 받은 목록을 (오래됐어도) 쓴다. 없으면 부른 쪽이 거른다
+    if (c) { const old = c.keys.slice(); old.stale = true; return old; }
+    throw e;
+  }
   const keys = l.keys.map((k) => ({ name: k.name }));
   m.set(prefix + '|' + limit, { at: Date.now(), keys });
   return keys;
+}
+// v294b: KV 목록·읽기가 실패한 까닭 (답의 kvSkipped) — 하루 한도면 'list limit'
+const kvWhy = (e) => (/limit/i.test(String((e && e.message) || e)) ? 'list limit' : 'kv error');
+async function safeList(env, prefix, limit) {
+  try { const keys = await cachedList(env, prefix, limit); return { keys, stale: !!keys.stale, skipped: '' }; } catch (e) { return { keys: [], stale: false, skipped: kvWhy(e) }; }
 }
 function listDirty(env, prefix) {
   for (const k of [...listCache.keys()]) if (k.startsWith(prefix)) listCache.delete(k);
@@ -297,7 +307,7 @@ const EV_KEEP_MS = 7 * 86400e3, EV_HOUR = 3600e3, EV_DEL_BATCH = 500, EV_MAX_BAT
 //   D1 로 옮긴 뒤 예전 evr: 은 더 생기지 않으므로 그 목록은 30분 같은 것을 쓴다
 const EV_PEND = 'evfpend', EV_OLD_LIST_TTL = 30 * 60e3;
 let evReady = null, evReadyFor = null, evCleanAt = 0, evMoveAt = 0, evWarnAt = 0, evCutAt = 0;
-const evStat = { since: Date.now(), rowsRead: 0, rowsWritten: 0, inserted: 0, fallback: 0, moved: 0, cleaned: 0, errors: 0 };
+const evStat = { since: 0, rowsRead: 0, rowsWritten: 0, inserted: 0, fallback: 0, moved: 0, cleaned: 0, errors: 0 };
 const evKey = (ts, pre) => (pre || 'evr:') + String(EVR_BASE - ts).padStart(16, '0') + ':' + crypto.randomUUID().slice(0, 6);
 const evTime = (k) => EVR_BASE - Number(String(k).split(':')[1]);
 function evMeta(r) {
@@ -401,7 +411,9 @@ async function evKvKeys(env, prefix, since, before, lim, ttl) {
     }
     keys.reverse();
   } else {
-    keys = (await cachedList(env, prefix, 1000, ttl)).map((k) => k.name).filter((n) => evTime(n) > since).slice(0, lim).reverse();
+    const listed = await cachedList(env, prefix, 1000, ttl);
+    keys = listed.map((k) => k.name).filter((n) => evTime(n) > since).slice(0, lim).reverse();
+    if (listed.stale) keys.stale = true;
   }
   return keys;
 }
@@ -534,6 +546,8 @@ async function upstream(url, headers) {
 
 export default {
   async fetch(req, env, ctx) {
+    if (!evStat.since) evStat.since = Date.now();   // v294b: 이 인스턴스가 켜진 때 (전역의 Date.now() 는 0)
+    if (!checkSweepAt) checkSweepAt = Date.now();
     const origin = req.headers.get('Origin') || '';
     const allowed = ALLOWED_ORIGINS.includes(origin);
     const cors = {
@@ -796,10 +810,16 @@ export default {
       if (url.pathname === '/check/next') {
         if (!env.LOGS) return new Response(null, { status: 204, headers: cors });
         // v293: 표시('chkpend')가 있을 때만 대기열 목록을 본다 (안전망: 인스턴스마다 30분에 한 번은 표시 없이도)
-        const pend = await env.LOGS.get(CHECK_PEND);
+        let pend = null;
+        try { pend = await env.LOGS.get(CHECK_PEND); } catch (e) { pend = null; }
         const sweep = Date.now() - checkSweepAt > CHECK_SWEEP_MS;
-        const l = pend || sweep ? await env.LOGS.list({ prefix: 'chkq:', limit: 20 }) : { keys: [] };
+        let l = { keys: [] }, listFailed = false;
+        if (pend || sweep) {
+          // v294b: 목록이 안 되면(하루 한도) 대기열은 이번에 건너뛰고 자동 확인만 — 실행기가 500 을 받지 않게
+          try { l = await env.LOGS.list({ prefix: 'chkq:', limit: 20 }); } catch (e) { listFailed = true; }
+        }
         if (sweep) checkSweepAt = Date.now();
+        if (listFailed) pend = null;   // 표시를 지우지 않는다
         if (pend && !l.keys.length && Date.now() - (Number(pend) || 0) > CHECK_PEND_STALE_MS) {
           if (env.LOGS.delete) await env.LOGS.delete(CHECK_PEND); else await env.LOGS.put(CHECK_PEND, '', { expirationTtl: 60 });
         }
@@ -874,7 +894,7 @@ export default {
       }
       if (url.pathname === '/check/unmatched') {
         if (!env.LOGS) return json({ v: 1, items: [] }, 200, cors);
-        const l = { keys: await cachedList(env, 'unm:', 1000) };   // v293: 60초 같은 목록
+        const l = await safeList(env, 'unm:', 1000);   // v293: 60초 같은 목록 · v294b: 목록이 안 되면 앞 목록이나 빈 목록 + kvSkipped
         const items = [];
         for (const k of l.keys) {
           let u = null;
@@ -887,13 +907,16 @@ export default {
             n: u.n, devices, days, last: u.last, candidate: devices >= 2 || days >= 2 });
         }
         items.sort((a, b) => (b.candidate - a.candidate) || (b.n - a.n));
-        return json({ v: 1, items }, 200, cors);
+        return json(Object.assign({ v: 1, items }, l.skipped ? { kvSkipped: l.skipped } : {}, l.stale ? { kvStale: true } : {}), 200, cors);
       }
       if (url.pathname === '/check/results') {
         if (!env.LOGS) return json({ items: [] }, 200, cors);
-        const l = { keys: await cachedList(env, 'chkr:', 100) };   // v293: 60초 같은 목록
-        const items = (await Promise.all(l.keys.map((k) => env.LOGS.get(k.name)))).filter(Boolean).map((v) => { try { return JSON.parse(v); } catch (e) { return null; } }).filter(Boolean);
-        return json({ items }, 200, cors);
+        const l = await safeList(env, 'chkr:', 100);   // v293: 60초 같은 목록 · v294b: 목록이 안 되면 앞 목록이나 빈 목록 + kvSkipped
+        let items = [];
+        try {
+          items = (await Promise.all(l.keys.map((k) => env.LOGS.get(k.name)))).filter(Boolean).map((v) => { try { return JSON.parse(v); } catch (e) { return null; } }).filter(Boolean);
+        } catch (e) { l.skipped = l.skipped || kvWhy(e); }
+        return json(Object.assign({ items }, l.skipped ? { kvSkipped: l.skipped } : {}, l.stale ? { kvStale: true } : {}), 200, cors);
       }
 
       // v196 카메라 통과 익명 통계 (2026-11-24 운전자 '앞으로 우리 테슬라클러스터 네비 이용자들 지나간곳 모조리 체크해서 과속 단속 체크해줘
@@ -1157,26 +1180,36 @@ export default {
             items = ((q && q.results) || []).map((r) => parse(r.body));
           } catch (e) { evStat.errors++; }
         }
+        let kvSkipped = '', kvStale = false;
         if (env.LOGS) {
-          const cut = env.STATS ? await evCutover(env) : 0;
+          // v294b (2026-11-29 00:43 관리 화면 502 'KV list() limit exceeded'): KV 목록·읽기가 실패해도 D1 기록은 준다 (kvSkipped 에 까닭).
+          //   목록 캐시에 앞서 받은 목록이 있으면 그것을 (kvStale)
+          const kvTry = async (fn) => { try { const k = await fn(); if (k && k.stale) kvStale = true; return k || []; } catch (e) { kvSkipped = kvSkipped || kvWhy(e); return []; } };
+          let cut = 0;
+          if (env.STATS) { try { cut = await evCutover(env); } catch (e) { cut = 0; } }
           let keys = [];
           if (!env.STATS || !cut || Date.now() < cut + EV_KEEP_MS + 86400e3) {
             // D1 로 옮기기 전 기록 (7일). D1 을 쓰면 더 생기지 않으므로 목록은 30분 같은 것을
-            keys = keys.concat(await evKvKeys(env, 'evr:', since, before, lim, env.STATS ? EV_OLD_LIST_TTL : 0));
+            keys = keys.concat(await kvTry(() => evKvKeys(env, 'evr:', since, before, lim, env.STATS ? EV_OLD_LIST_TTL : 0)));
           }
-          if (env.STATS && (await env.LOGS.get(EV_PEND))) keys = keys.concat(await evKvKeys(env, 'evf:', since, before, lim));   // D1 이 실패해 비켜 둔 기록
+          let pendF = null;
+          if (env.STATS) { try { pendF = await env.LOGS.get(EV_PEND); } catch (e) { kvSkipped = kvSkipped || kvWhy(e); } }
+          if (pendF) keys = keys.concat(await kvTry(() => evKvKeys(env, 'evf:', since, before, lim)));   // D1 이 실패해 비켜 둔 기록
           // 예전 형식('evt:') 기록: legacy=1 일 때만 끝까지 넘겨 가며 찾는다 (목록 호출이 여러 번 들어 평소엔 안 씀. 7일 뒤 모두 사라짐)
           if (p.get('legacy') === '1') {
-            let cursor, old = [];
-            for (let page = 0; page < 10; page++) {
-              const l = await env.LOGS.list({ prefix: 'evt:', limit: 1000, cursor });
-              old = old.concat(l.keys.map((k) => k.name).filter((n) => Number(n.split(':')[1]) > since));
-              if (l.list_complete || !l.cursor) break;
-              cursor = l.cursor;
-            }
+            const old = await kvTry(async () => {
+              let cursor, o = [];
+              for (let page = 0; page < 10; page++) {
+                const l = await env.LOGS.list({ prefix: 'evt:', limit: 1000, cursor });
+                o = o.concat(l.keys.map((k) => k.name).filter((n) => Number(n.split(':')[1]) > since));
+                if (l.list_complete || !l.cursor) break;
+                cursor = l.cursor;
+              }
+              return o;
+            });
             keys = old.sort().slice(-50).concat(keys);
           }
-          let kv = (await Promise.all(keys.map((k) => env.LOGS.get(k)))).filter(Boolean).map(parse);
+          let kv = await kvTry(async () => (await Promise.all(keys.map((k) => env.LOGS.get(k)))).filter(Boolean).map(parse));
           if (userOnly) kv = kv.filter((e) => e.user);   // 운전자가 누른 '놓침'·'틀림'만
           items = items.concat(kv);
         }
@@ -1185,7 +1218,7 @@ export default {
         items = items.filter((e) => { const k = (e.serverAt || 0) + '|' + (e.sid || '') + '|' + (e.type || '') + '|' + (e.msg || ''); if (seen.has(k)) return false; seen.add(k); return true; })
           .sort((a, b) => (a.serverAt || 0) - (b.serverAt || 0)).slice(-lim);
         const oldest = items.length ? items[0].serverAt || null : null;
-        return json(before ? { items, oldest } : { items }, 200, cors);
+        return json(Object.assign(before ? { items, oldest } : { items }, kvSkipped ? { kvSkipped } : {}, kvStale ? { kvStale: true } : {}), 200, cors);
       }
 
       // v225 (2026-11-24 운전자 테슬라 '의견을 보내고 싶은데도 못 보내네'): 테슬라 브라우저는 음성 인식 서버에 닿지 못해(network) 말을 글자로 못 바꾼다.
@@ -1212,8 +1245,8 @@ export default {
           const v = await env.LOGS.get('fba:' + id);
           return v ? new Response(v, { status: 200, headers: { ...cors, 'Content-Type': 'application/json' } }) : json({ error: 'not found' }, 404, cors);
         }
-        const l = { keys: await cachedList(env, 'fba:', 200) };   // v293: 60초 같은 목록
-        return json({ ids: l.keys.map((k) => k.name.slice(4)) }, 200, cors);
+        const l = await safeList(env, 'fba:', 200);   // v293: 60초 같은 목록 · v294b: 목록이 안 되면 앞 목록이나 빈 목록 + kvSkipped
+        return json(Object.assign({ ids: l.keys.map((k) => k.name.slice(4)) }, l.skipped ? { kvSkipped: l.skipped } : {}, l.stale ? { kvStale: true } : {}), 200, cors);
       }
 
       // v291 받아쓰기 (운전자 '그냥 텍스트로 보내기 … 음성으로 텍스트 채우는 느낌으로'): 테슬라 브라우저 음성 인식은 서버에 닿지 못해(network) 쓸 수 없다.
