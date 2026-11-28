@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-285'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-286'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -4513,6 +4513,13 @@
     }
     $('#secRemain').textContent = line;
     card.classList.toggle('over', st.over);
+    // v286 (운전자 '몇 키로 구간 단속인지 안 나와 있어서 … 평균속도 밑으로 표기 해줘도 괜찮을까 그 빈 공간', 네이버 구간 칸): 테슬라 화면은
+    //   빨간 원 제한 표지 · 남은 구간 · 남은 시간 (평균은 위 속도 칸에 노랑). 예전 '제한 100' 글자는 밝은 카드에서 흰 글씨라 안 보였다
+    $('#secSignN').textContent = s.limit;
+    $('#secRemD').textContent = st.remain !== null ? fmtDist(st.remain) : fmtDist(st.done) + ' 주행';
+    $('#secRemT').textContent = st.minLeft !== null ? mmss(st.minLeft) : '';
+    const need = st.need !== null ? (st.need >= 20 ? Math.floor(st.need) + ' km/h 이하로' : '평균 초과') : '';
+    $('#secNeed').textContent = need; $('#secNeed').hidden = !need;
   }
   // 경고 카드(예: '구간단속 끝 1.4km') 오른쪽 끝에 구간 평균 속도를 붙인다
   // 테슬라 모드에서 단속 경고가 떠 있으면 바로 밑에 내 속도 (구간단속 중이거나 속도 카메라 앞). 제한을 넘으면 빨갛게
@@ -4528,7 +4535,8 @@
     const em = $('#mySpeedLim');
     if (s && lim === s.limit) {
       const st = sectionStats(s);
-      em.innerHTML = '<small>구간평균</small>' + (st.avg === null ? '-' : Math.round(st.avg));
+      // v286 (운전자 '구간 평균 나와있는 숫자는 노란색으로 네이버지도랑 맞춰 주고'): 숫자는 네이버처럼 어두운 칸 위 노랑
+      em.innerHTML = '<small>구간평균</small><span class="avgv">' + (st.avg === null ? '-' : Math.round(st.avg)) + '</span>';
       em.classList.toggle('avg-over', st.over);
     } else { em.textContent = '제한 ' + lim; em.classList.remove('avg-over'); }
     el.classList.toggle('over', state.speedKmh > lim + 1);
@@ -8621,7 +8629,8 @@
   //     그림은 카드 바로 밑, 지금 속도·단속은 오른쪽 배지, '잘못된 정보 신고' 숨김
   // (2) 어느 때든 왼쪽 칸이 화면(innerHeight) 밑 출처 줄에 닿으면 차례로 접는다: 신고 버튼 → 하이패스 칸을 칩으로 → 단속 카드를 오른쪽 배지로
   //     → 속도 띠를 오른쪽 배지로 → 다음 단속·과속방지턱·주의 표지 줄 → 목적지 줄 → 구간단속 칸(속도 배지에 구간 제한). 넉넉해지면(16px) 거꾸로 편다
-  const FOLD_STEPS = ['fo-report', 'fo-toll', 'fo-cam', 'fo-speed', 'fo-small', 'fo-dest', 'fo-sec'];
+  // v286: '제보' 버튼은 왼쪽 칸에서 왼쪽 아래 모서리로 옮겨 접지 않는다 (부모 세션 '버튼을 숨기기 전에 카드를 먼저 접을 것') — 'fo-report' 뺌
+  const FOLD_STEPS = ['fo-toll', 'fo-cam', 'fo-speed', 'fo-small', 'fo-dest', 'fo-sec'];
   const FOLD_SLACK = 16, COL_FLOOR = 24;   // 화면 맨 밑 출처 줄(지도 저작권 글자) 높이만큼 비운다
   const lay = { k: 0, busy: false, chipBase: [], tollNoLanes: '' };
   function setJxTime() {
@@ -8655,7 +8664,10 @@
       // 보이는 화면 바닥 (테슬라 브라우저의 innerHeight; 앱 칸이 더 짧으면 앱 칸) − 출처 줄
       // v282: 길안내 중에는 맨 밑에 붙은 아래 띠(--dock-h) 위에서 끝난다
       const nb = $('#navBar'), dock = app.classList.contains('docked') && nb && nb.offsetHeight ? nb.offsetHeight : 0;
-      const limit = Math.min(window.innerHeight, app.getBoundingClientRect().bottom) - COL_FLOOR - dock;
+      // v286: 왼쪽 아래 '제보'·'의견' 버튼 위 8px 에서 끝난다 (왼쪽 칸과 가로로 겹치는 자리)
+      let cTop = Infinity;
+      for (const q of ['#camMissBtn', '#fbBtn']) { const e = $(q); if (e && !e.hidden && e.getClientRects().length && getComputedStyle(e).display !== 'none') cTop = Math.min(cTop, e.getBoundingClientRect().top); }
+      const limit = Math.min(Math.min(window.innerHeight, app.getBoundingClientRect().bottom) - COL_FLOOR - dock, cTop - 8);
       let k = Math.min(lay.k, FOLD_STEPS.length);
       applyFold(k);
       if (colBottom() > limit) { while (k < FOLD_STEPS.length && colBottom() > limit) applyFold(++k); }
@@ -8737,12 +8749,20 @@
     const cls = 'sidebadge' + (spdOn ? ' spd' : '') + (camOn ? ' cam' : lim ? ' lim' : '') + (lim && state.speedKmh > lim + 1 ? ' over' : '') +
       (camOn ? ['mobile', 'signal', 'sigspeed', 'aisign', 'ainum', 'doubt', 'rear', 'rear-after', 'seccam'].filter((c) => card.classList.contains(c)).map((c) => ' c-' + c).join('') : '');
     const img = camOn && sign.dataset.img ? sign.dataset.img : '';
-    const num = camOn ? $('#camLimit').textContent : lim ? String(lim) : '';
+    const sec = camState.section;
+    const num = camOn ? $('#camLimit').textContent : sec ? String(sec.limit) : lim ? String(lim) : '';
     const rearAfter = camOn && card.classList.contains('rear-after');
+    // v286 (부모 세션 '그림 때 오른쪽 배지도 같은 칸'): 구간단속 중이면 네이버 차례 그대로 제한 원 밑에 구간평균(노랑) · 남은 구간 · 남은 시간
+    let secHtml = '';
+    if (sec) {
+      const st = sectionStats(sec);
+      secHtml = '<div class="sbg-sec' + (st.over ? ' over' : '') + '"><small>구간평균</small><b>' + (st.avg === null ? '-' : Math.round(st.avg)) + '</b>' +
+        '<small>남은 구간</small><span>' + esc(st.remain !== null ? fmtDist(st.remain) : fmtDist(st.done)) + '</span>' + (st.minLeft !== null ? '<span>' + mmss(st.minLeft) + '</span>' : '') + '</div>';
+    }
     const html = (spdOn ? '<div class="sbg-speed"><b>' + sp + '</b><i>km/h</i></div>' : '') +
       (num ? '<div class="sbg-sign"' + (img ? ' style=\'background-image:' + img.replace(/'/g, '&#39;') + '\'' : '') + '>' + (camOn && !img ? '<i class="sbg-ico" aria-hidden="true"></i>' : '') + '<b>' + esc(num) + '</b></div>' : '') +
       (camOn && !rearAfter ? '<div class="sbg-dist">' + esc($('#camDist').textContent) + '</div>' : '') +
-      (camOn ? '<div class="sbg-kind" data-band="' + esc(rearAfter ? 'black' : card.dataset.band || '') + '">' + esc(rearAfter ? '후면단속 중' : $('#camKind').textContent || $('#camType').textContent) + '</div>' : '');
+      (camOn ? '<div class="sbg-kind" data-band="' + esc(rearAfter ? 'black' : card.dataset.band || '') + '">' + esc(rearAfter ? '후면단속 중' : $('#camKind').textContent || $('#camType').textContent) + '</div>' : '') + secHtml;
     if (el.className !== cls) el.className = cls;
     if (el._h !== html) { el.innerHTML = html; el._h = html; }
     el.setAttribute('aria-label', (spdOn ? '지금 ' + sp + 'km/h' : '') + (num ? ' 제한 ' + num : '') + (camOn ? ' ' + $('#camType').textContent + ' ' + $('#camDist').textContent : ''));
@@ -8750,12 +8770,25 @@
     // 자리: 시계·날씨 밑, 오른쪽 경로 막대 왼쪽 8px (막대가 없으면 화면 오른쪽 12px)
     const base = app.getBoundingClientRect(), rs = $('#routeStrip');
     const stripOn = !rs.hidden && rs.getClientRects().length && getComputedStyle(rs).display !== 'none';
-    const right = stripOn ? base.right - rs.getBoundingClientRect().left + 8 : 12;
+    // v286 (부모 세션, v284 수원신갈IC 160m: 막대 위 '3.3km 14:20 도착' 글자가 '40' 원을 덮음): 막대(34px)보다 넓은 위 글자(.rs-top)가 왼쪽으로
+    //   튀어나온다 — 막대와 그 글자 중 더 왼쪽 끝에서 8px (v275 규칙)
+    const rsTop = stripOn ? rs.querySelector('.rs-top') : null;
+    const stripL = stripOn ? Math.min(rs.getBoundingClientRect().left, rsTop && rsTop.getClientRects().length ? rsTop.getBoundingClientRect().left : Infinity) : 0;
+    const right = stripOn ? base.right - stripL + 8 : 12;
     const tops = ['.timebox', '#weather'].map((q) => $(q)).filter((e) => e && !e.hidden && e.getClientRects().length).map((e) => e.getBoundingClientRect().bottom - base.top);
     const top = Math.max(60, ...tops) + 10;
     const setVar = (k, px) => { const v = Math.round(px) + 'px'; if (app.style.getPropertyValue(k) !== v) app.style.setProperty(k, v); };
     setVar('--sbg-right', right);
     setVar('--sbg-top', top);
+    // v286: 구간 칸까지 붙은 배지가 오른쪽 아래 주행 기록 카드나 맨 밑 아래 띠에 닿으면 남은 구간·시간 줄부터, 그래도 닿으면 구간 칸을 뺀다 (8px 띄움)
+    if (secHtml) {
+      const tr = $('.trip'), nb = $('#navBar');
+      const floors = [tr, nb].filter((e) => e && !e.hidden && e.getClientRects().length && getComputedStyle(e).display !== 'none').map((e) => e.getBoundingClientRect().top);
+      const floor = Math.min(base.bottom, ...floors) - 8;
+      el.classList.remove('sec-tight', 'sec-none');
+      if (el.getBoundingClientRect().bottom > floor) el.classList.add('sec-tight');
+      if (el.getBoundingClientRect().bottom > floor) { el.classList.remove('sec-tight'); el.classList.add('sec-none'); }
+    }
   }
   // 테슬라 모드: 서랍(분기점 그림·단속·하이패스)이 길어져 왼쪽 아래 주행 기록·나침반에 닿으면 그동안 그 둘을 숨긴다 (글자가 겹치지 않게)
   // v212: 넓은 화면의 큰 속도는 카드 높이(--trip-h) + 18px 위에 둔다 — 카드가 높아져도 숫자가 붙지 않게
@@ -8774,7 +8807,7 @@
     const dr = $('#camDrawer'), fc = $('.fbcorner'), fr = fc ? fc.getBoundingClientRect() : null;   // v263: '의견' 버튼 (v282: 오른쪽 아래, 주행 기록 카드 왼쪽)
     // 서랍 밑에 붙는 다음 단속·과속방지턱·주의 표지 칸도 본다 (2026-11-14: 하이패스 차로 줄로 서랍이 길어지자 '100 14km'가 나침반에 겹침)
     // v282: 가로로 겹치는 것만 (버튼이 오른쪽으로 옮겨 왼쪽 칸과는 보통 겹치지 않는다)
-    const lowEls = [dr.classList.contains('open') ? dr : null, $('#camNext'), $('#bumpCard'), $('#signCard'), $('#parkCard'), $('#camMissBtn')]
+    const lowEls = [dr.classList.contains('open') ? dr : null, $('#camNext'), $('#bumpCard'), $('#signCard'), $('#parkCard')]   // v286: '제보'는 '의견' 옆 같은 모서리
       .filter((e) => e && !e.hidden && e.offsetParent !== null).map((e) => e.getBoundingClientRect());
     const lows = lowEls.map((q) => q.bottom);
     const covered = !!(fr && fr.top > 0) && lowEls.some((q) => q.right > fr.left && q.left < fr.right && q.bottom > fr.top - 6);
@@ -10907,6 +10940,9 @@
     const corner = document.createElement('div');
     corner.className = 'fbcorner';
     trip.parentNode.insertBefore(corner, trip);
+    // v286 (운전자 '제보랑 의견은 왼쪽 하단 안에다가 넣어 주는 게 좋아'): 왼쪽 아래 모서리에 동그란 '제보'·'의견' 두 개 나란히 (왼쪽 칸 흐름에서 빼낸다)
+    const mb = $('#camMissBtn');
+    if (mb) corner.appendChild(mb);
     corner.appendChild(fw);
     if (fp) corner.appendChild(fp);
   })();
@@ -10915,6 +10951,13 @@
   // 카드가 없으면 놓친 단속 신고(예전 '놓침': 차 안 진단 v171 · 신고 지점 v169) + 네이버 확인 요청(/check). 서버 기록의 user 칸은 그대로 'wrong'·'missed'
   // v282 (운전자 '잘못된 정보 신고를 제보로 빨간색 넣어주고'): 버튼 글자는 '제보', 빨간 바탕 (읽어 주는 이름은 '잘못된 정보 제보')
   const REPORT_LABEL = '제보', REPORT_ARIA = '잘못된 정보 제보';
+  // v286 (운전자 '의견 아이콘처럼 제보도 동그라미의 아이콘을 좀 만들어서 제보라고 써줬으면'): 동그란 버튼 안에 깃발 + '제보'. 글자만 바꿀 때 그림이
+  //   지워지지 않게 늘 이 함수로 (보냄·저장·취소처럼 긴 글자면 CSS 가 알약으로 늘인다)
+  const MISS_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 21V3.6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>' +
+    '<path d="M6.9 4.2h11.2l-2.6 4.3 2.6 4.3H6.9z" fill="currentColor"/><path d="M11.6 6.1v3" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/><circle cx="11.6" cy="10.9" r=".95" fill="#fff"/></svg>';
+  function setMiss(b, text) { if (b) b.innerHTML = MISS_ICON + '<b class="cm-t">' + esc(text) + '</b>'; }
+  const missText = (b) => { const t0 = b && b.querySelector('.cm-t'); return t0 ? t0.textContent : null; };
+  setMiss($('#camMissBtn'), REPORT_LABEL);
   function reportWrongCard() {
     const tg = camState.target, card = $('#camCard');
     // v161: 화면에 그려진 카메라에만. 카드가 방금(1초 안) 다른 카메라로 바뀌었으면 누름을 무시한다(엉뚱한 카메라가 표시되지 않게)
@@ -10966,7 +11009,7 @@
     const undo = !!(tg && tg.flag === 'doubt' && !card.hidden && card._camI === tg.i && camFlagToday(tg.c, state.heading === null ? null : Math.round(state.heading)));
     const want = undo ? '↩ 신고 취소' : REPORT_LABEL;
     b.classList.toggle('undo', undo);
-    if (b.textContent !== want) { b.textContent = want; b.setAttribute('aria-label', undo ? '신고 취소' : REPORT_ARIA); }
+    if (missText(b) !== want) { setMiss(b, want); b.setAttribute('aria-label', undo ? '신고 취소' : REPORT_ARIA); }
   }
   function reportMissed(b) {
     // v171: 누르는 순간 차 안에서 원인을 찾아 고친다. 우리 자료에 후보가 없으면 '내가 신고한 단속 지점'으로 저장 (v169)
@@ -10980,10 +11023,10 @@
       b.classList.remove('sending');
       // 차 안에서 고친 것(fx.text: '제한속도를 몰라…', '신고로 숨겨 둔 카메라였어요…')은 그대로 붙인다 — 바로 반영된 것을 알 수 있게
       const tail = fx.text ? ' · ' + fx.text : '', ms = fx.text ? 3500 : 3000;
-      if (!prefs.share) { b.classList.add('sent'); b.textContent = '✓ 저장'; toast('신고 접수 완료' + (tail || ' · 이 차에만 표시') + ' (서버로 보내지 않음)', '', ms); }
-      else if (ok === false) { b.classList.add('sent', 'saved'); b.textContent = '저장함'; toast('연결이 안 돼 저장해 두었어요. 연결되면 보낼게요.' + (fx.text ? ' ' + fx.text : ''), '', ms); }
-      else { b.classList.add('sent'); b.textContent = '✓ 보냄'; toast('신고 접수 완료' + tail, '', ms); }
-      b._sentT = setTimeout(() => { b.classList.remove('sent', 'saved'); b.textContent = REPORT_LABEL; }, MISS_SENT_MS);
+      if (!prefs.share) { b.classList.add('sent'); setMiss(b, '✓ 저장'); toast('신고 접수 완료' + (tail || ' · 이 차에만 표시') + ' (서버로 보내지 않음)', '', ms); }
+      else if (ok === false) { b.classList.add('sent', 'saved'); setMiss(b, '저장함'); toast('연결이 안 돼 저장해 두었어요. 연결되면 보낼게요.' + (fx.text ? ' ' + fx.text : ''), '', ms); }
+      else { b.classList.add('sent'); setMiss(b, '✓ 보냄'); toast('신고 접수 완료' + tail, '', ms); }
+      b._sentT = setTimeout(() => { b.classList.remove('sent', 'saved'); setMiss(b, REPORT_LABEL); }, MISS_SENT_MS);
     });
   }
   // 예전 '틀림' 버튼(숨김, 시험·예전 화면용)
@@ -10995,14 +11038,14 @@
     if (b.classList.contains('sent') || b.classList.contains('sending')) return;
     clearTimeout(b._sentT);
     if (tg && !card.hidden && card._camI === tg.i && b.classList.contains('undo')) {   // v244: 오늘 내가 신고한 카드 → 신고 취소
-      if (undoWrongCard()) { b.classList.remove('undo'); b.classList.add('sent'); b.textContent = '✓ 취소함'; b._sentT = setTimeout(() => { b.classList.remove('sent'); camMissLabel(); }, MISS_SENT_MS); }
+      if (undoWrongCard()) { b.classList.remove('undo'); b.classList.add('sent'); setMiss(b, '✓ 취소함'); b._sentT = setTimeout(() => { b.classList.remove('sent'); camMissLabel(); }, MISS_SENT_MS); }
       return;
     }
     if (tg && !card.hidden && card._camI === tg.i) {   // 경고 카드가 떠 있음 → 그 카메라 신고
-      if (reportWrongCard()) { b.classList.add('sent'); b.textContent = '✓ 보냄'; b._sentT = setTimeout(() => { b.classList.remove('sent'); b.textContent = REPORT_LABEL; camMissLabel(); }, MISS_SENT_MS); }
+      if (reportWrongCard()) { b.classList.add('sent'); setMiss(b, '✓ 보냄'); b._sentT = setTimeout(() => { b.classList.remove('sent'); setMiss(b, REPORT_LABEL); camMissLabel(); }, MISS_SENT_MS); }
       return;
     }
-    b.classList.add('sending'); b.textContent = '보내는 중…';
+    b.classList.add('sending'); setMiss(b, '보내는 중…');
     reportMissed(b);
   };
   // ---------- v202 실시간 신고 확인 (2026-11-24 운전자 '단속경보나 경고없을때 눌렀을때 에뮬레이터가 일을 하지 않는다면 찾아서 적용하고 그 사용자에게

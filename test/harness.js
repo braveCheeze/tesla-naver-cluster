@@ -1374,7 +1374,7 @@
           if (innerWidth < 1000) return !on;
           // v284: '의견'이 오른쪽(주행 기록 카드 왼쪽)으로 옮겨 — 속도계는 왼쪽 아래, 맨 밑 아래 띠 위, '의견'과 가로로 겹치지 않게
           const r = sb.getBoundingClientRect(), fb = document.querySelector('.fbcorner').getBoundingClientRect(), nb = document.getElementById('navBar').getBoundingClientRect();
-          return on && r.left < app.left + 60 && r.bottom <= nb.top - 4 && r.right < fb.left; })(),
+          return on && r.left < app.left + 60 && r.bottom <= nb.top - 4 && r.bottom <= fb.top - 4; })(),   // v286: '의견'·'제보'는 왼쪽 아래 — 큰 속도는 그 위
         // 야간·전체화면·설정 버튼은 길안내 패널 바로 오른쪽, 패널 위쪽 높이에
         topButtonsNextToNav: tc.left >= np.right && tc.left - np.right <= 16 && Math.abs(tc.top - np.top) <= 4,
       };
@@ -2969,6 +2969,7 @@
     { id: 'S176', name: "S176 nothing in the left column is cut off (v275, driver photo 2026-11-27 수원신갈IC 160 m: '이렇게 나와 버려 제일 좋은 방법 조금 변경해봐'): at 804×560 and 804×600 on the real 경부 → 수원신갈IC route, 900 m before the exit (card + next row + rest row + 40 camera + speed strip + hi-pass + report button) folds report → hi-pass chip → camera to the right badge → speed strip so the column ends above the attribution line; 160 m before (junction picture) the card is one line with the picture right under it, next guide / rest / hi-pass are chips, the right badge shows speed 79 (red over 40), the 40 sign, 370m and the kind band 8 px left of the route strip, no report button; restoring the size unfolds", fn: s176 },
     { id: 'S177', name: "S177 approach leg then turn (v277, keys Naver check of the crossing cameras v274 removed): a guided car coming in on the camera's own approach and turning at the junction is still alerted — 인항로 #23586 turning left, 안남로 #25184 turning right, 군왕로 #3564 turning toward 270° — while going straight through the junction on the crossing road either way is not; the two 30 school-zone cameras on one pole on 마장로324번길 190 m west of 안남로 follow Naver: westbound (after the right turn) #25199 at 274°, eastbound #25191 at 94°, each only for its own direction", fn: s177 },
     { id: 'S178', name: "S178 recorded voice clips (v278, driver '걍 MeloTTS로 다 가자' — the Tesla browser has no speech engine: 0 voices, speak() → synthesis-failed): every sentence the app speaks, built by the same functions (camSpeech for all kinds/zones/rear/box/distances/limits — box booths now say '박스형 단속 카메라' like Naver, section start, fixed sentences, ETA change, route start with the destination name left out, 이어서/다시 chains, and every Naver guide text in the test routes incl. toll gates) maps fully onto data/voice_clips.json; numbers read 12 · 110 · 1600 · 23000 as clips; with the flag on and no working speech the clips are fetched, decoded and played back to back (onEnd), one missing clip falls back to the beep (onFail), an uncovered sentence returns false; with the flag off speechSynthesis stays; v279: fetched clips land in Cache Storage and play with the network gone", fn: s178 },
+    { id: 'S182', name: "S182 section card like Naver (v286, driver '구간 평균 나와있는 숫자는 노란색으로 네이버지도랑 맞춰 주고 몇 키로 구간 단속인지 안 나와 있어서 … 평균속도 밑으로 표기'): 900 m into the 서울TG 100 section, day and night, the speed row's 구간평균 number is yellow on a dark chip and the section card shows a red-ring '100' sign in dark ink (the old '제한 100' text was white on the light card), 남은 구간 and the time; the card touches neither the route strip nor the docked bar", fn: s182 },
     { id: 'S179', name: "S179 cameras only Naver had in the daily Naver checks of 2026-11-24..27 (v280): the 19 spots in data/driver_spots.json (Naver-checked; rear, box and child flags as Naver's badge), plus v282's 8 from the pipeline's verified lines, alert along a straight route in their direction with Naver's limit and kind band (박스형 · 후면단속 · 신호과속 · 과속단속) by 520 m before, not the other way; 광주 필문대로 southbound #3183 and #3102 alert 60 (police data 50)", fn: s179 },
     { id: 'S180', name: "S180 a reroute or traffic answer that starts where the car is not is held, not shown (v280, driver: '고속화 도로 그 밑에 일반도로 … 엉뚱하게 없는 네비가 잡히다가 사라지거든'; /events: all 40 logged reroutes came from a route the car had never been on): (a) a reroute answer starting on a parallel road 40 m away never shows its guidance or '새 경로로 안내합니다', is dropped when the car does not get on it, and the next answer (the car's own road) is used at once; (b) a traffic answer starting 100 m ahead on a road 35 m to the side (passed v181's 'behind the start' check) is dropped, the current route stays, no reroute; (c) a reroute answer 40 m ahead on the same road is used at once as before; (d) an answer on a road 30 m to the side is used once the car moves onto that road", fn: s180 },
     { id: 'S181', name: "S181 docked bottom bar and the v282 layout (driver photos 2026-11-28: '간격을 좀 띄어주고', '가운데 떠있는걸 독바처럼 좀 내리는게', '잘못된 정보 신고를 제보로 빨간색', '의견을 오른쪽으로', '얘 UI가 너무 공간을 크게 차지', turn arrow '확대를 해도 이정도 느낌으로만'): while guiding at 804x638 the bottom bar spans the full width at the very bottom (40 px, numbers, place, 안내 종료 in one row); the map credit, trip card, GPS and 의견 sit above it; 의견 is 10 px left of the trip card, bottom-aligned, right of the left column; the left column ends at least 24 px above the bar; the chips are 8 px under the top buttons when those show; the report button reads '제보' on red; the card rows are compact (destination <= 34 px, 이어서 <= 32 px); above zoom 17 the turn arrow keeps its zoom-17 screen length; after the end the bar is the small pill again", fn: s181 },
@@ -3813,7 +3814,7 @@
       t.mySpots.length = 0; keepSpots.forEach((x) => t.mySpots.push(x)); t.store.set('mySpots', keepSpotRaw); t.applyUserSpots();   // v169
     }
     const [w, h] = r.size.split('x').map(Number);
-    const ok = w >= 84 && h >= 46 /* v282 빨간 '제보' */ && r.text1 === '✓ 보냄' && r.blue && r.toast1 && !r.toast2 && r.text3 === '제보' /* v202 */ && !r.sentAfter;
+    const ok = w >= 48 && h >= 48 /* v286 동그란 '제보' 50px ('의견'과 같게) */ && r.text1 === '✓ 보냄' && r.blue && r.toast1 && !r.toast2 && r.text3 === '제보' /* v202 */ && !r.sentAfter;
     return { pass: ok, detail: JSON.stringify(r) };
   }
 
@@ -6701,10 +6702,10 @@
       // v206: 주행 기록 카드 안 나침반 줄 오른쪽 끝 (46px, 말풍선 속 마이크 + '의견'), 진짜 누름이 버튼에 닿는다
       // v263 (운전자: 주행 기록 카드는 오른쪽 아래, 왼쪽 아래에는 초록 '의견' 버튼만): 왼쪽 아래 모서리 50px, 진짜 누름이 버튼에 닿는다
       const appR = document.getElementById('app').getBoundingClientRect();
-      // v282 (운전자 '의견을 오른쪽으로 빼주고'): 오른쪽 아래 주행 기록 카드 왼쪽 10px, 바닥을 카드와 맞춘다 (길안내 중 맨 밑 띠 위)
-      const trR = document.querySelector('.trip').getBoundingClientRect();
-      r.a = { w: Math.round(fbR.width), h: Math.round(fbR.height), right: fbR.right <= trR.left - 6 && fbR.right >= trR.left - 14 && fbR.left > appR.left + appR.width / 2,
-        row: Math.abs(fbR.bottom - trR.bottom) <= 2,
+      // v286 (운전자 '제보랑 의견은 왼쪽 하단 안에다가'): 왼쪽 아래 모서리, 동그란 '제보' 오른쪽 10px 에 나란히 (길안내 중 맨 밑 띠 위)
+      const msR = document.getElementById('camMissBtn').getBoundingClientRect();
+      r.a = { w: Math.round(fbR.width), h: Math.round(fbR.height), right: fbR.left >= appR.left + 12 && fbR.right < appR.left + appR.width / 2 && fbR.left - msR.right >= 6 && fbR.left - msR.right <= 14,
+        row: msR.width > 0 && Math.abs(fbR.bottom - msR.bottom) <= 2,
         inCard: !!btn.closest('.fbcorner'), cap: text('.fb-cap'), hit: !!(hit && hit.closest && hit.closest('#fbBtn')), shown: getComputedStyle(btn.parentElement).display !== 'none' };
       // (b)·(c)
       btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -7206,7 +7207,7 @@
       if (r.wide) {
         const sr = sb.getBoundingClientRect(), fbr = document.querySelector('.fbcorner').getBoundingClientRect();
         // v284: '의견'은 오른쪽(주행 기록 카드 왼쪽)으로 옮겼다 — 큰 속도는 왼쪽 아래 그대로, 화면 맨 밑에서 40px 넘게 위, '의견'과 가로로 안 겹친다
-        r.b = { bottomGap: Math.round(innerHeight - sr.bottom), clearFb: sr.right < fbr.left, shown: getComputedStyle(sb).display !== 'none' };
+        r.b = { bottomGap: Math.round(innerHeight - sr.bottom), clearFb: sr.bottom <= fbr.top - 4, shown: getComputedStyle(sb).display !== 'none' };   // v286: 버튼 위
         // (c) 주의 표지 칸을 속도 숫자 높이에만 걸치게
         // 제자리에서 보이게 한 뒤 위아래로만 옮긴다 (fixed 로 띄우면 offsetParent 가 없어 검사에서 빠진다)
         sign.hidden = false;
@@ -7227,7 +7228,7 @@
     const a = r.a || {}, b = r.b || {}, c1 = r.c1 || {}, c2 = r.c2 || {};
     // v263 (운전자 '표는 좀 작게, 조금 투명하게 blur'): 주행 기록 카드는 오른쪽 아래 작은 유리 (칸 사이 16px, 폭 140px 넘게), 가림 표시는 왼쪽 아래 '의견' 버튼(fb-covered)
     const ok = a.colGap === '16px' && a.w >= 140 && a.line === 'solid' && a.tripH === a.h + 'px' &&
-      (!r.wide || (b.shown && b.bottomGap >= 40 && b.clearFb && c1.speed && !c1.trip && c2.speed && !c2.trip)) &&   // v284: 왼쪽 칸이 내려와도 오른쪽 '의견'은 안 가린다
+      (!r.wide || (b.shown && b.bottomGap >= 40 && b.clearFb && c1.speed && !c1.trip && c2.speed && c2.trip)) &&   // v286: '의견'이 다시 왼쪽 아래 — 왼쪽 칸이 내려와 닿으면 가림 표시
       !r.after.speed && !r.after.trip;
     return { pass: !!ok, detail: JSON.stringify(r) };
   }
@@ -7475,6 +7476,8 @@
       if (/[?&]hold=1/.test(location.search)) await sleep(12000);   // 눈으로 볼 때만: 버튼판이 열린 길안내 화면을 잠깐 둔다
       r.a = { open: t.fbP.open, toast: text('#fbPanel .fbp-cap'), toastBox: !document.getElementById('toast').hidden, mode: t.store.get('fbMode'), labels: bs.map((x) => x.textContent), minW: Math.round(Math.min(...bs.map((x) => B(x).width))), minH: Math.round(Math.min(...bs.map((x) => B(x).height))),
         hits: hits.every(Boolean), who, overNav: !np.hidden && over(pb, nb), overCam: !!cd && !cd.hidden && cd.getClientRects().length > 0 && over(pb, B(cd)), overBtn: over(pb, fbb),
+        // v286: 왼쪽 아래 두 버튼 오른쪽으로 열린 판은 가운데 내 차도, 제보 버튼도 덮지 않는다
+        overCar: (() => { const me = document.querySelector('.me'); return !!me && me.getClientRects().length > 0 && over(pb, B(me)); })(), overMiss: (() => { const m = document.getElementById('camMissBtn'); return !!m && !m.hidden && m.getClientRects().length > 0 && over(pb, B(m)); })(),
         inView: pb.left >= 0 && pb.right <= innerWidth && pb.top >= 0 && pb.bottom <= innerHeight, camShown: !!cd && cd.getClientRects().length > 0, pressed: btn.classList.contains('open') };
       // v282: 공개 사용자는 버튼판이 열려도 녹음하지 않는다 ('녹음'을 누를 때만), 판 밑에 그 사실과 보관 기간
       await sleep(600);
@@ -7596,7 +7599,7 @@
       js.text === '여기 카메라는 50m 앞이에요' && js.how === 'text' && js.navOn === true && js.pos && !js.sheet && js.toast === '보냈어요' && js.queued === 0 &&
       !h.rec && h.open && h.cap === '말소리가 없어 녹음을 멈췄어요 · 버튼으로 보내 주세요' && h.queued === 0 && h.label === '녹음' &&
       ii.preset === '[소리 이상]' && ii.posted === 1 && ii.audio && ii.closed &&
-      a.labels.join() === '녹음,글로,카메라,길안내,화면,소리,좋아요' && a.minW >= 64 && a.minH >= 72 && a.hits && !a.overNav && !a.overCam && a.camShown && !a.overBtn && a.inView && a.pressed &&
+      a.labels.join() === '녹음,글로,카메라,길안내,화면,소리,좋아요' && a.minW >= 64 && a.minH >= 72 && a.hits && !a.overNav && !a.overCam && a.camShown && !a.overBtn && !a.overCar && !a.overMiss && a.inView && a.pressed &&
       c.text === '[카메라 이상]' && c.preset === 'cam' && c.navOn === true && c.cam === 60 && c.hasPos && c.closed && c.toast === '보냈어요' &&
       b.open && b.made === 0 && !d.open && !d.sent && e.opened && !e.open &&
       f.recShown && f.recording && q.n === 1 && /^audio\//.test(q.mime || '') && q.b64 && q.sec >= 1 && q.x === 1 && q.closed && q.toast === '저장했어요 · 연결되면 보내요' && !q.sent &&
@@ -8370,18 +8373,22 @@
       await new Promise((res) => setTimeout(res, 450));   // 서랍이 다 내려온 뒤
       t.renderNav();
       const ab = app.getBoundingClientRect(), floor = ab.top + H - 24;
-      const left = ['#navPanel', '#camDrawer', '#camNext', '#bumpCard', '#signCard', '#parkCard', '#camMissBtn'].map((q) => [q, box($(q))]).filter((x) => x[1]);
+      const left = ['#navPanel', '#camDrawer', '#camNext', '#bumpCard', '#signCard', '#parkCard'].map((q) => [q, box($(q))]).filter((x) => x[1]);   // v286: '제보'는 왼쪽 아래 모서리
+      const cMiss = box($('#camMissBtn')), cFb = box($('#fbBtn')), nbx = box($('#navBar'));
       const lowest = left.reduce((m, x) => Math.max(m, x[1].b), 0);
       const chips = [...document.querySelectorAll('#navChips .nchip')].map((c) => ({ k: c.dataset.k, cls: c.className, txt: c.textContent.trim(), b: box(c) }));
       const badge = box($('#sideBadge')), strip = box($('#routeStrip')), trip = box($('.trip')), np = box($('#navPanel')), jc = box($('#juncCard'));
+      const sLab = box(document.querySelector('#routeStrip .rs-top'));   // v286: 막대 위 남은 거리·도착 글자
       const tt = box($('#turnText'));
       return {
         H, dist, jx: app.classList.contains('jx-time'), folds: t.FOLD_STEPS.filter((c) => app.classList.contains(c)), over: lowest - floor, lowest: lowest - ab.top,
         dest: !!box(document.querySelector('#navPanel .navdest')), turnH: tt ? tt.b - tt.t : 0,
-        picGap: jc && np ? jc.t - np.b : null, cam: !!box($('#camCard')), spd: !!box($('#mySpeed')), toll: !!box($('#tollCard')), miss: !!box($('#camMissBtn')), next: !!box($('#nextTurn')),
+        picGap: jc && np ? jc.t - np.b : null, cam: !!box($('#camCard')), spd: !!box($('#mySpeed')), toll: !!box($('#tollCard')), miss: !!cMiss, next: !!box($('#nextTurn')),
+        corner: cMiss && cFb ? { l: cMiss.l - Math.round(ab.left), gap: cFb.l - cMiss.r, bot: Math.abs(cFb.b - cMiss.b), aboveBar: nbx ? nbx.t - cFb.b : null, colGap: Math.min(cMiss.t, cFb.t) - lowest } : null,
         rest: !!box($('#restCard')), chips: chips.map((c) => c.k + '|' + c.txt.replace(/\s+/g, ' ')),
         chipOver: chips.filter((c) => c.b && c.b.r > (badge ? badge.l - 4 : strip ? strip.l - 4 : ab.right)).map((c) => c.k),
-        badge: badge ? { txt: [...$('#sideBadge').children].map((c) => c.textContent.trim()).join(' '), cls: $('#sideBadge').className, gap: strip ? strip.l - badge.r : null, inView: badge.b <= floor,
+        badge: badge ? { txt: [...$('#sideBadge').children].map((c) => c.textContent.trim()).join(' '), cls: $('#sideBadge').className,
+          gap: strip ? Math.min(strip.l, sLab ? sLab.l : Infinity) - badge.r : null, labGap: sLab ? sLab.l - badge.r : null, inView: badge.b <= floor,
           tripHit: !!(trip && badge.b > trip.t && badge.r > trip.l && badge.l < trip.r) } : null,
       };
     };
@@ -8391,7 +8398,7 @@
     document.head.appendChild(still);
     try {
       if (ci < 0) return { pass: false, detail: 'no 40 camera row' };
-      for (const H of [560, 600]) for (const d of [900, 160]) out[H + '_' + d] = await scene(H, d);
+      for (const H of [560, 600, 638]) for (const d of [900, 160]) out[H + '_' + d] = await scene(H, d);   // v286: 638(테슬라 원래 높이)도
       if (keepStyle == null) app.removeAttribute('style'); else app.setAttribute('style', keepStyle);
       window.dispatchEvent(new Event('resize'));
       t.fitColumn();
@@ -8407,21 +8414,27 @@
       if (k === 'back') { if (o.folds.length) bad.push('back: still folded ' + o.folds.join(',')); continue; }
       if (o.over > 0) bad.push(k + ': left column ' + o.over + 'px below the screen');
       if (o.chipOver.length) bad.push(k + ': chip runs into the badge ' + o.chipOver.join(','));
+      // v286: 두 버튼은 화면 안(왼쪽 12px 넘게)·아래 띠 위 8px 넘게, 나란히(제보 → 의견), 왼쪽 칸은 그 위 8px 넘게에서 끝난다
+      const cn = o.corner;
+      if (!cn) bad.push(k + ': corner buttons missing');
+      else if (cn.l < 12 || cn.gap < 6 || cn.gap > 14 || cn.bot > 2 || !(cn.aboveBar >= 8) || cn.colGap < 7) bad.push(k + ': corner ' + JSON.stringify(cn));
       if (o.dist === 900) {
         if (o.jx) bad.push(k + ': picture already at 900 m');
         if (!o.cam && !(o.badge && /370m/.test(o.badge.txt))) bad.push(k + ': camera lost');
         if (!o.toll && !o.chips.some((c) => /^t:.*hi-pass/.test(c))) bad.push(k + ': hi-pass lost');
-        if (o.miss && o.folds.length) bad.push(k + ': report button kept while folding ' + o.folds.join(','));
-        if (o.folds.length && o.folds[0] !== 'fo-report') bad.push(k + ': fold order ' + o.folds.join(','));
+        // v286: '제보'·'의견'은 왼쪽 아래 모서리에 늘 (접는 칸이 아님) — 카드를 먼저 접는다
+        if (o.folds.length && o.folds[0] !== 'fo-toll') bad.push(k + ': fold order ' + o.folds.join(','));
       } else {
         if (!o.jx) bad.push(k + ': no picture time');
         if (o.dest) bad.push(k + ': destination line shown');
         if (o.turnH > 26) bad.push(k + ': turn text ' + o.turnH + 'px (not one line)');
         if (!(o.picGap !== null && o.picGap >= 0 && o.picGap <= 16)) bad.push(k + ': picture not under the card (' + o.picGap + ')');
-        if (o.cam || o.spd || o.toll || o.miss || o.next || o.rest) bad.push(k + ': left column still has ' + ['cam', 'spd', 'toll', 'miss', 'next', 'rest'].filter((x) => o[x]).join(','));
+        if (o.cam || o.spd || o.toll || o.next || o.rest) bad.push(k + ': left column still has ' + ['cam', 'spd', 'toll', 'next', 'rest'].filter((x) => o[x]).join(','));
         if (!o.badge || !/^79km\/h 40 370m \S/.test(o.badge.txt)) bad.push(k + ': badge ' + JSON.stringify(o.badge));
         if (o.badge && !/\bover\b/.test(o.badge.cls)) bad.push(k + ': 79 over 40 not red');
         if (o.badge && o.badge.gap !== null && (o.badge.gap < 6 || o.badge.gap > 10)) bad.push(k + ': badge gap to the route strip ' + o.badge.gap);
+        // v286: 막대 위 글자와도 8px 넘게 (반올림 1px) — v284 에서 글자가 '40' 원을 덮었다
+        if (o.badge && o.badge.labGap !== null && o.badge.labGap < 7) bad.push(k + ': badge under the strip label (' + o.badge.labGap + 'px)');
         if (o.badge && (!o.badge.inView || o.badge.tripHit)) bad.push(k + ': badge off screen or over the trip card');
         if (!o.chips.some((c) => /^n:/.test(c))) bad.push(k + ': next guide chip missing');
         if (!o.chips.some((c) => /^r:/.test(c))) bad.push(k + ': rest chip missing');
@@ -8638,17 +8651,20 @@
       const ab = app.getBoundingClientRect();
       const nb = box(document.getElementById('navBar')), trip = box(document.querySelector('.trip')), fc = box(document.querySelector('.fbcorner'));
       const np = box(document.getElementById('navPanel')), at = box(document.querySelector('#map .attrib')), gps = box(document.querySelector('.gps'));
-      const left = ['#navPanel', '#camDrawer', '#camNext', '#bumpCard', '#signCard', '#parkCard', '#camMissBtn'].map((q) => box(document.querySelector(q))).filter(Boolean);
+      const left = ['#navPanel', '#camDrawer', '#camNext', '#bumpCard', '#signCard', '#parkCard'].map((q) => box(document.querySelector(q))).filter(Boolean);
+      const cMiss = box(document.getElementById('camMissBtn')), cFb = box(document.getElementById('fbBtn'));
       const lowest = left.reduce((m, x) => Math.max(m, x.b), 0);
       const kids = ['#nbRemain', '#nbEta', '#roadName', '#nbEnd'].map((q) => box(document.querySelector(q)));
       r.dock = { docked: app.classList.contains('docked'), nb: nb && { l: nb.l - Math.round(ab.left), r: Math.round(ab.right) - nb.r, b: Math.round(ab.bottom) - nb.b, h: nb.b - nb.t },
         oneRow: !!nb && kids.every((k) => k && k.t >= nb.t && k.b <= nb.b), order: kids.every(Boolean) && kids[0].l < kids[1].l && kids[1].r <= kids[2].l + 1 && kids[2].r <= kids[3].l + 1,
         attrib: at && nb ? nb.t - at.b : null, trip: trip && nb ? nb.t - trip.b : null, gps: gps && nb ? nb.t - gps.b : null, col: nb ? nb.t - lowest : null,
-        fb: fc && trip && np ? { gap: trip.l - fc.r, bottom: trip.b - fc.b, rightOfCol: fc.l > np.r } : null };
+        // v286 (운전자 '제보랑 의견은 왼쪽 하단 안에다가'): 왼쪽 아래 모서리에 '제보' → '의견' 나란히, 아래 띠 위
+        fb: cMiss && cFb && nb ? { l: cMiss.l - Math.round(ab.left), gap: cFb.l - cMiss.r, bottom: Math.abs(cFb.b - cMiss.b), aboveBar: nb.t - cFb.b, colGap: Math.min(cMiss.t, cFb.t) - lowest,
+          round: Math.abs((cMiss.r - cMiss.l) - (cMiss.b - cMiss.t)) <= 1 && cMiss.r - cMiss.l >= 48 } : null };
       // 제보 버튼 (접히지 않게 잠깐 넉넉히) · 안내 카드 줄 높이
       app.style.height = '900px'; window.dispatchEvent(new Event('resize')); t.fitColumn();
       const mb = document.getElementById('camMissBtn');
-      r.report = { txt: mb.textContent, aria: mb.getAttribute('aria-label'), bg: getComputedStyle(mb).backgroundColor, shown: !!box(mb) };
+      r.report = { txt: mb.textContent, aria: mb.getAttribute('aria-label'), color: getComputedStyle(mb).color, icon: !!mb.querySelector('svg'), shown: !!box(mb) };
       const nd = box(document.querySelector('#navPanel .navdest')), nt = box(document.getElementById('nextTurn'));
       r.card = { dest: nd ? nd.b - nd.t : null, next: nt ? nt.b - nt.t : null };
       // 칩: 위쪽 버튼이 보이면 그 밑 8px (분기 그림 160m 앞: 그다음 안내·하이패스·휴게소 칩)
@@ -8674,12 +8690,50 @@
     }
     const d = r.dock || {}, n = d.nb || {}, f = d.fb || {}, rp = r.report || {}, c = r.card || {}, aw = r.arrow || {}, af = r.after || {};
     const ok = d.docked && n.l === 0 && n.r === 0 && n.b === 0 && n.h === 40 && d.oneRow && d.order &&
-      d.attrib >= 0 && d.trip >= 8 && d.gps >= 0 && d.col >= 24 && f.gap >= 6 && f.gap <= 14 && Math.abs(f.bottom) <= 2 && f.rightOfCol &&
-      r.chipGap === 8 && rp.txt === '제보' && rp.aria === '잘못된 정보 제보' && rp.bg === 'rgb(224, 49, 49)' && rp.shown &&
+      d.attrib >= 0 && d.trip >= 8 && d.gps >= 0 && d.col >= 24 && f.l >= 12 && f.gap >= 6 && f.gap <= 14 && f.bottom <= 2 && f.aboveBar >= 8 && f.colGap >= 7 && f.round &&
+      r.chipGap === 8 && rp.txt === '제보' && rp.aria === '잘못된 정보 제보' && rp.color === 'rgb(224, 49, 49)' && rp.icon && rp.shown &&
       c.dest !== null && c.dest <= 34 && (c.next === null || c.next <= 32) &&
       aw.b17 === 38 && aw.a17 === 25 && Math.abs(aw.b19 - aw.b17) <= 1 && Math.abs(aw.a19 - aw.a17) <= 1 && aw.b15 > 100 &&
       !af.docked && !af.on;
     return { pass: !!ok, detail: JSON.stringify(r) };
+  }
+
+  // S182 (v286, 운전자 '구간 평균 나와있는 숫자는 노란색으로 네이버지도랑 맞춰 주고 몇 키로 구간 단속인지 안 나와 있어서 … 평균속도 밑으로'):
+  //   서울TG 경로 100 구간 안 900m — 속도 칸 구간평균 숫자는 어두운 칸 위 노랑, 그 밑 구간 칸은 빨간 원 '100'(검은 글자 — 예전에는 흰 카드에 흰 글자라 안 보였다)
+  //   · 남은 구간 · 남은 시간. 낮·밤 모두, 오른쪽 경로 막대·아래 띠와 겹치지 않는다
+  async function s182() {
+    const t = T(), r = {};
+    const START = { lat: 37.40725, lng: 127.1038 };
+    const box = (q) => { const e = document.querySelector(q); if (!e || e.hidden || !e.getClientRects().length || getComputedStyle(e).display === 'none') return null; const b = e.getBoundingClientRect(); return { l: b.left, t: b.top, r: b.right, b: b.bottom }; };
+    const hit = (a, b) => !!a && !!b && a.r > b.l && a.l < b.r && a.b > b.t && a.t < b.b;
+    const keepNight = t.store.get('nightMode');
+    try {
+      await waitFor(() => t.cams.loaded, 10000, 100);
+      const fx = await (await realFetch(harnessDir + 'fixtures/route-seoultg-n.json', { cache: 'no-store' })).json();
+      const P = fx.path.map((x) => ({ lat: x[1], lng: x[0] }));
+      const cum = [0]; for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + hav(P[k - 1], P[k]));
+      const R = { route: fx, P, cum, total: cum[cum.length - 1], dest: { name: '시험', addr: '', lat: P[P.length - 1].lat, lng: P[P.length - 1].lng } };
+      let sc = 0, bd = 1e9; for (let s = 0; s < R.total; s += 2) { const d = hav(pointAt(R, s).p, START); if (d < bd) { bd = d; sc = s; } }
+      for (const mode of ['off', 'on']) {
+        t.store.set('nightMode', mode); t.applyNight();
+        await resetApp(); softReset(); await planAndStart(R);
+        for (let s = sc - 1500; s <= sc + 900; s += 20) { const a = pointAt(R, s); feed(a.p, 23, a.h); }
+        t.renderNav(); t.fitColumn();
+        const sign = document.getElementById('secSignN'), av = document.querySelector('#mySpeedLim .avgv');
+        const sb = box('#secCard .sec-blk'), strip = box('#routeStrip'), nb = box('#navBar');
+        r[mode] = { sec: !!t.camState.section, sign: sign.textContent, signVis: !!box('#secCard .sec-sign'), signInk: getComputedStyle(sign).color, signBg: getComputedStyle(sign.parentNode).backgroundColor,
+          avg: av ? av.textContent : null, avgInk: av ? getComputedStyle(av).color : null, avgBg: av ? getComputedStyle(av).backgroundColor : null,
+          rem: document.getElementById('secRemD').textContent, time: document.getElementById('secRemT').textContent, oldTop: !!box('#secCard .sec-top'),
+          hitStrip: hit(sb, strip), hitBar: hit(sb, nb) };
+        t.endNav();
+      }
+    } finally {
+      t.store.set('nightMode', keepNight); t.applyNight();
+      await resetApp(); softReset();
+    }
+    const ok1 = (o) => o && o.sec && o.sign === '100' && o.signVis && o.signInk === 'rgb(17, 17, 17)' && o.signBg === 'rgb(255, 255, 255)' && /^\d+$/.test(o.avg || '') &&
+      o.avgInk === 'rgb(255, 212, 59)' && o.avgBg !== 'rgba(0, 0, 0, 0)' && /km$|m$/.test(o.rem) && /^\d\d:\d\d$/.test(o.time) && !o.oldTop && !o.hitStrip && !o.hitBar;
+    return { pass: ok1(r.off) && ok1(r.on), detail: JSON.stringify(r) };
   }
 
   // S179 (v280): 네이버 하루 점검(2026-11-24 ~ 27)에서 네이버에만 있던 카메라 19곳을 data/driver_spots.json 에 넣었다(네이버 확인 표시 2,
@@ -9181,7 +9235,7 @@
       c.chips.length === 2 && /160m/.test(c.chips[0]) && /^R21km$/.test(c.chips[1]) && !c.restRow &&
       b.row && b.lead && b.chips.length === 1 && /^R/.test(b.chips[0]) &&
       d.bar && d.overlap.length === 0 &&
-      f.tripRight >= 0 && f.tripRight < 40 && r.d.fb && r.d.trip && r.d.trip[0] - r.d.fb[2] >= 6 && r.d.trip[0] - r.d.fb[2] <= 14 /* v282: 의견은 주행 기록 카드 왼쪽 */ && !f.gpsInTrip &&
+      f.tripRight >= 0 && f.tripRight < 40 && r.d.fb && r.d.trip && f.fbLeft >= 12 && f.fbLeft <= 30 && Math.abs(r.d.fb[3] - r.d.trip[3]) <= 2 /* v286: 제보·의견은 왼쪽 아래, 바닥은 주행 기록 카드와 같은 줄 */ && !f.gpsInTrip &&
       e.name === '시험 경유지' && e.tag && e.sub === '도착 시험 목적지' &&
       g.files >= 19 && g.x41sDay === 5;
     return { pass: !!ok, detail: JSON.stringify(r) };

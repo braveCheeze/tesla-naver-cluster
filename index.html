@@ -2062,7 +2062,7 @@
   #app.tesla.jx-time .navdest, #app.tesla.fo-dest .navdest { display: none; }
   #app.tesla.jx-time #turnText { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #app.tesla.jx-time #laneRow, #app.tesla.jx-time #colorRow, #app.tesla.jx-time #nextTurn, #app.tesla.jx-time #restCard { display: none !important; }
-  #app.tesla.jx-time #camMissBtn, #app.tesla.fo-report #camMissBtn { display: none !important; }
+  /* v286: '제보'는 왼쪽 아래 모서리 버튼 — 분기 그림 때도 접지 않는다 (예전: 그림 때·fo-report 때 숨김) */
   #app.tesla.jx-time #tollCard, #app.tesla.fo-toll #tollCard { display: none !important; }
   #app.tesla.jx-time #camCard, #app.tesla.jx-time #zoneBadge, #app.tesla.fo-cam #camCard, #app.tesla.fo-cam #zoneBadge { display: none !important; }
   #app.tesla.jx-time #mySpeed, #app.tesla.fo-speed #mySpeed { display: none !important; }
@@ -2179,6 +2179,69 @@
   .fbp-note { font-size: 11.5px; font-weight: 600; color: var(--nv-sub); padding: 0 4px; line-height: 1.3; }
   .fbp-btn.rec.on span::before { content: '● '; color: #ffdede; }
 
+  /* ===================== v286 (운전자 '의견 아이콘처럼 제보도 동그라미의 아이콘을 좀 만들어서 제보라고 써줬으면 좋겠고
+     제보랑 의견은 왼쪽 하단 안에다가 넣어 주는 게 좋아') =====================
+     왼쪽 아래 모서리(아래 띠 위, 화면 안쪽 20px)에 동그란 '제보'(빨강) · '의견'(초록) 50px 두 개 나란히. 왼쪽 칸은 그 위 8px 에서 끝난다(fitColumn).
+     '의견' 버튼판은 두 버튼 오른쪽에 두 줄(4칸씩)로, 바닥을 버튼에 맞춰 열린다 — 가운데 차·경로는 덮지 않게 */
+  #app.tesla .fbcorner { left: 20px; right: auto; bottom: var(--trip-b); display: flex; align-items: flex-end; gap: 10px; }
+  #app.tesla .fbcorner .cam-miss {
+    position: relative; flex: none; width: 50px; height: 50px; min-width: 0; min-height: 0; padding: 0; margin: 0; border: 0; border-radius: 25px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; pointer-events: auto; cursor: pointer;
+    background-color: var(--nv-glass); -webkit-backdrop-filter: var(--nv-blur); backdrop-filter: var(--nv-blur); color: #e03131;
+    box-shadow: inset 0 0 0 1.5px rgba(224, 49, 49, .6), var(--nv-shadow); font: inherit; letter-spacing: 0;
+  }
+  #app.tesla .fbcorner .cam-miss[hidden] { display: none; }
+  #app.tesla .fbcorner .cam-miss svg { width: 22px; height: 22px; flex: none; }
+  #app.tesla .fbcorner .cam-miss .cm-t { font-size: 10px; font-weight: 800; line-height: 1; letter-spacing: -.02em; margin-top: 1px; white-space: nowrap; }
+  #app.tesla .fbcorner .cam-miss:active { background-color: rgba(224, 49, 49, .16); }
+  body:has(#map.night) #app.tesla .fbcorner .cam-miss { color: #ff6b6b; box-shadow: inset 0 0 0 1.5px rgba(255, 107, 107, .65), var(--nv-shadow); }
+  /* 보내는 중 · 보냄 · 저장 · 취소: 알약으로 늘어나 글자만 (누른 것이 바로 보이게, v147) */
+  #app.tesla .fbcorner .cam-miss.sending, #app.tesla .fbcorner .cam-miss.sent, #app.tesla .fbcorner .cam-miss.undo { width: auto; padding: 0 16px; flex-direction: row; }
+  #app.tesla .fbcorner .cam-miss.sending svg, #app.tesla .fbcorner .cam-miss.sent svg, #app.tesla .fbcorner .cam-miss.undo svg { display: none; }
+  #app.tesla .fbcorner .cam-miss.sending .cm-t, #app.tesla .fbcorner .cam-miss.sent .cm-t, #app.tesla .fbcorner .cam-miss.undo .cm-t { font-size: 15px; }
+  #app.tesla .fbcorner .cam-miss.sending { background: #e03131; color: #fff; box-shadow: none; }
+  #app.tesla .fbcorner .cam-miss.sent { background: #1d4fb8; color: #fff; box-shadow: none; }
+  #app.tesla .fbcorner .cam-miss.sent.saved { background: #4b5563; }
+  #app.tesla .fbcorner .cam-miss.undo { background: rgba(20, 24, 30, .78); color: #fff; box-shadow: inset 0 0 0 2px #fff; }
+  #app.tesla .fbcorner .fbwrap { flex: none; }
+  #app.tesla .fbcorner .fb-label { left: 0; right: auto; }
+  #app.tesla .fbpanel:not([hidden]) { left: calc(100% + 10px); right: auto; bottom: 0; width: calc(4 * 66px + 3 * 6px + 16px); }
+  #app.tesla .fbcorner .fbp-row { flex-wrap: wrap; }
+  @keyframes fbpIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
+  /* 넓은 화면의 큰 속도는 두 버튼 위로 */
+  @media (min-width: 1000px) { #app.tesla .speedbox { bottom: calc(var(--trip-b) + 50px + 16px); } }
+
+  /* v286 구간단속 칸 (운전자 '구간 평균 나와있는 숫자는 노란색으로 네이버지도랑 맞춰 주고 몇 키로 구간 단속인지 안 나와 있어서 … 평균속도 밑으로'):
+     위 속도 칸의 구간평균 숫자는 네이버처럼 어두운 칸 위 노랑. 그 밑 구간 칸은 빨간 원 제한 표지 · 남은 구간 · 남은 시간 (낮·밤 같은 어두운 칸) */
+  .sec-blk { display: none; }
+  #app.tesla .seccard .sec-top, #app.tesla .seccard .sec-avg, #app.tesla .seccard .sec-remain { display: none; }
+  #app.tesla .seccard .sec-blk { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  #app.tesla .sec-sign { flex: none; width: 48px; height: 48px; border-radius: 50%; background: #fff; color: #111; display: flex; align-items: center; justify-content: center;
+    box-shadow: inset 0 0 0 5.5px #e53935, 0 1px 4px rgba(0, 0, 0, .25); }
+  #app.tesla .sec-sign b { font-size: 20px; font-weight: 900; letter-spacing: -.05em; line-height: 1; }
+  #app.tesla .sec-rest { display: flex; flex-direction: column; line-height: 1.1; }
+  #app.tesla .sec-rest small { font-size: 12px; font-weight: 700; color: var(--nv-sub); }
+  #app.tesla .sec-rest b { font-size: 20px; font-weight: 850; color: var(--nv-fg); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  #app.tesla .sec-time { margin-left: auto; padding: 5px 10px; border-radius: 9px; background: #23272f; color: #fff; font-size: 18px; font-weight: 850; font-variant-numeric: tabular-nums; }
+  #app.tesla .sec-time:empty { display: none; }
+  #app.tesla .sec-need { flex-basis: 100%; font-style: normal; font-size: 14px; font-weight: 800; color: var(--nv-red, #e53935); }
+  #app.tesla .myspeed em .avgv { display: inline-block; min-width: 46px; margin-left: 2px; padding: 2px 8px 1px; border-radius: 9px; text-align: center;
+    background: #23272f; color: #ffd43b; font-variant-numeric: tabular-nums; }
+  #app.tesla .myspeed em.avg-over .avgv, #app.tesla .myspeed.over em.avg-over .avgv { color: #ff6b6b; }
+  body:has(#map.night) #app.tesla .myspeed em .avgv, body:has(#map.night) #app.tesla .sec-time { background: #3a404c; }   /* 밤 카드도 어두워서 칸을 조금 밝게 */
+  /* 분기 그림 때 오른쪽 배지: 네이버 차례 그대로 — 제한 원 · 구간평균(노랑) · 남은 구간 · 시간 */
+  .sbg-sec { width: 100%; margin-top: 5px; padding: 4px 3px 4px; border-radius: 9px; background: #23272f; color: #fff; text-align: center; line-height: 1.08;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, .3); }
+  .sbg-sec small { display: block; font-size: 10.5px; font-weight: 700; color: #c9ced6; }
+  .sbg-sec b { display: block; font-size: 23px; font-weight: 900; color: #ffd43b; font-variant-numeric: tabular-nums; margin-bottom: 2px; }
+  .sbg-sec.over b { color: #ff6b6b; }
+  .sbg-sec span { display: block; font-size: 14px; font-weight: 850; font-variant-numeric: tabular-nums; padding-top: 2px; }
+  .sbg-sec small + span { border-top: 0; }
+  .sbg-sec b + small { padding-top: 3px; border-top: 1px solid rgba(255, 255, 255, .18); }
+  .sidebadge.sec-tight .sbg-sec b ~ small, .sidebadge.sec-tight .sbg-sec span { display: none; }
+  .sidebadge.sec-tight .sbg-sec b { margin-bottom: 0; }
+  .sidebadge.sec-none .sbg-sec { display: none; }
+
   /* '잘못된 정보 신고를 제보로 빨간색' */
   #app.tesla .cam-miss { min-width: 84px; min-height: 46px; padding: 0 16px; font-size: 17px; font-weight: 800; letter-spacing: .02em;
     background: #e03131; color: #fff; border: 0; box-shadow: 0 4px 12px rgba(224, 49, 49, .35); }
@@ -2267,6 +2330,7 @@
             <div class="sec-top">구간단속 · 제한 <b id="secLimit">100</b> km/h</div>
             <div class="sec-avg"><span id="secAvg">-</span><small> km/h 평균</small></div>
             <div id="secRemain" class="sec-remain">-</div>
+            <div class="sec-blk"><span class="sec-sign" aria-hidden="true"><b id="secSignN">100</b></span><span class="sec-rest"><small>남은 구간</small><b id="secRemD">-</b></span><span id="secRemT" class="sec-time"></span><i id="secNeed" class="sec-need" hidden></i></div>
           </div>
           <!-- 톨게이트(하이패스) 안내: 길안내 경로에 톨게이트가 있으면 2km 앞부터. 테슬라 모드에서는 단속 서랍 맨 밑 (2026-11-14 요청) -->
           <div id="tollCard" class="tollcard" hidden>
@@ -2594,8 +2658,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-285"></script>
-<script src="img/ai/picks.js?v=2026.11.16-285"></script>
-<script src="app.js?v=2026.11.16-285"></script>
+<script src="icons.js?v=2026.11.16-286"></script>
+<script src="img/ai/picks.js?v=2026.11.16-286"></script>
+<script src="app.js?v=2026.11.16-286"></script>
 </body>
 </html>
