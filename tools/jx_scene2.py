@@ -125,6 +125,28 @@ def _curve():
 
 
 SHAPES['x41c'] = _curve()
+# v297 (운전자가 네이버 거리뷰로 직접 따라간 신갈JC 원주 사진 6장, '출구 두 차로로'): x42c = 본선 4 + 출구 2 (원주 왼쪽 · 인천 오른쪽).
+#   맨 앞부터 실선으로 갈라진 두 차로가 고어(21m) 뒤 x41c 처럼 완만하게 휘고, ZS2C 에서 빗금 고어로 다시 갈린다(원주는 그대로 완만하게,
+#   인천은 더 오른쪽으로). 표지판 세 장: 본선 위(대전) · 출구 차로마다 하나(원주 ↓ · 인천 ↓). 두 차로 모두 칠해 두고 앱이 경로 차로만 남긴다
+#   (원주 길 'gn' · 인천 길 'np' — jx_variants)
+ZS2C = 34.0
+RAMP_C2 = (0.10, 0.006, ZS_C)   # x42c: 두 차로가 함께 완만하게 (다시 갈리는 곳이 그림 안에 보이게)
+BOARDS3 = ((0.05, 0.335, 0.47, 0.515), (0.505, 0.335, 0.725, 0.515), (0.745, 0.335, 0.965, 0.515))
+
+
+def _curve2():
+    sh = _exit(4, 2, lz=8.6, split=('half', 1, 'all'))
+    sh["bend"] = {0: [], 1: [RAMP_C2], 2: [RAMP_C2, (0.32, 0.05, ZS2C)]}   # 원주는 더 완만하게(다시 갈린 뒤 거의 곧게) · 인천은 오른쪽으로
+    sh['zs'] = ZS_C
+    sh['zs2'] = ZS2C
+    sh['turn'] = {1: 1, 2: 1}
+    sh['solid_split'] = True
+    sh['far'] = FAR_RAMP
+    sh['boards'] = BOARDS3
+    return sh
+
+
+SHAPES['x42c'] = _curve2()
 GO_N = {k: sum(1 for ln in v['lanes'] if ln[2] in v['go'] and len(ln) < 4) for k, v in SHAPES.items()}
 
 
@@ -317,8 +339,15 @@ def draw_base(name):
         for s2, (b0, b1, _zb) in groups.items():
             if s1 != s2 and abs(a1 - b0) < 0.01:
                 shared.add((s1, 'r')); shared.add((s2, 'l'))
+    zs2 = sh.get('zs2')
     for s, (x0, x1, za) in groups.items():
-        lane_line(x0, s, sh, False, d, white, 0.16, zs0 if (s, 'l') in shared else za)
+        if zs2 and s == 2:
+            lane_line(x0, s, sh, False, d, white, 0.16, zs2)   # v297 x42c: 다시 갈린 뒤부터 실선 (그 앞은 아래 점선)
+        else:
+            lane_line(x0, s, sh, False, d, white, 0.16, zs0 if (s, 'l') in shared else za)
+        if zs2 and s == 1:
+            lane_line(x1, s, sh, False, d, white, 0.16, zs2)
+            continue
         if r2 and s == 1:
             # v293 x41c: 출구 차로 오른쪽은 고어까지 실선(길 가장자리), 그 뒤는 연결로 두 차로 사이 점선, 바깥 가장자리 실선
             zt2 = r2[2] if len(r2) > 2 else r2[1]
@@ -337,7 +366,7 @@ def draw_base(name):
             # v293 x41c (운전자가 네이버 신갈JC 원주 그림의 본선 | 출구 경계에 빨간 줄을 그어 보냄): 출구 차로는 맨 앞부터 실선으로 갈라져 그대로 휜다
             lane_line(x0, 0, sh, not sh.get('solid_split'), d, white, 0.2, Z0, zs0)
         else:
-            lane_line(x0, 1, sh, True, d, white, 0.13, Z0, ZS2)   # 출구 안 두 무리: 다시 갈리기 전까지는 같은 연결로
+            lane_line(x0, 1, sh, True, d, white, 0.13, Z0, sh.get('zs2', ZS2))   # 출구 안 두 무리: 다시 갈리기 전까지는 같은 연결로
     # 노면 화살표: 앞쪽은 모두 곧게 (네이버 330m — 출구 차로도 아직 감속 차로). v293 x41c: 출구 차로는 오른쪽으로 꺾이는 ↱
     for ln in sh['lanes']:
         if lane_za(ln):
@@ -345,6 +374,19 @@ def draw_base(name):
         x0, x1, s = ln[:3]
         tn = sh.get('turn', {}).get(s, 0)
         d.polygon(arrow_glyph((x0 + x1) / 2, 12.0) if tn else arrow_poly((x0 + x1) / 2, s, sh, 10.2, 14.5, 0), fill=white)
+    if zs2:
+        # v297 x42c: 다시 갈리는 곳 빗금 고어 (두 갈래 사이 벌어진 자리, 벌어짐 6m 까지)
+        xb = [ln for ln in sh['lanes'] if ln[2] == 2][0][0]
+        z = zs2 + 2.0
+        while z < zs2 + 60:
+            g = shift(z, 2, sh) - shift(z, 1, sh)
+            if g > 6.0:
+                break
+            if g > 0.6:
+                a0 = xb + shift(z, 1, sh) + 0.25
+                a1 = xb + shift(z, 2, sh) - 0.25
+                d.polygon([proj(a0, z), proj(a1, z + 1.6), proj(a1, z + 2.3), proj(a0, z + 0.7)], fill=white)
+            z += 2.2
     far = sh.get('far')
     if far:
         # v293b: 오른쪽 끝 다른 연결로 (풀밭을 사이에 두고) — 회색 길, 가장자리 실선
@@ -358,7 +400,7 @@ def draw_base(name):
     d.rectangle([BEAM[0] * W, BEAM[1] * H, BEAM[2] * W, BEAM[3] * H], fill=gray)
     d.rectangle([0.035 * W, BEAM[1] * H, 0.055 * W, HZ + 40], fill=gray)
     d.rectangle([0.945 * W, BEAM[1] * H, 0.965 * W, HZ + 40], fill=gray)
-    for bx in (BOARD_L, BOARD_R):
+    for bx in sh.get('boards', (BOARD_L, BOARD_R)):
         x0, y0, x1, y1 = bx[0] * W, bx[1] * H, bx[2] * W, bx[3] * H
         d.rounded_rectangle([x0, y0, x1, y1], radius=10, fill=(11, 122, 67))
         d.rounded_rectangle([x0 + 7, y0 + 7, x1 - 7, y1 - 7], radius=6, outline=(255, 255, 255), width=4)
@@ -389,9 +431,10 @@ def lane_anchors(name):
     return out
 
 
-def boards_vis():
-    """표지판 두 장 → 보이는 띠 비율 (x0, y0, x1, y1)"""
-    return [[b[0], round(vis_y(b[1] * H), 3), b[2], round(vis_y(b[3] * H), 3)] for b in (BOARD_L, BOARD_R)]
+def boards_vis(name=None):
+    """표지판 (두 장, x42c 는 세 장) → 보이는 띠 비율 (x0, y0, x1, y1)"""
+    bs = SHAPES[name].get('boards', (BOARD_L, BOARD_R)) if name else (BOARD_L, BOARD_R)
+    return [[b[0], round(vis_y(b[1] * H), 3), b[2], round(vis_y(b[3] * H), 3)] for b in bs]
 
 
 def masks(name):
@@ -542,7 +585,7 @@ def check(path, name):
         why.append('경로 차로 초록 %.0f%%' % (go * 100))
     if ot > 0.12:
         why.append('다른 차로에 초록 %.0f%%' % (ot * 100))
-    for nm, bx in (('왼쪽', BOARD_L), ('오른쪽', BOARD_R)):
+    for nm, bx in zip(('왼쪽', '오른쪽', '오른쪽 끝'), SHAPES[name].get('boards', (BOARD_L, BOARD_R))):
         x0, y0, x1, y1 = int(bx[0] * W), int(bx[1] * H), int(bx[2] * W), int(bx[3] * H)
         inner = gr[y0 + 18:y1 - 18, x0 + 22:x1 - 22]
         if inner.mean() < 0.35:

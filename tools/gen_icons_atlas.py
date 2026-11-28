@@ -816,10 +816,20 @@ JX2_GEO_CURVE = ('GEOMETRY IS CRITICAL (like the junction view of a navigation a
                  'to the right, exactly as in the sketch. ')
 JX2_LANES_TXT['x41c'] = ('the road has exactly 5 lanes in the foreground: 4 grey lanes go straight on the left and 1 green lane (the route) on '
                          'their right, which runs straight beside them in the lower part of the picture, then leaves at the gore and bends gently to the right.')
-JX2_CURVE = {'x41c'}
+# v297 x42c (운전자 거리뷰 신갈JC 원주 '출구 두 차로로'): 출구 두 차로가 함께 완만하게 휘다가 빗금 고어에서 다시 갈린다. 표지판 세 장
+JX2_LANES_TXT['x42c'] = ('the road has exactly 6 lanes in the foreground: 4 grey lanes go straight on the left and 2 green lanes (two exit lanes, '
+                         'side by side, separated by a dashed white line) on their right. The two green exit lanes leave together at the gore and bend '
+                         'gently to the right; a little later they split again at a second white chevron-hatched gore: the left green lane continues '
+                         'gently, the right green lane veers further to the right, exactly as in the sketch. Both exit lanes stay green.')
+JX2_CURVE = {'x41c', 'x42c'}
+JX2_THREE_BOARDS = {'x42c'}   # 표지판 세 장 (본선 위 하나 · 출구 차로마다 하나)
 JX2 = {}
 for _k, _t in JX2_LANES_TXT.items():
     _e = JX2_EDIT.replace(JX2_GEO_OLD, JX2_GEO_CURVE) if _k in JX2_CURVE else JX2_EDIT
+    if _k in JX2_THREE_BOARDS:
+        _e = (_e.replace('the exact position and size of the two sign boards', 'the exact position and size of the three sign boards')
+              .replace('Sign boards: two plain dark-green', 'Sign boards: three plain dark-green')
+              .replace('the green exit lane is the rightmost lane beside the grey through lanes', 'the two green exit lanes are the rightmost lanes beside the grey through lanes'))
     JX2['jx2_%s_day' % _k] = (('ref/jx2_%s.png' % _k,), _e % _t, JX_DAY)
     JX2['jx2_%s_night' % _k] = (('ref/jx2_%s.png' % _k,), _e % _t, JX_NIGHT)
 
