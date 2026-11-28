@@ -69,7 +69,7 @@
   const authHeaders = (h) => (isOp() ? Object.assign({ Authorization: 'Bearer ' + adminToken() }, h) : h);
 
   // ---------- 운영 모니터링: 접속·오류를 길안내 서버에 짧게 남긴다 (위치는 보내지 않음) ----------
-  const APP_VERSION = '2026.11.16-284'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
+  const APP_VERSION = '2026.11.16-285'; // 배포 때 index.html 의 app.js?v=·icons.js?v= 와 version.json 도 같이 올린다
   // ---------- 아이콘 고르기 (2026-11-14 요청: 아이콘을 목록으로 보고 바꾸고 관리 — 내부 관리 페이지 tools/icons.html) ----------
   // 칸(slot) → img/ai/ 의 그림 파일. 기본은 저장소의 img/ai/picks.js(window.TNC_PICKS), 이 브라우저에서 고른 것은 localStorage
   // 'tnc.iconPick' 이 덮는다('-' 는 앱에 그려 둔 기본 그림). 칸: 안내 아이콘 이름(s, l, inr, tunnel …), 주의 표지 sign_<종류>
@@ -6910,7 +6910,15 @@
       }
       return best && best.d < 400 ? best.nm.slice(0, 2) : [];   // (겹치는 갈래는 -1000 이라 늘 통과)
     };
-    return { names: brs.map(nameOf), colors: brs.map((b) => (b.c === 'p' ? 'p' : 'g')) };
+    // v285 (운전자 '우리가 가는 방향에서만 색상을 적용해야 되지 … 이건 모든 전국 도로가 그렇게 되어야 해', 네이버 판교분기점 강동 쪽: '구리 성남' 둘만 분홍,
+    //   '일산 안양'은 회색): 경로가 실제로 가는 갈래 — 경로선이 그 갈래 끝점을 25m 안으로 지나는 하나(ensureRouteColorLines 의 bi). 모르면 null (예전처럼 둘 다 칠함)
+    const ri = cla.bi != null && cla.bi >= 0 ? brs.indexOf(row.br[cla.bi]) : -1;
+    return { names: brs.map(nameOf), colors: brs.map((b) => (b.c === 'p' ? 'p' : 'g')), route: ri >= 0 ? ri : null };
+  }
+  // v285: 갈 차로 무리가 다시 둘로 갈릴 때 경로 갈래 쪽 차로만 (차로 칸·그림 공통). ok = 갈 차로 번호(왼쪽부터), cnt = [왼쪽 무리 수, 오른쪽 무리 수]
+  function jxRouteGroup(ok, two, cnt) {
+    if (!two || two.route == null || !cnt || ok.length !== cnt[0] + cnt[1]) return ok;
+    return two.route === 0 ? ok.slice(0, cnt[0]) : ok.slice(cnt[0]);
   }
 
   // 노면 글자: 네 글자까지(네이버 '판교'·'서울'). 길면 쓰지 않는다 (표지판에 다 있다)
@@ -7057,7 +7065,9 @@
         const cnt = two ? (cfg.sub && cfg.sub[0] + cfg.sub[1] === nGo ? cfg.sub : [Math.floor(nGo / 2), nGo - Math.floor(nGo / 2)]) : null;
         let cols = new Array(nGo).fill(lc);
         if (two && two.colors[0] !== two.colors[1]) {
-          const scr = cols.map((c, k) => two.colors[k < cnt[0] ? 0 : 1]);
+          // v285: 경로가 가는 갈래를 알면(2판 그림) 그 무리만 그 색, 다른 무리는 칠하지 않는다('n' 회색 — 글자는 그대로). 모르면 예전처럼 두 색
+          const only = v2 && two.route != null ? two.route : -1;
+          const scr = cols.map((c, k) => { const gi = k < cnt[0] ? 0 : 1; return only < 0 || only === gi ? two.colors[gi] : 'n'; });
           cols = mir ? scr.reverse() : scr;
         }
         if (v2 && stay && cfg.bus) for (const i of cfg.bus) if (i < nGo) cols[mir ? nGo - 1 - i : i] = 'n';
@@ -7142,7 +7152,7 @@
         const lane = (p0, k, cls, fit, set) => {
           const f = fit && fit[k];
           const p = set ? set.P[k] : f ? [f[0], p0[1], p0[2], f[1], f[2]] : p0;
-          const bus = stay && goOrd[k] >= 0 && cols[goOrd[k]] === 'n';
+          const bus = goOrd[k] >= 0 && cols[goOrd[k]] === 'n';   // 버스전용차로(본선 그대로) · v285 경로가 안 가는 갈래 차로: 칠하지 않은 차로는 '갈 차로' 글자도 아님
           const nm = laneNames[k];
           const sk = Math.max(-38, Math.min(38, mir ? -p[4] : p[4]));
           let pos;
@@ -8105,7 +8115,7 @@
       if (hits.length !== 1) continue;                // 어느 갈래에도 안 감(본선 그대로) 또는 둘 다 닿음 → 모름
       // v197 그림 방향: 갈라지는 점의 진행 방향에서 본 갈래 끝점 쪽 (왼쪽 'l' / 오른쪽 'r')
       const turn = ((bearing(r, hits[0].b) - r.h + 540) % 360) - 180;
-      out.push({ at: o.at, end: hits[0].h.at, c: hits[0].b.c, name: r.name, k, side: turn < 0 ? 'l' : 'r' });
+      out.push({ at: o.at, end: hits[0].h.at, c: hits[0].b.c, name: r.name, k, side: turn < 0 ? 'l' : 'r', bi: r.br.indexOf(hits[0].b) });   // v285 bi: 경로가 가는 갈래
     }
     out.sort((u, v) => u.at - v.at);
     nav.clList = out;
@@ -8455,6 +8465,16 @@
     }
     // v197: 분기점 장면이 이 분기 단면의 차로를 이미 그렸으면 차로 칸은 숨긴다 (같은 것을 두 번 보이지 않게)
     if (hit && hit.fork && juncState.g && juncState.fork === hit.k) hit = null;
+    // v285 (운전자 '내가 가고자 하는 방향만 색상을 칠해줘', 네이버 판교분기점 차로 줄: 오른쪽 셋 중 '구리' 둘만 분홍): 갈 차로 무리가 바로 다시 갈리면
+    //   (색깔 유도선 두 갈래) 경로가 가는 갈래 쪽 차로만 갈 차로로. 무리 나누기는 그림과 같게 (왼쪽 ⌊n/2⌋ · 오른쪽 나머지)
+    //   같은 갈림점의 차로 칸일 때만 (차로 칸 자리가 유도선 갈라지는 점 200m 안 — 판교분기점 안내 전에 지나는 판교IC 차로 칸에 판교분기점 갈래를 쓰지 않게)
+    const claF = hit && hit.fork ? colorLineAhead() : null;
+    const sameFork = !!(claF && clSameTurn(claF) && hit.at != null && Math.abs(hit.at - claF.at) <= 200);
+    if (hit && sameFork && hit.ok.length >= 2 && g) {
+      const two = jxSplit2(g, []), n = hit.ok.length;
+      const ok2 = jxRouteGroup(hit.ok, two, [Math.floor(n / 2), n - Math.floor(n / 2)]);
+      if (ok2 !== hit.ok) hit = Object.assign({}, hit, { ok: ok2, sub: two.route });
+    }
     laneState.hit = hit;
     laneState.rowHit = hit;
     if (!hit) {
@@ -8468,7 +8488,9 @@
     el.hidden = false;
     el._d = hit.d != null ? hit.d : nav.dg != null ? nav.dg : Infinity;   // 서랍 칸 순서 (v158): 갈림길·직진 교차로는 그곳, 회전 차로는 안내 지점까지
     const box = el;
-    const key = (hit.fork ? 'f:' : hit.M === 'S' ? 's:' : g.i + ':' + g.t + ':') + hit.k;
+    // v285: 갈림길 차로 칸의 갈 차로도 그 갈래 색깔 유도선 색(분홍·초록), 없으면 하늘색 그대로 (네이버 판교분기점 차로 줄 분홍 둘)
+    const laneCl = sameFork ? (claF.c === 'p' ? 'p' : 'g') : '';
+    const key = (hit.fork ? 'f:' : hit.M === 'S' ? 's:' : g.i + ':' + g.t + ':') + hit.k + (hit.sub != null ? ':s' + hit.sub : '') + ':' + laneCl;
     const head = hit.fork || hit.M === 'S';   // 칸 위 머리줄 (분기 차로·직진 교차로)
     if (laneState.key !== key) {
       laneState.key = key;
@@ -8482,6 +8504,7 @@
       box.dataset.go = hit.ok.map((i) => i + 1).join(',');
       box.dataset.move = hit.M;
       box.dataset.fork = hit.fork ? '1' : '';
+      box.dataset.cl = laneCl;
       const busN = hit.lanes.map((m, i) => (isBusLane(m) ? i + 1 : 0)).filter(Boolean);
       box.dataset.bus = busN.join(',');
       box.setAttribute('aria-label', (hit.M === 'S' ? '직진 ' : '') + hit.lanes.length + '차로 중 ' + hit.ok.map((i) => i + 1).join('·') + '차로' +

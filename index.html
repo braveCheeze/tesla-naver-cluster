@@ -1453,6 +1453,9 @@
   .lanerow .lh .ld { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--nv-fg, #fff); }
   .lanerow .pt { color: #5d636c; }
   .lanerow .pt.on { color: #35a2ff; }
+  /* v285: 갈림길 차로 칸 — 경로 갈래에 색깔 유도선이 있으면 그 색 (네이버 판교분기점 차로 줄 분홍) */
+  .lanerow[data-cl="p"] .pt.on { color: #ff4fa3; }
+  .lanerow[data-cl="g"] .pt.on { color: #22b45a; }
   .lanerow .pt path { fill: none; stroke: currentColor; stroke-width: 3.8; stroke-linecap: butt; stroke-linejoin: round; }
   .lanerow .pt polygon { fill: currentColor; stroke: currentColor; stroke-width: .6; stroke-linejoin: round; }
   /* v139 버스전용차로 칸 (2026-11-16 사용자가 네이버 화면을 보고 '우리도 이런거 있음 좋겠다'): 네이버처럼 앞모습 버스, 회색.
@@ -2591,8 +2594,8 @@
 </div>
 
 <!-- 버전을 붙여 새 index.html 이 예전 app.js(브라우저 캐시)와 섞여 로딩되지 않게 한다. 배포 때마다 올린다. -->
-<script src="icons.js?v=2026.11.16-284"></script>
-<script src="img/ai/picks.js?v=2026.11.16-284"></script>
-<script src="app.js?v=2026.11.16-284"></script>
+<script src="icons.js?v=2026.11.16-285"></script>
+<script src="img/ai/picks.js?v=2026.11.16-285"></script>
+<script src="app.js?v=2026.11.16-285"></script>
 </body>
 </html>

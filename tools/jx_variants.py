@@ -45,8 +45,13 @@ for slot, f in re.findall(r'"(jx2_[a-z0-9]+_(?:day|night))": "([^"]+)"', picks):
         for k in range(1, ngo):
             for a, b in itertools.permutations('gpb', 2):
                 combos.add(a * k + b * (ngo - k))
+            # v285 (운전자 '내가 가고자 하는 방향만 색상을 칠해줘'): 갈 차로 무리가 다시 갈리면 경로 갈래 무리만 칠하고 다른 무리는 회색('n') — '_npp'(판교분기점 구리)·'_gnn'(일산)
+            for c in 'gpb':
+                combos.add(c * k + 'n' * (ngo - k)); combos.add('n' * k + c * (ngo - k))
     for cols in sorted(combos):
         out = os.path.join(ROOT, 'img', 'ai', f[:-5] + '_' + cols + '.webp')
+        if os.path.exists(out) and '--all' not in sys.argv:
+            continue   # v285: 이미 있는 그림은 그대로 (다시 만들면 바이트가 바뀌어 저장소만 커진다). 원본을 바꿨으면 --all
         jx_scene2.recolor_lanes(im, shape, list(cols)).save(out, 'WEBP', quality=86)
         n += 1
 print('차로마다 다른 색 그림', n)

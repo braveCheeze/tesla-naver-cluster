@@ -9217,7 +9217,7 @@
         img: sv.querySelector('img.jv-day') ? sv.querySelector('img.jv-day').getAttribute('src').replace(/^.*\/img\/ai\//, '').replace(/\?.*$/, '') : '' };
     };
     const at = async (f, re, before) => {
-      const R = await fixture(f);
+      const R = typeof f === 'string' ? await fixture(f) : f;
       await resetApp(); softReset(); await planAndStart(R);
       const g = R.route.guide.find((x) => re.test(x.s)), sg = R.cum[Math.min(g.i, R.cum.length - 1)];
       for (let s = Math.max(0, sg - before - 900); s <= sg - before; s += 20) { const a = pointAt(R, s); feed(a.p, 20, a.h); }
@@ -9231,6 +9231,23 @@
       await waitFor(() => t.jdData.loaded && t.forksData.loaded && t.clData.loaded, 10000, 100);
       r.a = await at('route-paldang-hanamic-s.json', /성남IC에서 '성남, 광주'/, 330);
       r.b = await at('route-seoultg-n.json', /판교분기점에서 '일산, 구리'/, 330);
+      // v285 (운전자 '내가 가고자 하는 방향만 색상을 칠해줘'): 같은 자리에서 일산 쪽으로 가는 경로 — 녹색 일산 차로 하나만, 구리 둘은 회색.
+      //   서울TG 경로를 판교분기점 둘째 갈림(67번 점) 앞까지 그대로, 그 뒤 녹색 유도선 끝(일산)을 지나 북북서로 (합성 경로)
+      {
+        const fx0 = await (await realFetch(harnessDir + 'fixtures/route-seoultg-n.json', { cache: 'no-store' })).json();
+        const GE = { lat: 37.406354, lng: 127.0964 };
+        const path = fx0.path.slice(0, 68).concat([[GE.lng, GE.lat]]);
+        for (let k = 1; k <= 4; k++) { const q = dest(GE, 340, 300 * k); path.push([round6(q.lng), round6(q.lat)]); }
+        const P = path.map((x) => ({ lat: x[1], lng: x[0] }));
+        const cum = [0]; for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + hav(P[k - 1], P[k]));
+        const last = P.length - 1, g55 = fx0.guide.find((x) => x.i === 55);
+        const guide = fx0.guide.filter((x) => x.i < 55).concat([g55, { i: 67, t: 1, s: "판교분기점에서 '일산, 평촌' 방면으로 왼쪽 방향", d: r0(cum[67] - cum[55]), ms: 30000 },
+          { i: last, t: 88, s: '목적지', d: r0(cum[last] - cum[67]), ms: 60000 }]);
+        const sections = (fx0.sections || []).filter((x) => x.i < 68).map((x) => Object.assign({}, x, { n: Math.min(x.n, 68 - x.i) }))
+          .concat([{ i: 67, n: last - 66, name: '수도권제1순환고속도로', speed: 80, cong: 1 }]);
+        const route = Object.assign({}, fx0, { path, guide, sections, distance: r0(cum[last]) });
+        r.b2 = await at({ route, P, cum, total: cum[last], dest: { name: '시험', addr: '', lat: P[last].lat, lng: P[last].lng } }, /판교분기점에서 '일산, 구리'/, 330);
+      }
       r.c = await at('route-paldang-hanamic-s.json', /하남분기점에서 '수도권제1순환선, 판교, 서하남'/, 330);
       r.d = await at('route-giheung-ic-s.json', /신갈분기점에서 '대전'/, 330);
       // v260: 서하남교차로 '강동' — 네이버처럼 강동 두 차로는 곧게, 하남 두 차로가 멀리서 오른쪽으로 비킨다 (경로 = 곧게 가는 쪽 f22k, 뒤집지 않음)
@@ -9242,7 +9259,7 @@
       for (const k of K2) { if (keep[k]) t.iconPicks[k] = keep[k]; else delete t.iconPicks[k]; }
       await resetApp(); softReset();
     }
-    const { a = {}, b = {}, c = {}, d = {}, e = {}, f = {} } = r;
+    const { a = {}, b = {}, b2 = {}, c = {}, d = {}, e = {}, f = {} } = r;
     // v257 (부모 세션 '틀린 도시는 안 된다'): 휴게소 방향 '부산'은 어디에도 없다. v259: 지시도시는 네이버와 맞춘 확인 표에서만 —
     //   성남IC '일산'(×4, 네이버 같음), 하남분기점 '구리 상일', 경부 하행 '대전'. 차로는 비우지 않는다
     const noCity = [a, b, c, d].every((x) => !/부산/.test(x.lanes || '') && !/부산/.test(x.other || ''));
@@ -9250,7 +9267,9 @@
     // v259 (③): 네이버처럼 본선 표지 없이 출구 표지 두 장 — '2B 성남 | 성남 광주 ↗' · '2A 성남 | 판교 ↗' (방패 없음)
     const ok = noCity && a.shown && a.jx2 && a.shape === 'x41s' && a.ratio === 1.33 && Math.abs(a.wide) <= 2 && a.lanes === '일산 일산 일산 일산 *성남/광주' && a.minK >= 0.25 &&
       /^2B성남\|2A/.test(a.tab) && !/\d/.test(a.sign) && a.other === '판교' &&
-      b.shown && b.shape === 'x43' && b.lc === 'gpp' && /_gpp\.webp/.test(b.img) && /서울/.test(b.other) &&
+      // v285: 경로(구리 쪽) 갈래 차로만 분홍, 일산 차로는 회색('npp') — 글자는 그대로, 갈 차로 표시(*)는 구리 둘만. 일산 쪽 경로는 녹색 하나('gnn')
+      b.shown && b.shape === 'x43' && b.lc === 'npp' && /_npp\.webp/.test(b.img) && /서울/.test(b.other) && /(^| )일산\/평촌 \*구리\/성남 \*구리\/성남$/.test(b.lanes) &&
+      b2.shown && b2.shape === 'x43' && b2.lc === 'gnn' && /_gnn\.webp/.test(b2.img) && /\*일산\/평촌 구리\/성남 구리\/성남$/.test(b2.lanes) &&
       c.shown && c.shape === 'x42' && c.lc === 'p' && /구리상일/.test(c.other) && /^구리\/상일 구리\/상일 구리\/상일 구리\/상일 /.test(c.lanes) &&
       e.shown && e.shape === 'f22k' && !e.m && e.lanes === '*강동 *강동 하남 하남' && e.hwy &&
       f.shown && f.shape === 'x42' && f.other === '동탄' && f.otherLeft && /^43A기흥\|43B/.test(f.tab) && /^대전 대전 대전 대전 \*기흥 \*기흥$/.test(f.lanes) &&
